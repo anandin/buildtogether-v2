@@ -19,7 +19,9 @@ import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
+import { getCurrentMonthExpenses, getSpendingByCategory, getEffectiveBudget } from "@/lib/storage";
 import { Spacing, BorderRadius } from "@/constants/theme";
+import { CATEGORY_LABELS } from "@/types";
 
 export default function GoalDetailScreen() {
   const insets = useSafeAreaInsets();
@@ -47,6 +49,33 @@ export default function GoalDetailScreen() {
   const progress = goal.targetAmount > 0 ? goal.savedAmount / goal.targetAmount : 0;
   const percentage = Math.min(Math.round(progress * 100), 100);
   const remaining = Math.max(goal.targetAmount - goal.savedAmount, 0);
+
+  const potentialSavings = React.useMemo(() => {
+    if (!data?.categoryBudgets || !data?.expenses) return { total: 0, categories: [] };
+    
+    const monthlyExpenses = getCurrentMonthExpenses(data.expenses);
+    const spending = getSpendingByCategory(monthlyExpenses);
+    
+    const underBudget = data.categoryBudgets
+      .map(budget => {
+        const spent = spending[budget.category] || 0;
+        const effective = getEffectiveBudget(budget);
+        const available = effective - spent;
+        const percentUsed = effective > 0 ? (spent / effective) * 100 : 0;
+        return {
+          category: budget.category,
+          available,
+          percentUsed,
+          hasRollover: budget.rolloverBalance > 0,
+        };
+      })
+      .filter(b => b.available >= 25 && b.percentUsed < 70)
+      .sort((a, b) => b.available - a.available)
+      .slice(0, 3);
+    
+    const total = underBudget.reduce((sum, b) => sum + b.available, 0);
+    return { total, categories: underBudget };
+  }, [data]);
 
   const size = 180;
   const strokeWidth = 12;
@@ -155,6 +184,48 @@ export default function GoalDetailScreen() {
           </View>
         </View>
       </View>
+
+      {potentialSavings.total > 0 && remaining > 0 ? (
+        <Card style={styles.savingsCard}>
+          <View style={styles.savingsHeader}>
+            <Feather name="trending-up" size={20} color={theme.success} />
+            <ThemedText type="heading" style={{ marginLeft: Spacing.sm }}>
+              Potential Savings
+            </ThemedText>
+          </View>
+          <ThemedText type="body" style={{ color: theme.textSecondary, marginBottom: Spacing.md }}>
+            You're under budget in {potentialSavings.categories.length} categories this month. 
+            You could add up to ${Math.min(potentialSavings.total, remaining).toFixed(0)} to this goal!
+          </ThemedText>
+          <View style={styles.savingsCategories}>
+            {potentialSavings.categories.map(cat => (
+              <View 
+                key={cat.category} 
+                style={[styles.savingsCategory, { backgroundColor: theme.success + "15" }]}
+              >
+                <ThemedText type="small" style={{ color: theme.success }}>
+                  {CATEGORY_LABELS[cat.category] || cat.category}
+                </ThemedText>
+                <ThemedText type="small" style={{ color: theme.success, fontWeight: "600" }}>
+                  ${cat.available.toFixed(0)}
+                </ThemedText>
+              </View>
+            ))}
+          </View>
+          <Pressable
+            onPress={() => {
+              const suggestedAmount = Math.min(potentialSavings.total, remaining);
+              setContributionAmount(suggestedAmount.toFixed(0));
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            }}
+            style={[styles.useSavingsButton, { backgroundColor: theme.success + "20" }]}
+          >
+            <ThemedText type="body" style={{ color: theme.success }}>
+              Use savings for this goal
+            </ThemedText>
+          </Pressable>
+        </Card>
+      ) : null}
 
       <Card style={styles.addCard}>
         <ThemedText type="heading" style={styles.cardTitle}>
@@ -291,6 +362,34 @@ const styles = StyleSheet.create({
   statDivider: {
     width: 1,
     height: 40,
+  },
+  savingsCard: {
+    marginBottom: Spacing.xl,
+  },
+  savingsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: Spacing.md,
+  },
+  savingsCategories: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  savingsCategory: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    gap: Spacing.sm,
+  },
+  useSavingsButton: {
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
   },
   addCard: {
     marginBottom: Spacing.xl,
