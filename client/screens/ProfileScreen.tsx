@@ -15,8 +15,8 @@ import { useApp } from "@/context/AppContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
 
 const avatarImages: Record<string, any> = {
-  "avatar-preset-1": require("../../../assets/images/avatar-preset-1.png"),
-  "avatar-preset-2": require("../../../assets/images/avatar-preset-2.png"),
+  "avatar-preset-1": require("../../assets/images/avatar-preset-1.png"),
+  "avatar-preset-2": require("../../assets/images/avatar-preset-2.png"),
 };
 
 export default function ProfileScreen() {
