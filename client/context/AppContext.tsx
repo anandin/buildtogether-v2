@@ -23,6 +23,7 @@ interface AppContextType {
   markInsightRead: (id: string) => Promise<void>;
   dismissInsight: (id: string) => Promise<void>;
   updatePartnerName: (partnerId: "partner1" | "partner2", name: string) => Promise<void>;
+  completeOnboarding: () => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -137,6 +138,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await refreshData();
   }, [refreshData]);
 
+  const completeOnboarding = useCallback(async () => {
+    await storage.completeOnboarding();
+    await refreshData();
+  }, [refreshData]);
+
   return (
     <AppContext.Provider
       value={{
@@ -160,6 +166,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         markInsightRead,
         dismissInsight,
         updatePartnerName,
+        completeOnboarding,
       }}
     >
       {children}

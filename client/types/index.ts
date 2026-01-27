@@ -151,6 +151,7 @@ export interface AppData {
   settlements: SettlementRecord[];
   connectedSince: string | null;
   lastInsightCheck?: string;
+  hasCompletedOnboarding?: boolean;
 }
 
 export const DEFAULT_CATEGORIES: ExpenseCategory[] = [

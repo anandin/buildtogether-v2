@@ -49,6 +49,7 @@ const defaultData: AppData = {
   settlements: [],
   connectedSince: null,
   lastInsightCheck: undefined,
+  hasCompletedOnboarding: false,
 };
 
 export async function loadAppData(): Promise<AppData> {
@@ -493,6 +494,15 @@ export function calculateOwedAmounts(
 
 export function getUnsettledExpenses(expenses: Expense[]): Expense[] {
   return expenses.filter((e) => !e.isSettled);
+}
+
+export async function completeOnboarding(): Promise<void> {
+  const data = await loadAppData();
+  data.hasCompletedOnboarding = true;
+  if (!data.connectedSince) {
+    data.connectedSince = new Date().toISOString();
+  }
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 }
 
 export function getCategoryBudgetStatus(

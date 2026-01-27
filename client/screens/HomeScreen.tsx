@@ -14,7 +14,7 @@ import { GoalCard } from "@/components/GoalCard";
 import { Card } from "@/components/Card";
 import { AICoach } from "@/components/AICoach";
 import { CategoryBudgetCard } from "@/components/CategoryBudgetCard";
-import { HarmonySpark } from "@/components/HarmonySpark";
+import { DreamGuardian } from "@/components/DreamGuardian";
 import { SteadyProgress } from "@/components/SteadyProgress";
 import { MonthlySettlementSummary } from "@/components/MonthlySettlementSummary";
 import { useTheme } from "@/hooks/useTheme";
@@ -67,13 +67,17 @@ export default function HomeScreen() {
     navigation.navigate("SettleUp");
   };
 
-  const handleHarmonySparkPress = () => {
-    navigation.navigate("GoalsTab");
+  const handleAddToGoal = () => {
+    if (data?.goals && data.goals.length > 0) {
+      navigation.navigate("GoalDetail", { goalId: data.goals[0].id });
+    } else {
+      navigation.navigate("AddGoal");
+    }
   };
 
   const renderContent = () => (
     <View style={styles.content}>
-      <HarmonySpark onPress={handleHarmonySparkPress} />
+      <DreamGuardian onAddToGoal={handleAddToGoal} />
 
       <BudgetCard
         spent={totalSpent}
