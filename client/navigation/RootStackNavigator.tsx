@@ -16,8 +16,8 @@ export type RootStackParamList = {
   Main: undefined;
   AddExpense: { prefilled?: { amount?: number; description?: string; category?: string; receiptImage?: string } } | undefined;
   ScanReceipt: undefined;
-  AddGoal: undefined;
-  GoalDetail: { goalId: string };
+  AddDream: undefined;
+  DreamDetail: { dreamId: string };
   FutureTimeline: undefined;
   SetBudget: undefined;
   ExpenseDetail: { expenseId: string };
@@ -42,7 +42,7 @@ export default function RootStackNavigator() {
         component={AddExpenseScreen}
         options={{
           presentation: "modal",
-          headerTitle: "Edit Expense",
+          headerTitle: "Add Expense",
         }}
       />
       <Stack.Screen
@@ -54,18 +54,18 @@ export default function RootStackNavigator() {
         }}
       />
       <Stack.Screen
-        name="AddGoal"
+        name="AddDream"
         component={AddGoalScreen}
         options={{
           presentation: "modal",
-          headerTitle: "New Goal",
+          headerTitle: "New Dream",
         }}
       />
       <Stack.Screen
-        name="GoalDetail"
+        name="DreamDetail"
         component={GoalDetailScreen}
         options={{
-          headerTitle: "Goal Details",
+          headerTitle: "Dream Details",
         }}
       />
       <Stack.Screen

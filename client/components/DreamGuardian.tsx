@@ -78,7 +78,7 @@ function getGuardianMood(
       emoji: "target",
       color: "#6366F1",
       message: `Hey ${partnerNames.partner1} & ${partnerNames.partner2}! Ready to dream together?`,
-      suggestion: "Tap Goals to create your first shared dream - a vacation, home project, or anything you want to save for together!",
+      suggestion: "Tap Dreams to create your first shared dream - a vacation, home project, or anything you want to save for together!",
       priority: "encourage",
     };
   }

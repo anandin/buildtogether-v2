@@ -38,8 +38,8 @@ export default function GoalDetailScreen() {
   const { theme } = useTheme();
   const { data, addGoalContribution, deleteGoal } = useApp();
 
-  const goalId = route.params?.goalId;
-  const goal = data?.goals.find((g) => g.id === goalId);
+  const dreamId = route.params?.dreamId || route.params?.goalId;
+  const goal = data?.goals.find((g) => g.id === dreamId);
 
   const [contributionAmount, setContributionAmount] = useState("");
   const [contributor, setContributor] = useState<"partner1" | "partner2">("partner1");
@@ -48,7 +48,7 @@ export default function GoalDetailScreen() {
   if (!goal) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor: theme.backgroundRoot }]}>
-        <ThemedText type="body">Goal not found</ThemedText>
+        <ThemedText type="body">Dream not found</ThemedText>
       </View>
     );
   }

@@ -3,17 +3,19 @@ import { View, StyleSheet, ScrollView, Pressable, Dimensions } from "react-nativ
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import Svg, { Rect, Text as SvgText, Line } from "react-native-svg";
-import { format, subDays, startOfMonth, endOfMonth, eachDayOfInterval } from "date-fns";
+import { format, subDays } from "date-fns";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
+import { SteadyProgress } from "@/components/SteadyProgress";
+import { AICoach } from "@/components/AICoach";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
 import { getCurrentMonthExpenses, getTotalSpent, getMerchantSpending } from "@/lib/storage";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import type { ExpenseCategory } from "@/types";
 import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS } from "@/types";
 
 const screenWidth = Dimensions.get("window").width;
@@ -22,6 +24,7 @@ export default function ChartScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
   const tabBarHeight = useBottomTabBarHeight();
+  const navigation = useNavigation<any>();
   const { theme } = useTheme();
   const { data } = useApp();
   const [selectedPeriod, setSelectedPeriod] = useState<"week" | "month" | "year">("month");
@@ -143,6 +146,25 @@ export default function ChartScreen() {
       }}
       scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
+      <SteadyProgress />
+
+      <Card style={styles.futureCard} onPress={() => navigation.navigate("FutureTimeline")}>
+        <View style={styles.futureContent}>
+          <View style={[styles.futureIcon, { backgroundColor: theme.primary + "20" }]}>
+            <Feather name="sunrise" size={20} color={theme.primary} />
+          </View>
+          <View style={styles.futureText}>
+            <ThemedText type="heading">Future Us</ThemedText>
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              See when your dreams become reality
+            </ThemedText>
+          </View>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </View>
+      </Card>
+
+      <AICoach />
+
       <Card style={styles.heroCard}>
         <View style={styles.heroHeader}>
           <ThemedText type="small" style={{ color: theme.textSecondary }}>
@@ -406,6 +428,24 @@ export default function ChartScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  futureCard: {
+    marginBottom: Spacing.lg,
+  },
+  futureContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  futureIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  futureText: {
+    flex: 1,
+    marginLeft: Spacing.md,
   },
   heroCard: {
     marginBottom: Spacing.lg,

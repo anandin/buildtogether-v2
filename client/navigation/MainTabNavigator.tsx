@@ -6,7 +6,7 @@ import { Platform, StyleSheet } from "react-native";
 import HomeStackNavigator from "@/navigation/HomeStackNavigator";
 import ExpensesStackNavigator from "@/navigation/ExpensesStackNavigator";
 import ChartStackNavigator from "@/navigation/ChartStackNavigator";
-import GoalsStackNavigator from "@/navigation/GoalsStackNavigator";
+import DreamsStackNavigator from "@/navigation/DreamsStackNavigator";
 import ProfileStackNavigator from "@/navigation/ProfileStackNavigator";
 import { useTheme } from "@/hooks/useTheme";
 
@@ -14,7 +14,7 @@ export type MainTabParamList = {
   HomeTab: undefined;
   ExpensesTab: undefined;
   ChartTab: undefined;
-  GoalsTab: undefined;
+  DreamsTab: undefined;
   ProfileTab: undefined;
 };
 
@@ -80,12 +80,12 @@ export default function MainTabNavigator() {
         }}
       />
       <Tab.Screen
-        name="GoalsTab"
-        component={GoalsStackNavigator}
+        name="DreamsTab"
+        component={DreamsStackNavigator}
         options={{
-          title: "Goals",
+          title: "Dreams",
           tabBarIcon: ({ color, size }) => (
-            <Feather name="target" size={size} color={color} />
+            <Feather name="star" size={size} color={color} />
           ),
         }}
       />

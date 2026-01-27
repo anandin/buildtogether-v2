@@ -91,8 +91,8 @@ export function QuickActions({
         onPress={onScanReceipt}
       />
       <QuickActionButton
-        icon="target"
-        label="New Goal"
+        icon="star"
+        label="New Dream"
         color={theme.success}
         onPress={onAddGoal}
       />
