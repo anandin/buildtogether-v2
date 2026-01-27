@@ -4,11 +4,15 @@ import { Feather } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { Platform, StyleSheet } from "react-native";
 import HomeStackNavigator from "@/navigation/HomeStackNavigator";
+import ExpensesStackNavigator from "@/navigation/ExpensesStackNavigator";
+import GoalsStackNavigator from "@/navigation/GoalsStackNavigator";
 import ProfileStackNavigator from "@/navigation/ProfileStackNavigator";
 import { useTheme } from "@/hooks/useTheme";
 
 export type MainTabParamList = {
   HomeTab: undefined;
+  ExpensesTab: undefined;
+  GoalsTab: undefined;
   ProfileTab: undefined;
 };
 
@@ -21,7 +25,7 @@ export default function MainTabNavigator() {
     <Tab.Navigator
       initialRouteName="HomeTab"
       screenOptions={{
-        tabBarActiveTintColor: theme.tabIconSelected,
+        tabBarActiveTintColor: theme.primary,
         tabBarInactiveTintColor: theme.tabIconDefault,
         tabBarStyle: {
           position: "absolute",
@@ -50,6 +54,26 @@ export default function MainTabNavigator() {
           title: "Home",
           tabBarIcon: ({ color, size }) => (
             <Feather name="home" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="ExpensesTab"
+        component={ExpensesStackNavigator}
+        options={{
+          title: "Expenses",
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="credit-card" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="GoalsTab"
+        component={GoalsStackNavigator}
+        options={{
+          title: "Goals",
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="target" size={size} color={color} />
           ),
         }}
       />

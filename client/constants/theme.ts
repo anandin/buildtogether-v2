@@ -1,30 +1,57 @@
 import { Platform } from "react-native";
 
-const tintColorLight = "#007AFF";
-const tintColorDark = "#0A84FF";
+export const AppColors = {
+  primary: "#FF9AA2",
+  accent: "#C7CEEA",
+  success: "#B5EAD7",
+  warning: "#FFDAC1",
+  background: "#FFFBF7",
+  surface: "#FFFFFF",
+  textPrimary: "#2D2D2D",
+  textSecondary: "#8E8E93",
+  border: "#E5E5EA",
+  error: "#FF6B6B",
+};
+
+const tintColorLight = AppColors.primary;
+const tintColorDark = "#FFB4BA";
 
 export const Colors = {
   light: {
-    text: "#11181C",
+    text: AppColors.textPrimary,
+    textSecondary: AppColors.textSecondary,
     buttonText: "#FFFFFF",
-    tabIconDefault: "#687076",
+    tabIconDefault: AppColors.textSecondary,
     tabIconSelected: tintColorLight,
-    link: "#007AFF",
-    backgroundRoot: "#FFFFFF", // Elevation 0
-    backgroundDefault: "#F2F2F2", // Elevation 1
-    backgroundSecondary: "#E6E6E6", // Elevation 2
-    backgroundTertiary: "#D9D9D9", // Elevation 3
+    link: AppColors.primary,
+    primary: AppColors.primary,
+    accent: AppColors.accent,
+    success: AppColors.success,
+    warning: AppColors.warning,
+    error: AppColors.error,
+    border: AppColors.border,
+    backgroundRoot: AppColors.background,
+    backgroundDefault: AppColors.surface,
+    backgroundSecondary: "#F8F4F0",
+    backgroundTertiary: "#F0EBE6",
   },
   dark: {
     text: "#ECEDEE",
+    textSecondary: "#9BA1A6",
     buttonText: "#FFFFFF",
     tabIconDefault: "#9BA1A6",
     tabIconSelected: tintColorDark,
-    link: "#0A84FF",
-    backgroundRoot: "#1F2123", // Elevation 0
-    backgroundDefault: "#2A2C2E", // Elevation 1
-    backgroundSecondary: "#353739", // Elevation 2
-    backgroundTertiary: "#404244", // Elevation 3
+    link: tintColorDark,
+    primary: tintColorDark,
+    accent: "#D4D9F0",
+    success: "#A8E0CC",
+    warning: "#FFE5D4",
+    error: "#FF8080",
+    border: "#3A3A3C",
+    backgroundRoot: "#1C1C1E",
+    backgroundDefault: "#2C2C2E",
+    backgroundSecondary: "#3A3A3C",
+    backgroundTertiary: "#48484A",
   },
 };
 
@@ -54,6 +81,11 @@ export const BorderRadius = {
 };
 
 export const Typography = {
+  hero: {
+    fontSize: 32,
+    lineHeight: 40,
+    fontWeight: "700" as const,
+  },
   h1: {
     fontSize: 32,
     lineHeight: 40,
@@ -74,14 +106,29 @@ export const Typography = {
     lineHeight: 28,
     fontWeight: "600" as const,
   },
+  heading: {
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: "600" as const,
+  },
   body: {
     fontSize: 16,
     lineHeight: 24,
     fontWeight: "400" as const,
   },
+  caption: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "400" as const,
+  },
   small: {
     fontSize: 14,
     lineHeight: 20,
+    fontWeight: "400" as const,
+  },
+  tiny: {
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: "400" as const,
   },
   link: {
@@ -91,15 +138,35 @@ export const Typography = {
   },
 };
 
+export const Shadows = {
+  card: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  floatingButton: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 4,
+  },
+  modal: {
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+};
+
 export const Fonts = Platform.select({
   ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
     sans: "system-ui",
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
     serif: "ui-serif",
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
     rounded: "ui-rounded",
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
     mono: "ui-monospace",
   },
   default: {
@@ -109,7 +176,7 @@ export const Fonts = Platform.select({
     mono: "monospace",
   },
   web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+    sans: "Nunito, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
     serif: "Georgia, 'Times New Roman', serif",
     rounded:
       "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
