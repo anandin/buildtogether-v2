@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import { View, StyleSheet, ScrollView, Pressable, TextInput, Modal } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
+import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
@@ -18,6 +19,7 @@ import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS, BUDGET_TYPE_INFO } fr
 export default function BudgetSettingsScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
+  const navigation = useNavigation();
   const { theme } = useTheme();
   const { data, updateCategoryBudget, processMonthlyRollover } = useApp();
   
@@ -244,9 +246,18 @@ export default function BudgetSettingsScreen() {
           ))}
         </View>
 
-        <ThemedText type="heading" style={{ marginTop: Spacing.xl, marginBottom: Spacing.md }}>
-          Category Budgets
-        </ThemedText>
+        <View style={styles.categoryHeader}>
+          <ThemedText type="heading">
+            Category Budgets
+          </ThemedText>
+          <Pressable
+            style={[styles.addCategoryButton, { backgroundColor: theme.primary }]}
+            onPress={() => navigation.navigate("AddCategory" as never)}
+          >
+            <Feather name="plus" size={16} color="#FFFFFF" />
+            <ThemedText type="small" style={{ color: "#FFFFFF", marginLeft: 4 }}>Add</ThemedText>
+          </Pressable>
+        </View>
         <ThemedText type="small" style={{ color: theme.textSecondary, marginBottom: Spacing.md }}>
           Tap any category to edit its budget
         </ThemedText>
@@ -525,5 +536,19 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
     marginTop: Spacing.xl,
+  },
+  categoryHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: Spacing.xl,
+    marginBottom: Spacing.md,
+  },
+  addCategoryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
   },
 });

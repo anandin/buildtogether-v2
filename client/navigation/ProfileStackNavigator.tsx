@@ -4,12 +4,16 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import ProfileScreen from "@/screens/ProfileScreen";
 import BudgetSettingsScreen from "@/screens/BudgetSettingsScreen";
 import { BillSplitSettingsScreen } from "@/screens/BillSplitSettingsScreen";
+import NotificationSettingsScreen from "@/screens/NotificationSettingsScreen";
+import AddCategoryScreen from "@/screens/AddCategoryScreen";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 
 export type ProfileStackParamList = {
   Profile: undefined;
   BudgetSettings: undefined;
   BillSplitSettings: undefined;
+  NotificationSettings: undefined;
+  AddCategory: undefined;
 };
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
@@ -38,6 +42,20 @@ export default function ProfileStackNavigator() {
         component={BillSplitSettingsScreen}
         options={{
           title: "Bill Splitting",
+        }}
+      />
+      <Stack.Screen
+        name="NotificationSettings"
+        component={NotificationSettingsScreen}
+        options={{
+          title: "Notifications",
+        }}
+      />
+      <Stack.Screen
+        name="AddCategory"
+        component={AddCategoryScreen}
+        options={{
+          title: "Add Category",
         }}
       />
     </Stack.Navigator>

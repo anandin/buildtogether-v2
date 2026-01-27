@@ -225,7 +225,10 @@ export default function ProfileScreen() {
           <Feather name="chevron-right" size={20} color={theme.textSecondary} />
         </Pressable>
 
-        <Pressable style={styles.settingRow}>
+        <Pressable 
+          style={styles.settingRow}
+          onPress={() => navigation.navigate("NotificationSettings")}
+        >
           <View style={[styles.settingIcon, { backgroundColor: theme.accent + "20" }]}>
             <Feather name="bell" size={18} color={theme.accent} />
           </View>
