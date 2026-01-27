@@ -12,6 +12,8 @@ import { QuickActions } from "@/components/QuickActions";
 import { ExpenseItem } from "@/components/ExpenseItem";
 import { GoalCard } from "@/components/GoalCard";
 import { Card } from "@/components/Card";
+import { AICoach } from "@/components/AICoach";
+import { CategoryBudgetCard } from "@/components/CategoryBudgetCard";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
 import { getCurrentMonthExpenses, getTotalSpent, calculateOwedAmounts, getUnsettledExpenses } from "@/lib/storage";
@@ -27,8 +29,13 @@ export default function HomeScreen() {
 
   const currentMonthExpenses = data ? getCurrentMonthExpenses(data.expenses) : [];
   const totalSpent = getTotalSpent(currentMonthExpenses);
-  const recentExpenses = data?.expenses.slice(0, 5) || [];
+  const recentExpenses = data?.expenses.slice(0, 3) || [];
   const activeGoals = data?.goals.slice(0, 2) || [];
+
+  const totalBudget = useMemo(() => {
+    if (!data?.categoryBudgets) return 2000;
+    return data.categoryBudgets.reduce((sum, b) => sum + b.monthlyLimit, 0);
+  }, [data?.categoryBudgets]);
 
   const owedAmounts = useMemo(() => {
     return data ? calculateOwedAmounts(data.expenses, data.partners) : { partner1Owes: 0, partner2Owes: 0 };
@@ -53,10 +60,6 @@ export default function HomeScreen() {
     navigation.navigate("AddGoal");
   };
 
-  const handleSetBudget = () => {
-    navigation.navigate("SetBudget");
-  };
-
   const handleSettleUp = () => {
     navigation.navigate("SettleUp");
   };
@@ -65,9 +68,8 @@ export default function HomeScreen() {
     <View style={styles.content}>
       <BudgetCard
         spent={totalSpent}
-        limit={data?.budget?.monthlyLimit || 2000}
+        limit={totalBudget}
         month={new Date().toLocaleString("default", { month: "long" })}
-        onPress={handleSetBudget}
       />
 
       {unsettledCount > 0 ? (
@@ -92,6 +94,14 @@ export default function HomeScreen() {
         onScanReceipt={handleScanReceipt}
         onAddGoal={handleAddGoal}
       />
+
+      <View style={styles.section}>
+        <AICoach />
+      </View>
+
+      <View style={styles.section}>
+        <CategoryBudgetCard />
+      </View>
 
       {recentExpenses.length > 0 ? (
         <View style={styles.section}>

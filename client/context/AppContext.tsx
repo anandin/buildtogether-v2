@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
-import type { AppData, Expense, Goal, Budget } from "@/types";
+import type { AppData, Expense, Goal, Budget, CategoryBudget, CustomCategory, AIInsight } from "@/types";
 import * as storage from "@/lib/storage";
 
 interface AppContextType {
@@ -15,6 +15,12 @@ interface AppContextType {
   deleteGoal: (id: string) => Promise<void>;
   addGoalContribution: (goalId: string, amount: number, contributor: "partner1" | "partner2") => Promise<void>;
   setBudget: (monthlyLimit: number) => Promise<Budget>;
+  updateCategoryBudget: (category: string, monthlyLimit: number) => Promise<CategoryBudget>;
+  addCustomCategory: (name: string, icon: string, color: string) => Promise<CustomCategory>;
+  deleteCustomCategory: (id: string) => Promise<void>;
+  addAIInsight: (insight: Omit<AIInsight, "id" | "createdAt" | "isRead" | "isDismissed">) => Promise<AIInsight>;
+  markInsightRead: (id: string) => Promise<void>;
+  dismissInsight: (id: string) => Promise<void>;
   updatePartnerName: (partnerId: "partner1" | "partner2", name: string) => Promise<void>;
 }
 
@@ -87,6 +93,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return budget;
   }, [refreshData]);
 
+  const updateCategoryBudget = useCallback(async (category: string, monthlyLimit: number) => {
+    const budget = await storage.updateCategoryBudget(category, monthlyLimit);
+    await refreshData();
+    return budget;
+  }, [refreshData]);
+
+  const addCustomCategory = useCallback(async (name: string, icon: string, color: string) => {
+    const category = await storage.addCustomCategory(name, icon, color);
+    await refreshData();
+    return category;
+  }, [refreshData]);
+
+  const deleteCustomCategory = useCallback(async (id: string) => {
+    await storage.deleteCustomCategory(id);
+    await refreshData();
+  }, [refreshData]);
+
+  const addAIInsight = useCallback(async (insight: Omit<AIInsight, "id" | "createdAt" | "isRead" | "isDismissed">) => {
+    const newInsight = await storage.addAIInsight(insight);
+    await refreshData();
+    return newInsight;
+  }, [refreshData]);
+
+  const markInsightRead = useCallback(async (id: string) => {
+    await storage.markInsightRead(id);
+    await refreshData();
+  }, [refreshData]);
+
+  const dismissInsight = useCallback(async (id: string) => {
+    await storage.dismissInsight(id);
+    await refreshData();
+  }, [refreshData]);
+
   const updatePartnerName = useCallback(async (partnerId: "partner1" | "partner2", name: string) => {
     await storage.updatePartnerName(partnerId, name);
     await refreshData();
@@ -107,6 +146,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         deleteGoal,
         addGoalContribution,
         setBudget,
+        updateCategoryBudget,
+        addCustomCategory,
+        deleteCustomCategory,
+        addAIInsight,
+        markInsightRead,
+        dismissInsight,
         updatePartnerName,
       }}
     >

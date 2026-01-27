@@ -2,6 +2,7 @@ export interface Expense {
   id: string;
   amount: number;
   description: string;
+  merchant?: string;
   category: ExpenseCategory;
   date: string;
   paidBy: "partner1" | "partner2" | "joint";
@@ -33,7 +34,12 @@ export type ExpenseCategory =
   | "travel"
   | "home"
   | "restaurants"
-  | "other";
+  | "subscriptions"
+  | "pets"
+  | "gifts"
+  | "personal"
+  | "other"
+  | string;
 
 export interface Goal {
   id: string;
@@ -60,6 +66,35 @@ export interface Budget {
   year: number;
 }
 
+export interface CategoryBudget {
+  id: string;
+  category: string;
+  monthlyLimit: number;
+  isCustom?: boolean;
+}
+
+export interface AIInsight {
+  id: string;
+  type: "saving_tip" | "spending_alert" | "goal_nudge" | "trend_analysis";
+  title: string;
+  message: string;
+  priority: "low" | "medium" | "high";
+  actionText?: string;
+  actionType?: "view_category" | "add_to_goal" | "review_spending" | "dismiss";
+  category?: string;
+  amount?: number;
+  createdAt: string;
+  isRead: boolean;
+  isDismissed: boolean;
+}
+
+export interface CustomCategory {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+}
+
 export interface Partner {
   id: "partner1" | "partner2";
   name: string;
@@ -80,15 +115,38 @@ export interface AppData {
   expenses: Expense[];
   goals: Goal[];
   budget: Budget | null;
+  categoryBudgets: CategoryBudget[];
+  customCategories: CustomCategory[];
+  aiInsights: AIInsight[];
   partners: {
     partner1: Partner;
     partner2: Partner;
   };
   settlements: SettlementRecord[];
   connectedSince: string | null;
+  lastInsightCheck?: string;
 }
 
-export const CATEGORY_ICONS: Record<ExpenseCategory, string> = {
+export const DEFAULT_CATEGORIES: ExpenseCategory[] = [
+  "groceries",
+  "restaurants",
+  "utilities",
+  "internet",
+  "transport",
+  "entertainment",
+  "shopping",
+  "health",
+  "travel",
+  "home",
+  "subscriptions",
+  "pets",
+  "gifts",
+  "personal",
+  "food",
+  "other",
+];
+
+export const CATEGORY_ICONS: Record<string, string> = {
   food: "coffee",
   groceries: "shopping-cart",
   transport: "navigation",
@@ -100,10 +158,14 @@ export const CATEGORY_ICONS: Record<ExpenseCategory, string> = {
   travel: "map-pin",
   home: "home",
   restaurants: "utensils",
+  subscriptions: "repeat",
+  pets: "heart",
+  gifts: "gift",
+  personal: "user",
   other: "more-horizontal",
 };
 
-export const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
+export const CATEGORY_LABELS: Record<string, string> = {
   food: "Food & Dining",
   groceries: "Groceries",
   transport: "Transport",
@@ -113,12 +175,16 @@ export const CATEGORY_LABELS: Record<ExpenseCategory, string> = {
   shopping: "Shopping",
   health: "Health",
   travel: "Travel",
-  home: "Home improvement",
+  home: "Home",
   restaurants: "Restaurants",
+  subscriptions: "Subscriptions",
+  pets: "Pets",
+  gifts: "Gifts",
+  personal: "Personal Care",
   other: "Other",
 };
 
-export const CATEGORY_COLORS: Record<ExpenseCategory, string> = {
+export const CATEGORY_COLORS: Record<string, string> = {
   food: "#FF9AA2",
   groceries: "#B5EAD7",
   transport: "#C7CEEA",
@@ -130,8 +196,24 @@ export const CATEGORY_COLORS: Record<ExpenseCategory, string> = {
   travel: "#C7CEEA",
   home: "#D4A574",
   restaurants: "#FF9AA2",
+  subscriptions: "#CDB4DB",
+  pets: "#FFD93D",
+  gifts: "#FF6B6B",
+  personal: "#F8B4D9",
   other: "#D4D4D4",
 };
+
+export const DEFAULT_CATEGORY_BUDGETS: { category: string; limit: number }[] = [
+  { category: "groceries", limit: 600 },
+  { category: "restaurants", limit: 300 },
+  { category: "utilities", limit: 200 },
+  { category: "internet", limit: 100 },
+  { category: "transport", limit: 200 },
+  { category: "entertainment", limit: 150 },
+  { category: "shopping", limit: 200 },
+  { category: "health", limit: 100 },
+  { category: "subscriptions", limit: 100 },
+];
 
 export const GOAL_COLORS = [
   "#FF9AA2",
@@ -155,9 +237,8 @@ export const GOAL_EMOJIS = [
   "umbrella",
 ];
 
-export const SPLIT_METHODS: { key: SplitMethod; label: string }[] = [
-  { key: "even", label: "Even" },
-  { key: "ratio", label: "Ratio" },
-  { key: "amount", label: "Amount" },
-  { key: "joint", label: "Joint" },
+export const SPLIT_METHODS: { key: SplitMethod; label: string; description: string }[] = [
+  { key: "even", label: "50/50", description: "Split evenly between both partners" },
+  { key: "ratio", label: "Custom %", description: "Set custom percentages for each partner" },
+  { key: "joint", label: "Joint", description: "Paid from joint account, no split needed" },
 ];

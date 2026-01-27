@@ -7,14 +7,27 @@ import type {
   Budget,
   GoalContribution,
   SettlementRecord,
+  CategoryBudget,
+  CustomCategory,
+  AIInsight,
 } from "@/types";
+import { DEFAULT_CATEGORY_BUDGETS } from "@/types";
 
 const STORAGE_KEY = "@build_together_data";
+
+const defaultCategoryBudgets: CategoryBudget[] = DEFAULT_CATEGORY_BUDGETS.map((b) => ({
+  id: uuidv4(),
+  category: b.category,
+  monthlyLimit: b.limit,
+}));
 
 const defaultData: AppData = {
   expenses: [],
   goals: [],
   budget: null,
+  categoryBudgets: defaultCategoryBudgets,
+  customCategories: [],
+  aiInsights: [],
   partners: {
     partner1: {
       id: "partner1",
@@ -31,6 +44,7 @@ const defaultData: AppData = {
   },
   settlements: [],
   connectedSince: null,
+  lastInsightCheck: undefined,
 };
 
 export async function loadAppData(): Promise<AppData> {
@@ -41,6 +55,9 @@ export async function loadAppData(): Promise<AppData> {
       return {
         ...defaultData,
         ...parsed,
+        categoryBudgets: parsed.categoryBudgets?.length ? parsed.categoryBudgets : defaultCategoryBudgets,
+        customCategories: parsed.customCategories || [],
+        aiInsights: parsed.aiInsights || [],
         partners: {
           ...defaultData.partners,
           ...parsed.partners,
@@ -186,6 +203,98 @@ export async function setBudget(monthlyLimit: number): Promise<Budget> {
   return budget;
 }
 
+export async function updateCategoryBudget(
+  category: string,
+  monthlyLimit: number
+): Promise<CategoryBudget> {
+  const data = await loadAppData();
+  const existing = data.categoryBudgets.find((b) => b.category === category);
+  
+  if (existing) {
+    existing.monthlyLimit = monthlyLimit;
+    await saveAppData(data);
+    return existing;
+  } else {
+    const newBudget: CategoryBudget = {
+      id: uuidv4(),
+      category,
+      monthlyLimit,
+      isCustom: true,
+    };
+    data.categoryBudgets.push(newBudget);
+    await saveAppData(data);
+    return newBudget;
+  }
+}
+
+export async function addCustomCategory(
+  name: string,
+  icon: string,
+  color: string
+): Promise<CustomCategory> {
+  const data = await loadAppData();
+  const newCategory: CustomCategory = {
+    id: uuidv4(),
+    name: name.toLowerCase().replace(/\s+/g, "_"),
+    icon,
+    color,
+  };
+  data.customCategories.push(newCategory);
+  await saveAppData(data);
+  return newCategory;
+}
+
+export async function deleteCustomCategory(id: string): Promise<void> {
+  const data = await loadAppData();
+  data.customCategories = data.customCategories.filter((c) => c.id !== id);
+  await saveAppData(data);
+}
+
+export async function addAIInsight(insight: Omit<AIInsight, "id" | "createdAt" | "isRead" | "isDismissed">): Promise<AIInsight> {
+  const data = await loadAppData();
+  const newInsight: AIInsight = {
+    ...insight,
+    id: uuidv4(),
+    createdAt: new Date().toISOString(),
+    isRead: false,
+    isDismissed: false,
+  };
+  data.aiInsights.unshift(newInsight);
+  data.lastInsightCheck = new Date().toISOString();
+  await saveAppData(data);
+  return newInsight;
+}
+
+export async function markInsightRead(id: string): Promise<void> {
+  const data = await loadAppData();
+  const insight = data.aiInsights.find((i) => i.id === id);
+  if (insight) {
+    insight.isRead = true;
+    await saveAppData(data);
+  }
+}
+
+export async function dismissInsight(id: string): Promise<void> {
+  const data = await loadAppData();
+  const insight = data.aiInsights.find((i) => i.id === id);
+  if (insight) {
+    insight.isDismissed = true;
+    await saveAppData(data);
+  }
+}
+
+export async function clearOldInsights(): Promise<void> {
+  const data = await loadAppData();
+  const oneWeekAgo = new Date();
+  oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+  
+  data.aiInsights = data.aiInsights.filter((i) => {
+    const createdAt = new Date(i.createdAt);
+    return createdAt > oneWeekAgo || !i.isDismissed;
+  });
+  await saveAppData(data);
+}
+
 export async function updatePartnerName(
   partnerId: "partner1" | "partner2",
   name: string
@@ -217,6 +326,28 @@ export function getCurrentMonthExpenses(expenses: Expense[]): Expense[] {
 
 export function getTotalSpent(expenses: Expense[]): number {
   return expenses.reduce((sum, expense) => sum + expense.amount, 0);
+}
+
+export function getSpendingByCategory(expenses: Expense[]): Record<string, number> {
+  const spending: Record<string, number> = {};
+  expenses.forEach((expense) => {
+    spending[expense.category] = (spending[expense.category] || 0) + expense.amount;
+  });
+  return spending;
+}
+
+export function getMerchantSpending(expenses: Expense[]): Record<string, { total: number; count: number }> {
+  const merchants: Record<string, { total: number; count: number }> = {};
+  expenses.forEach((expense) => {
+    if (expense.merchant) {
+      if (!merchants[expense.merchant]) {
+        merchants[expense.merchant] = { total: 0, count: 0 };
+      }
+      merchants[expense.merchant].total += expense.amount;
+      merchants[expense.merchant].count += 1;
+    }
+  });
+  return merchants;
 }
 
 export function getExpensesByDate(
@@ -287,4 +418,22 @@ export function calculateOwedAmounts(
 
 export function getUnsettledExpenses(expenses: Expense[]): Expense[] {
   return expenses.filter((e) => !e.isSettled);
+}
+
+export function getCategoryBudgetStatus(
+  expenses: Expense[],
+  categoryBudgets: CategoryBudget[]
+): { category: string; spent: number; limit: number; percentage: number }[] {
+  const monthlyExpenses = getCurrentMonthExpenses(expenses);
+  const spendingByCategory = getSpendingByCategory(monthlyExpenses);
+  
+  return categoryBudgets.map((budget) => {
+    const spent = spendingByCategory[budget.category] || 0;
+    return {
+      category: budget.category,
+      spent,
+      limit: budget.monthlyLimit,
+      percentage: budget.monthlyLimit > 0 ? (spent / budget.monthlyLimit) * 100 : 0,
+    };
+  });
 }
