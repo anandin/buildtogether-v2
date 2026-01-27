@@ -112,7 +112,7 @@ export default function ExpensesScreen() {
 
   const renderEmpty = () => (
     <EmptyState
-      image={require("../../assets/images/empty-expenses.png")}
+      icon="credit-card"
       title="No expenses yet"
       description="Start tracking your shared expenses together"
       actionLabel="Add First Expense"

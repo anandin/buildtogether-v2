@@ -1,13 +1,14 @@
 import React from "react";
-import { View, StyleSheet, Image, ImageSourcePropType } from "react-native";
+import { View, StyleSheet } from "react-native";
+import { Feather } from "@expo/vector-icons";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
-import { Spacing } from "@/constants/theme";
+import { Spacing, BorderRadius } from "@/constants/theme";
 
 interface EmptyStateProps {
-  image: ImageSourcePropType;
+  icon?: keyof typeof Feather.glyphMap;
   title: string;
   description: string;
   actionLabel?: string;
@@ -15,7 +16,7 @@ interface EmptyStateProps {
 }
 
 export function EmptyState({
-  image,
+  icon = "inbox",
   title,
   description,
   actionLabel,
@@ -25,7 +26,9 @@ export function EmptyState({
 
   return (
     <View style={styles.container}>
-      <Image source={image} style={styles.image} resizeMode="contain" />
+      <View style={[styles.iconContainer, { backgroundColor: theme.primary + "20" }]}>
+        <Feather name={icon} size={48} color={theme.primary} />
+      </View>
       <ThemedText type="h4" style={styles.title}>
         {title}
       </ThemedText>
@@ -52,9 +55,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing["2xl"],
     paddingVertical: Spacing["4xl"],
   },
-  image: {
-    width: 180,
-    height: 180,
+  iconContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: BorderRadius.full,
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: Spacing.xl,
   },
   title: {
