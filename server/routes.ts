@@ -331,6 +331,102 @@ Respond in JSON format:
     }
   });
 
+  // Ego Spend Detection - identifies luxury/status purchases for "Vanish" nudges
+  app.post("/api/detect-ego-spends", async (req, res) => {
+    try {
+      const { expenses } = req.body;
+
+      if (!expenses || !Array.isArray(expenses)) {
+        return res.status(400).json({ error: "Expenses array is required" });
+      }
+
+      // Only analyze recent expenses (last 30 days)
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const recentExpenses = expenses.filter((e: any) => {
+        const d = new Date(e.date);
+        return d >= thirtyDaysAgo;
+      });
+
+      if (recentExpenses.length === 0) {
+        return res.json({ egoSpends: [] });
+      }
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are a behavioral finance analyst for a couples savings app. Your job is to identify "Ego Spends" - purchases driven by status, impulse, or lifestyle inflation rather than genuine need.
+
+Ego Spends are NOT:
+- Essential groceries, utilities, rent, healthcare
+- Reasonable transportation
+- Basic household items
+
+Ego Spends ARE:
+- Luxury goods and premium upgrades
+- Impulse purchases at certain merchants (coffee shops, fast fashion)
+- Status-driven purchases (designer items, premium subscriptions)
+- Convenience spending that could be avoided (daily takeout, ride shares for short trips)
+- Entertainment that's become habitual rather than intentional
+
+For each Ego Spend identified, provide:
+1. A gentle, non-judgmental "nudge" message suggesting redirecting to Dreams
+2. The "vanish potential" - how much could be saved monthly by reducing this spending
+
+Be kind and supportive - focus on opportunity, not criticism. Use "we" language.
+
+Respond in JSON:
+{
+  "egoSpends": [
+    {
+      "expenseId": "string",
+      "nudgeMessage": "Friendly suggestion to redirect this to Dreams",
+      "vanishPotential": number (estimated monthly savings if reduced),
+      "egoCategory": "luxury" | "impulse" | "convenience" | "status" | "habitual"
+    }
+  ]
+}
+
+Only flag the top 3-5 most impactful Ego Spends. Don't flag everything.`,
+          },
+          {
+            role: "user",
+            content: `Analyze these recent expenses and identify Ego Spends:
+
+${recentExpenses.map((e: any) => `ID: ${e.id} | $${e.amount} | ${e.merchant || 'Unknown'} | ${e.description} | Category: ${e.category}`).join('\n')}
+
+Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that could be redirected to savings goals.`,
+          },
+        ],
+        max_completion_tokens: 600,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        return res.status(500).json({ error: "Failed to analyze expenses" });
+      }
+
+      try {
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          return res.json(parsed);
+        }
+        return res.status(500).json({ error: "Failed to parse ego spend data" });
+      } catch (parseError) {
+        return res.status(500).json({ error: "Failed to parse ego spend data" });
+      }
+    } catch (error: any) {
+      console.error("Ego spend detection error:", error);
+      return res.status(500).json({ 
+        error: error.message || "Failed to detect ego spends" 
+      });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
