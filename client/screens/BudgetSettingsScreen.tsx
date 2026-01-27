@@ -75,6 +75,22 @@ export default function BudgetSettingsScreen() {
     }
   };
 
+  const getCategoryDisplay = (categoryId: string) => {
+    const customCategory = data?.customCategories.find((c) => c.id === categoryId);
+    if (customCategory) {
+      return {
+        name: customCategory.name,
+        icon: customCategory.icon,
+        color: customCategory.color,
+      };
+    }
+    return {
+      name: CATEGORY_LABELS[categoryId] || categoryId,
+      icon: CATEGORY_ICONS[categoryId] || "circle",
+      color: CATEGORY_COLORS[categoryId] || theme.primary,
+    };
+  };
+
   const renderBudgetCard = (budget: CategoryBudget) => {
     const spent = spendingByCategory[budget.category] || 0;
     const effectiveBudget = getEffectiveBudget(budget);
@@ -87,6 +103,8 @@ export default function BudgetSettingsScreen() {
       : isNearLimit 
         ? theme.warning 
         : theme.success;
+
+    const categoryDisplay = getCategoryDisplay(budget.category);
 
     return (
       <Pressable
@@ -103,17 +121,17 @@ export default function BudgetSettingsScreen() {
         <View style={styles.budgetHeader}>
           <View style={[
             styles.categoryIcon,
-            { backgroundColor: (CATEGORY_COLORS[budget.category] || theme.primary) + "20" }
+            { backgroundColor: categoryDisplay.color + "20" }
           ]}>
             <Feather
-              name={(CATEGORY_ICONS[budget.category] || "circle") as any}
+              name={categoryDisplay.icon as any}
               size={18}
-              color={CATEGORY_COLORS[budget.category] || theme.primary}
+              color={categoryDisplay.color}
             />
           </View>
           <View style={styles.budgetInfo}>
             <ThemedText type="body">
-              {CATEGORY_LABELS[budget.category] || budget.category}
+              {categoryDisplay.name}
             </ThemedText>
             <View style={styles.budgetTypeTag}>
               <Feather
@@ -277,7 +295,7 @@ export default function BudgetSettingsScreen() {
               <ThemedText type="body" style={{ color: theme.primary }}>Cancel</ThemedText>
             </Pressable>
             <ThemedText type="heading">
-              Edit {CATEGORY_LABELS[editingBudget?.category || ""] || editingBudget?.category}
+              Edit {editingBudget ? getCategoryDisplay(editingBudget.category).name : ""}
             </ThemedText>
             <Pressable onPress={handleSaveBudget}>
               <ThemedText type="body" style={{ color: theme.primary, fontWeight: "600" }}>Save</ThemedText>
