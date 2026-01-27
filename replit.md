@@ -18,16 +18,21 @@ Preferred communication style: Simple, everyday language.
 
 **Navigation**: React Navigation v7 with a hybrid structure:
 - Root stack navigator for modal screens (AddExpense, ScanReceipt, GoalDetail, SettleUp, ExpenseDetail)
-- Bottom tab navigator for main sections (Home, List, Chart, Goals, Profile)
+- Bottom tab navigator with intuitive naming:
+  - **Home** (home icon) - Dashboard with AI coaching and quick actions
+  - **Expenses** (credit-card icon) - Full expense list and calendar view
+  - **Insights** (trending-up icon) - Analytics, charts, and spending breakdown
+  - **Goals** (target icon) - Savings goals tracking
+  - **Settings** (settings icon) - Partner profiles and budget configuration
 - Each tab has its own stack navigator for nested screens
 
 **Recent Updates (Jan 2026)**:
-- Enhanced expense model with advanced split options (Even/Ratio/Amount/Joint/Single)
-- CalendarView component showing daily spending totals with month navigation
-- Expense Detail screen with split breakdown per partner, temp cover display
-- Settle Up screen with tabs for unsettled expenses and settlement records
-- Chart/Analytics tab with 7-day bar chart, category breakdown, partner spending comparison
-- Settlement tracking system to track who owes whom
+- AI-first expense entry with natural language parsing and smart categorization
+- Merchant extraction from receipts (separate from notes) for trend analysis
+- Multi-category budget tracking with 9 pre-defined categories and custom categories
+- AI Coach component providing weekly savings nudges and spending insights
+- Enhanced Insights screen with daily budget calculator, spending change indicators, and merchant leaderboard
+- Redesigned navigation with user-friendly names (Expenses, Insights, Settings)
 
 **State Management**: 
 - React Context (AppContext) for global app data including expenses, goals, budget, and partner information
