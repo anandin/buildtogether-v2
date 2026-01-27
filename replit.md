@@ -17,12 +17,12 @@ Preferred communication style: Simple, everyday language.
 **Framework**: Expo SDK 54 with React Native 0.81, using the new architecture (Fabric/TurboModules enabled).
 
 **Navigation**: React Navigation v7 with a hybrid structure:
-- Root stack navigator for modal screens (AddExpense, ScanReceipt, GoalDetail, SettleUp, ExpenseDetail)
+- Root stack navigator for modal screens (AddExpense, ScanReceipt, DreamDetail, SettleUp, ExpenseDetail)
 - Bottom tab navigator with intuitive naming:
-  - **Home** (home icon) - Dashboard with AI coaching and quick actions
-  - **Expenses** (credit-card icon) - Full expense list and calendar view
-  - **Insights** (trending-up icon) - Analytics, charts, and spending breakdown
-  - **Goals** (target icon) - Savings goals tracking
+  - **Home** (home icon) - Minimal dashboard with Dream Guardian and quick actions
+  - **Expenses** (credit-card icon) - Full expense list with smart time-based grouping, settlement tracker, and category budgets
+  - **Insights** (trending-up icon) - Analytics, charts, Steady Progress, AI Coach, and Future Us timeline
+  - **Dreams** (star icon) - Shared savings dreams tracking (renamed from Goals)
   - **Settings** (settings icon) - Partner profiles and budget configuration
 - Each tab has its own stack navigator for nested screens
 
@@ -48,6 +48,11 @@ Preferred communication style: Simple, everyday language.
 - **Future Us Timeline**: Visual goal horizon showing projected completion dates based on savings rate
 - **Bill Split System**: Configurable expense splitting with equal, income-based, or custom ratios
 - **Monthly Settlement Summary**: Dashboard card showing who owes what each month based on split preferences
+- **Reorganized Tab Structure (Jan 2026)**:
+  - Home: Minimal - Dream Guardian, budget snapshot, quick actions only
+  - Expenses: Smart time-grouped list (Today/Yesterday/This Week/Earlier), category filter chips, payer indicators, settlement tracker, category budgets
+  - Insights: Steady Progress, Future Us, AI Coach (moved from Home), spending analytics
+  - Dreams: Renamed from Goals, star icon, shared savings dreams
 
 **State Management**: 
 - React Context (AppContext) for global app data including expenses, goals, budget, and partner information
