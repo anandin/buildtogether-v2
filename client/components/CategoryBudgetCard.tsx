@@ -9,8 +9,9 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS } from "@/types";
+import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS, BUDGET_TYPE_INFO } from "@/types";
 import * as storage from "@/lib/storage";
+import { getEffectiveBudget } from "@/lib/storage";
 
 export function CategoryBudgetCard() {
   const { theme } = useTheme();
@@ -21,12 +22,24 @@ export function CategoryBudgetCard() {
 
   if (!data) return null;
 
-  const budgetStatus = storage.getCategoryBudgetStatus(data.expenses, data.categoryBudgets);
+  const budgetStatus = storage.getCategoryBudgetStatus(data.expenses, data.categoryBudgets).map(b => {
+    const budgetConfig = data.categoryBudgets.find(cb => cb.category === b.category);
+    const effectiveBudget = budgetConfig ? getEffectiveBudget(budgetConfig) : b.limit;
+    const effectivePercentage = effectiveBudget > 0 ? (b.spent / effectiveBudget) * 100 : 0;
+    return {
+      ...b,
+      effectiveBudget,
+      effectivePercentage,
+      budgetType: budgetConfig?.budgetType || 'recurring',
+      rolloverBalance: budgetConfig?.rolloverBalance || 0,
+      alertThreshold: budgetConfig?.alertThreshold || 80,
+    };
+  });
   
-  const sortedBudgets = [...budgetStatus].sort((a, b) => b.percentage - a.percentage);
+  const sortedBudgets = [...budgetStatus].sort((a, b) => b.effectivePercentage - a.effectivePercentage);
   const displayedBudgets = showAll ? sortedBudgets : sortedBudgets.slice(0, 4);
-  const overBudgetCount = sortedBudgets.filter(b => b.percentage >= 100).length;
-  const nearBudgetCount = sortedBudgets.filter(b => b.percentage >= 80 && b.percentage < 100).length;
+  const overBudgetCount = sortedBudgets.filter(b => b.effectivePercentage >= 100).length;
+  const nearBudgetCount = sortedBudgets.filter(b => b.effectivePercentage >= b.alertThreshold && b.effectivePercentage < 100).length;
 
   const handleEditBudget = (category: string, currentLimit: number) => {
     setEditingCategory(category);
@@ -40,7 +53,7 @@ export function CategoryBudgetCard() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
     }
-    await updateCategoryBudget(editingCategory, amount);
+    await updateCategoryBudget(editingCategory, { monthlyLimit: amount });
     setEditingCategory(null);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
@@ -94,12 +107,30 @@ export function CategoryBudgetCard() {
             
             <View style={styles.budgetInfo}>
               <View style={styles.budgetHeader}>
-                <ThemedText type="small">
-                  {CATEGORY_LABELS[budget.category] || budget.category}
-                </ThemedText>
-                <ThemedText type="small" style={{ color: getStatusColor(budget.percentage) }}>
-                  ${budget.spent.toFixed(0)} / ${budget.limit}
-                </ThemedText>
+                <View style={styles.categoryNameRow}>
+                  <ThemedText type="small">
+                    {CATEGORY_LABELS[budget.category] || budget.category}
+                  </ThemedText>
+                  {budget.budgetType !== 'recurring' ? (
+                    <View style={[styles.budgetTypeBadge, { backgroundColor: theme.accent + "20" }]}>
+                      <Feather 
+                        name={BUDGET_TYPE_INFO[budget.budgetType].icon as any} 
+                        size={8} 
+                        color={theme.accent} 
+                      />
+                    </View>
+                  ) : null}
+                </View>
+                <View style={styles.amountRow}>
+                  <ThemedText type="small" style={{ color: getStatusColor(budget.effectivePercentage) }}>
+                    ${budget.spent.toFixed(0)} / ${budget.effectiveBudget.toFixed(0)}
+                  </ThemedText>
+                  {budget.rolloverBalance > 0 ? (
+                    <ThemedText type="tiny" style={{ color: theme.success, marginLeft: 4 }}>
+                      +{budget.rolloverBalance.toFixed(0)}
+                    </ThemedText>
+                  ) : null}
+                </View>
               </View>
               
               <View style={[styles.progressBar, { backgroundColor: theme.border }]}>
@@ -107,11 +138,19 @@ export function CategoryBudgetCard() {
                   style={[
                     styles.progressFill, 
                     { 
-                      backgroundColor: getStatusColor(budget.percentage),
-                      width: `${Math.min(budget.percentage, 100)}%`,
+                      backgroundColor: getStatusColor(budget.effectivePercentage),
+                      width: `${Math.min(budget.effectivePercentage, 100)}%`,
                     }
                   ]} 
                 />
+                {budget.alertThreshold < 100 ? (
+                  <View 
+                    style={[
+                      styles.thresholdMarker, 
+                      { left: `${budget.alertThreshold}%`, backgroundColor: theme.warning }
+                    ]} 
+                  />
+                ) : null}
               </View>
             </View>
           </Pressable>
@@ -203,15 +242,39 @@ const styles = StyleSheet.create({
   budgetHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
+  },
+  categoryNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  budgetTypeBadge: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  amountRow: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   progressBar: {
     height: 6,
     borderRadius: 3,
     overflow: "hidden",
+    position: "relative",
   },
   progressFill: {
     height: "100%",
     borderRadius: 3,
+  },
+  thresholdMarker: {
+    position: "absolute",
+    top: 0,
+    width: 2,
+    height: "100%",
   },
   modalOverlay: {
     flex: 1,
