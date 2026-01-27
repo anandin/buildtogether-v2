@@ -17,9 +17,17 @@ Preferred communication style: Simple, everyday language.
 **Framework**: Expo SDK 54 with React Native 0.81, using the new architecture (Fabric/TurboModules enabled).
 
 **Navigation**: React Navigation v7 with a hybrid structure:
-- Root stack navigator for modal screens (AddExpense, ScanReceipt, GoalDetail, SettleUp)
-- Bottom tab navigator for main sections (Home, Expenses, Chart, Goals, Profile)
-- Each tab has its own stack navigator for future nested screens
+- Root stack navigator for modal screens (AddExpense, ScanReceipt, GoalDetail, SettleUp, ExpenseDetail)
+- Bottom tab navigator for main sections (Home, List, Chart, Goals, Profile)
+- Each tab has its own stack navigator for nested screens
+
+**Recent Updates (Jan 2026)**:
+- Enhanced expense model with advanced split options (Even/Ratio/Amount/Joint/Single)
+- CalendarView component showing daily spending totals with month navigation
+- Expense Detail screen with split breakdown per partner, temp cover display
+- Settle Up screen with tabs for unsettled expenses and settlement records
+- Chart/Analytics tab with 7-day bar chart, category breakdown, partner spending comparison
+- Settlement tracking system to track who owes whom
 
 **State Management**: 
 - React Context (AppContext) for global app data including expenses, goals, budget, and partner information
