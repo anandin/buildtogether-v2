@@ -40,6 +40,8 @@ Preferred communication style: Simple, everyday language.
 - **The Harmony Spark**: Behavioral economics-driven dashboard with pulsating orb visualization
 - **Invisible Wealth Counter**: 10-year compound projection toggle (7% growth rate)
 - **Commitment Heart**: Loss aversion streak tracker that cracks after 72h without Dream deposits
+- **Onboarding Flow**: Welcome screen with feature highlights, followed by partner name setup and optional first goal creation
+- **Dream Guardian**: Friendly AI companion replacing complex visualizations - speaks naturally and gives contextual encouragement based on savings behavior
 - **Ego Spend Detection**: AI identifies luxury/status purchases with "Vanish to Dream" redirect buttons
 - **Haptic Dream Deposits**: Enhanced goal contribution flow with celebration animation
 - **Steady Progress**: Calm streak tracking showing days of mindful spending, no impulse purchases, and expense tracking consistency
