@@ -6,6 +6,7 @@ import type {
   Goal,
   Budget,
   GoalContribution,
+  SettlementRecord,
 } from "@/types";
 
 const STORAGE_KEY = "@build_together_data";
@@ -19,13 +20,16 @@ const defaultData: AppData = {
       id: "partner1",
       name: "You",
       avatar: "avatar-preset-1",
+      color: "#FF9AA2",
     },
     partner2: {
       id: "partner2",
       name: "Partner",
       avatar: "avatar-preset-2",
+      color: "#C7CEEA",
     },
   },
+  settlements: [],
   connectedSince: null,
 };
 
@@ -33,7 +37,17 @@ export async function loadAppData(): Promise<AppData> {
   try {
     const data = await AsyncStorage.getItem(STORAGE_KEY);
     if (data) {
-      return { ...defaultData, ...JSON.parse(data) };
+      const parsed = JSON.parse(data);
+      return {
+        ...defaultData,
+        ...parsed,
+        partners: {
+          ...defaultData.partners,
+          ...parsed.partners,
+          partner1: { ...defaultData.partners.partner1, ...parsed.partners?.partner1 },
+          partner2: { ...defaultData.partners.partner2, ...parsed.partners?.partner2 },
+        },
+      };
     }
     return defaultData;
   } catch (error) {
@@ -76,6 +90,34 @@ export async function updateExpense(expense: Expense): Promise<void> {
 export async function deleteExpense(id: string): Promise<void> {
   const data = await loadAppData();
   data.expenses = data.expenses.filter((e) => e.id !== id);
+  await saveAppData(data);
+}
+
+export async function settleExpenses(
+  expenseIds: string[],
+  from: "partner1" | "partner2",
+  to: "partner1" | "partner2",
+  amount: number
+): Promise<void> {
+  const data = await loadAppData();
+  
+  expenseIds.forEach((id) => {
+    const expense = data.expenses.find((e) => e.id === id);
+    if (expense) {
+      expense.isSettled = true;
+    }
+  });
+
+  const settlement: SettlementRecord = {
+    id: uuidv4(),
+    date: new Date().toISOString(),
+    amount,
+    from,
+    to,
+    expenses: expenseIds,
+  };
+  data.settlements.push(settlement);
+  
   await saveAppData(data);
 }
 
@@ -175,4 +217,74 @@ export function getCurrentMonthExpenses(expenses: Expense[]): Expense[] {
 
 export function getTotalSpent(expenses: Expense[]): number {
   return expenses.reduce((sum, expense) => sum + expense.amount, 0);
+}
+
+export function getExpensesByDate(
+  expenses: Expense[],
+  year: number,
+  month: number
+): Record<string, Expense[]> {
+  const grouped: Record<string, Expense[]> = {};
+  
+  expenses.forEach((expense) => {
+    const date = new Date(expense.date);
+    if (date.getFullYear() === year && date.getMonth() === month) {
+      const day = date.getDate().toString();
+      if (!grouped[day]) {
+        grouped[day] = [];
+      }
+      grouped[day].push(expense);
+    }
+  });
+  
+  return grouped;
+}
+
+export function getDailyTotals(
+  expenses: Expense[],
+  year: number,
+  month: number
+): Record<number, number> {
+  const totals: Record<number, number> = {};
+  
+  expenses.forEach((expense) => {
+    const date = new Date(expense.date);
+    if (date.getFullYear() === year && date.getMonth() === month) {
+      const day = date.getDate();
+      totals[day] = (totals[day] || 0) + expense.amount;
+    }
+  });
+  
+  return totals;
+}
+
+export function calculateOwedAmounts(
+  expenses: Expense[],
+  partners: AppData["partners"]
+): { partner1Owes: number; partner2Owes: number } {
+  let partner1Owes = 0;
+  let partner2Owes = 0;
+
+  const unsettledExpenses = expenses.filter((e) => !e.isSettled);
+
+  unsettledExpenses.forEach((expense) => {
+    if (expense.splitMethod === "joint" || expense.paidBy === "joint") {
+      return;
+    }
+
+    const partner1Share = expense.splitAmounts?.partner1 ?? expense.amount / 2;
+    const partner2Share = expense.splitAmounts?.partner2 ?? expense.amount / 2;
+
+    if (expense.paidBy === "partner1") {
+      partner2Owes += partner2Share;
+    } else if (expense.paidBy === "partner2") {
+      partner1Owes += partner1Share;
+    }
+  });
+
+  return { partner1Owes, partner2Owes };
+}
+
+export function getUnsettledExpenses(expenses: Expense[]): Expense[] {
+  return expenses.filter((e) => !e.isSettled);
 }

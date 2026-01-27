@@ -5,6 +5,7 @@ import { BlurView } from "expo-blur";
 import { Platform, StyleSheet } from "react-native";
 import HomeStackNavigator from "@/navigation/HomeStackNavigator";
 import ExpensesStackNavigator from "@/navigation/ExpensesStackNavigator";
+import ChartStackNavigator from "@/navigation/ChartStackNavigator";
 import GoalsStackNavigator from "@/navigation/GoalsStackNavigator";
 import ProfileStackNavigator from "@/navigation/ProfileStackNavigator";
 import { useTheme } from "@/hooks/useTheme";
@@ -12,6 +13,7 @@ import { useTheme } from "@/hooks/useTheme";
 export type MainTabParamList = {
   HomeTab: undefined;
   ExpensesTab: undefined;
+  ChartTab: undefined;
   GoalsTab: undefined;
   ProfileTab: undefined;
 };
@@ -61,9 +63,19 @@ export default function MainTabNavigator() {
         name="ExpensesTab"
         component={ExpensesStackNavigator}
         options={{
-          title: "Expenses",
+          title: "List",
           tabBarIcon: ({ color, size }) => (
-            <Feather name="credit-card" size={size} color={color} />
+            <Feather name="list" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tab.Screen
+        name="ChartTab"
+        component={ChartStackNavigator}
+        options={{
+          title: "Chart",
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="pie-chart" size={size} color={color} />
           ),
         }}
       />

@@ -9,6 +9,7 @@ interface AppContextType {
   addExpense: (expense: Omit<Expense, "id" | "createdAt">) => Promise<Expense>;
   updateExpense: (expense: Expense) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
+  settleExpenses: (expenseIds: string[], from: "partner1" | "partner2", to: "partner1" | "partner2", amount: number) => Promise<void>;
   addGoal: (goal: Omit<Goal, "id" | "createdAt" | "contributions" | "savedAmount">) => Promise<Goal>;
   updateGoal: (goal: Goal) => Promise<void>;
   deleteGoal: (id: string) => Promise<void>;
@@ -46,6 +47,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deleteExpense = useCallback(async (id: string) => {
     await storage.deleteExpense(id);
+    await refreshData();
+  }, [refreshData]);
+
+  const settleExpenses = useCallback(async (
+    expenseIds: string[],
+    from: "partner1" | "partner2",
+    to: "partner1" | "partner2",
+    amount: number
+  ) => {
+    await storage.settleExpenses(expenseIds, from, to, amount);
     await refreshData();
   }, [refreshData]);
 
@@ -90,6 +101,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addExpense,
         updateExpense,
         deleteExpense,
+        settleExpenses,
         addGoal,
         updateGoal,
         deleteGoal,

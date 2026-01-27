@@ -6,16 +6,19 @@ import ScanReceiptScreen from "@/screens/ScanReceiptScreen";
 import AddGoalScreen from "@/screens/AddGoalScreen";
 import GoalDetailScreen from "@/screens/GoalDetailScreen";
 import SetBudgetScreen from "@/screens/SetBudgetScreen";
+import ExpenseDetailScreen from "@/screens/ExpenseDetailScreen";
+import SettleUpScreen from "@/screens/SettleUpScreen";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 
 export type RootStackParamList = {
   Main: undefined;
-  AddExpense: { prefilled?: { amount?: number; description?: string; category?: string } } | undefined;
+  AddExpense: { prefilled?: { amount?: number; description?: string; category?: string; receiptImage?: string } } | undefined;
   ScanReceipt: undefined;
   AddGoal: undefined;
   GoalDetail: { goalId: string };
   SetBudget: undefined;
   ExpenseDetail: { expenseId: string };
+  SettleUp: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -35,7 +38,7 @@ export default function RootStackNavigator() {
         component={AddExpenseScreen}
         options={{
           presentation: "modal",
-          headerTitle: "Add Expense",
+          headerTitle: "Edit Expense",
         }}
       />
       <Stack.Screen
@@ -67,6 +70,21 @@ export default function RootStackNavigator() {
         options={{
           presentation: "modal",
           headerTitle: "Set Budget",
+        }}
+      />
+      <Stack.Screen
+        name="ExpenseDetail"
+        component={ExpenseDetailScreen}
+        options={{
+          headerTitle: "Details",
+        }}
+      />
+      <Stack.Screen
+        name="SettleUp"
+        component={SettleUpScreen}
+        options={{
+          presentation: "modal",
+          headerShown: false,
         }}
       />
     </Stack.Navigator>

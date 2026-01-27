@@ -1,5 +1,5 @@
-import React from "react";
-import { View, FlatList, StyleSheet, RefreshControl } from "react-native";
+import React, { useMemo } from "react";
+import { View, FlatList, StyleSheet, RefreshControl, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
@@ -14,7 +14,7 @@ import { GoalCard } from "@/components/GoalCard";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
-import { getCurrentMonthExpenses, getTotalSpent } from "@/lib/storage";
+import { getCurrentMonthExpenses, getTotalSpent, calculateOwedAmounts, getUnsettledExpenses } from "@/lib/storage";
 import { Spacing, BorderRadius } from "@/constants/theme";
 
 export default function HomeScreen() {
@@ -29,6 +29,17 @@ export default function HomeScreen() {
   const totalSpent = getTotalSpent(currentMonthExpenses);
   const recentExpenses = data?.expenses.slice(0, 5) || [];
   const activeGoals = data?.goals.slice(0, 2) || [];
+
+  const owedAmounts = useMemo(() => {
+    return data ? calculateOwedAmounts(data.expenses, data.partners) : { partner1Owes: 0, partner2Owes: 0 };
+  }, [data]);
+
+  const unsettledCount = useMemo(() => {
+    return data ? getUnsettledExpenses(data.expenses).length : 0;
+  }, [data]);
+
+  const netOwed = owedAmounts.partner1Owes - owedAmounts.partner2Owes;
+  const absOwed = Math.abs(netOwed);
 
   const handleAddExpense = () => {
     navigation.navigate("AddExpense");
@@ -46,6 +57,10 @@ export default function HomeScreen() {
     navigation.navigate("SetBudget");
   };
 
+  const handleSettleUp = () => {
+    navigation.navigate("SettleUp");
+  };
+
   const renderContent = () => (
     <View style={styles.content}>
       <BudgetCard
@@ -54,6 +69,23 @@ export default function HomeScreen() {
         month={new Date().toLocaleString("default", { month: "long" })}
         onPress={handleSetBudget}
       />
+
+      {unsettledCount > 0 ? (
+        <Card style={styles.settleCard} onPress={handleSettleUp}>
+          <View style={styles.settleContent}>
+            <View style={[styles.settleIcon, { backgroundColor: theme.warning + "20" }]}>
+              <Feather name="repeat" size={20} color={theme.warning} />
+            </View>
+            <View style={styles.settleText}>
+              <ThemedText type="heading">Settle Up</ThemedText>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                {unsettledCount} unsettled expense{unsettledCount !== 1 ? "s" : ""} • ${absOwed.toFixed(2)} owed
+              </ThemedText>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+          </View>
+        </Card>
+      ) : null}
 
       <QuickActions
         onAddExpense={handleAddExpense}
@@ -77,7 +109,7 @@ export default function HomeScreen() {
               key={expense.id}
               expense={expense}
               partnerName={
-                data?.partners[expense.paidBy]?.name || "Partner"
+                data?.partners[expense.paidBy === "joint" ? "partner1" : expense.paidBy]?.name || "Partner"
               }
               onPress={() =>
                 navigation.navigate("ExpenseDetail", { expenseId: expense.id })
@@ -153,6 +185,24 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+  },
+  settleCard: {
+    marginBottom: Spacing.lg,
+  },
+  settleContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  settleIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  settleText: {
+    flex: 1,
+    marginLeft: Spacing.md,
   },
   section: {
     marginBottom: Spacing.xl,
