@@ -42,6 +42,10 @@ Preferred communication style: Simple, everyday language.
 - **Commitment Heart**: Loss aversion streak tracker that cracks after 72h without Dream deposits
 - **Ego Spend Detection**: AI identifies luxury/status purchases with "Vanish to Dream" redirect buttons
 - **Haptic Dream Deposits**: Enhanced goal contribution flow with celebration animation
+- **Steady Progress**: Calm streak tracking showing days of mindful spending, no impulse purchases, and expense tracking consistency
+- **Future Us Timeline**: Visual goal horizon showing projected completion dates based on savings rate
+- **Bill Split System**: Configurable expense splitting with equal, income-based, or custom ratios
+- **Monthly Settlement Summary**: Dashboard card showing who owes what each month based on split preferences
 
 **State Management**: 
 - React Context (AppContext) for global app data including expenses, goals, budget, and partner information
