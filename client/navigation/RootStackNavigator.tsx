@@ -8,6 +8,7 @@ import GoalDetailScreen from "@/screens/GoalDetailScreen";
 import SetBudgetScreen from "@/screens/SetBudgetScreen";
 import ExpenseDetailScreen from "@/screens/ExpenseDetailScreen";
 import SettleUpScreen from "@/screens/SettleUpScreen";
+import { FutureTimelineScreen } from "@/screens/FutureTimelineScreen";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 
 export type RootStackParamList = {
@@ -16,6 +17,7 @@ export type RootStackParamList = {
   ScanReceipt: undefined;
   AddGoal: undefined;
   GoalDetail: { goalId: string };
+  FutureTimeline: undefined;
   SetBudget: undefined;
   ExpenseDetail: { expenseId: string };
   SettleUp: undefined;
@@ -62,6 +64,13 @@ export default function RootStackNavigator() {
         component={GoalDetailScreen}
         options={{
           headerTitle: "Goal Details",
+        }}
+      />
+      <Stack.Screen
+        name="FutureTimeline"
+        component={FutureTimelineScreen}
+        options={{
+          headerTitle: "Future Us",
         }}
       />
       <Stack.Screen

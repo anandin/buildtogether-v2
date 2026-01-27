@@ -118,6 +118,25 @@ export interface SettlementRecord {
   expenses: string[];
 }
 
+export interface SteadyProgressStreak {
+  type: "under_budget" | "no_impulse" | "daily_tracking" | "savings_streak";
+  label: string;
+  days: number;
+  lastUpdated: string;
+  isActive: boolean;
+}
+
+export interface BillSplitPreference {
+  splitType: "equal" | "income_ratio" | "custom";
+  partner1Ratio: number;
+  partner2Ratio: number;
+  sharedCategories: string[];
+  personalCategories: {
+    partner1: string[];
+    partner2: string[];
+  };
+}
+
 export interface AppData {
   expenses: Expense[];
   goals: Goal[];

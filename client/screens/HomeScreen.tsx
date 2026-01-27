@@ -15,6 +15,7 @@ import { Card } from "@/components/Card";
 import { AICoach } from "@/components/AICoach";
 import { CategoryBudgetCard } from "@/components/CategoryBudgetCard";
 import { HarmonySpark } from "@/components/HarmonySpark";
+import { SteadyProgress } from "@/components/SteadyProgress";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
 import { getCurrentMonthExpenses, getTotalSpent, calculateOwedAmounts, getUnsettledExpenses } from "@/lib/storage";
@@ -101,6 +102,23 @@ export default function HomeScreen() {
         onScanReceipt={handleScanReceipt}
         onAddGoal={handleAddGoal}
       />
+
+      <SteadyProgress />
+
+      <Card style={styles.futureCard} onPress={() => navigation.navigate("FutureTimeline")}>
+        <View style={styles.futureContent}>
+          <View style={[styles.futureIcon, { backgroundColor: theme.primary + "20" }]}>
+            <Feather name="sunrise" size={20} color={theme.primary} />
+          </View>
+          <View style={styles.futureText}>
+            <ThemedText type="heading">Future Us</ThemedText>
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              See when your dreams become reality
+            </ThemedText>
+          </View>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </View>
+      </Card>
 
       <View style={styles.section}>
         <AICoach />
@@ -218,6 +236,24 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   settleText: {
+    flex: 1,
+    marginLeft: Spacing.md,
+  },
+  futureCard: {
+    marginBottom: Spacing.lg,
+  },
+  futureContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  futureIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  futureText: {
     flex: 1,
     marginLeft: Spacing.md,
   },
