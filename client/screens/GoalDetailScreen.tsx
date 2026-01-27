@@ -13,6 +13,13 @@ import { Feather } from "@expo/vector-icons";
 import { format } from "date-fns";
 import * as Haptics from "expo-haptics";
 import Svg, { Circle } from "react-native-svg";
+import Animated, { 
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming, 
+  withSpring,
+  withSequence,
+} from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
@@ -83,6 +90,15 @@ export default function GoalDetailScreen() {
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference * (1 - Math.min(progress, 1));
 
+  const [showCelebration, setShowCelebration] = useState(false);
+  const celebrationScale = useSharedValue(0);
+  const celebrationOpacity = useSharedValue(0);
+
+  const celebrationStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: celebrationScale.value }],
+    opacity: celebrationOpacity.value,
+  }));
+
   const handleAddContribution = async () => {
     const amount = parseFloat(contributionAmount);
     if (isNaN(amount) || amount <= 0) {
@@ -94,7 +110,21 @@ export default function GoalDetailScreen() {
     try {
       await addGoalContribution(goal.id, amount, contributor);
       setContributionAmount("");
+      
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      
+      setShowCelebration(true);
+      celebrationScale.value = withSpring(1.2, { damping: 8, stiffness: 100 }, () => {
+        celebrationScale.value = withSpring(0, { damping: 15 });
+      });
+      celebrationOpacity.value = withSequence(
+        withTiming(1, { duration: 200 }),
+        withTiming(0, { duration: 800 })
+      );
+      
+      setTimeout(() => setShowCelebration(false), 1200);
+      
     } catch (error) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
@@ -277,6 +307,17 @@ export default function GoalDetailScreen() {
         >
           {adding ? "Adding..." : "Add to Goal"}
         </Button>
+        
+        {showCelebration ? (
+          <Animated.View style={[styles.celebrationOverlay, celebrationStyle]}>
+            <View style={[styles.celebrationContent, { backgroundColor: goal.color }]}>
+              <Feather name="check" size={40} color="#FFFFFF" />
+              <ThemedText type="heading" style={styles.celebrationText}>
+                Dream Deposit!
+              </ThemedText>
+            </View>
+          </Animated.View>
+        ) : null}
       </Card>
 
       {goal.contributions.length > 0 ? (
@@ -424,6 +465,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   addButton: {},
+  celebrationOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(0,0,0,0.3)",
+    borderRadius: BorderRadius.lg,
+  },
+  celebrationContent: {
+    alignItems: "center",
+    justifyContent: "center",
+    padding: Spacing["2xl"],
+    borderRadius: BorderRadius.xl,
+  },
+  celebrationText: {
+    color: "#FFFFFF",
+    marginTop: Spacing.md,
+  },
   historySection: {
     marginBottom: Spacing.xl,
   },

@@ -14,6 +14,7 @@ import { GoalCard } from "@/components/GoalCard";
 import { Card } from "@/components/Card";
 import { AICoach } from "@/components/AICoach";
 import { CategoryBudgetCard } from "@/components/CategoryBudgetCard";
+import { HarmonySpark } from "@/components/HarmonySpark";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
 import { getCurrentMonthExpenses, getTotalSpent, calculateOwedAmounts, getUnsettledExpenses } from "@/lib/storage";
@@ -64,8 +65,14 @@ export default function HomeScreen() {
     navigation.navigate("SettleUp");
   };
 
+  const handleHarmonySparkPress = () => {
+    navigation.navigate("GoalsTab");
+  };
+
   const renderContent = () => (
     <View style={styles.content}>
+      <HarmonySpark onPress={handleHarmonySparkPress} />
+
       <BudgetCard
         spent={totalSpent}
         limit={totalBudget}
