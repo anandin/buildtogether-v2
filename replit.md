@@ -37,6 +37,11 @@ Preferred communication style: Simple, everyday language.
 - **Rollover Budgets**: Unused budget amounts carry forward to the next month automatically
 - **Budget-to-Goal Suggestions**: GoalDetailScreen shows potential savings from under-budget categories
 - **AI-Powered Budget Analysis**: Backend AI endpoint now analyzes budget status and suggests savings toward goals
+- **The Harmony Spark**: Behavioral economics-driven dashboard with pulsating orb visualization
+- **Invisible Wealth Counter**: 10-year compound projection toggle (7% growth rate)
+- **Commitment Heart**: Loss aversion streak tracker that cracks after 72h without Dream deposits
+- **Ego Spend Detection**: AI identifies luxury/status purchases with "Vanish to Dream" redirect buttons
+- **Haptic Dream Deposits**: Enhanced goal contribution flow with celebration animation
 
 **State Management**: 
 - React Context (AppContext) for global app data including expenses, goals, budget, and partner information
@@ -89,6 +94,24 @@ Preferred communication style: Simple, everyday language.
 - `processMonthlyRollover()` in `client/lib/storage.ts`: Updates rollover balances at month transitions
 - `BudgetSettingsScreen`: Full CRUD UI for category budgets accessible from Settings tab
 - AI insights endpoint (`/api/ai-insights`): Analyzes budget status and suggests savings toward goals
+- Ego spend endpoint (`/api/detect-ego-spends`): Identifies luxury/impulse purchases for "Vanish" nudges
+
+### Harmony Spark Feature
+
+**Behavioral Economics Components**:
+- **Harmony Orb**: Central pulsating visualization showing Ego vs Dream ratio (savings / (savings + ego spending))
+- **Invisible Wealth Counter**: Toggle shows 10-year compound value at 7% growth (fights hyperbolic discounting)
+- **Commitment Heart**: Tracks last Dream deposit, "cracks" after 72 hours without contribution (loss aversion)
+- **Vanish Nudges**: AI-detected Ego Spends appear on expense list with one-tap redirect to Dreams
+
+**Key Components**:
+- `HarmonySpark` component in `client/components/HarmonySpark.tsx`
+- `ExpenseItem` enhanced with `egoNudge` and `onVanish` props for Vanish functionality
+- Ego categories: shopping, entertainment, restaurants, personal, gifts
+- Essential categories: groceries, utilities, internet, transport, health
+
+**Visual System**:
+- Orb gradient colors shift based on ratio: indigo (steady) → gold (high saving) → amber (warning)
 
 ### Key Design Decisions
 
