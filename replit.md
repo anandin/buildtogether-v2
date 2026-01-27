@@ -33,6 +33,10 @@ Preferred communication style: Simple, everyday language.
 - AI Coach component providing weekly savings nudges and spending insights
 - Enhanced Insights screen with daily budget calculator, spending change indicators, and merchant leaderboard
 - Redesigned navigation with user-friendly names (Expenses, Insights, Settings)
+- **Advanced Budget System**: Three budget types (recurring, rollover, one-time) with configurable alert thresholds
+- **Rollover Budgets**: Unused budget amounts carry forward to the next month automatically
+- **Budget-to-Goal Suggestions**: GoalDetailScreen shows potential savings from under-budget categories
+- **AI-Powered Budget Analysis**: Backend AI endpoint now analyzes budget status and suggests savings toward goals
 
 **State Management**: 
 - React Context (AppContext) for global app data including expenses, goals, budget, and partner information
@@ -71,6 +75,20 @@ Preferred communication style: Simple, everyday language.
 2. Receipt scanning sends base64 image to server, which calls OpenAI Vision API
 3. Server returns extracted expense data (amount, description, category)
 4. Client updates local storage and refreshes context
+
+### Budget System
+
+**Budget Types**:
+- **Recurring**: Resets at the start of each month (default for most expenses)
+- **Rollover**: Unused budget carries forward to next month (good for variable expenses)
+- **One-time**: Fixed budget until a specific end date (for special events/projects)
+
+**Key Components**:
+- `CategoryBudget` type in `client/types/index.ts`: Includes budgetType, alertThreshold, rolloverBalance, endDate
+- `getEffectiveBudget()` in `client/lib/storage.ts`: Calculates monthlyLimit + rolloverBalance for rollover types
+- `processMonthlyRollover()` in `client/lib/storage.ts`: Updates rollover balances at month transitions
+- `BudgetSettingsScreen`: Full CRUD UI for category budgets accessible from Settings tab
+- AI insights endpoint (`/api/ai-insights`): Analyzes budget status and suggests savings toward goals
 
 ### Key Design Decisions
 
