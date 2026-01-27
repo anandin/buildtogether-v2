@@ -157,7 +157,7 @@ export const CATEGORY_ICONS: Record<string, string> = {
   health: "heart",
   travel: "map-pin",
   home: "home",
-  restaurants: "utensils",
+  restaurants: "coffee",
   subscriptions: "repeat",
   pets: "heart",
   gifts: "gift",

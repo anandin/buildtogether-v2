@@ -18,7 +18,7 @@ export default function ChartStackNavigator() {
         name="Chart"
         component={ChartScreen}
         options={{
-          headerTitle: "Analytics",
+          headerTitle: "Insights",
         }}
       />
     </Stack.Navigator>

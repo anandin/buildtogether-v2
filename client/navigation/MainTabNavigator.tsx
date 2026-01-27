@@ -63,9 +63,9 @@ export default function MainTabNavigator() {
         name="ExpensesTab"
         component={ExpensesStackNavigator}
         options={{
-          title: "List",
+          title: "Expenses",
           tabBarIcon: ({ color, size }) => (
-            <Feather name="list" size={size} color={color} />
+            <Feather name="credit-card" size={size} color={color} />
           ),
         }}
       />
@@ -73,9 +73,9 @@ export default function MainTabNavigator() {
         name="ChartTab"
         component={ChartStackNavigator}
         options={{
-          title: "Chart",
+          title: "Insights",
           tabBarIcon: ({ color, size }) => (
-            <Feather name="pie-chart" size={size} color={color} />
+            <Feather name="trending-up" size={size} color={color} />
           ),
         }}
       />
@@ -93,9 +93,9 @@ export default function MainTabNavigator() {
         name="ProfileTab"
         component={ProfileStackNavigator}
         options={{
-          title: "Profile",
+          title: "Settings",
           tabBarIcon: ({ color, size }) => (
-            <Feather name="user" size={size} color={color} />
+            <Feather name="settings" size={size} color={color} />
           ),
         }}
       />
