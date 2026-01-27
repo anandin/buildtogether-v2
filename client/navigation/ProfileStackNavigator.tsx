@@ -3,11 +3,13 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
 import ProfileScreen from "@/screens/ProfileScreen";
 import BudgetSettingsScreen from "@/screens/BudgetSettingsScreen";
+import { BillSplitSettingsScreen } from "@/screens/BillSplitSettingsScreen";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 
 export type ProfileStackParamList = {
   Profile: undefined;
   BudgetSettings: undefined;
+  BillSplitSettings: undefined;
 };
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
@@ -29,6 +31,13 @@ export default function ProfileStackNavigator() {
         component={BudgetSettingsScreen}
         options={{
           title: "Category Budgets",
+        }}
+      />
+      <Stack.Screen
+        name="BillSplitSettings"
+        component={BillSplitSettingsScreen}
+        options={{
+          title: "Bill Splitting",
         }}
       />
     </Stack.Navigator>

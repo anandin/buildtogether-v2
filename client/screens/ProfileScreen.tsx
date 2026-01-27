@@ -209,6 +209,22 @@ export default function ProfileScreen() {
           Settings
         </ThemedText>
         
+        <Pressable 
+          style={styles.settingRow}
+          onPress={() => navigation.navigate("BillSplitSettings")}
+        >
+          <View style={[styles.settingIcon, { backgroundColor: theme.success + "20" }]}>
+            <Feather name="pie-chart" size={18} color={theme.success} />
+          </View>
+          <View style={styles.settingContent}>
+            <ThemedText type="body">Bill Splitting</ThemedText>
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              Configure how expenses are divided
+            </ThemedText>
+          </View>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
+
         <Pressable style={styles.settingRow}>
           <View style={[styles.settingIcon, { backgroundColor: theme.accent + "20" }]}>
             <Feather name="bell" size={18} color={theme.accent} />

@@ -16,6 +16,7 @@ import { AICoach } from "@/components/AICoach";
 import { CategoryBudgetCard } from "@/components/CategoryBudgetCard";
 import { HarmonySpark } from "@/components/HarmonySpark";
 import { SteadyProgress } from "@/components/SteadyProgress";
+import { MonthlySettlementSummary } from "@/components/MonthlySettlementSummary";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
 import { getCurrentMonthExpenses, getTotalSpent, calculateOwedAmounts, getUnsettledExpenses } from "@/lib/storage";
@@ -104,6 +105,8 @@ export default function HomeScreen() {
       />
 
       <SteadyProgress />
+
+      <MonthlySettlementSummary onSettleUp={handleSettleUp} />
 
       <Card style={styles.futureCard} onPress={() => navigation.navigate("FutureTimeline")}>
         <View style={styles.futureContent}>

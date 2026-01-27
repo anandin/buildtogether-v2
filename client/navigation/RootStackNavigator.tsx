@@ -9,6 +9,7 @@ import SetBudgetScreen from "@/screens/SetBudgetScreen";
 import ExpenseDetailScreen from "@/screens/ExpenseDetailScreen";
 import SettleUpScreen from "@/screens/SettleUpScreen";
 import { FutureTimelineScreen } from "@/screens/FutureTimelineScreen";
+import { BillSplitSettingsScreen } from "@/screens/BillSplitSettingsScreen";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 
 export type RootStackParamList = {
@@ -21,6 +22,7 @@ export type RootStackParamList = {
   SetBudget: undefined;
   ExpenseDetail: { expenseId: string };
   SettleUp: undefined;
+  BillSplitSettings: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -94,6 +96,13 @@ export default function RootStackNavigator() {
         options={{
           presentation: "modal",
           headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="BillSplitSettings"
+        component={BillSplitSettingsScreen}
+        options={{
+          headerTitle: "Bill Splitting",
         }}
       />
     </Stack.Navigator>
