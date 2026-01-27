@@ -66,11 +66,18 @@ export interface Budget {
   year: number;
 }
 
+export type BudgetType = "recurring" | "rollover" | "one-time";
+
 export interface CategoryBudget {
   id: string;
   category: string;
   monthlyLimit: number;
+  budgetType: BudgetType;
+  alertThreshold: number;
+  rolloverBalance: number;
+  endDate?: string;
   isCustom?: boolean;
+  lastResetDate?: string;
 }
 
 export interface AIInsight {
@@ -203,17 +210,35 @@ export const CATEGORY_COLORS: Record<string, string> = {
   other: "#D4D4D4",
 };
 
-export const DEFAULT_CATEGORY_BUDGETS: { category: string; limit: number }[] = [
-  { category: "groceries", limit: 600 },
-  { category: "restaurants", limit: 300 },
-  { category: "utilities", limit: 200 },
-  { category: "internet", limit: 100 },
-  { category: "transport", limit: 200 },
-  { category: "entertainment", limit: 150 },
-  { category: "shopping", limit: 200 },
-  { category: "health", limit: 100 },
-  { category: "subscriptions", limit: 100 },
+export const DEFAULT_CATEGORY_BUDGETS: { category: string; limit: number; budgetType: BudgetType }[] = [
+  { category: "groceries", limit: 600, budgetType: "recurring" },
+  { category: "restaurants", limit: 300, budgetType: "recurring" },
+  { category: "utilities", limit: 200, budgetType: "recurring" },
+  { category: "internet", limit: 100, budgetType: "recurring" },
+  { category: "transport", limit: 200, budgetType: "rollover" },
+  { category: "entertainment", limit: 150, budgetType: "rollover" },
+  { category: "shopping", limit: 200, budgetType: "rollover" },
+  { category: "health", limit: 100, budgetType: "rollover" },
+  { category: "subscriptions", limit: 100, budgetType: "recurring" },
 ];
+
+export const BUDGET_TYPE_INFO: Record<BudgetType, { label: string; description: string; icon: string }> = {
+  recurring: {
+    label: "Recurring",
+    description: "Resets every month",
+    icon: "refresh-cw",
+  },
+  rollover: {
+    label: "Rollover",
+    description: "Unused amount carries over",
+    icon: "arrow-right-circle",
+  },
+  "one-time": {
+    label: "One-time",
+    description: "Fixed budget until date",
+    icon: "calendar",
+  },
+};
 
 export const GOAL_COLORS = [
   "#FF9AA2",

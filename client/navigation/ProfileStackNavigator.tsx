@@ -2,10 +2,12 @@ import React from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 
 import ProfileScreen from "@/screens/ProfileScreen";
+import BudgetSettingsScreen from "@/screens/BudgetSettingsScreen";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 
 export type ProfileStackParamList = {
   Profile: undefined;
+  BudgetSettings: undefined;
 };
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
@@ -20,6 +22,13 @@ export default function ProfileStackNavigator() {
         component={ProfileScreen}
         options={{
           title: "Settings",
+        }}
+      />
+      <Stack.Screen
+        name="BudgetSettings"
+        component={BudgetSettingsScreen}
+        options={{
+          title: "Category Budgets",
         }}
       />
     </Stack.Navigator>

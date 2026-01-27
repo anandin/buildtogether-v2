@@ -1,8 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { View, StyleSheet, Image, TextInput, Pressable } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
@@ -12,17 +14,22 @@ import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
+import { getCurrentMonthExpenses, getTotalSpent, getEffectiveBudget } from "@/lib/storage";
 import { Spacing, BorderRadius } from "@/constants/theme";
+import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 
 const avatarImages: Record<string, any> = {
   "avatar-preset-1": require("../../assets/images/avatar-preset-1.png"),
   "avatar-preset-2": require("../../assets/images/avatar-preset-2.png"),
 };
 
+type NavigationProp = NativeStackNavigationProp<ProfileStackParamList>;
+
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
   const tabBarHeight = useBottomTabBarHeight();
+  const navigation = useNavigation<NavigationProp>();
   const { theme } = useTheme();
   const { data, updatePartnerName, setBudget } = useApp();
 
@@ -31,6 +38,14 @@ export default function ProfileScreen() {
   const [budgetAmount, setBudgetAmount] = useState(
     data?.budget?.monthlyLimit?.toString() || "2000"
   );
+
+  const budgetSummary = useMemo(() => {
+    if (!data?.categoryBudgets) return { total: 0, spent: 0, categories: 0 };
+    const monthlyExpenses = getCurrentMonthExpenses(data.expenses);
+    const spent = getTotalSpent(monthlyExpenses);
+    const total = data.categoryBudgets.reduce((sum, b) => sum + getEffectiveBudget(b), 0);
+    return { total, spent, categories: data.categoryBudgets.length };
+  }, [data]);
 
   const handleEditPartner = (partnerId: "partner1" | "partner2") => {
     setEditingPartner(partnerId);
@@ -135,28 +150,58 @@ export default function ProfileScreen() {
       </Card>
 
       <Card style={styles.budgetCard}>
-        <ThemedText type="heading" style={styles.sectionTitle}>
-          Monthly Budget
-        </ThemedText>
-        <View style={styles.budgetInput}>
-          <ThemedText type="h3" style={{ color: theme.textSecondary }}>
-            $
-          </ThemedText>
-          <TextInput
-            style={[
-              styles.budgetInputField,
-              { color: theme.text },
-            ]}
-            value={budgetAmount}
-            onChangeText={setBudgetAmount}
-            keyboardType="numeric"
-            placeholder="0"
-            placeholderTextColor={theme.textSecondary}
-          />
+        <View style={styles.budgetHeader}>
+          <ThemedText type="heading">Category Budgets</ThemedText>
+          <Pressable
+            onPress={() => navigation.navigate("BudgetSettings")}
+            style={[styles.editBudgetButton, { backgroundColor: theme.primary + "15" }]}
+          >
+            <ThemedText type="small" style={{ color: theme.primary }}>Edit</ThemedText>
+          </Pressable>
         </View>
-        <Button onPress={handleSaveBudget} style={styles.saveButton}>
-          Update Budget
-        </Button>
+        
+        <View style={styles.budgetStats}>
+          <View style={styles.budgetStat}>
+            <ThemedText type="h2" style={{ color: theme.primary }}>
+              ${budgetSummary.total.toFixed(0)}
+            </ThemedText>
+            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+              Total Budget
+            </ThemedText>
+          </View>
+          <View style={styles.budgetStatDivider} />
+          <View style={styles.budgetStat}>
+            <ThemedText type="h2">
+              ${budgetSummary.spent.toFixed(0)}
+            </ThemedText>
+            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+              Spent
+            </ThemedText>
+          </View>
+          <View style={styles.budgetStatDivider} />
+          <View style={styles.budgetStat}>
+            <ThemedText type="h2" style={{ color: budgetSummary.total - budgetSummary.spent >= 0 ? theme.success : theme.error }}>
+              ${(budgetSummary.total - budgetSummary.spent).toFixed(0)}
+            </ThemedText>
+            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+              Remaining
+            </ThemedText>
+          </View>
+        </View>
+        
+        <Pressable
+          onPress={() => navigation.navigate("BudgetSettings")}
+          style={[styles.budgetLink, { backgroundColor: theme.backgroundSecondary }]}
+        >
+          <Feather name="sliders" size={18} color={theme.primary} />
+          <View style={styles.budgetLinkText}>
+            <ThemedText type="body">Manage {budgetSummary.categories} category budgets</ThemedText>
+            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+              Set limits, rollover rules & alerts
+            </ThemedText>
+          </View>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
       </Card>
 
       <Card style={styles.settingsCard}>
@@ -272,16 +317,40 @@ const styles = StyleSheet.create({
   budgetCard: {
     marginBottom: Spacing.lg,
   },
-  budgetInput: {
+  budgetHeader: {
     flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
     marginBottom: Spacing.lg,
   },
-  budgetInputField: {
+  editBudgetButton: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+  },
+  budgetStats: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    marginBottom: Spacing.lg,
+  },
+  budgetStat: {
+    alignItems: "center",
     flex: 1,
-    fontSize: 32,
-    fontWeight: "700",
-    marginLeft: Spacing.xs,
+  },
+  budgetStatDivider: {
+    width: 1,
+    height: 40,
+    backgroundColor: "rgba(0,0,0,0.1)",
+  },
+  budgetLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+  },
+  budgetLinkText: {
+    flex: 1,
+    marginLeft: Spacing.md,
   },
   settingsCard: {
     marginBottom: Spacing.lg,

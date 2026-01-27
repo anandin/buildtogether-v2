@@ -19,6 +19,10 @@ const defaultCategoryBudgets: CategoryBudget[] = DEFAULT_CATEGORY_BUDGETS.map((b
   id: uuidv4(),
   category: b.category,
   monthlyLimit: b.limit,
+  budgetType: b.budgetType,
+  alertThreshold: 80,
+  rolloverBalance: 0,
+  lastResetDate: new Date().toISOString(),
 }));
 
 const defaultData: AppData = {
@@ -205,26 +209,97 @@ export async function setBudget(monthlyLimit: number): Promise<Budget> {
 
 export async function updateCategoryBudget(
   category: string,
-  monthlyLimit: number
+  updates: Partial<Omit<CategoryBudget, "id" | "category">>
 ): Promise<CategoryBudget> {
   const data = await loadAppData();
   const existing = data.categoryBudgets.find((b) => b.category === category);
   
   if (existing) {
-    existing.monthlyLimit = monthlyLimit;
+    Object.assign(existing, updates);
     await saveAppData(data);
     return existing;
   } else {
     const newBudget: CategoryBudget = {
       id: uuidv4(),
       category,
-      monthlyLimit,
+      monthlyLimit: updates.monthlyLimit || 100,
+      budgetType: updates.budgetType || "recurring",
+      alertThreshold: updates.alertThreshold || 80,
+      rolloverBalance: updates.rolloverBalance || 0,
+      endDate: updates.endDate,
       isCustom: true,
+      lastResetDate: new Date().toISOString(),
     };
     data.categoryBudgets.push(newBudget);
     await saveAppData(data);
     return newBudget;
   }
+}
+
+export async function processMonthlyRollover(): Promise<void> {
+  const data = await loadAppData();
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+  
+  for (const budget of data.categoryBudgets) {
+    const lastReset = budget.lastResetDate ? new Date(budget.lastResetDate) : null;
+    const needsReset = !lastReset || 
+      lastReset.getMonth() !== currentMonth || 
+      lastReset.getFullYear() !== currentYear;
+    
+    if (needsReset) {
+      const lastMonthExpenses = data.expenses.filter(e => {
+        const d = new Date(e.date);
+        const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+        const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+        return d.getMonth() === prevMonth && d.getFullYear() === prevYear && e.category === budget.category;
+      });
+      const lastMonthSpent = lastMonthExpenses.reduce((sum, e) => sum + e.amount, 0);
+      const unused = Math.max(0, budget.monthlyLimit + budget.rolloverBalance - lastMonthSpent);
+      
+      if (budget.budgetType === "rollover") {
+        budget.rolloverBalance = unused;
+      } else if (budget.budgetType === "recurring") {
+        budget.rolloverBalance = 0;
+      }
+      
+      budget.lastResetDate = now.toISOString();
+    }
+  }
+  
+  await saveAppData(data);
+}
+
+export function getEffectiveBudget(budget: CategoryBudget): number {
+  if (budget.budgetType === "rollover") {
+    return budget.monthlyLimit + budget.rolloverBalance;
+  }
+  return budget.monthlyLimit;
+}
+
+export function getBudgetSavingsOpportunity(
+  expenses: Expense[],
+  categoryBudgets: CategoryBudget[]
+): { totalSavings: number; categorySavings: { category: string; amount: number }[] } {
+  const monthlyExpenses = getCurrentMonthExpenses(expenses);
+  const spendingByCategory = getSpendingByCategory(monthlyExpenses);
+  
+  const categorySavings: { category: string; amount: number }[] = [];
+  let totalSavings = 0;
+  
+  for (const budget of categoryBudgets) {
+    const spent = spendingByCategory[budget.category] || 0;
+    const effectiveBudget = getEffectiveBudget(budget);
+    const remaining = Math.max(0, effectiveBudget - spent);
+    
+    if (remaining > 0) {
+      categorySavings.push({ category: budget.category, amount: remaining });
+      totalSavings += remaining;
+    }
+  }
+  
+  return { totalSavings, categorySavings: categorySavings.sort((a, b) => b.amount - a.amount) };
 }
 
 export async function addCustomCategory(

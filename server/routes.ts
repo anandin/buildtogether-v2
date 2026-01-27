@@ -140,29 +140,61 @@ If you cannot read the receipt clearly, still try to provide your best guess. If
         }
       });
 
-      // Find over-budget categories
-      const overBudgetCategories = categoryBudgets?.filter((b: any) => {
+      // Find over-budget categories (using effective budget with rollover)
+      const budgetStatus = categoryBudgets?.map((b: any) => {
         const spent = categoryTotals[b.category] || 0;
-        return spent > b.monthlyLimit * 0.8; // Alert at 80%
+        const effectiveBudget = b.budgetType === 'rollover' 
+          ? b.monthlyLimit + (b.rolloverBalance || 0)
+          : b.monthlyLimit;
+        const percentage = effectiveBudget > 0 ? (spent / effectiveBudget) * 100 : 0;
+        const threshold = b.alertThreshold || 80;
+        return {
+          ...b,
+          spent,
+          effectiveBudget,
+          percentage,
+          isOverThreshold: percentage >= threshold,
+          isOverBudget: percentage >= 100,
+          remaining: effectiveBudget - spent,
+        };
       }) || [];
+
+      const overBudgetCategories = budgetStatus.filter((b: any) => b.isOverThreshold);
+      const underBudgetCategories = budgetStatus.filter((b: any) => b.remaining > 50 && b.percentage < 70);
+      const totalPotentialSavings = underBudgetCategories.reduce((s: number, b: any) => s + b.remaining, 0);
+
+      // Calculate goal progress
+      const totalGoalTarget = goals?.reduce((s: number, g: any) => s + g.targetAmount, 0) || 0;
+      const totalGoalSaved = goals?.reduce((s: number, g: any) => s + g.savedAmount, 0) || 0;
+      const goalsProgress = totalGoalTarget > 0 ? (totalGoalSaved / totalGoalTarget) * 100 : 0;
 
       const response = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
           {
             role: "system",
-            content: `You are a friendly AI financial coach for couples. Analyze their spending data and provide helpful, actionable insights to help them save money and reach their goals together.
+            content: `You are a friendly AI financial coach for couples. Analyze their spending and BUDGET data to provide helpful, actionable insights to help them save money and reach their goals together.
+
+IMPORTANT: Use their budget settings to make smart recommendations:
+- Categories with "rollover" budgets carry unused money forward - suggest moving rollover to goals!
+- Categories near their alert threshold need gentle warnings
+- Categories well under budget = potential savings to redirect to goals
 
 Be warm, supportive, and specific. Focus on:
-1. Identifying spending patterns and potential savings
-2. Celebrating wins when they're under budget
-3. Gentle nudges when overspending
-4. Progress toward shared goals
-5. Specific merchant/category trends
+1. Identifying savings opportunities from under-budget categories
+2. Suggesting moving rollover/surplus amounts toward goals
+3. Celebrating wins when they're under budget
+4. Gentle nudges when approaching budget thresholds
+5. Connecting budget performance directly to goal progress
 
-Generate 2-3 insights. Each insight should be:
-- Personalized to their actual spending data
-- Actionable (specific things they can do)
+Generate 2-4 insights. Prioritize:
+- HIGH priority for budget-to-goal opportunities (if they have surplus that could go to goals)
+- MEDIUM for spending alerts and trends
+- LOW for general tips
+
+Each insight should be:
+- Personalized to their actual budget and spending data
+- Actionable (specific amounts to save or move to goals)
 - Encouraging (focus on opportunity, not criticism)
 - Brief (1-2 sentences max)
 
@@ -175,31 +207,36 @@ Respond in JSON format:
       "message": "The insight message",
       "priority": "low" | "medium" | "high",
       "category": "optional category name if relevant",
-      "amount": optional number if relevant
+      "amount": optional number if relevant,
+      "actionType": "add_to_goal" | "view_category" | "review_spending" | "dismiss"
     }
   ]
 }`,
           },
           {
             role: "user",
-            content: `Here's our spending data:
+            content: `Here's our financial data:
 
-This month's total: $${thisMonthTotal.toFixed(2)}
-Last month's total: $${lastMonthTotal.toFixed(2)}
+SPENDING SUMMARY:
+- This month's total: $${thisMonthTotal.toFixed(2)}
+- Last month's total: $${lastMonthTotal.toFixed(2)}
+- Change: ${thisMonthTotal > lastMonthTotal ? '+' : ''}$${(thisMonthTotal - lastMonthTotal).toFixed(2)}
 
-Spending by category this month:
-${Object.entries(categoryTotals).map(([cat, amt]) => `- ${cat}: $${(amt as number).toFixed(2)}`).join('\n')}
+BUDGET STATUS (with types):
+${budgetStatus.map((b: any) => `- ${b.category} (${b.budgetType}): $${b.spent.toFixed(0)} / $${b.effectiveBudget.toFixed(0)} (${b.percentage.toFixed(0)}%) ${b.rolloverBalance > 0 ? `[+$${b.rolloverBalance} rollover]` : ''} ${b.isOverThreshold ? '⚠️' : '✓'}`).join('\n')}
 
-Top merchants:
+POTENTIAL SAVINGS THIS MONTH: $${totalPotentialSavings.toFixed(0)}
+Categories with surplus:
+${underBudgetCategories.map((b: any) => `- ${b.category}: $${b.remaining.toFixed(0)} under budget`).join('\n') || 'None yet'}
+
+TOP MERCHANTS:
 ${Object.entries(merchantTotals).slice(0, 5).map(([name, data]) => `- ${name}: $${data.total.toFixed(2)} (${data.count} visits)`).join('\n')}
 
-Our savings goals:
-${goals?.map((g: any) => `- ${g.name}: $${g.savedAmount} / $${g.targetAmount}`).join('\n') || 'No goals set yet'}
+SAVINGS GOALS:
+${goals?.map((g: any) => `- ${g.name}: $${g.savedAmount} / $${g.targetAmount} (${((g.savedAmount / g.targetAmount) * 100).toFixed(0)}%)`).join('\n') || 'No goals set yet'}
+Overall goal progress: ${goalsProgress.toFixed(0)}%
 
-Categories over 80% of budget:
-${overBudgetCategories.map((b: any) => `- ${b.category}: $${categoryTotals[b.category]?.toFixed(2) || 0} / $${b.monthlyLimit}`).join('\n') || 'None! Great job!'}
-
-Please provide personalized insights to help us save together.`,
+Please analyze our budgets and spending to provide personalized insights. Focus on how we can move surplus/rollover money toward our goals!`,
           },
         ],
         max_completion_tokens: 800,

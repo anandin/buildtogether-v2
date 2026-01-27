@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
-import type { AppData, Expense, Goal, Budget, CategoryBudget, CustomCategory, AIInsight } from "@/types";
+import type { AppData, Expense, Goal, Budget, CategoryBudget, CustomCategory, AIInsight, BudgetType } from "@/types";
 import * as storage from "@/lib/storage";
 
 interface AppContextType {
@@ -15,7 +15,8 @@ interface AppContextType {
   deleteGoal: (id: string) => Promise<void>;
   addGoalContribution: (goalId: string, amount: number, contributor: "partner1" | "partner2") => Promise<void>;
   setBudget: (monthlyLimit: number) => Promise<Budget>;
-  updateCategoryBudget: (category: string, monthlyLimit: number) => Promise<CategoryBudget>;
+  updateCategoryBudget: (category: string, updates: Partial<Omit<CategoryBudget, "id" | "category">>) => Promise<CategoryBudget>;
+  processMonthlyRollover: () => Promise<void>;
   addCustomCategory: (name: string, icon: string, color: string) => Promise<CustomCategory>;
   deleteCustomCategory: (id: string) => Promise<void>;
   addAIInsight: (insight: Omit<AIInsight, "id" | "createdAt" | "isRead" | "isDismissed">) => Promise<AIInsight>;
@@ -93,10 +94,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return budget;
   }, [refreshData]);
 
-  const updateCategoryBudget = useCallback(async (category: string, monthlyLimit: number) => {
-    const budget = await storage.updateCategoryBudget(category, monthlyLimit);
+  const updateCategoryBudget = useCallback(async (category: string, updates: Partial<Omit<CategoryBudget, "id" | "category">>) => {
+    const budget = await storage.updateCategoryBudget(category, updates);
     await refreshData();
     return budget;
+  }, [refreshData]);
+
+  const processMonthlyRollover = useCallback(async () => {
+    await storage.processMonthlyRollover();
+    await refreshData();
   }, [refreshData]);
 
   const addCustomCategory = useCallback(async (name: string, icon: string, color: string) => {
@@ -147,6 +153,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addGoalContribution,
         setBudget,
         updateCategoryBudget,
+        processMonthlyRollover,
         addCustomCategory,
         deleteCustomCategory,
         addAIInsight,
