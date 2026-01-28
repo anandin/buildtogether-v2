@@ -17,6 +17,10 @@ import {
   users,
   sessions,
   partnerInvites,
+  guardianInsights,
+  guardianRecommendations,
+  savingsConfirmations,
+  savingsStreaks,
 } from "@shared/schema";
 import crypto from "crypto";
 
@@ -1504,6 +1508,345 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
       res.json({ success: true, count: defaultBenchmarks.length });
     } catch (error: any) {
       console.error("Seed benchmarks error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== GUARDIAN MEMORY SYSTEM ====================
+
+  // Get all Guardian insights for a couple
+  app.get("/api/guardian/insights/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const insights = await db
+        .select()
+        .from(guardianInsights)
+        .where(and(eq(guardianInsights.coupleId, coupleId), eq(guardianInsights.isActive, true)))
+        .orderBy(desc(guardianInsights.createdAt));
+      res.json(insights);
+    } catch (error: any) {
+      console.error("Get guardian insights error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Store a new Guardian insight
+  app.post("/api/guardian/insights/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const { insightType, category, title, description, confidence, metadata } = req.body;
+      
+      const [insight] = await db
+        .insert(guardianInsights)
+        .values({
+          coupleId,
+          insightType,
+          category,
+          title,
+          description,
+          confidence: confidence || 0.5,
+          metadata,
+        })
+        .returning();
+      
+      res.json(insight);
+    } catch (error: any) {
+      console.error("Create guardian insight error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get recommendations for a couple (with optional status filter)
+  app.get("/api/guardian/recommendations/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const { status } = req.query;
+      
+      let query = db
+        .select()
+        .from(guardianRecommendations)
+        .where(eq(guardianRecommendations.coupleId, coupleId))
+        .orderBy(desc(guardianRecommendations.createdAt));
+      
+      const recommendations = await query;
+      
+      // Filter by status if provided
+      const filtered = status 
+        ? recommendations.filter(r => r.status === status)
+        : recommendations;
+      
+      res.json(filtered);
+    } catch (error: any) {
+      console.error("Get guardian recommendations error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Create a new recommendation
+  app.post("/api/guardian/recommendations/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const { insightId, recommendationType, title, message, suggestedAction, targetAmount, category } = req.body;
+      
+      const [recommendation] = await db
+        .insert(guardianRecommendations)
+        .values({
+          coupleId,
+          insightId,
+          recommendationType,
+          title,
+          message,
+          suggestedAction,
+          targetAmount,
+          category,
+          status: "pending",
+        })
+        .returning();
+      
+      res.json(recommendation);
+    } catch (error: any) {
+      console.error("Create guardian recommendation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update recommendation status (shown, acted, dismissed)
+  app.put("/api/guardian/recommendations/:coupleId/:recommendationId", async (req, res) => {
+    try {
+      const { coupleId, recommendationId } = req.params;
+      const { status, userFeedback } = req.body;
+      
+      const updateData: any = { status };
+      
+      if (status === "shown") {
+        updateData.shownAt = new Date();
+      } else if (status === "acted") {
+        updateData.actedAt = new Date();
+      } else if (status === "dismissed") {
+        updateData.dismissedAt = new Date();
+      }
+      
+      if (userFeedback) {
+        updateData.userFeedback = userFeedback;
+      }
+      
+      const [updated] = await db
+        .update(guardianRecommendations)
+        .set(updateData)
+        .where(
+          and(
+            eq(guardianRecommendations.id, recommendationId),
+            eq(guardianRecommendations.coupleId, coupleId)
+          )
+        )
+        .returning();
+      
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update guardian recommendation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get savings confirmations for a couple
+  app.get("/api/guardian/savings/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const confirmations = await db
+        .select()
+        .from(savingsConfirmations)
+        .where(eq(savingsConfirmations.coupleId, coupleId))
+        .orderBy(desc(savingsConfirmations.createdAt));
+      res.json(confirmations);
+    } catch (error: any) {
+      console.error("Get savings confirmations error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Confirm a savings deposit
+  app.post("/api/guardian/savings/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const { goalId, amount, confirmationType, note, triggeredBy, recommendationId, confirmationDate } = req.body;
+      
+      // Create savings confirmation
+      const [confirmation] = await db
+        .insert(savingsConfirmations)
+        .values({
+          coupleId,
+          goalId,
+          amount,
+          confirmationType: confirmationType || "bank_transfer",
+          note,
+          triggeredBy,
+          recommendationId,
+          confirmationDate: confirmationDate || new Date().toISOString().split("T")[0],
+        })
+        .returning();
+      
+      // Update savings streak
+      const [existingStreak] = await db
+        .select()
+        .from(savingsStreaks)
+        .where(eq(savingsStreaks.coupleId, coupleId));
+      
+      const today = new Date();
+      const todayStr = today.toISOString().split("T")[0];
+      
+      if (existingStreak) {
+        // Calculate if we're within the streak window (7 days for weekly streaks)
+        const lastDate = existingStreak.lastConfirmationDate 
+          ? new Date(existingStreak.lastConfirmationDate)
+          : null;
+        
+        let newStreak = existingStreak.currentStreak;
+        let streakBroken = false;
+        
+        if (lastDate) {
+          const daysSinceLastConfirmation = Math.floor(
+            (today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24)
+          );
+          
+          if (daysSinceLastConfirmation <= 7) {
+            // Within weekly window, increment streak
+            newStreak += 1;
+          } else {
+            // Streak broken, reset to 1
+            newStreak = 1;
+            streakBroken = true;
+          }
+        } else {
+          newStreak = 1;
+        }
+        
+        await db
+          .update(savingsStreaks)
+          .set({
+            currentStreak: newStreak,
+            longestStreak: Math.max(existingStreak.longestStreak, newStreak),
+            lastConfirmationDate: todayStr,
+            totalConfirmations: existingStreak.totalConfirmations + 1,
+            totalAmountSaved: existingStreak.totalAmountSaved + amount,
+            streakBrokenCount: streakBroken 
+              ? existingStreak.streakBrokenCount + 1 
+              : existingStreak.streakBrokenCount,
+            updatedAt: new Date(),
+          })
+          .where(eq(savingsStreaks.coupleId, coupleId));
+      } else {
+        // Create new streak record
+        await db.insert(savingsStreaks).values({
+          coupleId,
+          currentStreak: 1,
+          longestStreak: 1,
+          lastConfirmationDate: todayStr,
+          totalConfirmations: 1,
+          totalAmountSaved: amount,
+        });
+      }
+      
+      // If this was triggered by a recommendation, mark it as acted
+      if (recommendationId) {
+        await db
+          .update(guardianRecommendations)
+          .set({ status: "acted", actedAt: new Date() })
+          .where(eq(guardianRecommendations.id, recommendationId));
+      }
+      
+      res.json(confirmation);
+    } catch (error: any) {
+      console.error("Create savings confirmation error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get savings streak for a couple
+  app.get("/api/guardian/streak/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const [streak] = await db
+        .select()
+        .from(savingsStreaks)
+        .where(eq(savingsStreaks.coupleId, coupleId));
+      
+      if (!streak) {
+        // Return default streak data
+        return res.json({
+          coupleId,
+          currentStreak: 0,
+          longestStreak: 0,
+          lastConfirmationDate: null,
+          totalConfirmations: 0,
+          totalAmountSaved: 0,
+          streakBrokenCount: 0,
+        });
+      }
+      
+      res.json(streak);
+    } catch (error: any) {
+      console.error("Get savings streak error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get Guardian memory context (combined insights, recommendations, streak for AI prompts)
+  app.get("/api/guardian/memory/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      
+      // Get all relevant data in parallel
+      const [insights, recommendations, streak, couple, recentExpenses] = await Promise.all([
+        db.select().from(guardianInsights)
+          .where(and(eq(guardianInsights.coupleId, coupleId), eq(guardianInsights.isActive, true)))
+          .orderBy(desc(guardianInsights.createdAt)),
+        db.select().from(guardianRecommendations)
+          .where(eq(guardianRecommendations.coupleId, coupleId))
+          .orderBy(desc(guardianRecommendations.createdAt)),
+        db.select().from(savingsStreaks)
+          .where(eq(savingsStreaks.coupleId, coupleId)),
+        db.select().from(couples)
+          .where(eq(couples.id, coupleId)),
+        db.select().from(expenses)
+          .where(eq(expenses.coupleId, coupleId))
+          .orderBy(desc(expenses.createdAt)),
+      ]);
+      
+      // Calculate recommendation effectiveness
+      const actedRecommendations = recommendations.filter(r => r.status === "acted");
+      const shownRecommendations = recommendations.filter(r => r.status === "shown" || r.status === "acted" || r.status === "dismissed");
+      const effectivenessRate = shownRecommendations.length > 0 
+        ? actedRecommendations.length / shownRecommendations.length 
+        : 0;
+      
+      // Get family profile from couple
+      const familyProfile = couple[0] ? {
+        numAdults: couple[0].numAdults || 2,
+        numKidsUnder5: couple[0].numKidsUnder5 || 0,
+        numKids5to12: couple[0].numKids5to12 || 0,
+        numTeens: couple[0].numTeens || 0,
+        city: couple[0].city,
+        country: couple[0].country || "US",
+        partner1Name: couple[0].partner1Name,
+        partner2Name: couple[0].partner2Name,
+      } : null;
+      
+      res.json({
+        insights: insights.slice(0, 10), // Last 10 active insights
+        recentRecommendations: recommendations.slice(0, 5), // Last 5 recommendations
+        streak: streak[0] || null,
+        effectivenessRate,
+        familyProfile,
+        totalExpenses: recentExpenses.length,
+        recentExpenseCount: recentExpenses.filter(e => {
+          const expDate = new Date(e.date);
+          const weekAgo = new Date();
+          weekAgo.setDate(weekAgo.getDate() - 7);
+          return expDate >= weekAgo;
+        }).length,
+      });
+    } catch (error: any) {
+      console.error("Get guardian memory error:", error);
       res.status(500).json({ error: error.message });
     }
   });
