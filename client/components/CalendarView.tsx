@@ -7,7 +7,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import type { Expense } from "@/types";
-import { getDailyTotals } from "@/lib/storage";
+import { getDailyTotals } from "@/lib/cloudStorage";
 
 interface CalendarViewProps {
   expenses: Expense[];

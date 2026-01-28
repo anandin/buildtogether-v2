@@ -15,7 +15,7 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
-import { getCurrentMonthExpenses, getTotalSpent, getEffectiveBudget } from "@/lib/storage";
+import { getCurrentMonthExpenses, getTotalSpent, getEffectiveBudget } from "@/lib/cloudStorage";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";

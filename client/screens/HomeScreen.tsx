@@ -14,7 +14,7 @@ import { Card } from "@/components/Card";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
-import { getCurrentMonthExpenses, getTotalSpent } from "@/lib/storage";
+import { getCurrentMonthExpenses, getTotalSpent } from "@/lib/cloudStorage";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS } from "@/types";
 

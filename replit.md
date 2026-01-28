@@ -69,6 +69,12 @@ Preferred communication style: Simple, everyday language.
 - TanStack Query (React Query) for server state management and API calls
 - AsyncStorage for local data persistence
 
+**Storage Architecture (Important)**:
+- All screens and components MUST import utility functions from `@/lib/cloudStorage`, NOT from `@/lib/storage`
+- `cloudStorage.ts` contains all data sync logic and utility functions: `getCurrentMonthExpenses`, `getTotalSpent`, `calculateOwedAmounts`, `getUnsettledExpenses`, `getEffectiveBudget`, `getCategoryBudgetStatus`, `getMerchantSpending`, `getDailyTotals`, `getSpendingByCategory`
+- The old `storage.ts` file exists but should NOT be used for imports - all functionality has been consolidated to cloudStorage
+- This consolidation ensures data consistency after settlements and other state changes across all screens
+
 **Styling Approach**:
 - Custom theming system with light/dark mode support via `useTheme` hook
 - Warm pastel color palette (primary: #FF9AA2, accent: #C7CEEA)

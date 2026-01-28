@@ -20,7 +20,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
-import { getCurrentMonthExpenses } from "@/lib/storage";
+import { getCurrentMonthExpenses } from "@/lib/cloudStorage";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { Goal, Expense } from "@/types";
 

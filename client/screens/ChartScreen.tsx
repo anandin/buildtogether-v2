@@ -14,7 +14,7 @@ import { SteadyProgress } from "@/components/SteadyProgress";
 import { SpendingInsights } from "@/components/SpendingInsights";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
-import { getCurrentMonthExpenses, getTotalSpent, getMerchantSpending } from "@/lib/storage";
+import { getCurrentMonthExpenses, getTotalSpent, getMerchantSpending } from "@/lib/cloudStorage";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS } from "@/types";
 

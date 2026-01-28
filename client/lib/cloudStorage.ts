@@ -299,3 +299,88 @@ export function getEffectiveBudget(budget: CategoryBudget): number {
   }
   return budget.monthlyLimit;
 }
+
+export function getTotalSpent(expenses: Expense[]): number {
+  return expenses.reduce((sum, expense) => sum + expense.amount, 0);
+}
+
+export function getUnsettledExpenses(expenses: Expense[]): Expense[] {
+  return expenses.filter((e) => !e.isSettled);
+}
+
+export function calculateOwedAmounts(
+  expenses: Expense[],
+  partners: { partner1: { id: string; name: string }; partner2: { id: string; name: string } }
+): { partner1Owes: number; partner2Owes: number } {
+  let partner1Owes = 0;
+  let partner2Owes = 0;
+
+  const unsettledExpenses = expenses.filter((e) => !e.isSettled);
+
+  unsettledExpenses.forEach((expense) => {
+    if (expense.splitMethod === "joint" || expense.paidBy === "joint") {
+      return;
+    }
+
+    const partner1Share = expense.splitAmounts?.partner1 ?? expense.amount / 2;
+    const partner2Share = expense.splitAmounts?.partner2 ?? expense.amount / 2;
+
+    if (expense.paidBy === "partner1") {
+      partner2Owes += partner2Share;
+    } else if (expense.paidBy === "partner2") {
+      partner1Owes += partner1Share;
+    }
+  });
+
+  return { partner1Owes, partner2Owes };
+}
+
+export function getMerchantSpending(expenses: Expense[]): Record<string, { total: number; count: number }> {
+  const merchants: Record<string, { total: number; count: number }> = {};
+  expenses.forEach((expense) => {
+    if (expense.merchant) {
+      if (!merchants[expense.merchant]) {
+        merchants[expense.merchant] = { total: 0, count: 0 };
+      }
+      merchants[expense.merchant].total += expense.amount;
+      merchants[expense.merchant].count += 1;
+    }
+  });
+  return merchants;
+}
+
+export function getDailyTotals(
+  expenses: Expense[],
+  year: number,
+  month: number
+): Record<number, number> {
+  const totals: Record<number, number> = {};
+  
+  expenses.forEach((expense) => {
+    const date = new Date(expense.date);
+    if (date.getFullYear() === year && date.getMonth() === month) {
+      const day = date.getDate();
+      totals[day] = (totals[day] || 0) + expense.amount;
+    }
+  });
+  
+  return totals;
+}
+
+export function getCategoryBudgetStatus(
+  expenses: Expense[],
+  categoryBudgets: CategoryBudget[]
+): { category: string; spent: number; limit: number; percentage: number }[] {
+  const monthlyExpenses = getCurrentMonthExpenses(expenses);
+  const spendingByCategory = getSpendingByCategory(monthlyExpenses);
+  
+  return categoryBudgets.map((budget) => {
+    const spent = spendingByCategory[budget.category] || 0;
+    return {
+      category: budget.category,
+      spent,
+      limit: budget.monthlyLimit,
+      percentage: budget.monthlyLimit > 0 ? (spent / budget.monthlyLimit) * 100 : 0,
+    };
+  });
+}

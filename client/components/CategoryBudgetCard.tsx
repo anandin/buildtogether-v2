@@ -10,8 +10,8 @@ import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS, BUDGET_TYPE_INFO } from "@/types";
-import * as storage from "@/lib/storage";
-import { getEffectiveBudget } from "@/lib/storage";
+import * as storage from "@/lib/cloudStorage";
+import { getEffectiveBudget } from "@/lib/cloudStorage";
 
 export function CategoryBudgetCard() {
   const { theme } = useTheme();

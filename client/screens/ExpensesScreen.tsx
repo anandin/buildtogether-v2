@@ -15,7 +15,7 @@ import { CategoryBudgetCard } from "@/components/CategoryBudgetCard";
 import { MonthlySettlementSummary } from "@/components/MonthlySettlementSummary";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
-import { getCurrentMonthExpenses, getTotalSpent, calculateOwedAmounts } from "@/lib/storage";
+import { getCurrentMonthExpenses, getTotalSpent, calculateOwedAmounts } from "@/lib/cloudStorage";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import type { Expense, ExpenseCategory } from "@/types";
 import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS, DEFAULT_CATEGORIES } from "@/types";

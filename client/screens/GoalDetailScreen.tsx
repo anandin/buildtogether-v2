@@ -26,7 +26,7 @@ import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
-import { getCurrentMonthExpenses, getSpendingByCategory, getEffectiveBudget } from "@/lib/storage";
+import { getCurrentMonthExpenses, getSpendingByCategory, getEffectiveBudget } from "@/lib/cloudStorage";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { CATEGORY_LABELS } from "@/types";
 
