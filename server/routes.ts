@@ -1729,8 +1729,8 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
             totalConfirmations: existingStreak.totalConfirmations + 1,
             totalAmountSaved: existingStreak.totalAmountSaved + amount,
             streakBrokenCount: streakBroken 
-              ? existingStreak.streakBrokenCount + 1 
-              : existingStreak.streakBrokenCount,
+              ? (existingStreak.streakBrokenCount || 0) + 1 
+              : (existingStreak.streakBrokenCount || 0),
             updatedAt: new Date(),
           })
           .where(eq(savingsStreaks.coupleId, coupleId));
