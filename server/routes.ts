@@ -1193,13 +1193,14 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
   app.get("/api/benchmarks", async (req, res) => {
     try {
       const { familySize, hasKids, country } = req.query;
-      let query = db.select().from(spendingBenchmarks);
       
+      let benchmarks;
       if (familySize) {
-        query = query.where(eq(spendingBenchmarks.familySize, parseInt(familySize as string)));
+        benchmarks = await db.select().from(spendingBenchmarks)
+          .where(eq(spendingBenchmarks.familySize, parseInt(familySize as string)));
+      } else {
+        benchmarks = await db.select().from(spendingBenchmarks);
       }
-      
-      const benchmarks = await query;
       res.json(benchmarks);
     } catch (error: any) {
       console.error("Get benchmarks error:", error);

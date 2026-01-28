@@ -7,12 +7,29 @@ import { v4 as uuidv4 } from "uuid";
 const COUPLE_ID_KEY = "@couple_id";
 const LOCAL_CACHE_KEY = "@app_data_cache";
 
+let cachedCoupleId: string | null = null;
+
+export async function setCoupleId(coupleId: string): Promise<void> {
+  cachedCoupleId = coupleId;
+  await AsyncStorage.setItem(COUPLE_ID_KEY, coupleId);
+}
+
+export async function clearCoupleId(): Promise<void> {
+  cachedCoupleId = null;
+  await AsyncStorage.removeItem(COUPLE_ID_KEY);
+  await AsyncStorage.removeItem(LOCAL_CACHE_KEY);
+}
+
 async function getCoupleId(): Promise<string> {
+  if (cachedCoupleId) {
+    return cachedCoupleId;
+  }
   let coupleId = await AsyncStorage.getItem(COUPLE_ID_KEY);
   if (!coupleId) {
     coupleId = uuidv4();
     await AsyncStorage.setItem(COUPLE_ID_KEY, coupleId);
   }
+  cachedCoupleId = coupleId;
   return coupleId;
 }
 
