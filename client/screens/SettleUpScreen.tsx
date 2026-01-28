@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { View, StyleSheet, FlatList, Pressable } from "react-native";
+import { View, StyleSheet, FlatList, Pressable, Image } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
@@ -7,12 +7,15 @@ import { format } from "date-fns";
 import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
+import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
 import { getUnsettledExpenses, calculateOwedAmounts } from "@/lib/storage";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS } from "@/types";
+import { CATEGORY_ICONS, CATEGORY_COLORS } from "@/types";
+
+import dreamGuardianIcon from "../../assets/images/dream-guardian-icon.png";
 
 type TabType = "unsettled" | "records";
 
@@ -62,7 +65,7 @@ export default function SettleUpScreen() {
             {item.description}
           </ThemedText>
           <ThemedText type="small" style={{ color: theme.textSecondary }}>
-            {format(new Date(item.date), "MMM d")} • {data?.partners[item.paidBy]?.name}
+            {format(new Date(item.date), "MMM d")} · {data?.partners[item.paidBy as keyof typeof data.partners]?.name}
           </ThemedText>
         </View>
         <ThemedText type="heading">${item.amount.toFixed(2)}</ThemedText>
@@ -72,9 +75,12 @@ export default function SettleUpScreen() {
 
   const renderRecordItem = ({ item }: any) => (
     <View style={[styles.recordItem, { backgroundColor: theme.backgroundDefault }]}>
+      <View style={[styles.recordIcon, { backgroundColor: theme.success + "15" }]}>
+        <Feather name="check-circle" size={18} color={theme.success} />
+      </View>
       <View style={styles.recordInfo}>
         <ThemedText type="body">
-          {data?.partners[item.from]?.name} paid {data?.partners[item.to]?.name}
+          {data?.partners[item.from as keyof typeof data.partners]?.name} paid {data?.partners[item.to as keyof typeof data.partners]?.name}
         </ThemedText>
         <ThemedText type="small" style={{ color: theme.textSecondary }}>
           {format(new Date(item.date), "MMM d, yyyy")}
@@ -86,47 +92,114 @@ export default function SettleUpScreen() {
     </View>
   );
 
+  const EmptyUnsettledState = () => (
+    <View style={styles.emptyState}>
+      <View style={[styles.emptyIconContainer, { backgroundColor: theme.success + "15" }]}>
+        <Feather name="check-circle" size={48} color={theme.success} />
+      </View>
+      <ThemedText type="heading" style={{ marginTop: Spacing.lg, marginBottom: Spacing.xs }}>
+        All settled!
+      </ThemedText>
+      <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "center", maxWidth: 260 }}>
+        You're all caught up. No pending expenses to split with your partner.
+      </ThemedText>
+    </View>
+  );
+
+  const EmptyRecordsState = () => (
+    <View style={styles.emptyState}>
+      <View style={[styles.emptyIconContainer, { backgroundColor: theme.primary + "15" }]}>
+        <Feather name="clock" size={48} color={theme.primary} />
+      </View>
+      <ThemedText type="heading" style={{ marginTop: Spacing.lg, marginBottom: Spacing.xs }}>
+        No history yet
+      </ThemedText>
+      <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "center", maxWidth: 260 }}>
+        Once you settle expenses, they'll appear here as a record of your payments.
+      </ThemedText>
+    </View>
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-      <View style={[styles.header, { backgroundColor: theme.primary }]}>
-        <Pressable onPress={() => navigation.goBack()} style={styles.closeButton}>
-          <Feather name="chevron-down" size={28} color="#FFFFFF" />
+      <View style={[styles.header, { paddingTop: insets.top + Spacing.md }]}>
+        <Pressable 
+          onPress={() => navigation.goBack()} 
+          style={[styles.closeButton, { backgroundColor: theme.backgroundDefault }]}
+        >
+          <Feather name="x" size={20} color={theme.text} />
         </Pressable>
-        <ThemedText type="h4" style={styles.headerTitle}>
-          Settle Up
-        </ThemedText>
+        <ThemedText type="heading">Settle Up</ThemedText>
         <View style={styles.headerPlaceholder} />
       </View>
 
-      <View style={styles.tabs}>
+      {absOwed > 0 && activeTab === "unsettled" ? (
+        <Card style={styles.summaryCard}>
+          <View style={styles.summaryContent}>
+            <Image source={dreamGuardianIcon} style={styles.guardianIcon} resizeMode="cover" />
+            <View style={styles.summaryText}>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                Settlement Summary
+              </ThemedText>
+              <ThemedText type="body">
+                <ThemedText type="body" style={{ fontWeight: "700" }}>
+                  {data?.partners[whoOwes]?.name}
+                </ThemedText>
+                {" owes "}
+                <ThemedText type="body" style={{ fontWeight: "700" }}>
+                  {data?.partners[whoGets]?.name}
+                </ThemedText>
+              </ThemedText>
+            </View>
+            <View style={[styles.amountBadge, { backgroundColor: theme.primary + "15" }]}>
+              <ThemedText type="heading" style={{ color: theme.primary }}>
+                ${absOwed.toFixed(2)}
+              </ThemedText>
+            </View>
+          </View>
+        </Card>
+      ) : null}
+
+      <View style={[styles.tabs, { borderBottomColor: theme.border }]}>
         <Pressable
           style={[
             styles.tab,
-            activeTab === "unsettled" && styles.activeTab,
             activeTab === "unsettled" && { borderBottomColor: theme.primary },
           ]}
           onPress={() => setActiveTab("unsettled")}
         >
           <ThemedText
             type="body"
-            style={{ color: activeTab === "unsettled" ? theme.primary : theme.textSecondary }}
+            style={{ 
+              color: activeTab === "unsettled" ? theme.primary : theme.textSecondary,
+              fontWeight: activeTab === "unsettled" ? "600" : "400",
+            }}
           >
-            Unsettled List
+            Pending
           </ThemedText>
+          {unsettledExpenses.length > 0 ? (
+            <View style={[styles.badge, { backgroundColor: theme.primary }]}>
+              <ThemedText type="tiny" style={{ color: "#FFFFFF", fontWeight: "600" }}>
+                {unsettledExpenses.length}
+              </ThemedText>
+            </View>
+          ) : null}
         </Pressable>
         <Pressable
           style={[
             styles.tab,
-            activeTab === "records" && styles.activeTab,
             activeTab === "records" && { borderBottomColor: theme.primary },
           ]}
           onPress={() => setActiveTab("records")}
         >
           <ThemedText
             type="body"
-            style={{ color: activeTab === "records" ? theme.primary : theme.textSecondary }}
+            style={{ 
+              color: activeTab === "records" ? theme.primary : theme.textSecondary,
+              fontWeight: activeTab === "records" ? "600" : "400",
+            }}
           >
-            Records
+            History
           </ThemedText>
         </Pressable>
       </View>
@@ -141,11 +214,7 @@ export default function SettleUpScreen() {
               contentContainerStyle={styles.listContent}
             />
           ) : (
-            <View style={styles.emptyState}>
-              <ThemedText type="body" style={{ color: theme.textSecondary }}>
-                No unsettled expenses
-              </ThemedText>
-            </View>
+            <EmptyUnsettledState />
           )
         ) : (
           <FlatList
@@ -153,31 +222,24 @@ export default function SettleUpScreen() {
             keyExtractor={(item) => item.id}
             renderItem={renderRecordItem}
             contentContainerStyle={styles.listContent}
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <ThemedText type="body" style={{ color: theme.textSecondary }}>
-                  No settlement records
-                </ThemedText>
-              </View>
-            }
+            ListEmptyComponent={<EmptyRecordsState />}
           />
         )}
       </View>
 
-      <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing.lg }]}>
-        <Pressable style={styles.checkButton}>
-          <Feather name="check" size={20} color={theme.textSecondary} />
-        </Pressable>
-        <Button
-          onPress={handleSettleAll}
-          disabled={unsettledExpenses.length === 0}
-          style={[styles.confirmButton, { backgroundColor: absOwed > 0 ? theme.primary : theme.border }]}
-        >
-          <ThemedText type="body" style={{ color: "#FFFFFF" }}>
-            {absOwed > 0 ? `Confirm total $${absOwed.toFixed(2)}` : "Confirm total"}
-          </ThemedText>
-        </Button>
-      </View>
+      {activeTab === "unsettled" && unsettledExpenses.length > 0 ? (
+        <View style={[styles.footer, { paddingBottom: insets.bottom + Spacing.lg }]}>
+          <Button
+            onPress={handleSettleAll}
+            style={[styles.confirmButton, { backgroundColor: theme.primary }]}
+          >
+            <Feather name="check" size={18} color="#FFFFFF" style={{ marginRight: Spacing.sm }} />
+            <ThemedText type="body" style={{ color: "#FFFFFF", fontWeight: "600" }}>
+              Mark as Settled · ${absOwed.toFixed(2)}
+            </ThemedText>
+          </Button>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -190,38 +252,65 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingTop: 60,
-    paddingBottom: Spacing.lg,
+    paddingBottom: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    borderBottomLeftRadius: BorderRadius.xl,
-    borderBottomRightRadius: BorderRadius.xl,
   },
   closeButton: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
   },
-  headerTitle: {
-    color: "#FFFFFF",
-  },
   headerPlaceholder: {
+    width: 36,
+  },
+  summaryCard: {
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    padding: Spacing.md,
+  },
+  summaryContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+  },
+  guardianIcon: {
     width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  summaryText: {
+    flex: 1,
+    gap: 2,
+  },
+  amountBadge: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
   },
   tabs: {
     flexDirection: "row",
     borderBottomWidth: 1,
-    borderBottomColor: "#E5E5EA",
+    marginHorizontal: Spacing.lg,
   },
   tab: {
     flex: 1,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     paddingVertical: Spacing.md,
     borderBottomWidth: 2,
     borderBottomColor: "transparent",
+    gap: Spacing.xs,
   },
-  activeTab: {
-    borderBottomWidth: 2,
+  badge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 6,
   },
   content: {
     flex: 1,
@@ -246,39 +335,46 @@ const styles = StyleSheet.create({
   },
   expenseInfo: {
     flex: 1,
+    gap: 2,
   },
   recordItem: {
     flexDirection: "row",
     alignItems: "center",
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
+    gap: Spacing.md,
+  },
+  recordIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: BorderRadius.sm,
+    alignItems: "center",
+    justifyContent: "center",
   },
   recordInfo: {
     flex: 1,
+    gap: 2,
   },
   emptyState: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: Spacing["5xl"],
+    padding: Spacing.xl,
   },
-  footer: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.lg,
-    gap: Spacing.md,
-  },
-  checkButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: "#E5E5EA",
+  emptyIconContainer: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     alignItems: "center",
     justifyContent: "center",
   },
+  footer: {
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
+  },
   confirmButton: {
-    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

@@ -272,6 +272,7 @@ export function DreamGuardian({ onAddToGoal }: DreamGuardianProps) {
 const styles = StyleSheet.create({
   container: {
     padding: Spacing.lg,
+    marginBottom: Spacing.lg,
   },
   header: {
     flexDirection: "row",
