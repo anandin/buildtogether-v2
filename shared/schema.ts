@@ -7,8 +7,35 @@ export const users = pgTable("users", {
   id: varchar("id")
     .primaryKey()
     .default(sql`gen_random_uuid()`),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+  email: text("email").unique(),
+  name: text("name"),
+  appleId: text("apple_id").unique(),
+  googleId: text("google_id").unique(),
+  coupleId: varchar("couple_id"),
+  partnerRole: text("partner_role"),
+  avatarUrl: text("avatar_url"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  lastLoginAt: timestamp("last_login_at"),
+});
+
+export const sessions = pgTable("sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const partnerInvites = pgTable("partner_invites", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull().references(() => couples.id, { onDelete: "cascade" }),
+  inviteCode: text("invite_code").notNull().unique(),
+  invitedBy: varchar("invited_by").notNull().references(() => users.id),
+  invitedEmail: text("invited_email"),
+  status: text("status").notNull().default("pending"),
+  expiresAt: timestamp("expires_at").notNull(),
+  acceptedBy: varchar("accepted_by"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const partners = pgTable("partners", {
@@ -161,9 +188,47 @@ export const goalContributionsRelations = relations(goalContributions, ({ one })
   }),
 }));
 
-export const insertUserSchema = createInsertSchema(users).pick({
-  username: true,
-  password: true,
+export const usersRelations = relations(users, ({ one, many }) => ({
+  sessions: many(sessions),
+  couple: one(couples, {
+    fields: [users.coupleId],
+    references: [couples.id],
+  }),
+}));
+
+export const sessionsRelations = relations(sessions, ({ one }) => ({
+  user: one(users, {
+    fields: [sessions.userId],
+    references: [users.id],
+  }),
+}));
+
+export const partnerInvitesRelations = relations(partnerInvites, ({ one }) => ({
+  couple: one(couples, {
+    fields: [partnerInvites.coupleId],
+    references: [couples.id],
+  }),
+  inviter: one(users, {
+    fields: [partnerInvites.invitedBy],
+    references: [users.id],
+  }),
+}));
+
+export const insertUserSchema = createInsertSchema(users).omit({
+  id: true,
+  createdAt: true,
+  lastLoginAt: true,
+});
+
+export const insertSessionSchema = createInsertSchema(sessions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertPartnerInviteSchema = createInsertSchema(partnerInvites).omit({
+  id: true,
+  createdAt: true,
+  acceptedBy: true,
 });
 
 export const insertExpenseSchema = createInsertSchema(expenses).omit({
@@ -183,7 +248,11 @@ export const insertCategoryBudgetSchema = createInsertSchema(categoryBudgets).om
 });
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
+export type InsertSession = z.infer<typeof insertSessionSchema>;
+export type InsertPartnerInvite = z.infer<typeof insertPartnerInviteSchema>;
 export type User = typeof users.$inferSelect;
+export type Session = typeof sessions.$inferSelect;
+export type PartnerInvite = typeof partnerInvites.$inferSelect;
 export type Expense = typeof expenses.$inferSelect;
 export type Goal = typeof goals.$inferSelect;
 export type GoalContribution = typeof goalContributions.$inferSelect;

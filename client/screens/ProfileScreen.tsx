@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from "react";
-import { View, StyleSheet, Image, TextInput, Pressable } from "react-native";
+import { View, StyleSheet, Image, TextInput, Pressable, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, CommonActions } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -14,24 +14,29 @@ import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
 import { getCurrentMonthExpenses, getTotalSpent, getEffectiveBudget } from "@/lib/storage";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
+import type { RootStackParamList } from "@/navigation/RootStackNavigator";
 
 const avatarImages: Record<string, any> = {
   "avatar-preset-1": require("../../assets/images/avatar-preset-1.png"),
   "avatar-preset-2": require("../../assets/images/avatar-preset-2.png"),
 };
 
-type NavigationProp = NativeStackNavigationProp<ProfileStackParamList>;
+type ProfileNavigationProp = NativeStackNavigationProp<ProfileStackParamList>;
+type RootNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
   const tabBarHeight = useBottomTabBarHeight();
-  const navigation = useNavigation<NavigationProp>();
+  const navigation = useNavigation<ProfileNavigationProp>();
+  const rootNavigation = useNavigation<RootNavigationProp>();
   const { theme } = useTheme();
   const { data, updatePartnerName, setBudget } = useApp();
+  const { user, signOut } = useAuth();
 
   const [editingPartner, setEditingPartner] = useState<"partner1" | "partner2" | null>(null);
   const [partnerName, setPartnerName] = useState("");
@@ -66,6 +71,24 @@ export default function ProfileScreen() {
       await setBudget(amount);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
+  };
+
+  const handleSignOut = () => {
+    Alert.alert(
+      "Sign Out",
+      "Are you sure you want to sign out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Sign Out",
+          style: "destructive",
+          onPress: async () => {
+            await signOut();
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -283,6 +306,89 @@ export default function ProfileScreen() {
           <Feather name="chevron-right" size={20} color={theme.textSecondary} />
         </Pressable>
       </Card>
+
+      <Card style={styles.settingsCard}>
+        <ThemedText type="heading" style={styles.sectionTitle}>
+          Partner
+        </ThemedText>
+        
+        <Pressable 
+          style={styles.settingRow}
+          onPress={() => rootNavigation.navigate("PartnerInvite")}
+        >
+          <View style={[styles.settingIcon, { backgroundColor: theme.primary + "20" }]}>
+            <Feather name="user-plus" size={18} color={theme.primary} />
+          </View>
+          <View style={styles.settingContent}>
+            <ThemedText type="body">Connect Partner</ThemedText>
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              Invite your partner or enter their code
+            </ThemedText>
+          </View>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
+      </Card>
+
+      <Card style={styles.settingsCard}>
+        <ThemedText type="heading" style={styles.sectionTitle}>
+          Legal
+        </ThemedText>
+        
+        <Pressable 
+          style={styles.settingRow}
+          onPress={() => rootNavigation.navigate("PrivacyPolicy")}
+        >
+          <View style={[styles.settingIcon, { backgroundColor: "#8B5CF6" + "20" }]}>
+            <Feather name="shield" size={18} color="#8B5CF6" />
+          </View>
+          <View style={styles.settingContent}>
+            <ThemedText type="body">Privacy Policy</ThemedText>
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              How we protect your data
+            </ThemedText>
+          </View>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
+
+        <Pressable 
+          style={styles.settingRow}
+          onPress={() => rootNavigation.navigate("TermsOfService")}
+        >
+          <View style={[styles.settingIcon, { backgroundColor: "#0EA5E9" + "20" }]}>
+            <Feather name="file-text" size={18} color="#0EA5E9" />
+          </View>
+          <View style={styles.settingContent}>
+            <ThemedText type="body">Terms of Service</ThemedText>
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              Usage guidelines and policies
+            </ThemedText>
+          </View>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
+      </Card>
+
+      {user ? (
+        <Card style={styles.settingsCard}>
+          <ThemedText type="heading" style={styles.sectionTitle}>
+            Account
+          </ThemedText>
+          
+          <Pressable 
+            style={styles.settingRow}
+            onPress={handleSignOut}
+          >
+            <View style={[styles.settingIcon, { backgroundColor: theme.error + "20" }]}>
+              <Feather name="log-out" size={18} color={theme.error} />
+            </View>
+            <View style={styles.settingContent}>
+              <ThemedText type="body" style={{ color: theme.error }}>Sign Out</ThemedText>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                {user.email || "Signed in with Apple"}
+              </ThemedText>
+            </View>
+          </Pressable>
+        </Card>
+      ) : null}
 
       <ThemedText
         type="small"

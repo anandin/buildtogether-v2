@@ -10,6 +10,9 @@ import ExpenseDetailScreen from "@/screens/ExpenseDetailScreen";
 import SettleUpScreen from "@/screens/SettleUpScreen";
 import { FutureTimelineScreen } from "@/screens/FutureTimelineScreen";
 import { BillSplitSettingsScreen } from "@/screens/BillSplitSettingsScreen";
+import PartnerInviteScreen from "@/screens/PartnerInviteScreen";
+import PrivacyPolicyScreen from "@/screens/PrivacyPolicyScreen";
+import TermsOfServiceScreen from "@/screens/TermsOfServiceScreen";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 
 export type RootStackParamList = {
@@ -17,12 +20,15 @@ export type RootStackParamList = {
   AddExpense: { prefilled?: { amount?: number; description?: string; category?: string; receiptImage?: string } } | undefined;
   ScanReceipt: undefined;
   AddDream: undefined;
-  DreamDetail: { dreamId: string };
+  DreamDetail: { dreamId?: string; goalId?: string; suggestedAmount?: number; fromCoach?: boolean };
   FutureTimeline: undefined;
   SetBudget: undefined;
   ExpenseDetail: { expenseId: string };
   SettleUp: undefined;
   BillSplitSettings: undefined;
+  PartnerInvite: undefined;
+  PrivacyPolicy: undefined;
+  TermsOfService: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -103,6 +109,27 @@ export default function RootStackNavigator() {
         component={BillSplitSettingsScreen}
         options={{
           headerTitle: "Bill Splitting",
+        }}
+      />
+      <Stack.Screen
+        name="PartnerInvite"
+        component={PartnerInviteScreen}
+        options={{
+          headerTitle: "Connect Partner",
+        }}
+      />
+      <Stack.Screen
+        name="PrivacyPolicy"
+        component={PrivacyPolicyScreen}
+        options={{
+          headerTitle: "Privacy Policy",
+        }}
+      />
+      <Stack.Screen
+        name="TermsOfService"
+        component={TermsOfServiceScreen}
+        options={{
+          headerTitle: "Terms of Service",
         }}
       />
     </Stack.Navigator>

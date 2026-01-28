@@ -14,8 +14,24 @@ import {
   lineItems,
   spendingBenchmarks,
   cachedInsights,
+  users,
+  sessions,
+  partnerInvites,
 } from "@shared/schema";
 import crypto from "crypto";
+
+function generateInviteCode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+function generateSessionToken(): string {
+  return crypto.randomBytes(32).toString("hex");
+}
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -23,6 +39,254 @@ const openai = new OpenAI({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // ==================== AUTHENTICATION ENDPOINTS ====================
+
+  // Apple Sign-In - verify identity token and create/update user
+  app.post("/api/auth/apple", async (req, res) => {
+    try {
+      const { appleId, email, fullName, identityToken } = req.body;
+
+      if (!appleId) {
+        return res.status(400).json({ error: "Apple ID is required" });
+      }
+
+      // Check if user exists by Apple ID
+      let user = await db.query.users.findFirst({
+        where: eq(users.appleId, appleId),
+      });
+
+      if (user) {
+        // Update last login
+        await db.update(users)
+          .set({ lastLoginAt: new Date() })
+          .where(eq(users.id, user.id));
+      } else {
+        // Create new user and couple
+        const [newCouple] = await db.insert(couples).values({
+          partner1Name: fullName || "You",
+          partner2Name: "Partner",
+          hasCompletedOnboarding: false,
+        }).returning();
+
+        const [newUser] = await db.insert(users).values({
+          appleId,
+          email: email || null,
+          name: fullName || null,
+          coupleId: newCouple.id,
+          partnerRole: "partner1",
+        }).returning();
+
+        user = newUser;
+      }
+
+      // Create session
+      const token = generateSessionToken();
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+      await db.insert(sessions).values({
+        userId: user.id,
+        token,
+        expiresAt,
+      });
+
+      res.json({
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          coupleId: user.coupleId,
+          partnerRole: user.partnerRole,
+        },
+        token,
+        expiresAt: expiresAt.toISOString(),
+      });
+    } catch (error: any) {
+      console.error("Apple auth error:", error);
+      res.status(500).json({ error: error.message || "Authentication failed" });
+    }
+  });
+
+  // Validate session token
+  app.get("/api/auth/session", async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith("Bearer ")) {
+        return res.status(401).json({ error: "No token provided" });
+      }
+
+      const token = authHeader.split(" ")[1];
+      const session = await db.query.sessions.findFirst({
+        where: eq(sessions.token, token),
+      });
+
+      if (!session || new Date(session.expiresAt) < new Date()) {
+        return res.status(401).json({ error: "Invalid or expired session" });
+      }
+
+      const user = await db.query.users.findFirst({
+        where: eq(users.id, session.userId),
+      });
+
+      if (!user) {
+        return res.status(401).json({ error: "User not found" });
+      }
+
+      res.json({
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          coupleId: user.coupleId,
+          partnerRole: user.partnerRole,
+        },
+      });
+    } catch (error: any) {
+      console.error("Session validation error:", error);
+      res.status(500).json({ error: "Session validation failed" });
+    }
+  });
+
+  // Logout - delete session
+  app.post("/api/auth/logout", async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith("Bearer ")) {
+        const token = authHeader.split(" ")[1];
+        await db.delete(sessions).where(eq(sessions.token, token));
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Logout error:", error);
+      res.status(500).json({ error: "Logout failed" });
+    }
+  });
+
+  // Create partner invite
+  app.post("/api/invite/create", async (req, res) => {
+    try {
+      const { coupleId, userId, email } = req.body;
+
+      if (!coupleId || !userId) {
+        return res.status(400).json({ error: "Couple ID and user ID required" });
+      }
+
+      // Generate unique invite code
+      let inviteCode = generateInviteCode();
+      let attempts = 0;
+      while (attempts < 10) {
+        const existing = await db.query.partnerInvites.findFirst({
+          where: eq(partnerInvites.inviteCode, inviteCode),
+        });
+        if (!existing) break;
+        inviteCode = generateInviteCode();
+        attempts++;
+      }
+
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+      const [invite] = await db.insert(partnerInvites).values({
+        coupleId,
+        invitedBy: userId,
+        inviteCode,
+        invitedEmail: email || null,
+        expiresAt,
+      }).returning();
+
+      res.json({
+        inviteCode: invite.inviteCode,
+        expiresAt: invite.expiresAt,
+      });
+    } catch (error: any) {
+      console.error("Create invite error:", error);
+      res.status(500).json({ error: "Failed to create invite" });
+    }
+  });
+
+  // Accept partner invite
+  app.post("/api/invite/accept", async (req, res) => {
+    try {
+      const { inviteCode, userId } = req.body;
+
+      if (!inviteCode || !userId) {
+        return res.status(400).json({ error: "Invite code and user ID required" });
+      }
+
+      const invite = await db.query.partnerInvites.findFirst({
+        where: and(
+          eq(partnerInvites.inviteCode, inviteCode.toUpperCase()),
+          eq(partnerInvites.status, "pending")
+        ),
+      });
+
+      if (!invite) {
+        return res.status(404).json({ error: "Invite not found or already used" });
+      }
+
+      if (new Date(invite.expiresAt) < new Date()) {
+        return res.status(400).json({ error: "Invite has expired" });
+      }
+
+      // Update user to join the couple
+      await db.update(users)
+        .set({ 
+          coupleId: invite.coupleId, 
+          partnerRole: "partner2" 
+        })
+        .where(eq(users.id, userId));
+
+      // Mark invite as accepted
+      await db.update(partnerInvites)
+        .set({ 
+          status: "accepted", 
+          acceptedBy: userId 
+        })
+        .where(eq(partnerInvites.id, invite.id));
+
+      // Update couple connected status
+      await db.update(couples)
+        .set({ connectedSince: new Date().toISOString() })
+        .where(eq(couples.id, invite.coupleId));
+
+      res.json({ 
+        success: true, 
+        coupleId: invite.coupleId,
+        message: "Successfully connected with your partner!" 
+      });
+    } catch (error: any) {
+      console.error("Accept invite error:", error);
+      res.status(500).json({ error: "Failed to accept invite" });
+    }
+  });
+
+  // Get current invite for a couple
+  app.get("/api/invite/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+
+      const invite = await db.query.partnerInvites.findFirst({
+        where: and(
+          eq(partnerInvites.coupleId, coupleId),
+          eq(partnerInvites.status, "pending")
+        ),
+      });
+
+      if (!invite || new Date(invite.expiresAt) < new Date()) {
+        return res.json({ hasActiveInvite: false });
+      }
+
+      res.json({
+        hasActiveInvite: true,
+        inviteCode: invite.inviteCode,
+        expiresAt: invite.expiresAt,
+      });
+    } catch (error: any) {
+      console.error("Get invite error:", error);
+      res.status(500).json({ error: "Failed to get invite" });
+    }
+  });
+
+  // ==================== EXISTING ENDPOINTS ====================
+
   // Receipt scanning endpoint - enhanced with line item extraction
   app.post("/api/scan-receipt", async (req, res) => {
     try {

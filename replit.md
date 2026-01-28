@@ -27,6 +27,11 @@ Preferred communication style: Simple, everyday language.
 - Each tab has its own stack navigator for nested screens
 
 **Recent Updates (Jan 2026)**:
+- **Apple Sign-In Authentication**: Full authentication flow with Apple Sign-In, JWT session tokens, and secure token storage (SecureStore on mobile, AsyncStorage on web)
+- **Partner Linking System**: 6-character invite codes with 7-day expiry for connecting partners to shared couple accounts
+- **AuthContext Provider**: App-wide authentication state management with automatic session refresh
+- **Legal Compliance Pages**: Privacy Policy and Terms of Service screens for App Store readiness
+- **Settings Screen Enhancements**: New Partner section (Connect Partner), Legal section (Privacy/Terms), and Account section (Sign Out)
 - **Cloud Storage Migration**: Moved from local AsyncStorage to PostgreSQL database for cross-device sync
 - **Cloud API Endpoints**: Full REST API for expenses, goals, budgets, categories, settlements, and couple data
 - **Offline Support**: Local cache fallback when network unavailable, syncs on reconnect
