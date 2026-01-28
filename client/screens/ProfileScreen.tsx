@@ -211,6 +211,22 @@ export default function ProfileScreen() {
         
         <Pressable 
           style={styles.settingRow}
+          onPress={() => navigation.navigate("FamilyProfile")}
+        >
+          <View style={[styles.settingIcon, { backgroundColor: "#6366F1" + "20" }]}>
+            <Feather name="users" size={18} color="#6366F1" />
+          </View>
+          <View style={styles.settingContent}>
+            <ThemedText type="body">Family Profile</ThemedText>
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              Family size for personalized insights
+            </ThemedText>
+          </View>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
+
+        <Pressable 
+          style={styles.settingRow}
           onPress={() => navigation.navigate("BillSplitSettings")}
         >
           <View style={[styles.settingIcon, { backgroundColor: theme.success + "20" }]}>

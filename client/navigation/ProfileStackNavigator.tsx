@@ -6,6 +6,7 @@ import BudgetSettingsScreen from "@/screens/BudgetSettingsScreen";
 import { BillSplitSettingsScreen } from "@/screens/BillSplitSettingsScreen";
 import NotificationSettingsScreen from "@/screens/NotificationSettingsScreen";
 import AddCategoryScreen from "@/screens/AddCategoryScreen";
+import FamilyProfileScreen from "@/screens/FamilyProfileScreen";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 
 export type ProfileStackParamList = {
@@ -14,6 +15,7 @@ export type ProfileStackParamList = {
   BillSplitSettings: undefined;
   NotificationSettings: undefined;
   AddCategory: undefined;
+  FamilyProfile: undefined;
 };
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
@@ -56,6 +58,13 @@ export default function ProfileStackNavigator() {
         component={AddCategoryScreen}
         options={{
           title: "Add Category",
+        }}
+      />
+      <Stack.Screen
+        name="FamilyProfile"
+        component={FamilyProfileScreen}
+        options={{
+          title: "Family Profile",
         }}
       />
     </Stack.Navigator>
