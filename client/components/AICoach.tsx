@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { View, StyleSheet, Pressable, ActivityIndicator } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { useNavigation } from "@react-navigation/native";
 import Animated, { FadeInDown, FadeOutUp } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 
@@ -18,6 +19,7 @@ interface AICoachProps {
 
 export function AICoach({ onViewDetails }: AICoachProps) {
   const { theme } = useTheme();
+  const navigation = useNavigation<any>();
   const { data, addAIInsight, dismissInsight } = useApp();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +76,27 @@ export function AICoach({ onViewDetails }: AICoachProps) {
   const handleDismiss = async (id: string) => {
     await dismissInsight(id);
     Haptics.selectionAsync();
+  };
+
+  const handleAction = (insight: AIInsight) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    if (insight.actionType === "add_to_goal") {
+      const firstGoal = data?.goals?.[0];
+      if (firstGoal) {
+        navigation.navigate("DreamDetail", { 
+          goalId: firstGoal.id,
+          suggestedAmount: insight.amount || 0,
+          fromCoach: true 
+        });
+      } else {
+        navigation.navigate("Dreams");
+      }
+    } else if (insight.actionType === "view_category" && insight.category) {
+      navigation.navigate("Expenses");
+    } else if (onViewDetails) {
+      onViewDetails(insight);
+    }
   };
 
   const getInsightIcon = (type: AIInsight["type"]): keyof typeof Feather.glyphMap => {
@@ -178,13 +201,13 @@ export function AICoach({ onViewDetails }: AICoachProps) {
               </Pressable>
             </View>
 
-            {insight.actionText ? (
+            {insight.actionText || insight.actionType === "add_to_goal" ? (
               <Pressable
-                onPress={() => onViewDetails?.(insight)}
+                onPress={() => handleAction(insight)}
                 style={[styles.actionButton, { backgroundColor: theme.primary + "10" }]}
               >
-                <ThemedText type="small" style={{ color: theme.primary }}>
-                  {insight.actionText}
+                <ThemedText type="small" style={{ color: theme.primary, fontWeight: "600" }}>
+                  {insight.actionText || (insight.amount ? `Move $${insight.amount} to Dream` : "Add to Dream")}
                 </ThemedText>
                 <Feather name="arrow-right" size={14} color={theme.primary} />
               </Pressable>

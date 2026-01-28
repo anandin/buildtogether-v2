@@ -236,8 +236,9 @@ Respond in JSON format:
       "message": "The insight message",
       "priority": "low" | "medium" | "high",
       "category": "optional category name if relevant",
-      "amount": optional number if relevant,
-      "actionType": "add_to_goal" | "view_category" | "review_spending" | "dismiss"
+      "amount": optional number if relevant (use this for savings amounts),
+      "actionType": "add_to_goal" | "view_category" | "review_spending" | "dismiss",
+      "actionText": "Short CTA like 'Move $50 to Dream' or 'View Details'"
     }
   ]
 }`,

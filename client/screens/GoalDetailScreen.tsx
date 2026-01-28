@@ -39,11 +39,16 @@ export default function GoalDetailScreen() {
   const { data, addGoalContribution, deleteGoal } = useApp();
 
   const dreamId = route.params?.dreamId || route.params?.goalId;
+  const suggestedAmount = route.params?.suggestedAmount;
+  const fromCoach = route.params?.fromCoach;
   const goal = data?.goals.find((g) => g.id === dreamId);
 
-  const [contributionAmount, setContributionAmount] = useState("");
+  const [contributionAmount, setContributionAmount] = useState(
+    suggestedAmount ? suggestedAmount.toString() : ""
+  );
   const [contributor, setContributor] = useState<"partner1" | "partner2">("partner1");
   const [adding, setAdding] = useState(false);
+  const [showCoachBanner, setShowCoachBanner] = useState(fromCoach && suggestedAmount > 0);
 
   if (!goal) {
     return (
@@ -153,6 +158,27 @@ export default function GoalDetailScreen() {
         </View>
         <ThemedText type="h3">{goal.name}</ThemedText>
       </View>
+
+      {showCoachBanner ? (
+        <Card style={StyleSheet.flatten([styles.coachBanner, { borderColor: theme.primary + "40" }])}>
+          <View style={styles.coachBannerContent}>
+            <View style={[styles.coachIcon, { backgroundColor: theme.primary + "15" }]}>
+              <Feather name="cpu" size={18} color={theme.primary} />
+            </View>
+            <View style={styles.coachText}>
+              <ThemedText type="small" style={{ fontWeight: "600" }}>
+                AI Coach Suggestion
+              </ThemedText>
+              <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+                Based on your budget savings, ${suggestedAmount} can go toward this dream
+              </ThemedText>
+            </View>
+            <Pressable onPress={() => setShowCoachBanner(false)} hitSlop={8}>
+              <Feather name="x" size={16} color={theme.textSecondary} />
+            </Pressable>
+          </View>
+        </Card>
+      ) : null}
 
       <View style={styles.progressSection}>
         <View style={styles.progressRing}>
@@ -505,5 +531,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: Spacing.lg,
+  },
+  coachBanner: {
+    marginBottom: Spacing.lg,
+    borderWidth: 1,
+  },
+  coachBannerContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  coachIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  coachText: {
+    flex: 1,
+    gap: 2,
   },
 });
