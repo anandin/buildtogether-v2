@@ -13,7 +13,9 @@ import {
   settlements,
   lineItems,
   spendingBenchmarks,
+  cachedInsights,
 } from "@shared/schema";
+import crypto from "crypto";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -509,6 +511,20 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
     }
   });
 
+  // Get line items for an expense
+  app.get("/api/expenses/:coupleId/:expenseId/line-items", async (req, res) => {
+    try {
+      const { expenseId } = req.params;
+      const result = await db.select().from(lineItems)
+        .where(eq(lineItems.expenseId, expenseId))
+        .orderBy(lineItems.createdAt);
+      res.json(result);
+    } catch (error: any) {
+      console.error("Get line items error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Add expense
   app.post("/api/expenses/:coupleId", async (req, res) => {
     try {
@@ -926,15 +942,60 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
     }
   });
 
-  // AI-powered spending insights with benchmarks
+  // AI-powered spending insights with benchmarks and caching
   app.post("/api/spending-insights/:coupleId", async (req, res) => {
     try {
       const { coupleId } = req.params;
+      const forceRefresh = req.body?.forceRefresh === true;
       
       const [couple] = await db.select().from(couples).where(eq(couples.id, coupleId));
       const expensesData = await db.select().from(expenses)
         .where(eq(expenses.coupleId, coupleId))
         .orderBy(desc(expenses.createdAt));
+      
+      // Calculate time context for projections
+      const now = new Date();
+      const dayOfMonth = now.getDate();
+      const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+      const monthProgress = dayOfMonth / daysInMonth;
+      
+      // Filter current month expenses for projection
+      const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const currentMonthExpenses = expensesData.filter(e => new Date(e.date) >= currentMonthStart);
+      const currentMonthTotal = currentMonthExpenses.reduce((sum, e) => sum + e.amount, 0);
+      
+      // Project monthly spending based on current pace
+      const projectedMonthlyTotal = dayOfMonth > 0 ? (currentMonthTotal / dayOfMonth) * daysInMonth : 0;
+      
+      // Create data hash for caching
+      const dataForHash = {
+        expenseCount: expensesData.length,
+        currentMonthTotal: Math.round(currentMonthTotal * 100),
+        dayOfMonth,
+        familyProfile: {
+          adults: couple?.numAdults,
+          kids: (couple?.numKidsUnder5 || 0) + (couple?.numKids5to12 || 0) + (couple?.numTeens || 0),
+        }
+      };
+      const dataHash = crypto.createHash('md5').update(JSON.stringify(dataForHash)).digest('hex');
+      
+      // Check cache first (unless force refresh)
+      if (!forceRefresh) {
+        const [cached] = await db.select().from(cachedInsights)
+          .where(eq(cachedInsights.coupleId, coupleId));
+        
+        if (cached && cached.dataHash === dataHash && new Date(cached.expiresAt) > now) {
+          return res.json({
+            overallHealthScore: cached.healthScore,
+            insights: cached.insights,
+            spendingBreakdown: cached.spendingBreakdown,
+            monthlyProjected: cached.monthlyProjected,
+            dayOfMonth: cached.dayOfMonth,
+            daysInMonth: cached.daysInMonth,
+            cached: true,
+          });
+        }
+      }
       
       const familySize = (couple?.numAdults || 2) + (couple?.numKidsUnder5 || 0) + (couple?.numKids5to12 || 0) + (couple?.numTeens || 0);
       const hasKids = (couple?.numKidsUnder5 || 0) + (couple?.numKids5to12 || 0) + (couple?.numTeens || 0) > 0;
@@ -947,9 +1008,16 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
         })
       );
       
-      const spendingByCategory: Record<string, number> = {};
-      expensesData.forEach(e => {
-        spendingByCategory[e.category] = (spendingByCategory[e.category] || 0) + e.amount;
+      // Calculate spending by category for current month only
+      const currentMonthByCategory: Record<string, number> = {};
+      currentMonthExpenses.forEach(e => {
+        currentMonthByCategory[e.category] = (currentMonthByCategory[e.category] || 0) + e.amount;
+      });
+      
+      // Project each category to full month
+      const projectedByCategory: Record<string, number> = {};
+      Object.entries(currentMonthByCategory).forEach(([cat, amount]) => {
+        projectedByCategory[cat] = dayOfMonth > 0 ? Math.round((amount / dayOfMonth) * daysInMonth) : 0;
       });
       
       const benchmarksData = await db.select().from(spendingBenchmarks)
@@ -962,6 +1030,14 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
             role: "system",
             content: `You are a friendly financial wellness coach for couples. Analyze their spending patterns and provide gentle, supportive insights.
 
+CRITICAL CONTEXT - TIME-AWARE ANALYSIS:
+- Today is day ${dayOfMonth} of ${daysInMonth} days in this month (${Math.round(monthProgress * 100)}% through the month)
+- Current month actual spending: $${currentMonthTotal.toFixed(2)}
+- Projected full-month spending at current pace: $${projectedMonthlyTotal.toFixed(2)}
+- When comparing to monthly benchmarks, ALWAYS use the projected monthly amount, NOT the actual spend so far
+- If we're early in the month (< 50%), be especially careful about projections - mention data is limited
+- Express comparisons as "On track to spend $X this month" or "At current pace, you'll spend $X"
+
 IMPORTANT PRINCIPLES:
 - Never shame spending. People work hard and deserve to enjoy their money.
 - Use social proof: "Families like yours typically spend..." 
@@ -969,6 +1045,7 @@ IMPORTANT PRINCIPLES:
 - If they have kids, normalize snacks and treats
 - Celebrate mindful choices
 - Only flag truly unusual spending compared to benchmarks
+- If spending data is limited (few expenses), acknowledge this and be conservative
 
 Family context:
 - Family size: ${familySize} people
@@ -986,17 +1063,9 @@ Respond in JSON:
       "type": "celebration" | "observation" | "suggestion",
       "category": "string",
       "title": "string (short, friendly)",
-      "message": "string (supportive, max 2 sentences)",
+      "message": "string (supportive, max 2 sentences, reference projected monthly when comparing to benchmarks)",
       "benchmarkComparison": "below" | "average" | "above" | null,
       "potentialSavings": number | null
-    }
-  ],
-  "frequentItems": [
-    {
-      "name": "string",
-      "frequency": "weekly" | "biweekly" | "monthly",
-      "totalSpent": number,
-      "suggestion": "string" | null
     }
   ],
   "spendingBreakdown": {
@@ -1010,11 +1079,17 @@ Respond in JSON:
             role: "user",
             content: `Analyze this spending data:
 
-Monthly spending by category: ${JSON.stringify(spendingByCategory)}
+Current month spending (actual so far): ${JSON.stringify(currentMonthByCategory)}
+Projected full-month spending at current pace: ${JSON.stringify(projectedByCategory)}
+Number of expenses this month: ${currentMonthExpenses.length}
 
-Benchmarks for similar families: ${JSON.stringify(benchmarksData)}
+Monthly benchmarks for similar families: ${JSON.stringify(benchmarksData.map(b => ({
+              category: b.category,
+              monthlyAverage: b.monthlyAverage,
+              range: `$${b.lowRange}-$${b.highRange}`
+            })))}
 
-Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 20).map(({ expense, items }) => ({
+Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(({ expense, items }) => ({
               merchant: expense.merchant,
               category: expense.category,
               items: items.map(i => ({ name: i.name, price: i.totalPrice, classification: i.classification }))
@@ -1029,7 +1104,30 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 20).map(
         const jsonMatch = content.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           const insights = JSON.parse(jsonMatch[0]);
-          return res.json(insights);
+          
+          // Cache the results (expires in 6 hours or when data changes)
+          const expiresAt = new Date(now.getTime() + 6 * 60 * 60 * 1000);
+          
+          await db.delete(cachedInsights).where(eq(cachedInsights.coupleId, coupleId));
+          await db.insert(cachedInsights).values({
+            coupleId,
+            dataHash,
+            insights: insights.insights,
+            healthScore: insights.overallHealthScore,
+            spendingBreakdown: insights.spendingBreakdown,
+            monthlyProjected: projectedMonthlyTotal,
+            daysInMonth,
+            dayOfMonth,
+            expiresAt,
+          });
+          
+          return res.json({
+            ...insights,
+            monthlyProjected: projectedMonthlyTotal,
+            dayOfMonth,
+            daysInMonth,
+            cached: false,
+          });
         }
       }
       

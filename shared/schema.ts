@@ -136,6 +136,20 @@ export const spendingBenchmarks = pgTable("spending_benchmarks", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const cachedInsights = pgTable("cached_insights", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull().unique(),
+  dataHash: text("data_hash").notNull(),
+  insights: jsonb("insights").notNull(),
+  healthScore: integer("health_score").notNull(),
+  spendingBreakdown: jsonb("spending_breakdown").notNull(),
+  monthlyProjected: real("monthly_projected"),
+  daysInMonth: integer("days_in_month"),
+  dayOfMonth: integer("day_of_month"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  expiresAt: timestamp("expires_at").notNull(),
+});
+
 export const goalsRelations = relations(goals, ({ many }) => ({
   contributions: many(goalContributions),
 }));
@@ -179,3 +193,4 @@ export type Settlement = typeof settlements.$inferSelect;
 export type Couple = typeof couples.$inferSelect;
 export type LineItem = typeof lineItems.$inferSelect;
 export type SpendingBenchmark = typeof spendingBenchmarks.$inferSelect;
+export type CachedInsight = typeof cachedInsights.$inferSelect;

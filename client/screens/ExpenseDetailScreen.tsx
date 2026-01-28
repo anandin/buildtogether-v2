@@ -1,18 +1,53 @@
-import React from "react";
-import { View, StyleSheet, ScrollView, Pressable, Image } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, StyleSheet, ScrollView, Pressable, Image, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { format } from "date-fns";
 import * as Haptics from "expo-haptics";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
+import { apiRequest } from "@/lib/query-client";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS } from "@/types";
+
+const COUPLE_ID_KEY = "@couple_id";
+
+interface LineItem {
+  id: string;
+  name: string;
+  quantity: number;
+  totalPrice: number;
+  classification: string;
+  isEssential: boolean;
+}
+
+const CLASSIFICATION_COLORS: Record<string, string> = {
+  staple: "#10B981",
+  household: "#6366F1",
+  beverage: "#3B82F6",
+  treat: "#F59E0B",
+  prepared: "#8B5CF6",
+  luxury: "#EC4899",
+  kids: "#14B8A6",
+  other: "#6B7280",
+};
+
+const CLASSIFICATION_ICONS: Record<string, string> = {
+  staple: "check-circle",
+  household: "home",
+  beverage: "coffee",
+  treat: "star",
+  prepared: "package",
+  luxury: "award",
+  kids: "heart",
+  other: "circle",
+};
 
 export default function ExpenseDetailScreen() {
   const insets = useSafeAreaInsets();
@@ -21,9 +56,32 @@ export default function ExpenseDetailScreen() {
   const route = useRoute<any>();
   const { theme } = useTheme();
   const { data, deleteExpense } = useApp();
+  
+  const [lineItemsData, setLineItemsData] = useState<LineItem[]>([]);
+  const [loadingItems, setLoadingItems] = useState(false);
 
   const expenseId = route.params?.expenseId;
   const expense = data?.expenses.find((e) => e.id === expenseId);
+
+  useEffect(() => {
+    const fetchLineItems = async () => {
+      if (!expenseId) return;
+      setLoadingItems(true);
+      try {
+        const coupleId = await AsyncStorage.getItem(COUPLE_ID_KEY);
+        if (coupleId) {
+          const response = await apiRequest("GET", `/api/expenses/${coupleId}/${expenseId}/line-items`);
+          const items = await response.json();
+          setLineItemsData(items);
+        }
+      } catch (err) {
+        console.error("Failed to fetch line items:", err);
+      } finally {
+        setLoadingItems(false);
+      }
+    };
+    fetchLineItems();
+  }, [expenseId]);
 
   if (!expense) {
     return (
@@ -106,6 +164,72 @@ export default function ExpenseDetailScreen() {
           {expense.note || expense.description}
         </ThemedText>
       </Card>
+
+      {(loadingItems || lineItemsData.length > 0) ? (
+        <Card style={styles.lineItemsCard}>
+          <View style={styles.lineItemsHeader}>
+            <Feather name="list" size={18} color={theme.primary} />
+            <ThemedText type="body" style={{ fontWeight: "600", marginLeft: Spacing.sm }}>
+              Items Breakdown
+            </ThemedText>
+          </View>
+          
+          {loadingItems ? (
+            <ActivityIndicator size="small" color={theme.primary} style={{ padding: Spacing.lg }} />
+          ) : (
+            <>
+              {lineItemsData.map((item, index) => {
+                const itemColor = CLASSIFICATION_COLORS[item.classification] || CLASSIFICATION_COLORS.other;
+                const itemIcon = CLASSIFICATION_ICONS[item.classification] || CLASSIFICATION_ICONS.other;
+                return (
+                  <View key={item.id || index} style={styles.lineItemRow}>
+                    <View style={[styles.lineItemIcon, { backgroundColor: itemColor + "20" }]}>
+                      <Feather name={itemIcon as any} size={14} color={itemColor} />
+                    </View>
+                    <View style={styles.lineItemInfo}>
+                      <ThemedText type="small" numberOfLines={1}>
+                        {item.name}
+                      </ThemedText>
+                      <View style={styles.lineItemMeta}>
+                        <View style={[styles.classificationBadge, { backgroundColor: itemColor + "15" }]}>
+                          <ThemedText type="tiny" style={{ color: itemColor, textTransform: "capitalize" }}>
+                            {item.classification}
+                          </ThemedText>
+                        </View>
+                        {item.quantity > 1 ? (
+                          <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+                            x{item.quantity}
+                          </ThemedText>
+                        ) : null}
+                      </View>
+                    </View>
+                    <ThemedText type="small" style={{ fontWeight: "600" }}>
+                      ${item.totalPrice.toFixed(2)}
+                    </ThemedText>
+                  </View>
+                );
+              })}
+              
+              <View style={[styles.lineItemsSummary, { borderTopColor: theme.border }]}>
+                <View style={styles.summaryRow}>
+                  <View style={styles.summaryItem}>
+                    <ThemedText type="tiny" style={{ color: theme.textSecondary }}>Essentials</ThemedText>
+                    <ThemedText type="small" style={{ color: "#10B981", fontWeight: "600" }}>
+                      ${lineItemsData.filter(i => i.isEssential).reduce((s, i) => s + i.totalPrice, 0).toFixed(2)}
+                    </ThemedText>
+                  </View>
+                  <View style={styles.summaryItem}>
+                    <ThemedText type="tiny" style={{ color: theme.textSecondary }}>Treats/Extras</ThemedText>
+                    <ThemedText type="small" style={{ color: "#F59E0B", fontWeight: "600" }}>
+                      ${lineItemsData.filter(i => !i.isEssential).reduce((s, i) => s + i.totalPrice, 0).toFixed(2)}
+                    </ThemedText>
+                  </View>
+                </View>
+              </View>
+            </>
+          )}
+        </Card>
+      ) : null}
 
       <View style={styles.splitSection}>
         <View style={styles.splitHeader}>
@@ -259,6 +383,54 @@ const styles = StyleSheet.create({
   },
   noteCard: {
     marginBottom: Spacing.xl,
+  },
+  lineItemsCard: {
+    marginBottom: Spacing.xl,
+  },
+  lineItemsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: Spacing.md,
+  },
+  lineItemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  lineItemIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  lineItemInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  lineItemMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  classificationBadge: {
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 1,
+    borderRadius: BorderRadius.xs,
+  },
+  lineItemsSummary: {
+    marginTop: Spacing.md,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+  },
+  summaryItem: {
+    alignItems: "center",
+    gap: 2,
   },
   splitSection: {
     marginBottom: Spacing.xl,

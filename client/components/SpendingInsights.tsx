@@ -29,6 +29,10 @@ interface SpendingInsightsData {
     discretionary: number;
     treats: number;
   };
+  monthlyProjected?: number;
+  dayOfMonth?: number;
+  daysInMonth?: number;
+  cached?: boolean;
 }
 
 const INSIGHT_TYPE_COLORS: Record<string, string> = {
@@ -50,13 +54,13 @@ export function SpendingInsights() {
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
-  const fetchInsights = async () => {
+  const fetchInsights = async (forceRefresh = false) => {
     setLoading(true);
     setError(null);
     try {
       const coupleId = await AsyncStorage.getItem(COUPLE_ID_KEY);
       if (coupleId) {
-        const response = await apiRequest("POST", `/api/spending-insights/${coupleId}`);
+        const response = await apiRequest("POST", `/api/spending-insights/${coupleId}`, { forceRefresh });
         const data = await response.json();
         setInsights(data);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -111,7 +115,7 @@ export function SpendingInsights() {
         
         <Pressable
           style={[styles.generateButton, { backgroundColor: "#6366F1" }]}
-          onPress={fetchInsights}
+          onPress={() => fetchInsights()}
         >
           <Feather name="cpu" size={18} color="#FFFFFF" />
           <ThemedText type="body" style={{ color: "#FFFFFF", fontWeight: "600" }}>
@@ -145,7 +149,7 @@ export function SpendingInsights() {
           </ThemedText>
           <Pressable
             style={[styles.retryButton, { borderColor: theme.border }]}
-            onPress={fetchInsights}
+            onPress={() => fetchInsights()}
           >
             <ThemedText type="small">Try Again</ThemedText>
           </Pressable>
@@ -179,10 +183,24 @@ export function SpendingInsights() {
             </ThemedText>
           </View>
         </View>
-        <Pressable onPress={fetchInsights} style={styles.refreshButton}>
+        <Pressable onPress={() => fetchInsights(true)} style={styles.refreshButton}>
           <Feather name="refresh-cw" size={18} color={theme.textSecondary} />
         </Pressable>
       </View>
+
+      {insights.monthlyProjected && insights.dayOfMonth && insights.daysInMonth ? (
+        <View style={[styles.projectionBanner, { backgroundColor: theme.backgroundDefault }]}>
+          <Feather name="trending-up" size={14} color={theme.textSecondary} />
+          <ThemedText type="tiny" style={{ color: theme.textSecondary, marginLeft: Spacing.xs }}>
+            Day {insights.dayOfMonth} of {insights.daysInMonth} | Projected: ${Math.round(insights.monthlyProjected)}/mo
+          </ThemedText>
+          {insights.cached ? (
+            <View style={[styles.cachedBadge, { backgroundColor: theme.success + "20" }]}>
+              <ThemedText type="tiny" style={{ color: theme.success }}>Cached</ThemedText>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
 
       <View style={styles.breakdownRow}>
         <View style={styles.breakdownItem}>
@@ -348,6 +366,19 @@ const styles = StyleSheet.create({
   },
   refreshButton: {
     padding: Spacing.sm,
+  },
+  projectionBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    marginBottom: Spacing.md,
+  },
+  cachedBadge: {
+    marginLeft: "auto",
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.xs,
   },
   breakdownRow: {
     flexDirection: "row",
