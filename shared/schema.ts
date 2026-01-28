@@ -239,6 +239,89 @@ export const savingsStreaks = pgTable("savings_streaks", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// Daily AI Analysis tracking - triggers proactive insights
+export const dailyAnalysis = pgTable("daily_analysis", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull(),
+  analysisDate: text("analysis_date").notNull(), // YYYY-MM-DD
+  
+  // What was analyzed
+  expensesAnalyzed: integer("expenses_analyzed").default(0),
+  totalSpentToday: real("total_spent_today").default(0),
+  topCategoryToday: text("top_category_today"),
+  
+  // AI-generated daily insight
+  dailyNudge: text("daily_nudge"), // The main message for the day
+  nudgeType: text("nudge_type"), // celebration, warning, encouragement, tip, loss_aversion
+  nudgePriority: text("nudge_priority").default("medium"), // low, medium, high, urgent
+  suggestedAction: text("suggested_action"),
+  targetGoalId: varchar("target_goal_id"), // Which dream to nudge toward
+  
+  // Behavioral context used
+  daysWithoutDeposit: integer("days_without_deposit"),
+  currentStreakDays: integer("current_streak_days"),
+  spendingVsAverage: real("spending_vs_average"), // 1.0 = normal, 1.5 = 50% higher
+  
+  // User response tracking
+  wasShown: boolean("was_shown").default(false),
+  shownAt: timestamp("shown_at"),
+  userResponse: text("user_response"), // acted, dismissed, ignored
+  respondedAt: timestamp("responded_at"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Partner-specific nudge preferences - learn what works for each person
+export const partnerNudgePreferences = pgTable("partner_nudge_preferences", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull(),
+  partnerRole: text("partner_role").notNull(), // partner1 or partner2
+  
+  // Nudge style effectiveness (0-1 scale, higher = more effective)
+  lossAversionScore: real("loss_aversion_score").default(0.5), // "You'll lose X if..."
+  gainFramingScore: real("gain_framing_score").default(0.5), // "You'll gain X if..."
+  socialProofScore: real("social_proof_score").default(0.5), // "Couples like you..."
+  progressScore: real("progress_score").default(0.5), // "You're X% there!"
+  urgencyScore: real("urgency_score").default(0.5), // "Act now before..."
+  
+  // Category-specific patterns
+  weaknessCategories: jsonb("weakness_categories"), // ["shopping", "restaurants"]
+  peakSpendingDays: jsonb("peak_spending_days"), // ["saturday", "friday"]
+  bestResponseTime: text("best_response_time"), // "morning", "evening"
+  
+  // Historical effectiveness
+  totalNudgesReceived: integer("total_nudges_received").default(0),
+  nudgesActedOn: integer("nudges_acted_on").default(0),
+  nudgesDismissed: integer("nudges_dismissed").default(0),
+  totalSavedFromNudges: real("total_saved_from_nudges").default(0),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Escalating nudge history - tracks nudge intensity over time
+export const nudgeEscalation = pgTable("nudge_escalation", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull(),
+  topic: text("topic").notNull(), // e.g., "shopping_overspend", "no_deposits", "streak_risk"
+  
+  currentLevel: integer("current_level").default(1), // 1-5, 1=gentle, 5=urgent
+  lastEscalationDate: text("last_escalation_date"),
+  
+  // Escalation history
+  level1SentAt: timestamp("level1_sent_at"),
+  level2SentAt: timestamp("level2_sent_at"),
+  level3SentAt: timestamp("level3_sent_at"),
+  level4SentAt: timestamp("level4_sent_at"),
+  level5SentAt: timestamp("level5_sent_at"),
+  
+  // Resolution
+  resolvedAt: timestamp("resolved_at"),
+  resolutionType: text("resolution_type"), // user_acted, auto_resolved, dismissed
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const goalsRelations = relations(goals, ({ many }) => ({
   contributions: many(goalContributions),
 }));
@@ -329,3 +412,6 @@ export type GuardianInsight = typeof guardianInsights.$inferSelect;
 export type GuardianRecommendation = typeof guardianRecommendations.$inferSelect;
 export type SavingsConfirmation = typeof savingsConfirmations.$inferSelect;
 export type SavingsStreak = typeof savingsStreaks.$inferSelect;
+export type DailyAnalysis = typeof dailyAnalysis.$inferSelect;
+export type PartnerNudgePreference = typeof partnerNudgePreferences.$inferSelect;
+export type NudgeEscalation = typeof nudgeEscalation.$inferSelect;
