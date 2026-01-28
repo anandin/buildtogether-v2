@@ -1,3 +1,15 @@
+export type LineItemClassification = "staple" | "treat" | "beverage" | "household" | "prepared" | "luxury" | "kids" | "other";
+
+export interface LineItem {
+  id?: string;
+  name: string;
+  quantity: number;
+  unitPrice?: number;
+  totalPrice: number;
+  classification: LineItemClassification;
+  isEssential: boolean;
+}
+
 export interface Expense {
   id: string;
   amount: number;
@@ -18,6 +30,7 @@ export interface Expense {
   receiptImage?: string;
   isSettled: boolean;
   createdAt: string;
+  lineItems?: LineItem[];
 }
 
 export type SplitMethod = "even" | "ratio" | "amount" | "joint" | "single";

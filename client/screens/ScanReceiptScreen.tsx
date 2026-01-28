@@ -92,6 +92,7 @@ export default function ScanReceiptScreen() {
           description: data.description,
           category: data.category,
           suggestedSplit: data.suggestedSplit,
+          lineItems: data.lineItems || [],
         },
       });
     } catch (err: any) {

@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { apiRequest, getApiUrl } from "@/lib/query-client";
-import type { AppData, Expense, Goal, CategoryBudget, CustomCategory, SettlementRecord } from "@/types";
+import type { AppData, Expense, Goal, CategoryBudget, CustomCategory, SettlementRecord, LineItem } from "@/types";
 import { DEFAULT_CATEGORY_BUDGETS } from "@/types";
 import { v4 as uuidv4 } from "uuid";
 
@@ -113,13 +113,27 @@ export async function loadAppData(): Promise<AppData> {
 
 export async function addExpense(expense: Omit<Expense, "id" | "createdAt">): Promise<Expense> {
   const coupleId = await getCoupleId();
+  const { lineItems, ...expenseData } = expense;
+  
   const response = await apiRequest("POST", `/api/expenses/${coupleId}`, {
-    ...expense,
+    ...expenseData,
     date: expense.date || new Date().toISOString().split("T")[0],
   });
   const newExpense = await response.json();
+  
+  if (lineItems && lineItems.length > 0) {
+    try {
+      await apiRequest("POST", `/api/expenses/${coupleId}/${newExpense.id}/line-items`, {
+        items: lineItems,
+      });
+    } catch (err) {
+      console.error("Failed to save line items:", err);
+    }
+  }
+  
   return {
     ...newExpense,
+    lineItems,
     createdAt: newExpense.createdAt || new Date().toISOString(),
   };
 }

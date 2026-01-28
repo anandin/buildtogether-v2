@@ -22,9 +22,31 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import type { ExpenseCategory, SplitMethod } from "@/types";
+import type { ExpenseCategory, SplitMethod, LineItem } from "@/types";
 import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS, SPLIT_METHODS, DEFAULT_CATEGORIES } from "@/types";
 import { getApiUrl } from "@/lib/query-client";
+
+const LINE_ITEM_CLASSIFICATION_LABELS: Record<string, string> = {
+  staple: "Essential",
+  treat: "Treat",
+  beverage: "Drink",
+  household: "Household",
+  prepared: "Ready-Made",
+  luxury: "Premium",
+  kids: "Kids",
+  other: "Other",
+};
+
+const LINE_ITEM_CLASSIFICATION_COLORS: Record<string, string> = {
+  staple: "#B5EAD7",
+  treat: "#FFB7B2",
+  beverage: "#A2D2FF",
+  household: "#FFDAC1",
+  prepared: "#C7CEEA",
+  luxury: "#CDB4DB",
+  kids: "#FFD93D",
+  other: "#D4D4D4",
+};
 
 export default function AddExpenseScreen() {
   const insets = useSafeAreaInsets();
@@ -54,6 +76,8 @@ export default function AddExpenseScreen() {
   const [isAIProcessing, setIsAIProcessing] = useState(false);
   const [quickInput, setQuickInput] = useState("");
   const [showQuickInput, setShowQuickInput] = useState(!prefilled && !receiptImage);
+  const [lineItems, setLineItems] = useState<LineItem[]>(prefilled?.lineItems || []);
+  const [showLineItems, setShowLineItems] = useState(false);
 
   const allCategories = [
     ...DEFAULT_CATEGORIES,
@@ -132,6 +156,7 @@ export default function AddExpenseScreen() {
         note: note.trim() || undefined,
         receiptImage: receiptImage || prefilled?.receiptImage,
         isSettled: splitMethod === "joint",
+        lineItems: lineItems.length > 0 ? lineItems : undefined,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       navigation.goBack();
@@ -377,6 +402,76 @@ export default function AddExpenseScreen() {
                 placeholderTextColor={theme.textSecondary}
               />
             </View>
+
+            {lineItems.length > 0 ? (
+              <View style={styles.lineItemsContainer}>
+                <Pressable
+                  style={[styles.lineItemsHeader, { borderBottomColor: showLineItems ? theme.border : "transparent" }]}
+                  onPress={() => setShowLineItems(!showLineItems)}
+                >
+                  <View style={styles.fieldLabel}>
+                    <Feather name="list" size={16} color={theme.textSecondary} />
+                    <ThemedText type="body">Items Breakdown</ThemedText>
+                  </View>
+                  <View style={styles.lineItemsHeaderRight}>
+                    <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                      {lineItems.length} items
+                    </ThemedText>
+                    <Feather 
+                      name={showLineItems ? "chevron-up" : "chevron-down"} 
+                      size={18} 
+                      color={theme.textSecondary} 
+                    />
+                  </View>
+                </Pressable>
+                
+                {showLineItems ? (
+                  <View style={styles.lineItemsList}>
+                    {lineItems.map((item, index) => (
+                      <View key={index} style={[styles.lineItemRow, { borderBottomColor: theme.border }]}>
+                        <View style={styles.lineItemInfo}>
+                          <ThemedText type="small" numberOfLines={1} style={{ flex: 1 }}>
+                            {item.name}
+                          </ThemedText>
+                          <View 
+                            style={[
+                              styles.classificationBadge, 
+                              { backgroundColor: LINE_ITEM_CLASSIFICATION_COLORS[item.classification] + "40" }
+                            ]}
+                          >
+                            <ThemedText type="tiny" style={{ color: theme.text }}>
+                              {LINE_ITEM_CLASSIFICATION_LABELS[item.classification]}
+                            </ThemedText>
+                          </View>
+                        </View>
+                        <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                          ${item.totalPrice.toFixed(2)}
+                        </ThemedText>
+                      </View>
+                    ))}
+                    
+                    <View style={styles.lineItemsSummary}>
+                      <View style={styles.lineItemSummaryRow}>
+                        <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+                          Essentials: {lineItems.filter(i => i.isEssential).length} items
+                        </ThemedText>
+                        <ThemedText type="tiny" style={{ color: LINE_ITEM_CLASSIFICATION_COLORS.staple }}>
+                          ${lineItems.filter(i => i.isEssential).reduce((sum, i) => sum + i.totalPrice, 0).toFixed(2)}
+                        </ThemedText>
+                      </View>
+                      <View style={styles.lineItemSummaryRow}>
+                        <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+                          Treats & Extras: {lineItems.filter(i => !i.isEssential).length} items
+                        </ThemedText>
+                        <ThemedText type="tiny" style={{ color: LINE_ITEM_CLASSIFICATION_COLORS.treat }}>
+                          ${lineItems.filter(i => !i.isEssential).reduce((sum, i) => sum + i.totalPrice, 0).toFixed(2)}
+                        </ThemedText>
+                      </View>
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+            ) : null}
           </View>
 
           <View style={styles.section}>
@@ -800,6 +895,53 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
+    alignItems: "center",
+  },
+  lineItemsContainer: {
+    marginTop: Spacing.md,
+  },
+  lineItemsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+  },
+  lineItemsHeaderRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  lineItemsList: {
+    paddingTop: Spacing.sm,
+  },
+  lineItemRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 0.5,
+    gap: Spacing.sm,
+  },
+  lineItemInfo: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  classificationBadge: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.sm,
+  },
+  lineItemsSummary: {
+    marginTop: Spacing.md,
+    paddingTop: Spacing.md,
+    gap: Spacing.xs,
+  },
+  lineItemSummaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
   },
 });
