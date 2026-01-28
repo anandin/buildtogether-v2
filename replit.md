@@ -17,7 +17,7 @@ Preferred communication style: Simple, everyday language.
 **Framework**: Expo SDK 54 with React Native 0.81, using the new architecture (Fabric/TurboModules enabled).
 
 **Navigation**: React Navigation v7 with a hybrid structure:
-- Root stack navigator for modal screens (AddExpense, ScanReceipt, DreamDetail, SettleUp, ExpenseDetail)
+- Root stack navigator for modal screens (AddExpense, ScanReceipt, DreamDetail, SettleUp, ExpenseDetail, ConfirmSavings)
 - Bottom tab navigator with intuitive naming:
   - **Home** (home icon) - Minimal dashboard with Dream Guardian and quick actions
   - **Expenses** (credit-card icon) - Full expense list with smart time-based grouping, settlement tracker, and category budgets
@@ -52,6 +52,8 @@ Preferred communication style: Simple, everyday language.
 - **Commitment Heart**: Loss aversion streak tracker that cracks after 72h without Dream deposits
 - **Onboarding Flow**: Welcome screen with feature highlights, followed by partner name setup and optional first goal creation
 - **Dream Guardian**: Friendly AI companion replacing complex visualizations - speaks naturally and gives contextual encouragement based on savings behavior
+- **Guardian Memory System**: Backend database tables and API endpoints for tracking insights, recommendations, savings confirmations, and streak data - enables hyper-personalized AI coaching
+- **ConfirmSavingsScreen**: Manual savings logging with celebration animations, streak tracking, quick amount buttons, and optional goal linking - no bank linking required
 - **Ego Spend Detection**: AI identifies luxury/status purchases with "Vanish to Dream" redirect buttons
 - **Haptic Dream Deposits**: Enhanced goal contribution flow with celebration animation
 - **Steady Progress**: Calm streak tracking showing days of mindful spending, no impulse purchases, and expense tracking consistency

@@ -13,6 +13,7 @@ import { BillSplitSettingsScreen } from "@/screens/BillSplitSettingsScreen";
 import PartnerInviteScreen from "@/screens/PartnerInviteScreen";
 import PrivacyPolicyScreen from "@/screens/PrivacyPolicyScreen";
 import TermsOfServiceScreen from "@/screens/TermsOfServiceScreen";
+import ConfirmSavingsScreen from "@/screens/ConfirmSavingsScreen";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 
 export type RootStackParamList = {
@@ -29,6 +30,7 @@ export type RootStackParamList = {
   PartnerInvite: undefined;
   PrivacyPolicy: undefined;
   TermsOfService: undefined;
+  ConfirmSavings: { suggestedAmount?: number; goalId?: string; recommendationId?: string } | undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -130,6 +132,14 @@ export default function RootStackNavigator() {
         component={TermsOfServiceScreen}
         options={{
           headerTitle: "Terms of Service",
+        }}
+      />
+      <Stack.Screen
+        name="ConfirmSavings"
+        component={ConfirmSavingsScreen}
+        options={{
+          presentation: "modal",
+          headerTitle: "Confirm Savings",
         }}
       />
     </Stack.Navigator>

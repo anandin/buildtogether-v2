@@ -1,5 +1,5 @@
-import React, { useMemo } from "react";
-import { View, StyleSheet, Pressable, Image } from "react-native";
+import React, { useMemo, useState, useEffect, useCallback } from "react";
+import { View, StyleSheet, Pressable, Image, ActivityIndicator } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -10,15 +10,17 @@ import Animated, {
 } from "react-native-reanimated";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { differenceInDays, differenceInHours } from "date-fns";
+import { differenceInDays } from "date-fns";
+import { useQuery } from "@tanstack/react-query";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
-import { getCurrentMonthExpenses } from "@/lib/cloudStorage";
+import { getCurrentMonthExpenses, getSpendingByCategory } from "@/lib/cloudStorage";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { Goal, Expense } from "@/types";
+import { getApiUrl } from "@/lib/query-client";
 
 import dreamGuardianIcon from "../../assets/images/dream-guardian-icon.png";
 
@@ -26,6 +28,7 @@ const EGO_CATEGORIES = ["shopping", "entertainment", "restaurants", "personal", 
 
 interface DreamGuardianProps {
   onAddToGoal?: () => void;
+  coupleId?: string;
 }
 
 interface GuardianMood {
@@ -34,6 +37,14 @@ interface GuardianMood {
   message: string;
   suggestion: string;
   priority: "celebrate" | "encourage" | "gentle-nudge" | "urgent";
+}
+
+interface SavingsStreak {
+  currentStreak: number;
+  longestStreak: number;
+  totalConfirmations: number;
+  totalAmountSaved: number;
+  lastConfirmationDate: string | null;
 }
 
 function getLastDepositDays(goals: Goal[]): number | null {
@@ -144,11 +155,17 @@ function getGuardianMood(
   };
 }
 
-export function DreamGuardian({ onAddToGoal }: DreamGuardianProps) {
+export function DreamGuardian({ onAddToGoal, coupleId }: DreamGuardianProps) {
   const { theme } = useTheme();
   const { data } = useApp();
   
   const breatheScale = useSharedValue(1);
+  
+  const { data: streakData } = useQuery<SavingsStreak>({
+    queryKey: ["/api/guardian/streak", coupleId],
+    enabled: !!coupleId,
+    staleTime: 1000 * 60 * 5,
+  });
   
   React.useEffect(() => {
     breatheScale.value = withRepeat(
@@ -190,6 +207,9 @@ export function DreamGuardian({ onAddToGoal }: DreamGuardianProps) {
     if (!data) return 0;
     return getTotalSaved(data.goals);
   }, [data]);
+  
+  const totalConfirmedSavings = streakData?.totalAmountSaved || 0;
+  const currentStreak = streakData?.currentStreak || 0;
   
   const handleAddToGoal = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -258,12 +278,29 @@ export function DreamGuardian({ onAddToGoal }: DreamGuardianProps) {
             {data?.goals.length || 0} dreams
           </ThemedText>
         </View>
-        <View style={styles.stat}>
-          <Feather name="trending-up" size={16} color={theme.success} />
-          <ThemedText type="small" style={{ color: theme.textSecondary }}>
-            {data?.goals.filter(g => g.savedAmount >= g.targetAmount * 0.5).length || 0} halfway+
-          </ThemedText>
-        </View>
+        {currentStreak > 0 ? (
+          <View style={styles.stat}>
+            <Feather name="zap" size={16} color="#F59E0B" />
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              {currentStreak}w streak
+            </ThemedText>
+          </View>
+        ) : (
+          <View style={styles.stat}>
+            <Feather name="trending-up" size={16} color={theme.success} />
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              {data?.goals.filter(g => g.savedAmount >= g.targetAmount * 0.5).length || 0} halfway+
+            </ThemedText>
+          </View>
+        )}
+        {totalConfirmedSavings > 0 ? (
+          <View style={styles.stat}>
+            <Feather name="check-circle" size={16} color={theme.success} />
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              ${totalConfirmedSavings.toFixed(0)} confirmed
+            </ThemedText>
+          </View>
+        ) : null}
       </View>
     </Card>
   );
