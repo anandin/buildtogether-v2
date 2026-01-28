@@ -12,6 +12,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { SteadyProgress } from "@/components/SteadyProgress";
 import { AICoach } from "@/components/AICoach";
+import { SpendingInsights } from "@/components/SpendingInsights";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
 import { getCurrentMonthExpenses, getTotalSpent, getMerchantSpending } from "@/lib/storage";
@@ -147,6 +148,8 @@ export default function ChartScreen() {
       scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
       <SteadyProgress />
+
+      <SpendingInsights />
 
       <Card style={styles.futureCard} onPress={() => navigation.navigate("FutureTimeline")}>
         <View style={styles.futureContent}>
