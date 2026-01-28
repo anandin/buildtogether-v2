@@ -2,10 +2,10 @@ import React, { useState } from "react";
 import {
   View,
   StyleSheet,
-  ScrollView,
   TextInput,
   Pressable,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -144,13 +144,14 @@ export default function GoalDetailScreen() {
   };
 
   return (
-    <ScrollView
+    <KeyboardAwareScrollView
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       contentContainerStyle={{
         paddingTop: headerHeight + Spacing.xl,
-        paddingBottom: insets.bottom + Spacing.xl,
+        paddingBottom: insets.bottom + Spacing["3xl"] + 80,
         paddingHorizontal: Spacing.lg,
       }}
+      bottomOffset={40}
     >
       <View style={styles.header}>
         <View style={[styles.iconContainer, { backgroundColor: goal.color + "20" }]}>
@@ -380,7 +381,7 @@ export default function GoalDetailScreen() {
           Delete Goal
         </ThemedText>
       </Pressable>
-    </ScrollView>
+    </KeyboardAwareScrollView>
   );
 }
 
