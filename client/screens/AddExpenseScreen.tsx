@@ -21,7 +21,10 @@ import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
+import { useAIFeedback } from "@/context/AIFeedbackContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
+import { getCategoryBudgetStatus, getTotalSpent } from "@/lib/cloudStorage";
 import type { ExpenseCategory, SplitMethod, LineItem } from "@/types";
 import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS, SPLIT_METHODS, DEFAULT_CATEGORIES } from "@/types";
 import { getApiUrl } from "@/lib/query-client";
@@ -55,6 +58,8 @@ export default function AddExpenseScreen() {
   const route = useRoute<any>();
   const { theme } = useTheme();
   const { addExpense, data } = useApp();
+  const { user } = useAuth();
+  const { showFeedback, showLearning } = useAIFeedback();
 
   const prefilled = route.params?.prefilled;
   const receiptImage = route.params?.receiptImage;
@@ -144,7 +149,7 @@ export default function AddExpenseScreen() {
 
     setSaving(true);
     try {
-      await addExpense({
+      const expenseData = {
         amount: amountNum,
         description: description.trim() || merchant || "Expense",
         merchant: merchant.trim() || undefined,
@@ -157,8 +162,67 @@ export default function AddExpenseScreen() {
         receiptImage: receiptImage || prefilled?.receiptImage,
         isSettled: splitMethod === "joint",
         lineItems: lineItems.length > 0 ? lineItems : undefined,
-      });
+      };
+      
+      await addExpense(expenseData);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      
+      // Get AI feedback for this expense
+      try {
+        const coupleId = user?.coupleId;
+        if (coupleId && data) {
+          const budgetStatus = await getCategoryBudgetStatus(category, data);
+          const monthlyTotal = await getTotalSpent(data);
+          const partnerName = paidBy === "partner1" 
+            ? data.partners?.partner1?.name 
+            : data.partners?.partner2?.name;
+          
+          const apiUrl = getApiUrl();
+          const feedbackResponse = await fetch(
+            new URL("/api/guardian/expense-feedback", apiUrl).toString(),
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                coupleId,
+                expense: expenseData,
+                budgetStatus: budgetStatus ? {
+                  spent: budgetStatus.spent,
+                  limit: budgetStatus.limit,
+                } : null,
+                monthlyTotal,
+                partnerName,
+              }),
+            }
+          );
+          
+          if (feedbackResponse.ok) {
+            const feedback = await feedbackResponse.json();
+            showFeedback({
+              type: feedback.feedbackType,
+              title: feedback.title,
+              message: feedback.message,
+              actionLabel: feedback.actionLabel,
+              onAction: feedback.actionType === "redirect_to_dream" 
+                ? () => navigation.navigate("Dreams")
+                : feedback.actionType === "set_budget"
+                ? () => navigation.navigate("BudgetSettings")
+                : undefined,
+            });
+            
+            // Show learning pattern notification if detected
+            if (feedback.learnedPattern) {
+              setTimeout(() => {
+                showLearning("Pattern Detected", feedback.learnedPattern);
+              }, 4000);
+            }
+          }
+        }
+      } catch (feedbackError) {
+        // AI feedback is non-critical, don't block the flow
+        console.log("AI feedback error (non-critical):", feedbackError);
+      }
+      
       navigation.goBack();
     } catch (error) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);

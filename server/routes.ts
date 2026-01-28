@@ -2452,6 +2452,140 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
     }
   });
 
+  // AI feedback for expense entry - immediate reaction
+  app.post("/api/guardian/expense-feedback", async (req, res) => {
+    try {
+      const { coupleId, expense, budgetStatus, monthlyTotal, partnerName } = req.body;
+      
+      if (!coupleId || !expense) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      
+      const amount = expense.amount;
+      const category = expense.category;
+      const merchant = expense.merchant || expense.description;
+      
+      // Determine feedback type based on budget impact
+      let feedbackType: "celebration" | "insight" | "warning" | "suggestion" = "insight";
+      let title = "Tracked!";
+      let message = "";
+      let actionLabel: string | undefined;
+      let actionType: string | undefined;
+      
+      if (budgetStatus) {
+        const percentUsed = (budgetStatus.spent / budgetStatus.limit) * 100;
+        const remaining = budgetStatus.limit - budgetStatus.spent;
+        
+        if (percentUsed >= 100) {
+          feedbackType = "warning";
+          title = "Over Budget";
+          message = `${category} is now $${Math.abs(remaining).toFixed(0)} over budget. Consider redirecting future ${category} spending to your dreams!`;
+          actionLabel = "Move to Dream";
+          actionType = "redirect_to_dream";
+        } else if (percentUsed >= 85) {
+          feedbackType = "warning";
+          title = "Budget Alert";
+          message = `Only $${remaining.toFixed(0)} left for ${category} this month. You're doing great tracking - just a heads up!`;
+        } else if (percentUsed <= 50 && amount > 20) {
+          feedbackType = "celebration";
+          title = "Smart Spending!";
+          message = `This keeps ${category} at ${Math.round(percentUsed)}% of budget. Still $${remaining.toFixed(0)} to go!`;
+        } else {
+          feedbackType = "insight";
+          title = "Got it!";
+          message = `${category} is now at ${Math.round(percentUsed)}% of budget. $${remaining.toFixed(0)} remaining this month.`;
+        }
+      } else {
+        // No budget set for this category
+        feedbackType = "insight";
+        title = "Logged!";
+        message = `$${amount.toFixed(2)} at ${merchant} recorded. Consider setting a ${category} budget to track better!`;
+        actionLabel = "Set Budget";
+        actionType = "set_budget";
+      }
+      
+      // Check for patterns (spending frequency)
+      const frequencyNote = monthlyTotal > amount * 3 
+        ? ` You've spent $${monthlyTotal.toFixed(0)} on ${category} this month.`
+        : "";
+      
+      if (frequencyNote && feedbackType !== "warning") {
+        message += frequencyNote;
+      }
+      
+      res.json({
+        feedbackType,
+        title,
+        message,
+        actionLabel,
+        actionType,
+        learnedPattern: frequencyNote ? `${partnerName || "You"} frequently spend on ${category}` : null,
+      });
+    } catch (error: any) {
+      console.error("Expense feedback error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // AI feedback for dream deposit - celebration
+  app.post("/api/guardian/deposit-feedback", async (req, res) => {
+    try {
+      const { coupleId, amount, goalName, goalProgress, streakDays, previousDeposit } = req.body;
+      
+      if (!coupleId || !amount) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+      
+      let feedbackType: "celebration" | "insight" = "celebration";
+      let title = "Dream Deposit!";
+      let message = "";
+      
+      // Calculate days closer to goal
+      const daysCloser = goalProgress?.averageDailyRate > 0 
+        ? Math.round(amount / goalProgress.averageDailyRate)
+        : null;
+      
+      // Streak celebration
+      if (streakDays && streakDays >= 7) {
+        title = `${streakDays} Day Streak!`;
+        message = `Amazing consistency! You're ${daysCloser ? `${daysCloser} days closer to ` : "getting closer to "}${goalName}.`;
+      } else if (streakDays && streakDays >= 3) {
+        title = "Streak Building!";
+        message = `${streakDays} deposits in a row! ${daysCloser ? `${daysCloser} days closer to ${goalName}.` : `Keep the momentum going!`}`;
+      } else if (daysCloser) {
+        message = `You just moved ${daysCloser} days closer to ${goalName}. At this pace, you're doing great!`;
+      } else {
+        message = `$${amount.toFixed(0)} added to ${goalName}. Every bit gets you closer!`;
+      }
+      
+      // Compare to previous deposit
+      if (previousDeposit && amount > previousDeposit) {
+        message += ` That's more than your last deposit!`;
+      }
+      
+      // Goal progress milestone
+      if (goalProgress) {
+        const percentComplete = (goalProgress.current / goalProgress.target) * 100;
+        if (percentComplete >= 75 && percentComplete < 100) {
+          message += ` You're in the home stretch - ${Math.round(percentComplete)}% complete!`;
+        } else if (percentComplete >= 50 && percentComplete < 75) {
+          message += ` Halfway there at ${Math.round(percentComplete)}%!`;
+        }
+      }
+      
+      res.json({
+        feedbackType,
+        title,
+        message,
+        streakDays,
+        daysCloser,
+      });
+    } catch (error: any) {
+      console.error("Deposit feedback error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
