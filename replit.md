@@ -27,6 +27,10 @@ Preferred communication style: Simple, everyday language.
 - Each tab has its own stack navigator for nested screens
 
 **Recent Updates (Jan 2026)**:
+- **Cloud Storage Migration**: Moved from local AsyncStorage to PostgreSQL database for cross-device sync
+- **Cloud API Endpoints**: Full REST API for expenses, goals, budgets, categories, settlements, and couple data
+- **Offline Support**: Local cache fallback when network unavailable, syncs on reconnect
+- **Image Compression**: Receipt images resized to 1024px width and 50% JPEG quality before upload
 - AI-first expense entry with natural language parsing and smart categorization
 - Merchant extraction from receipts (separate from notes) for trend analysis
 - Multi-category budget tracking with 9 pre-defined categories and custom categories
