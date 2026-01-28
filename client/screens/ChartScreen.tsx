@@ -6,7 +6,7 @@ import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import Svg, { Rect, Text as SvgText, Line } from "react-native-svg";
-import { format, subDays } from "date-fns";
+import { format, subDays, subMonths, startOfMonth, endOfMonth, startOfWeek, endOfWeek, eachDayOfInterval, eachWeekOfInterval, eachMonthOfInterval, subYears } from "date-fns";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
@@ -87,43 +87,94 @@ export default function ChartScreen() {
     return { partner1Total, partner2Total };
   }, [currentMonthExpenses]);
 
-  const chartData = useMemo(() => {
-    const dailyTotals: number[] = Array(7).fill(0);
+  const periodExpenses = useMemo(() => {
+    if (!data) return [];
     const today = new Date();
     
-    for (let i = 6; i >= 0; i--) {
-      const date = new Date(today);
-      date.setDate(date.getDate() - i);
+    if (selectedPeriod === "week") {
+      const weekAgo = subDays(today, 7);
+      return data.expenses.filter(e => new Date(e.date) >= weekAgo);
+    } else if (selectedPeriod === "month") {
+      return currentMonthExpenses;
+    } else {
+      const yearAgo = subYears(today, 1);
+      return data.expenses.filter(e => new Date(e.date) >= yearAgo);
+    }
+  }, [data, selectedPeriod, currentMonthExpenses]);
+
+  const { chartData, chartLabels, chartTitle } = useMemo(() => {
+    const today = new Date();
+    
+    if (selectedPeriod === "week") {
+      const totals: number[] = Array(7).fill(0);
+      const labels: string[] = [];
       
-      currentMonthExpenses.forEach((expense) => {
-        const expenseDate = new Date(expense.date);
-        if (
-          expenseDate.getDate() === date.getDate() &&
-          expenseDate.getMonth() === date.getMonth()
-        ) {
-          dailyTotals[6 - i] += expense.amount;
+      for (let i = 6; i >= 0; i--) {
+        const date = subDays(today, i);
+        labels.push(format(date, "EEE"));
+        
+        periodExpenses.forEach((expense) => {
+          const expenseDate = new Date(expense.date);
+          if (format(expenseDate, "yyyy-MM-dd") === format(date, "yyyy-MM-dd")) {
+            totals[6 - i] += expense.amount;
+          }
+        });
+      }
+      
+      return { chartData: totals, chartLabels: labels, chartTitle: "Last 7 Days" };
+    } else if (selectedPeriod === "month") {
+      const daysInMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+      const numBars = Math.min(daysInMonth, 31);
+      const totals: number[] = Array(numBars).fill(0);
+      const labels: string[] = [];
+      
+      const startDate = startOfMonth(today);
+      for (let i = 0; i < numBars; i++) {
+        const date = new Date(startDate);
+        date.setDate(date.getDate() + i);
+        
+        if (i % 5 === 0 || i === numBars - 1) {
+          labels.push(format(date, "d"));
+        } else {
+          labels.push("");
         }
-      });
+        
+        periodExpenses.forEach((expense) => {
+          const expenseDate = new Date(expense.date);
+          if (format(expenseDate, "yyyy-MM-dd") === format(date, "yyyy-MM-dd")) {
+            totals[i] += expense.amount;
+          }
+        });
+      }
+      
+      return { chartData: totals, chartLabels: labels, chartTitle: format(today, "MMMM yyyy") };
+    } else {
+      const totals: number[] = Array(12).fill(0);
+      const labels: string[] = [];
+      
+      for (let i = 11; i >= 0; i--) {
+        const date = subMonths(today, i);
+        labels.push(format(date, "MMM"));
+        
+        periodExpenses.forEach((expense) => {
+          const expenseDate = new Date(expense.date);
+          if (
+            expenseDate.getMonth() === date.getMonth() &&
+            expenseDate.getFullYear() === date.getFullYear()
+          ) {
+            totals[11 - i] += expense.amount;
+          }
+        });
+      }
+      
+      return { chartData: totals, chartLabels: labels, chartTitle: "Last 12 Months" };
     }
-    
-    return dailyTotals;
-  }, [currentMonthExpenses]);
-
-  const getDayLabels = () => {
-    const labels = [];
-    const today = new Date();
-    for (let i = 6; i >= 0; i--) {
-      const date = subDays(today, i);
-      labels.push(format(date, "EEE"));
-    }
-    return labels;
-  };
-
-  const dayLabels = getDayLabels();
+  }, [selectedPeriod, periodExpenses]);
   const maxChartValue = Math.max(...chartData, 1);
   const chartHeight = 150;
   const chartWidth = screenWidth - Spacing.lg * 4;
-  const barWidth = (chartWidth - 60) / 7;
+  const numBars = chartData.length;
+  const barWidth = (chartWidth - 60) / numBars;
 
   const totalBudget = useMemo(() => {
     if (!data?.categoryBudgets) return 2000;
@@ -247,7 +298,7 @@ export default function ChartScreen() {
 
       <Card style={styles.chartCard}>
         <ThemedText type="heading" style={styles.chartTitle}>
-          Last 7 Days
+          {chartTitle}
         </ThemedText>
         <View style={styles.chartContainer}>
           <Svg width={chartWidth} height={chartHeight + 40}>
@@ -282,7 +333,7 @@ export default function ChartScreen() {
                     fill={theme.textSecondary}
                     textAnchor="middle"
                   >
-                    {dayLabels[index]}
+                    {chartLabels[index]}
                   </SvgText>
                   {value > 0 ? (
                     <SvgText

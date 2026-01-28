@@ -47,6 +47,20 @@ interface SavingsStreak {
   lastConfirmationDate: string | null;
 }
 
+interface DailyNudge {
+  hasNudge: boolean;
+  nudge?: {
+    id: string;
+    message: string;
+    type: string;
+    priority: string;
+    suggestedAction: string | null;
+    targetGoalId: string | null;
+    date: string;
+    daysWithoutDeposit: number | null;
+  };
+}
+
 function getLastDepositDays(goals: Goal[]): number | null {
   let latestDate: Date | null = null;
   
@@ -158,6 +172,7 @@ function getGuardianMood(
 export function DreamGuardian({ onAddToGoal, coupleId }: DreamGuardianProps) {
   const { theme } = useTheme();
   const { data } = useApp();
+  const [showAiNudge, setShowAiNudge] = useState(true);
   
   const breatheScale = useSharedValue(1);
   
@@ -165,6 +180,12 @@ export function DreamGuardian({ onAddToGoal, coupleId }: DreamGuardianProps) {
     queryKey: ["/api/guardian/streak", coupleId],
     enabled: !!coupleId,
     staleTime: 1000 * 60 * 5,
+  });
+  
+  const { data: dailyNudge, refetch: refetchNudge } = useQuery<DailyNudge>({
+    queryKey: ["/api/guardian/daily-nudge", coupleId],
+    enabled: !!coupleId,
+    staleTime: 1000 * 60 * 2,
   });
   
   React.useEffect(() => {
@@ -216,6 +237,32 @@ export function DreamGuardian({ onAddToGoal, coupleId }: DreamGuardianProps) {
     onAddToGoal?.();
   };
   
+  const handleNudgeAction = async (response: 'acted' | 'dismissed') => {
+    if (!dailyNudge?.nudge?.id || !coupleId) return;
+    
+    try {
+      const url = new URL(`/api/guardian/nudge-response/${coupleId}/${dailyNudge.nudge.id}`, getApiUrl());
+      await fetch(url.toString(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response })
+      });
+      
+      if (response === 'acted') {
+        handleAddToGoal();
+      }
+      setShowAiNudge(false);
+      refetchNudge();
+    } catch (error) {
+      console.error("Failed to record nudge response:", error);
+    }
+  };
+  
+  const hasActiveAiNudge = dailyNudge?.hasNudge && dailyNudge.nudge && showAiNudge;
+  const nudgePriority = dailyNudge?.nudge?.priority || "medium";
+  const nudgeColor = nudgePriority === "high" ? "#EF4444" : 
+                     nudgePriority === "medium" ? "#F59E0B" : "#10B981";
+  
   return (
     <Card style={styles.container}>
       <View style={styles.header}>
@@ -250,26 +297,68 @@ export function DreamGuardian({ onAddToGoal, coupleId }: DreamGuardianProps) {
         ) : null}
       </View>
       
-      <View style={[styles.messageContainer, { backgroundColor: guardianMood.color + "08" }]}>
-        <ThemedText type="body" style={styles.message}>
-          {guardianMood.message}
-        </ThemedText>
-        <ThemedText type="small" style={[styles.suggestion, { color: theme.textSecondary }]}>
-          {guardianMood.suggestion}
-        </ThemedText>
-      </View>
-      
-      {(guardianMood.priority === "gentle-nudge" || guardianMood.priority === "urgent") ? (
-        <Pressable
-          style={[styles.actionButton, { backgroundColor: guardianMood.color }]}
-          onPress={handleAddToGoal}
-        >
-          <Feather name="plus-circle" size={18} color="#FFFFFF" />
-          <ThemedText type="body" style={styles.actionButtonText}>
-            Add to Dreams
+      {hasActiveAiNudge ? (
+        <View style={[styles.aiNudgeContainer, { borderColor: nudgeColor + "40" }]}>
+          <View style={styles.aiNudgeHeader}>
+            <View style={[styles.aiNudgeBadge, { backgroundColor: nudgeColor + "20" }]}>
+              <Feather name="sparkles" size={12} color={nudgeColor} />
+              <ThemedText type="tiny" style={{ color: nudgeColor, fontWeight: "600" }}>
+                AI Insight
+              </ThemedText>
+            </View>
+            <Pressable onPress={() => handleNudgeAction('dismissed')} hitSlop={10}>
+              <Feather name="x" size={18} color={theme.textSecondary} />
+            </Pressable>
+          </View>
+          <ThemedText type="body" style={styles.message}>
+            {dailyNudge?.nudge?.message}
           </ThemedText>
-        </Pressable>
-      ) : null}
+          {dailyNudge?.nudge?.suggestedAction ? (
+            <Pressable
+              style={[styles.actionButton, { backgroundColor: nudgeColor }]}
+              onPress={() => handleNudgeAction('acted')}
+            >
+              <Feather name="plus-circle" size={18} color="#FFFFFF" />
+              <ThemedText type="body" style={styles.actionButtonText}>
+                {dailyNudge.nudge.suggestedAction}
+              </ThemedText>
+            </Pressable>
+          ) : (
+            <Pressable
+              style={[styles.actionButton, { backgroundColor: nudgeColor }]}
+              onPress={() => handleNudgeAction('acted')}
+            >
+              <Feather name="plus-circle" size={18} color="#FFFFFF" />
+              <ThemedText type="body" style={styles.actionButtonText}>
+                Add to Dreams
+              </ThemedText>
+            </Pressable>
+          )}
+        </View>
+      ) : (
+        <>
+          <View style={[styles.messageContainer, { backgroundColor: guardianMood.color + "08" }]}>
+            <ThemedText type="body" style={styles.message}>
+              {guardianMood.message}
+            </ThemedText>
+            <ThemedText type="small" style={[styles.suggestion, { color: theme.textSecondary }]}>
+              {guardianMood.suggestion}
+            </ThemedText>
+          </View>
+          
+          {(guardianMood.priority === "gentle-nudge" || guardianMood.priority === "urgent") ? (
+            <Pressable
+              style={[styles.actionButton, { backgroundColor: guardianMood.color }]}
+              onPress={handleAddToGoal}
+            >
+              <Feather name="plus-circle" size={18} color="#FFFFFF" />
+              <ThemedText type="body" style={styles.actionButtonText}>
+                Add to Dreams
+              </ThemedText>
+            </Pressable>
+          ) : null}
+        </>
+      )}
       
       <View style={styles.quickStats}>
         <View style={styles.stat}>
@@ -376,5 +465,25 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.xs,
+  },
+  aiNudgeContainer: {
+    borderWidth: 1,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  aiNudgeHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: Spacing.sm,
+  },
+  aiNudgeBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
   },
 });
