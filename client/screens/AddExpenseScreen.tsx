@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   View,
   StyleSheet,
@@ -110,6 +110,49 @@ export default function AddExpenseScreen() {
   };
 
   const shares = getPartnerShares();
+  
+  const budgetImpact = useMemo(() => {
+    if (!data?.categoryBudgets || !data?.expenses) {
+      return null;
+    }
+    
+    const expenses = data.expenses || [];
+    const categoryBudgets = data.categoryBudgets || [];
+    const budgetStatuses = getCategoryBudgetStatus(expenses, categoryBudgets);
+    const currentBudget = budgetStatuses.find(b => b.category === category);
+    
+    if (!currentBudget) {
+      return null;
+    }
+    
+    const currentSpent = currentBudget.spent;
+    const budgetLimit = currentBudget.limit;
+    const projectedSpent = currentSpent + amountValue;
+    const currentPercentage = (currentSpent / budgetLimit) * 100;
+    const projectedPercentage = (projectedSpent / budgetLimit) * 100;
+    const remaining = budgetLimit - currentSpent;
+    const projectedRemaining = budgetLimit - projectedSpent;
+    
+    let status: "safe" | "warning" | "over" = "safe";
+    if (projectedPercentage >= 100) {
+      status = "over";
+    } else if (projectedPercentage >= 80) {
+      status = "warning";
+    }
+    
+    return {
+      currentSpent,
+      budgetLimit,
+      projectedSpent,
+      currentPercentage: Math.min(currentPercentage, 100),
+      projectedPercentage: Math.min(projectedPercentage, 100),
+      remaining,
+      projectedRemaining,
+      status,
+      isOverBudget: projectedSpent > budgetLimit,
+      overAmount: projectedSpent > budgetLimit ? projectedSpent - budgetLimit : 0,
+    };
+  }, [data?.categoryBudgets, data?.expenses, category, amountValue]);
 
   const handleQuickParse = async () => {
     if (!quickInput.trim()) return;
@@ -326,6 +369,84 @@ export default function AddExpenseScreen() {
               />
             </View>
           </View>
+          
+          {budgetImpact && amountValue > 0 ? (
+            <View 
+              style={[
+                styles.budgetImpactContainer, 
+                { 
+                  backgroundColor: budgetImpact.status === "over" 
+                    ? theme.error + "10" 
+                    : budgetImpact.status === "warning" 
+                    ? theme.warning + "10" 
+                    : theme.success + "10",
+                  borderColor: budgetImpact.status === "over" 
+                    ? theme.error + "30" 
+                    : budgetImpact.status === "warning" 
+                    ? theme.warning + "30" 
+                    : theme.success + "30",
+                }
+              ]}
+            >
+              <View style={styles.budgetImpactHeader}>
+                <Feather 
+                  name={budgetImpact.status === "over" ? "alert-circle" : budgetImpact.status === "warning" ? "alert-triangle" : "check-circle"} 
+                  size={16} 
+                  color={budgetImpact.status === "over" ? theme.error : budgetImpact.status === "warning" ? theme.warning : theme.success} 
+                />
+                <ThemedText 
+                  type="small" 
+                  style={{ 
+                    color: budgetImpact.status === "over" ? theme.error : budgetImpact.status === "warning" ? theme.warning : theme.success,
+                    fontWeight: "600",
+                    flex: 1,
+                  }}
+                >
+                  {budgetImpact.isOverBudget 
+                    ? `$${budgetImpact.overAmount.toFixed(0)} over ${CATEGORY_LABELS[category] || category} budget`
+                    : budgetImpact.status === "warning"
+                    ? `Getting close to ${CATEGORY_LABELS[category] || category} limit`
+                    : `$${budgetImpact.projectedRemaining.toFixed(0)} remaining in ${CATEGORY_LABELS[category] || category}`
+                  }
+                </ThemedText>
+              </View>
+              
+              <View style={styles.budgetProgressBar}>
+                <View 
+                  style={[
+                    styles.budgetProgressCurrent, 
+                    { 
+                      width: `${budgetImpact.currentPercentage}%`,
+                      backgroundColor: theme.textSecondary + "40",
+                    }
+                  ]} 
+                />
+                <View 
+                  style={[
+                    styles.budgetProgressProjected, 
+                    { 
+                      width: `${Math.min(budgetImpact.projectedPercentage - budgetImpact.currentPercentage, 100 - budgetImpact.currentPercentage)}%`,
+                      left: `${budgetImpact.currentPercentage}%`,
+                      backgroundColor: budgetImpact.status === "over" 
+                        ? theme.error 
+                        : budgetImpact.status === "warning" 
+                        ? theme.warning 
+                        : theme.success,
+                    }
+                  ]} 
+                />
+              </View>
+              
+              <View style={styles.budgetProgressLabels}>
+                <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+                  ${budgetImpact.currentSpent.toFixed(0)} spent
+                </ThemedText>
+                <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+                  ${budgetImpact.budgetLimit.toFixed(0)} limit
+                </ThemedText>
+              </View>
+            </View>
+          ) : null}
 
           {merchant ? (
             <View style={[styles.merchantBadge, { backgroundColor: theme.primary + "15" }]}>
@@ -795,6 +916,42 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     minWidth: 120,
     textAlign: "center",
+  },
+  budgetImpactContainer: {
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    marginBottom: Spacing.lg,
+    gap: Spacing.sm,
+  },
+  budgetImpactHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+  },
+  budgetProgressBar: {
+    height: 8,
+    backgroundColor: "rgba(0,0,0,0.1)",
+    borderRadius: 4,
+    overflow: "hidden",
+    position: "relative",
+  },
+  budgetProgressCurrent: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    height: "100%",
+    borderRadius: 4,
+  },
+  budgetProgressProjected: {
+    position: "absolute",
+    top: 0,
+    height: "100%",
+    borderRadius: 4,
+  },
+  budgetProgressLabels: {
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   merchantBadge: {
     flexDirection: "row",
