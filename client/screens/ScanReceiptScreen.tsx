@@ -88,8 +88,10 @@ export default function ScanReceiptScreen() {
       navigation.replace("AddExpense", {
         prefilled: {
           amount: data.amount,
+          merchant: data.merchant,
           description: data.description,
           category: data.category,
+          suggestedSplit: data.suggestedSplit,
         },
       });
     } catch (err: any) {
