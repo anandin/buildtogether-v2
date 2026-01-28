@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, StyleSheet, Pressable, ActivityIndicator } from "react-native";
+import { View, StyleSheet, Pressable, ActivityIndicator, Image } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -9,6 +9,8 @@ import { Card } from "./Card";
 import { useTheme } from "@/hooks/useTheme";
 import { apiRequest } from "@/lib/query-client";
 import { Spacing, BorderRadius } from "@/constants/theme";
+
+import dreamGuardianIcon from "../../assets/images/dream-guardian-icon.png";
 
 const COUPLE_ID_KEY = "@couple_id";
 
@@ -102,24 +104,28 @@ export function SpendingInsights() {
     return (
       <Card style={styles.card}>
         <View style={styles.header}>
-          <View style={[styles.iconContainer, { backgroundColor: "#6366F1" + "20" }]}>
-            <Feather name="zap" size={24} color="#6366F1" />
+          <View style={[styles.iconContainer, { backgroundColor: theme.primary + "15" }]}>
+            <Image 
+              source={dreamGuardianIcon} 
+              style={styles.guardianImage} 
+              resizeMode="cover"
+            />
           </View>
           <View style={styles.headerText}>
-            <ThemedText type="heading">AI Spending Coach</ThemedText>
+            <ThemedText type="heading">Dream Guardian Insights</ThemedText>
             <ThemedText type="small" style={{ color: theme.textSecondary }}>
-              Get personalized insights based on your family
+              Personalized tips based on your spending
             </ThemedText>
           </View>
         </View>
         
         <Pressable
-          style={[styles.generateButton, { backgroundColor: "#6366F1" }]}
+          style={[styles.generateButton, { backgroundColor: theme.primary }]}
           onPress={() => fetchInsights()}
         >
-          <Feather name="cpu" size={18} color="#FFFFFF" />
+          <Feather name="zap" size={18} color="#FFFFFF" />
           <ThemedText type="body" style={{ color: "#FFFFFF", fontWeight: "600" }}>
-            Generate Insights
+            Get Insights
           </ThemedText>
         </Pressable>
       </Card>
@@ -130,9 +136,9 @@ export function SpendingInsights() {
     return (
       <Card style={styles.card}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#6366F1" />
+          <ActivityIndicator size="large" color={theme.primary} />
           <ThemedText type="body" style={{ marginTop: Spacing.md, color: theme.textSecondary }}>
-            Analyzing your spending patterns...
+            Dream Guardian is analyzing your spending...
           </ThemedText>
         </View>
       </Card>
@@ -319,6 +325,12 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
+  },
+  guardianImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
   },
   headerText: {
     flex: 1,

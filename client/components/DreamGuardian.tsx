@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { View, StyleSheet, Pressable } from "react-native";
+import { View, StyleSheet, Pressable, Image } from "react-native";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -19,6 +19,8 @@ import { useApp } from "@/context/AppContext";
 import { getCurrentMonthExpenses } from "@/lib/storage";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { Goal, Expense } from "@/types";
+
+import dreamGuardianIcon from "../../assets/images/dream-guardian-icon.png";
 
 const EGO_CATEGORIES = ["shopping", "entertainment", "restaurants", "personal", "gifts"];
 
@@ -201,11 +203,15 @@ export function DreamGuardian({ onAddToGoal }: DreamGuardianProps) {
           <Animated.View 
             style={[
               styles.iconContainer, 
-              { backgroundColor: guardianMood.color + "20" },
+              { backgroundColor: guardianMood.color + "15" },
               breatheStyle
             ]}
           >
-            <Feather name={guardianMood.emoji as any} size={24} color={guardianMood.color} />
+            <Image 
+              source={dreamGuardianIcon} 
+              style={styles.guardianImage} 
+              resizeMode="cover"
+            />
           </Animated.View>
           <View style={styles.titleText}>
             <ThemedText type="heading">Dream Guardian</ThemedText>
@@ -279,11 +285,17 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   iconContainer: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     justifyContent: "center",
     alignItems: "center",
+    overflow: "hidden",
+  },
+  guardianImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
   },
   titleText: {
     gap: 2,

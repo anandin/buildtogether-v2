@@ -11,7 +11,6 @@ import { format, subDays } from "date-fns";
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { SteadyProgress } from "@/components/SteadyProgress";
-import { AICoach } from "@/components/AICoach";
 import { SpendingInsights } from "@/components/SpendingInsights";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
@@ -165,8 +164,6 @@ export default function ChartScreen() {
           <Feather name="chevron-right" size={20} color={theme.textSecondary} />
         </View>
       </Card>
-
-      <AICoach />
 
       <Card style={styles.heroCard}>
         <View style={styles.heroHeader}>

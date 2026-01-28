@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, StyleSheet, Pressable, ActivityIndicator } from "react-native";
+import { View, StyleSheet, Pressable, ActivityIndicator, Image } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
 import Animated, { FadeInDown, FadeOutUp } from "react-native-reanimated";
@@ -12,6 +12,8 @@ import { useApp } from "@/context/AppContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { getApiUrl } from "@/lib/query-client";
 import type { AIInsight } from "@/types";
+
+import dreamGuardianIcon from "../../assets/images/dream-guardian-icon.png";
 
 interface AICoachProps {
   onViewDetails?: (insight: AIInsight) => void;
@@ -125,14 +127,18 @@ export function AICoach({ onViewDetails }: AICoachProps) {
       <Pressable onPress={fetchInsights}>
         <Card style={StyleSheet.flatten([styles.emptyCard, { borderColor: theme.primary + "30" }])}>
           <View style={[styles.aiIconContainer, { backgroundColor: theme.primary + "15" }]}>
-            <Feather name="cpu" size={24} color={theme.primary} />
+            <Image 
+              source={dreamGuardianIcon} 
+              style={styles.guardianImage} 
+              resizeMode="cover"
+            />
           </View>
           <View style={styles.emptyContent}>
             <ThemedText type="body" style={{ fontWeight: "600" }}>
-              AI Savings Coach
+              Dream Guardian Tips
             </ThemedText>
             <ThemedText type="small" style={{ color: theme.textSecondary }}>
-              Tap to get personalized savings tips based on your spending
+              Tap for personalized savings tips
             </ThemedText>
           </View>
           <Feather name="chevron-right" size={20} color={theme.textSecondary} />
@@ -146,7 +152,7 @@ export function AICoach({ onViewDetails }: AICoachProps) {
       <Card style={styles.loadingCard}>
         <ActivityIndicator size="small" color={theme.primary} />
         <ThemedText type="small" style={{ color: theme.textSecondary, marginLeft: Spacing.sm }}>
-          Analyzing your spending patterns...
+          Dream Guardian is thinking...
         </ThemedText>
       </Card>
     );
@@ -156,9 +162,9 @@ export function AICoach({ onViewDetails }: AICoachProps) {
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Feather name="cpu" size={18} color={theme.primary} />
+          <Image source={dreamGuardianIcon} style={styles.headerIcon} resizeMode="cover" />
           <ThemedText type="body" style={{ fontWeight: "600" }}>
-            AI Insights
+            Dream Guardian Tips
           </ThemedText>
         </View>
         <Pressable onPress={fetchInsights} style={styles.refreshButton}>
@@ -256,6 +262,17 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
+  },
+  guardianImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+  },
+  headerIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
   },
   emptyContent: {
     flex: 1,
