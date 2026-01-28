@@ -177,6 +177,67 @@ export const cachedInsights = pgTable("cached_insights", {
   expiresAt: timestamp("expires_at").notNull(),
 });
 
+// Guardian Memory System - for hyper-personalized AI coaching
+export const guardianInsights = pgTable("guardian_insights", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull(),
+  insightType: text("insight_type").notNull(), // pattern, achievement, warning, preference
+  category: text("category"), // spending category if relevant
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  confidence: real("confidence").default(0.5), // 0-1 how confident the AI is
+  isActive: boolean("is_active").default(true),
+  metadata: jsonb("metadata"), // flexible data for different insight types
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const guardianRecommendations = pgTable("guardian_recommendations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull(),
+  insightId: varchar("insight_id"), // link to the insight that triggered this
+  recommendationType: text("recommendation_type").notNull(), // savings_tip, budget_adjust, goal_reminder, celebrate
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  suggestedAction: text("suggested_action"), // what the user should do
+  targetAmount: real("target_amount"), // if saving/budget related
+  category: text("category"), // if category specific
+  status: text("status").notNull().default("pending"), // pending, shown, acted, dismissed, expired
+  shownAt: timestamp("shown_at"),
+  actedAt: timestamp("acted_at"),
+  dismissedAt: timestamp("dismissed_at"),
+  userFeedback: text("user_feedback"), // helpful, not_helpful, already_knew
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const savingsConfirmations = pgTable("savings_confirmations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull(),
+  goalId: varchar("goal_id"), // optional link to a specific dream/goal
+  amount: real("amount").notNull(),
+  confirmationType: text("confirmation_type").notNull(), // bank_transfer, cash_saved, auto_transfer
+  note: text("note"),
+  triggeredBy: text("triggered_by"), // which partner confirmed
+  recommendationId: varchar("recommendation_id"), // if this was from a Guardian recommendation
+  isVerified: boolean("is_verified").default(false), // for future bank linking
+  confirmationDate: text("confirmation_date").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Track savings streaks for gamification
+export const savingsStreaks = pgTable("savings_streaks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull().unique(),
+  currentStreak: integer("current_streak").default(0).notNull(), // weeks in a row
+  longestStreak: integer("longest_streak").default(0).notNull(),
+  lastConfirmationDate: text("last_confirmation_date"),
+  totalConfirmations: integer("total_confirmations").default(0).notNull(),
+  totalAmountSaved: real("total_amount_saved").default(0).notNull(),
+  streakBrokenCount: integer("streak_broken_count").default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const goalsRelations = relations(goals, ({ many }) => ({
   contributions: many(goalContributions),
 }));
@@ -263,3 +324,7 @@ export type Couple = typeof couples.$inferSelect;
 export type LineItem = typeof lineItems.$inferSelect;
 export type SpendingBenchmark = typeof spendingBenchmarks.$inferSelect;
 export type CachedInsight = typeof cachedInsights.$inferSelect;
+export type GuardianInsight = typeof guardianInsights.$inferSelect;
+export type GuardianRecommendation = typeof guardianRecommendations.$inferSelect;
+export type SavingsConfirmation = typeof savingsConfirmations.$inferSelect;
+export type SavingsStreak = typeof savingsStreaks.$inferSelect;
