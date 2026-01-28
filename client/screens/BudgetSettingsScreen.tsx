@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import { View, StyleSheet, ScrollView, Pressable, TextInput, Modal } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -19,6 +20,7 @@ import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS, BUDGET_TYPE_INFO } fr
 export default function BudgetSettingsScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
+  const tabBarHeight = useBottomTabBarHeight();
   const navigation = useNavigation();
   const { theme } = useTheme();
   const { data, updateCategoryBudget, processMonthlyRollover } = useApp();
@@ -194,7 +196,7 @@ export default function BudgetSettingsScreen() {
       <ScrollView
         contentContainerStyle={{
           paddingTop: headerHeight + Spacing.xl,
-          paddingBottom: insets.bottom + Spacing.xl,
+          paddingBottom: tabBarHeight + Spacing.xl,
           paddingHorizontal: Spacing.lg,
         }}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
