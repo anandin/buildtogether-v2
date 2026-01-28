@@ -42,29 +42,29 @@ export function WelcomeScreen({ onGetStarted }: WelcomeScreenProps) {
           </ThemedText>
           
           <ThemedText type="body" style={[styles.subtitle, { color: theme.textSecondary }]}>
-            The couples finance app that makes{"\n"}money conversations easy
+            Your personal finance companion{"\n"}that learns what works for you
           </ThemedText>
         </View>
         
         <View style={styles.featuresSection}>
           <FeatureItem 
-            icon="pie-chart" 
-            title="Share expenses fairly"
-            description="Split bills your way - equal, by income, or custom"
+            icon="cpu" 
+            title="AI that knows you"
+            description="Learns your habits and gives personalized tips"
             color={theme.primary}
             theme={theme}
           />
           <FeatureItem 
-            icon="target" 
-            title="Dream together"
-            description="Save toward shared goals like vacations or a home"
+            icon="star" 
+            title="Shared savings dreams"
+            description="Track goals together - from date nights to dream homes"
             color={theme.success}
             theme={theme}
           />
           <FeatureItem 
-            icon="sun" 
-            title="Your Dream Guardian"
-            description="A friendly ally helping you stay on track"
+            icon="heart" 
+            title="Friendly Dream Guardian"
+            description="Your cheerful owl companion keeps you on track"
             color={theme.warning}
             theme={theme}
           />
@@ -83,7 +83,7 @@ export function WelcomeScreen({ onGetStarted }: WelcomeScreenProps) {
         </Pressable>
         
         <ThemedText type="tiny" style={[styles.privacyNote, { color: theme.textSecondary }]}>
-          Your financial data stays on your device
+          No bank linking needed - privacy-first design
         </ThemedText>
       </View>
     </View>

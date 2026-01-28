@@ -87,7 +87,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
               </View>
               <ThemedText type="h2">Who's building together?</ThemedText>
               <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "center" }}>
-                Enter your names so your Dream Guardian{"\n"}knows who to cheer for!
+                Your friendly owl guardian will learn your{"\n"}spending patterns and cheer you on!
               </ThemedText>
             </View>
             
@@ -167,9 +167,9 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
               <View style={[styles.stepIndicator, { backgroundColor: theme.success }]}>
                 <ThemedText type="small" style={{ color: "#FFFFFF", fontWeight: "600" }}>2</ThemedText>
               </View>
-              <ThemedText type="h2">What are you saving for?</ThemedText>
+              <ThemedText type="h2">What's your first dream?</ThemedText>
               <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "center" }}>
-                Create your first shared dream.{"\n"}This is what you're building toward together!
+                Your guardian will track your progress{"\n"}and give smart tips to get there faster!
               </ThemedText>
             </View>
             

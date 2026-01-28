@@ -60,6 +60,38 @@
         display: block;
       }
 
+      .features-box {
+        background: linear-gradient(135deg, #FF9AA2 0%, #C7CEEA 100%);
+        border-radius: 16px;
+        padding: 20px;
+        margin-bottom: 28px;
+        text-align: left;
+      }
+      .feature-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 0;
+        color: #fff;
+      }
+      .feature-item:not(:last-child) {
+        border-bottom: 1px solid rgba(255,255,255,0.2);
+      }
+      .feature-icon {
+        width: 36px;
+        height: 36px;
+        background: rgba(255,255,255,0.2);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+      }
+      .feature-text {
+        font-size: 15px;
+        font-weight: 500;
+      }
+
       .steps-container {
         display: flex;
         flex-direction: column;
@@ -325,6 +357,9 @@
         .open-button:hover {
           background: #e0e0e0;
         }
+        .features-box {
+          background: linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%);
+        }
       }
     </style>
   </head>
@@ -337,7 +372,36 @@
 
       <div class="content" id="content">
         <h1>APP_NAME_PLACEHOLDER</h1>
-        <p class="subtitle">Preview this app on your phone</p>
+        <p class="subtitle">Your AI-powered finance companion that learns what works for you</p>
+
+        <div class="features-box">
+          <div class="feature-item">
+            <span class="feature-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+                <line x1="8" y1="21" x2="16" y2="21"></line>
+                <line x1="12" y1="17" x2="12" y2="21"></line>
+              </svg>
+            </span>
+            <span class="feature-text">AI that learns your spending patterns</span>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+              </svg>
+            </span>
+            <span class="feature-text">Track shared dreams together</span>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+              </svg>
+            </span>
+            <span class="feature-text">Your friendly Dream Guardian owl</span>
+          </div>
+        </div>
 
         <div class="steps-container">
           <div class="step">
