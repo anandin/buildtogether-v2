@@ -161,6 +161,74 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete account - Required for Apple App Store compliance
+  app.delete("/api/auth/account", async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith("Bearer ")) {
+        return res.status(401).json({ error: "No token provided" });
+      }
+
+      const token = authHeader.split(" ")[1];
+      const session = await db.query.sessions.findFirst({
+        where: eq(sessions.token, token),
+      });
+
+      if (!session || new Date(session.expiresAt) < new Date()) {
+        return res.status(401).json({ error: "Invalid or expired session" });
+      }
+
+      const user = await db.query.users.findFirst({
+        where: eq(users.id, session.userId),
+      });
+
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+
+      // Delete all user sessions
+      await db.delete(sessions).where(eq(sessions.userId, user.id));
+
+      // If user is partner1, we need to handle the couple data
+      // For now, we'll delete the user but leave couple data for partner2
+      // If partner2, just unlink from couple
+      if (user.coupleId) {
+        const couple = await db.query.couples.findFirst({
+          where: eq(couples.id, user.coupleId),
+        });
+
+        if (couple) {
+          // Check if there's another user linked to this couple
+          const otherUsers = await db.select().from(users)
+            .where(and(
+              eq(users.coupleId, user.coupleId),
+              eq(users.id, user.id)
+            ));
+
+          // If this user is the only one, delete all couple data
+          if (otherUsers.length <= 1) {
+            // Delete couple-related data
+            await db.delete(expenses).where(eq(expenses.coupleId, user.coupleId));
+            await db.delete(goals).where(eq(goals.coupleId, user.coupleId));
+            await db.delete(categoryBudgets).where(eq(categoryBudgets.coupleId, user.coupleId));
+            await db.delete(customCategories).where(eq(customCategories.coupleId, user.coupleId));
+            await db.delete(settlements).where(eq(settlements.coupleId, user.coupleId));
+            await db.delete(partnerInvites).where(eq(partnerInvites.coupleId, user.coupleId));
+            await db.delete(couples).where(eq(couples.id, user.coupleId));
+          }
+        }
+      }
+
+      // Delete the user
+      await db.delete(users).where(eq(users.id, user.id));
+
+      res.json({ success: true, message: "Account deleted successfully" });
+    } catch (error: any) {
+      console.error("Delete account error:", error);
+      res.status(500).json({ error: "Failed to delete account" });
+    }
+  });
+
   // Create partner invite
   app.post("/api/invite/create", async (req, res) => {
     try {

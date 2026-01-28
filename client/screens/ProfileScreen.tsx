@@ -36,7 +36,7 @@ export default function ProfileScreen() {
   const rootNavigation = useNavigation<RootNavigationProp>();
   const { theme } = useTheme();
   const { data, updatePartnerName, setBudget } = useApp();
-  const { user, signOut } = useAuth();
+  const { user, signOut, deleteAccount } = useAuth();
 
   const [editingPartner, setEditingPartner] = useState<"partner1" | "partner2" | null>(null);
   const [partnerName, setPartnerName] = useState("");
@@ -85,6 +85,41 @@ export default function ProfileScreen() {
           onPress: async () => {
             await signOut();
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    Alert.alert(
+      "Delete Account",
+      "This will permanently delete your account and all your data. This action cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete Account",
+          style: "destructive",
+          onPress: () => {
+            Alert.alert(
+              "Are you absolutely sure?",
+              "All your expenses, savings dreams, and settings will be permanently deleted.",
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Yes, Delete Everything",
+                  style: "destructive",
+                  onPress: async () => {
+                    try {
+                      await deleteAccount();
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                    } catch (error) {
+                      Alert.alert("Error", "Failed to delete account. Please try again.");
+                    }
+                  },
+                },
+              ]
+            );
           },
         },
       ]
@@ -384,6 +419,21 @@ export default function ProfileScreen() {
               <ThemedText type="body" style={{ color: theme.error }}>Sign Out</ThemedText>
               <ThemedText type="small" style={{ color: theme.textSecondary }}>
                 {user.email || "Signed in with Apple"}
+              </ThemedText>
+            </View>
+          </Pressable>
+
+          <Pressable 
+            style={styles.settingRow}
+            onPress={handleDeleteAccount}
+          >
+            <View style={[styles.settingIcon, { backgroundColor: theme.error + "10" }]}>
+              <Feather name="trash-2" size={18} color={theme.error} />
+            </View>
+            <View style={styles.settingContent}>
+              <ThemedText type="body" style={{ color: theme.error }}>Delete Account</ThemedText>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                Permanently delete all your data
               </ThemedText>
             </View>
           </Pressable>
