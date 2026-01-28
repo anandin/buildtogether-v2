@@ -301,7 +301,7 @@ export function DreamGuardian({ onAddToGoal, coupleId }: DreamGuardianProps) {
         <View style={[styles.aiNudgeContainer, { borderColor: nudgeColor + "40" }]}>
           <View style={styles.aiNudgeHeader}>
             <View style={[styles.aiNudgeBadge, { backgroundColor: nudgeColor + "20" }]}>
-              <Feather name="sparkles" size={12} color={nudgeColor} />
+              <Feather name="zap" size={12} color={nudgeColor} />
               <ThemedText type="tiny" style={{ color: nudgeColor, fontWeight: "600" }}>
                 AI Insight
               </ThemedText>

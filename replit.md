@@ -53,6 +53,11 @@ Preferred communication style: Simple, everyday language.
 - **Onboarding Flow**: Welcome screen with feature highlights, followed by partner name setup and optional first goal creation
 - **Dream Guardian**: Friendly AI companion replacing complex visualizations - speaks naturally and gives contextual encouragement based on savings behavior
 - **Guardian Memory System**: Backend database tables and API endpoints for tracking insights, recommendations, savings confirmations, and streak data - enables hyper-personalized AI coaching
+- **Daily AI Analysis System**: Proactive AI that analyzes daily spending patterns and generates personalized nudges using behavioral psychology (loss aversion, fresh start effect, sunk cost protection, goal gradient)
+- **5-Level Escalating Nudge System**: Nudges escalate from gentle → friendly → direct → urgent → intervention based on user responsiveness
+- **Partner-Specific Learning**: Tracks which behavioral techniques work best for each partner and adapts AI messaging accordingly
+- **Nudge Response Tracking**: Records acted/dismissed/ignored responses to improve future recommendations
+- **Dynamic Chart Period Toggle**: Insights screen now shows Week/Month/Year spending data with dynamic labels
 - **ConfirmSavingsScreen**: Manual savings logging with celebration animations, streak tracking, quick amount buttons, and optional goal linking - no bank linking required
 - **Ego Spend Detection**: AI identifies luxury/status purchases with "Vanish to Dream" redirect buttons
 - **Haptic Dream Deposits**: Enhanced goal contribution flow with celebration animation
