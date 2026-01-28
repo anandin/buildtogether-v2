@@ -70,6 +70,12 @@ Preferred communication style: Simple, everyday language.
   - Expenses: Smart time-grouped list (Today/Yesterday/This Week/Earlier), category filter chips, payer indicators, settlement tracker, category budgets
   - Insights: Steady Progress, Future Us, AI Coach (moved from Home), spending analytics
   - Dreams: Renamed from Goals, star icon, shared savings dreams
+- **UX Transformation - Live Learning App (Jan 2026)**:
+  - **AI Feedback Toast System**: Immediate AI reactions after every user action (expense entry, dream deposits), with actionable buttons and contextual insights
+  - **Real-Time Budget Impact Preview**: As users type expense amounts, a live preview shows budget status with color-coded progress bars (green=safe, yellow=warning at 80%, red=over budget)
+  - **Guardian Memory Screen**: Full transparency into what AI has learned - shows insights history, recommendation audit trail, effectiveness tracking, and behavioral pattern analysis
+  - **Personalized Greetings**: Context-aware app-open messages from Dream Guardian considering time of day, recent activity, streaks, and goal progress
+  - **WCAG AA Accessibility**: Updated color palette meeting 4.5:1 contrast ratios while maintaining warm pastel personality
 
 **State Management**: 
 - React Context (AppContext) for global app data including expenses, goals, budget, and partner information
