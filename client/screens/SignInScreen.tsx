@@ -1,7 +1,8 @@
 import React, { useState } from "react";
-import { View, StyleSheet, Platform, Pressable } from "react-native";
+import { View, StyleSheet, Platform, Pressable, TextInput, ScrollView, KeyboardAvoidingView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as AppleAuthentication from "expo-apple-authentication";
+import * as WebBrowser from "expo-web-browser";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
@@ -10,12 +11,22 @@ import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/context/AuthContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
 
+WebBrowser.maybeCompleteAuthSession();
+
+type AuthMode = "signin" | "signup";
+
 export default function SignInScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { signInWithApple } = useAuth();
+  const { signInWithApple, signInWithEmail, signUpWithEmail } = useAuth();
+  
+  const [mode, setMode] = useState<AuthMode>("signin");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleAppleSignIn = async () => {
     try {
@@ -31,122 +42,223 @@ export default function SignInScreen() {
     }
   };
 
+  const handleEmailAuth = async () => {
+    if (!email.trim() || !password.trim()) {
+      setError("Please enter your email and password");
+      return;
+    }
+
+    if (mode === "signup" && password.length < 6) {
+      setError("Password must be at least 6 characters");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      
+      if (mode === "signin") {
+        await signInWithEmail(email.trim(), password);
+      } else {
+        await signUpWithEmail(email.trim(), password, name.trim() || undefined);
+      }
+      
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err: any) {
+      setError(err.message || "Authentication failed. Please try again.");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleMode = () => {
+    setMode(mode === "signin" ? "signup" : "signin");
+    setError(null);
+  };
+
   return (
-    <View 
-      style={[
-        styles.container, 
-        { 
-          backgroundColor: theme.backgroundRoot,
-          paddingTop: insets.top + Spacing["2xl"],
-          paddingBottom: insets.bottom + Spacing["2xl"],
-        }
-      ]}
+    <KeyboardAvoidingView 
+      style={{ flex: 1, backgroundColor: theme.backgroundRoot }}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <View style={styles.header}>
-        <View style={[styles.logoContainer, { backgroundColor: theme.primary + "15" }]}>
-          <Feather name="heart" size={48} color={theme.primary} />
-        </View>
-        <ThemedText type="h1" style={styles.title}>
-          Build Together
-        </ThemedText>
-        <ThemedText type="body" style={[styles.subtitle, { color: theme.textSecondary }]}>
-          Your personal finance companion{"\n"}that learns what works for you
-        </ThemedText>
-      </View>
-
-      <View style={styles.features}>
-        <FeatureItem 
-          icon="cpu" 
-          title="AI that knows you"
-          description="Learns your habits and gives personalized tips"
-          theme={theme}
-        />
-        <FeatureItem 
-          icon="star" 
-          title="Shared savings dreams"
-          description="Track goals together - from date nights to homes"
-          theme={theme}
-        />
-        <FeatureItem 
-          icon="heart" 
-          title="Your Dream Guardian"
-          description="A friendly owl companion cheering you on"
-          theme={theme}
-        />
-      </View>
-
-      <View style={styles.authSection}>
-        {error ? (
-          <ThemedText type="small" style={[styles.error, { color: theme.error }]}>
-            {error}
+      <ScrollView 
+        contentContainerStyle={[
+          styles.container,
+          { 
+            paddingTop: insets.top + Spacing.xl,
+            paddingBottom: insets.bottom + Spacing.xl,
+          }
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.header}>
+          <View style={[styles.logoContainer, { backgroundColor: theme.primary + "15" }]}>
+            <Feather name="heart" size={48} color={theme.primary} />
+          </View>
+          <ThemedText type="h1" style={styles.title}>
+            Build Together
           </ThemedText>
-        ) : null}
+          <ThemedText type="body" style={[styles.subtitle, { color: theme.textSecondary }]}>
+            Your personal finance companion{"\n"}that learns what works for you
+          </ThemedText>
+        </View>
 
-        {Platform.OS === "ios" ? (
-          <AppleAuthentication.AppleAuthenticationButton
-            buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-            buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
-            cornerRadius={BorderRadius.md}
-            style={styles.appleButton}
-            onPress={handleAppleSignIn}
-          />
-        ) : (
+        <View style={styles.authSection}>
+          {error ? (
+            <View style={[styles.errorBox, { backgroundColor: theme.error + "15" }]}>
+              <Feather name="alert-circle" size={16} color={theme.error} />
+              <ThemedText type="small" style={[styles.errorText, { color: theme.error }]}>
+                {error}
+              </ThemedText>
+            </View>
+          ) : null}
+
+          {mode === "signup" ? (
+            <View style={styles.inputContainer}>
+              <ThemedText type="small" style={[styles.inputLabel, { color: theme.textSecondary }]}>
+                Name (optional)
+              </ThemedText>
+              <View style={[styles.inputWrapper, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
+                <Feather name="user" size={18} color={theme.textSecondary} />
+                <TextInput
+                  style={[styles.input, { color: theme.text }]}
+                  placeholder="Your name"
+                  placeholderTextColor={theme.textSecondary}
+                  value={name}
+                  onChangeText={setName}
+                  autoCapitalize="words"
+                  testID="input-name"
+                />
+              </View>
+            </View>
+          ) : null}
+
+          <View style={styles.inputContainer}>
+            <ThemedText type="small" style={[styles.inputLabel, { color: theme.textSecondary }]}>
+              Email
+            </ThemedText>
+            <View style={[styles.inputWrapper, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
+              <Feather name="mail" size={18} color={theme.textSecondary} />
+              <TextInput
+                style={[styles.input, { color: theme.text }]}
+                placeholder="your@email.com"
+                placeholderTextColor={theme.textSecondary}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoComplete="email"
+                testID="input-email"
+              />
+            </View>
+          </View>
+
+          <View style={styles.inputContainer}>
+            <ThemedText type="small" style={[styles.inputLabel, { color: theme.textSecondary }]}>
+              Password
+            </ThemedText>
+            <View style={[styles.inputWrapper, { backgroundColor: theme.backgroundSecondary, borderColor: theme.border }]}>
+              <Feather name="lock" size={18} color={theme.textSecondary} />
+              <TextInput
+                style={[styles.input, { color: theme.text }]}
+                placeholder="Your password"
+                placeholderTextColor={theme.textSecondary}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                testID="input-password"
+              />
+              <Pressable onPress={() => setShowPassword(!showPassword)}>
+                <Feather name={showPassword ? "eye-off" : "eye"} size={18} color={theme.textSecondary} />
+              </Pressable>
+            </View>
+          </View>
+
           <Pressable
-            style={[styles.signInButton, { backgroundColor: theme.primary }]}
-            onPress={handleAppleSignIn}
+            style={[styles.primaryButton, { backgroundColor: theme.primary }]}
+            onPress={handleEmailAuth}
             disabled={loading}
+            testID="button-email-auth"
           >
-            <Feather name="log-in" size={20} color="#FFFFFF" />
             <ThemedText type="body" style={styles.buttonText}>
-              {loading ? "Signing in..." : "Continue with Apple"}
+              {loading ? "Please wait..." : mode === "signin" ? "Sign In" : "Create Account"}
             </ThemedText>
           </Pressable>
-        )}
 
-        <ThemedText type="tiny" style={[styles.terms, { color: theme.textSecondary }]}>
-          By continuing, you agree to our Terms of Service and Privacy Policy
-        </ThemedText>
-      </View>
-    </View>
-  );
-}
+          <Pressable onPress={toggleMode} style={styles.toggleMode}>
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              {mode === "signin" ? "Don't have an account? " : "Already have an account? "}
+              <ThemedText type="small" style={{ color: theme.primary, fontWeight: "600" }}>
+                {mode === "signin" ? "Sign Up" : "Sign In"}
+              </ThemedText>
+            </ThemedText>
+          </Pressable>
 
-function FeatureItem({ 
-  icon, 
-  title, 
-  description,
-  theme,
-}: { 
-  icon: keyof typeof Feather.glyphMap; 
-  title: string; 
-  description: string;
-  theme: any;
-}) {
-  return (
-    <View style={styles.featureItem}>
-      <View style={[styles.featureIcon, { backgroundColor: theme.primary + "15" }]}>
-        <Feather name={icon} size={20} color={theme.primary} />
-      </View>
-      <View style={styles.featureText}>
-        <ThemedText type="body" style={{ fontWeight: "600" }}>
-          {title}
-        </ThemedText>
-        <ThemedText type="small" style={{ color: theme.textSecondary }}>
-          {description}
-        </ThemedText>
-      </View>
-    </View>
+          <View style={styles.divider}>
+            <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+            <ThemedText type="small" style={[styles.dividerText, { color: theme.textSecondary }]}>
+              or continue with
+            </ThemedText>
+            <View style={[styles.dividerLine, { backgroundColor: theme.border }]} />
+          </View>
+
+          <View style={styles.socialButtons}>
+            {Platform.OS === "ios" ? (
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.BLACK}
+                cornerRadius={BorderRadius.md}
+                style={styles.socialButton}
+                onPress={handleAppleSignIn}
+              />
+            ) : (
+              <Pressable
+                style={[styles.socialButtonAlt, { backgroundColor: "#000" }]}
+                onPress={handleAppleSignIn}
+                disabled={loading}
+                testID="button-apple"
+              >
+                <Feather name="smartphone" size={20} color="#FFFFFF" />
+                <ThemedText type="body" style={styles.buttonText}>
+                  Apple
+                </ThemedText>
+              </Pressable>
+            )}
+
+            <Pressable
+              style={[styles.socialButtonAlt, { backgroundColor: theme.backgroundSecondary, borderWidth: 1, borderColor: theme.border }]}
+              onPress={() => setError("Google Sign-In coming soon!")}
+              disabled={loading}
+              testID="button-google"
+            >
+              <View style={styles.googleIcon}>
+                <ThemedText style={{ fontSize: 16, fontWeight: "bold" }}>G</ThemedText>
+              </View>
+              <ThemedText type="body" style={{ color: theme.text, fontWeight: "600" }}>
+                Google
+              </ThemedText>
+            </Pressable>
+          </View>
+
+          <ThemedText type="tiny" style={[styles.terms, { color: theme.textSecondary }]}>
+            By continuing, you agree to our Terms of Service and Privacy Policy
+          </ThemedText>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    flexGrow: 1,
     paddingHorizontal: Spacing.xl,
   },
   header: {
     alignItems: "center",
-    marginBottom: Spacing["2xl"],
+    marginBottom: Spacing.xl,
   },
   logoContainer: {
     width: 100,
@@ -164,38 +276,82 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 24,
   },
-  features: {
+  authSection: {
     flex: 1,
-    justifyContent: "center",
-    gap: Spacing.lg,
+    gap: Spacing.md,
   },
-  featureItem: {
+  errorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+  },
+  errorText: {
+    flex: 1,
+  },
+  inputContainer: {
+    gap: Spacing.xs,
+  },
+  inputLabel: {
+    marginLeft: Spacing.xs,
+  },
+  inputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    height: 50,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: "Nunito_400Regular",
+  },
+  primaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: Spacing.sm,
+    height: 50,
+    borderRadius: BorderRadius.md,
+    marginTop: Spacing.sm,
+  },
+  buttonText: {
+    color: "#FFFFFF",
+    fontWeight: "600",
+  },
+  toggleMode: {
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+  },
+  divider: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.md,
+    marginVertical: Spacing.sm,
   },
-  featureIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  featureText: {
+  dividerLine: {
     flex: 1,
-    gap: 2,
+    height: 1,
   },
-  authSection: {
+  dividerText: {
+    textTransform: "uppercase",
+    fontSize: 11,
+    letterSpacing: 1,
+  },
+  socialButtons: {
+    flexDirection: "row",
     gap: Spacing.md,
   },
-  error: {
-    textAlign: "center",
-  },
-  appleButton: {
-    width: "100%",
+  socialButton: {
+    flex: 1,
     height: 50,
   },
-  signInButton: {
+  socialButtonAlt: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -203,12 +359,15 @@ const styles = StyleSheet.create({
     height: 50,
     borderRadius: BorderRadius.md,
   },
-  buttonText: {
-    color: "#FFFFFF",
-    fontWeight: "600",
+  googleIcon: {
+    width: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
   },
   terms: {
     textAlign: "center",
     lineHeight: 18,
+    marginTop: Spacing.md,
   },
 });

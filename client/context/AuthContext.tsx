@@ -19,6 +19,9 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   signInWithApple: () => Promise<void>;
+  signInWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string, name?: string) => Promise<void>;
+  signInWithGoogle: (googleId: string, email: string | null, name: string | null, idToken: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshSession: () => Promise<void>;
   deleteAccount: () => Promise<void>;
@@ -142,6 +145,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const signInWithEmail = async (email: string, password: string) => {
+    const apiUrl = getApiUrl();
+    const response = await fetch(new URL("/api/auth/login", apiUrl).toString(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email, password }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Login failed");
+    }
+
+    await setToken(data.token);
+    if (data.user.coupleId) {
+      await setCoupleId(data.user.coupleId);
+    }
+    setUser(data.user);
+  };
+
+  const signUpWithEmail = async (email: string, password: string, name?: string) => {
+    const apiUrl = getApiUrl();
+    const response = await fetch(new URL("/api/auth/register", apiUrl).toString(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ email, password, name }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Registration failed");
+    }
+
+    await setToken(data.token);
+    if (data.user.coupleId) {
+      await setCoupleId(data.user.coupleId);
+    }
+    setUser(data.user);
+  };
+
+  const signInWithGoogle = async (googleId: string, email: string | null, name: string | null, idToken: string) => {
+    const apiUrl = getApiUrl();
+    const response = await fetch(new URL("/api/auth/google", apiUrl).toString(), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ googleId, email, name, idToken }),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Google sign in failed");
+    }
+
+    await setToken(data.token);
+    if (data.user.coupleId) {
+      await setCoupleId(data.user.coupleId);
+    }
+    setUser(data.user);
+  };
+
   const signOut = async () => {
     try {
       const token = await getToken();
@@ -199,6 +268,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         isAuthenticated: !!user,
         signInWithApple,
+        signInWithEmail,
+        signUpWithEmail,
+        signInWithGoogle,
         signOut,
         refreshSession,
         deleteAccount,
