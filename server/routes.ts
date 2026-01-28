@@ -22,7 +22,11 @@ import {
   guardianRecommendations,
   savingsConfirmations,
   savingsStreaks,
+  dailyAnalysis,
+  partnerNudgePreferences,
+  nudgeEscalation,
 } from "@shared/schema";
+import { buildDailyAnalysisPrompt } from "./prompts";
 import crypto from "crypto";
 
 function generateInviteCode(): string {
@@ -2047,6 +2051,403 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
       });
     } catch (error: any) {
       console.error("Get guardian memory error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== DAILY AI ANALYSIS ENDPOINT ====================
+  // This is the proactive AI that analyzes spending and generates nudges
+  
+  app.post("/api/guardian/daily-analysis/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Check if we already analyzed today
+      const existingAnalysis = await db.select().from(dailyAnalysis)
+        .where(and(eq(dailyAnalysis.coupleId, coupleId), eq(dailyAnalysis.analysisDate, today)));
+      
+      if (existingAnalysis.length > 0 && existingAnalysis[0].dailyNudge) {
+        // Return existing analysis
+        return res.json(existingAnalysis[0]);
+      }
+      
+      // Gather all context for the AI
+      const [
+        coupleData,
+        allExpenses,
+        goalsData,
+        streakData,
+        nudgePrefs,
+        escalations,
+        recentAnalyses,
+        savingsData
+      ] = await Promise.all([
+        db.select().from(couples).where(eq(couples.id, coupleId)),
+        db.select().from(expenses).where(eq(expenses.coupleId, coupleId)).orderBy(desc(expenses.date)),
+        db.select().from(goals).where(eq(goals.coupleId, coupleId)),
+        db.select().from(savingsStreaks).where(eq(savingsStreaks.coupleId, coupleId)),
+        db.select().from(partnerNudgePreferences).where(eq(partnerNudgePreferences.coupleId, coupleId)),
+        db.select().from(nudgeEscalation).where(eq(nudgeEscalation.coupleId, coupleId)),
+        db.select().from(dailyAnalysis)
+          .where(eq(dailyAnalysis.coupleId, coupleId))
+          .orderBy(desc(dailyAnalysis.analysisDate))
+          .limit(10),
+        db.select().from(savingsConfirmations).where(eq(savingsConfirmations.coupleId, coupleId))
+      ]);
+      
+      const couple = coupleData[0];
+      if (!couple) {
+        return res.status(404).json({ error: "Couple not found" });
+      }
+      
+      // Calculate today's spending
+      const todayExpenses = allExpenses.filter(e => e.date === today);
+      const todaySpending = todayExpenses.reduce((sum, e) => sum + e.amount, 0);
+      const todayCategories: Record<string, number> = {};
+      todayExpenses.forEach(e => {
+        todayCategories[e.category] = (todayCategories[e.category] || 0) + e.amount;
+      });
+      
+      // Calculate weekly average
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      const weeklyExpenses = allExpenses.filter(e => new Date(e.date) >= weekAgo);
+      const weeklyTotal = weeklyExpenses.reduce((sum, e) => sum + e.amount, 0);
+      
+      // Monthly total
+      const thisMonth = today.substring(0, 7);
+      const monthlyExpenses = allExpenses.filter(e => e.date.startsWith(thisMonth));
+      const monthlyTotal = monthlyExpenses.reduce((sum, e) => sum + e.amount, 0);
+      
+      // Days without deposit
+      const lastConfirmationDate = streakData[0]?.lastConfirmationDate;
+      const daysWithoutDeposit = lastConfirmationDate 
+        ? Math.floor((new Date().getTime() - new Date(lastConfirmationDate).getTime()) / (1000 * 60 * 60 * 24))
+        : 999;
+      
+      // Get closest goal
+      let closestGoal = null;
+      if (goalsData.length > 0) {
+        const sortedGoals = goalsData
+          .filter(g => g.savedAmount < g.targetAmount)
+          .sort((a, b) => (b.savedAmount / b.targetAmount) - (a.savedAmount / a.targetAmount));
+        
+        if (sortedGoals.length > 0) {
+          const g = sortedGoals[0];
+          closestGoal = {
+            name: g.name,
+            emoji: g.emoji,
+            progress: Math.round((g.savedAmount / g.targetAmount) * 100),
+            amountLeft: g.targetAmount - g.savedAmount
+          };
+        }
+      }
+      
+      // Find current escalation level
+      const currentEscalation = escalations.find(e => !e.resolvedAt);
+      const escalationLevel = currentEscalation?.currentLevel || 1;
+      
+      // Get last nudge info
+      const lastAnalysis = recentAnalyses.find(a => a.dailyNudge);
+      const lastNudgeType = lastAnalysis?.nudgeType || null;
+      const lastNudgeActedOn = lastAnalysis?.userResponse === 'acted';
+      
+      // Build context for AI
+      const context = {
+        todaySpending,
+        todayCategories,
+        weeklyAverage: weeklyTotal,
+        monthlyTotal,
+        daysWithoutDeposit,
+        currentStreakWeeks: streakData[0]?.currentStreak || 0,
+        longestStreak: streakData[0]?.longestStreak || 0,
+        totalSavedToDate: savingsData.reduce((sum, s) => sum + s.amount, 0),
+        closestGoal,
+        escalationLevel,
+        lastNudgeType,
+        lastNudgeActedOn
+      };
+      
+      const familyProfile = {
+        numAdults: couple.numAdults || 2,
+        numKidsUnder5: couple.numKidsUnder5 || 0,
+        numKids5to12: couple.numKids5to12 || 0,
+        numTeens: couple.numTeens || 0,
+        city: couple.city,
+        country: couple.country || "US",
+        partner1Name: couple.partner1Name,
+        partner2Name: couple.partner2Name
+      };
+      
+      // Get partner preferences
+      const prefs = nudgePrefs[0];
+      const partnerPreferences = prefs ? {
+        partnerRole: prefs.partnerRole,
+        lossAversionScore: prefs.lossAversionScore || 0.5,
+        gainFramingScore: prefs.gainFramingScore || 0.5,
+        socialProofScore: prefs.socialProofScore || 0.5,
+        progressScore: prefs.progressScore || 0.5,
+        urgencyScore: prefs.urgencyScore || 0.5,
+        weaknessCategories: (prefs.weaknessCategories as string[]) || [],
+        totalNudgesReceived: prefs.totalNudgesReceived || 0,
+        nudgesActedOn: prefs.nudgesActedOn || 0
+      } : null;
+      
+      // Build goals for prompt
+      const goalsForPrompt = goalsData.map(g => ({
+        name: g.name,
+        emoji: g.emoji,
+        targetAmount: g.targetAmount,
+        savedAmount: g.savedAmount
+      }));
+      
+      // Generate AI insight
+      const prompt = buildDailyAnalysisPrompt(familyProfile, partnerPreferences, context, goalsForPrompt);
+      
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: prompt },
+          { role: "user", content: `Today is ${today}. Generate a daily insight for this couple.` }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.7,
+      });
+      
+      const responseText = completion.choices[0].message.content;
+      let aiResponse;
+      try {
+        aiResponse = JSON.parse(responseText || "{}");
+      } catch {
+        aiResponse = { shouldNudge: false, message: "Keep up the great work!" };
+      }
+      
+      // Save the analysis
+      const [newAnalysis] = await db.insert(dailyAnalysis).values({
+        coupleId,
+        analysisDate: today,
+        expensesAnalyzed: todayExpenses.length,
+        totalSpentToday: todaySpending,
+        topCategoryToday: Object.keys(todayCategories).sort((a, b) => todayCategories[b] - todayCategories[a])[0] || null,
+        dailyNudge: aiResponse.shouldNudge ? aiResponse.message : null,
+        nudgeType: aiResponse.nudgeType || null,
+        nudgePriority: aiResponse.priority || "medium",
+        suggestedAction: aiResponse.suggestedAction || null,
+        targetGoalId: goalsData.find(g => g.emoji === aiResponse.targetGoalEmoji)?.id || null,
+        daysWithoutDeposit,
+        currentStreakDays: (streakData[0]?.currentStreak || 0) * 7,
+        spendingVsAverage: weeklyTotal > 0 ? todaySpending / (weeklyTotal / 7) : 1,
+      }).returning();
+      
+      // Update escalation if needed
+      if (daysWithoutDeposit > 7 && !currentEscalation) {
+        await db.insert(nudgeEscalation).values({
+          coupleId,
+          topic: "no_deposits",
+          currentLevel: 1,
+          level1SentAt: new Date(),
+        });
+      } else if (currentEscalation && daysWithoutDeposit > 14 && (currentEscalation.currentLevel || 1) < 5) {
+        // Escalate
+        const newLevel = Math.min((currentEscalation.currentLevel || 1) + 1, 5);
+        const levelField = `level${newLevel}SentAt` as keyof typeof currentEscalation;
+        await db.update(nudgeEscalation)
+          .set({ 
+            currentLevel: newLevel, 
+            lastEscalationDate: today,
+            [levelField]: new Date()
+          })
+          .where(eq(nudgeEscalation.id, currentEscalation.id));
+      }
+      
+      res.json({
+        ...newAnalysis,
+        aiResponse,
+        context: {
+          todaySpending,
+          daysWithoutDeposit,
+          closestGoal,
+          monthlyTotal
+        }
+      });
+    } catch (error: any) {
+      console.error("Daily analysis error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Get latest daily nudge for a couple
+  app.get("/api/guardian/daily-nudge/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Get most recent unshown nudge or today's nudge
+      const [analysis] = await db.select().from(dailyAnalysis)
+        .where(eq(dailyAnalysis.coupleId, coupleId))
+        .orderBy(desc(dailyAnalysis.analysisDate))
+        .limit(1);
+      
+      if (!analysis || !analysis.dailyNudge) {
+        return res.json({ hasNudge: false });
+      }
+      
+      // Mark as shown if not already
+      if (!analysis.wasShown) {
+        await db.update(dailyAnalysis)
+          .set({ wasShown: true, shownAt: new Date() })
+          .where(eq(dailyAnalysis.id, analysis.id));
+      }
+      
+      res.json({
+        hasNudge: true,
+        nudge: {
+          id: analysis.id,
+          message: analysis.dailyNudge,
+          type: analysis.nudgeType,
+          priority: analysis.nudgePriority,
+          suggestedAction: analysis.suggestedAction,
+          targetGoalId: analysis.targetGoalId,
+          date: analysis.analysisDate,
+          daysWithoutDeposit: analysis.daysWithoutDeposit,
+        }
+      });
+    } catch (error: any) {
+      console.error("Get daily nudge error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Record user response to a nudge
+  app.post("/api/guardian/nudge-response/:coupleId/:analysisId", async (req, res) => {
+    try {
+      const { coupleId, analysisId } = req.params;
+      const { response, savedAmount } = req.body; // response: 'acted' | 'dismissed' | 'ignored'
+      
+      await db.update(dailyAnalysis)
+        .set({ 
+          userResponse: response,
+          respondedAt: new Date()
+        })
+        .where(and(eq(dailyAnalysis.id, analysisId), eq(dailyAnalysis.coupleId, coupleId)));
+      
+      // Update partner nudge preferences based on response
+      const [prefs] = await db.select().from(partnerNudgePreferences)
+        .where(eq(partnerNudgePreferences.coupleId, coupleId));
+      
+      if (prefs) {
+        const updates: any = {
+          totalNudgesReceived: (prefs.totalNudgesReceived || 0) + 1,
+          updatedAt: new Date()
+        };
+        
+        if (response === 'acted') {
+          updates.nudgesActedOn = (prefs.nudgesActedOn || 0) + 1;
+          updates.totalSavedFromNudges = (prefs.totalSavedFromNudges || 0) + (savedAmount || 0);
+        } else if (response === 'dismissed') {
+          updates.nudgesDismissed = (prefs.nudgesDismissed || 0) + 1;
+        }
+        
+        await db.update(partnerNudgePreferences)
+          .set(updates)
+          .where(eq(partnerNudgePreferences.id, prefs.id));
+      } else {
+        // Create initial preferences
+        await db.insert(partnerNudgePreferences).values({
+          coupleId,
+          partnerRole: "partner1",
+          totalNudgesReceived: 1,
+          nudgesActedOn: response === 'acted' ? 1 : 0,
+          nudgesDismissed: response === 'dismissed' ? 1 : 0,
+          totalSavedFromNudges: response === 'acted' ? (savedAmount || 0) : 0,
+        });
+      }
+      
+      // If they acted, resolve any escalation
+      if (response === 'acted') {
+        await db.update(nudgeEscalation)
+          .set({ resolvedAt: new Date(), resolutionType: 'user_acted' })
+          .where(and(
+            eq(nudgeEscalation.coupleId, coupleId),
+            eq(nudgeEscalation.resolvedAt, null as any)
+          ));
+      }
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Record nudge response error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Trigger daily analysis after expense is added (called by frontend after expense creation)
+  app.post("/api/guardian/trigger-analysis/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      
+      // Just trigger the daily analysis endpoint
+      const response = await fetch(`http://localhost:5000/api/guardian/daily-analysis/${coupleId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const data = await response.json();
+      res.json(data);
+    } catch (error: any) {
+      console.error("Trigger analysis error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+  
+  // Get historical analysis for insights screen
+  app.get("/api/guardian/history/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const { months = 6 } = req.query;
+      
+      const cutoffDate = new Date();
+      cutoffDate.setMonth(cutoffDate.getMonth() - Number(months));
+      const cutoffStr = cutoffDate.toISOString().split('T')[0];
+      
+      const analyses = await db.select().from(dailyAnalysis)
+        .where(eq(dailyAnalysis.coupleId, coupleId))
+        .orderBy(desc(dailyAnalysis.analysisDate));
+      
+      // Filter and aggregate by month
+      const monthlyData: Record<string, { 
+        totalSpent: number; 
+        nudgesGiven: number; 
+        nudgesActedOn: number;
+        topCategories: Record<string, number>;
+      }> = {};
+      
+      analyses.filter(a => a.analysisDate >= cutoffStr).forEach(a => {
+        const month = a.analysisDate.substring(0, 7);
+        if (!monthlyData[month]) {
+          monthlyData[month] = { totalSpent: 0, nudgesGiven: 0, nudgesActedOn: 0, topCategories: {} };
+        }
+        monthlyData[month].totalSpent += a.totalSpentToday || 0;
+        if (a.dailyNudge) {
+          monthlyData[month].nudgesGiven++;
+          if (a.userResponse === 'acted') {
+            monthlyData[month].nudgesActedOn++;
+          }
+        }
+        if (a.topCategoryToday) {
+          monthlyData[month].topCategories[a.topCategoryToday] = 
+            (monthlyData[month].topCategories[a.topCategoryToday] || 0) + (a.totalSpentToday || 0);
+        }
+      });
+      
+      res.json({
+        monthlyData,
+        recentNudges: analyses.filter(a => a.dailyNudge).slice(0, 10),
+        totalNudgesGiven: analyses.filter(a => a.dailyNudge).length,
+        totalActedOn: analyses.filter(a => a.userResponse === 'acted').length,
+      });
+    } catch (error: any) {
+      console.error("Get history error:", error);
       res.status(500).json({ error: error.message });
     }
   });

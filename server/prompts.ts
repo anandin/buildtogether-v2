@@ -370,3 +370,234 @@ Return JSON:
   "suggestedAmount": (number) suggested savings based on their spending
 }`;
 }
+
+// =====================================================
+// BEHAVIORAL PSYCHOLOGY PROMPTS FOR DREAM GUARDIAN
+// =====================================================
+
+interface PartnerPreferences {
+  partnerRole: string;
+  lossAversionScore: number;
+  gainFramingScore: number;
+  socialProofScore: number;
+  progressScore: number;
+  urgencyScore: number;
+  weaknessCategories: string[];
+  totalNudgesReceived: number;
+  nudgesActedOn: number;
+}
+
+interface DailyContext {
+  todaySpending: number;
+  todayCategories: Record<string, number>;
+  weeklyAverage: number;
+  monthlyTotal: number;
+  daysWithoutDeposit: number;
+  currentStreakWeeks: number;
+  longestStreak: number;
+  totalSavedToDate: number;
+  closestGoal: { name: string; emoji: string; progress: number; amountLeft: number } | null;
+  escalationLevel: number; // 1-5
+  lastNudgeType: string | null;
+  lastNudgeActedOn: boolean | null;
+}
+
+function getNudgeStyleGuidance(prefs: PartnerPreferences | null): string {
+  if (!prefs || prefs.totalNudgesReceived < 5) {
+    return "Try a mix of styles to learn what resonates with this person.";
+  }
+  
+  const styles: string[] = [];
+  const effectivenessRate = prefs.nudgesActedOn / prefs.totalNudgesReceived;
+  
+  if (prefs.lossAversionScore > 0.6) {
+    styles.push("Loss framing works well (\"You could lose X if...\")");
+  }
+  if (prefs.gainFramingScore > 0.6) {
+    styles.push("Gain framing works well (\"You'll gain X when...\")");
+  }
+  if (prefs.progressScore > 0.6) {
+    styles.push("Progress updates motivate them (\"You're X% there!\")");
+  }
+  if (prefs.urgencyScore > 0.6) {
+    styles.push("Urgency motivates action (\"Act now before...\")");
+  }
+  
+  if (styles.length === 0) {
+    return `This person has a ${Math.round(effectivenessRate * 100)}% response rate. Keep experimenting with different approaches.`;
+  }
+  
+  return `EFFECTIVE STYLES FOR THIS PERSON:\n${styles.join('\n')}\nResponse rate: ${Math.round(effectivenessRate * 100)}%`;
+}
+
+function getEscalationGuidance(level: number): string {
+  const levels = {
+    1: "LEVEL 1 (Gentle): Soft observation. No pressure. Just plant a seed.\nExample: \"I noticed something interesting about your week...\"",
+    2: "LEVEL 2 (Friendly): Subtle suggestion with positive framing.\nExample: \"Here's a small opportunity I spotted for you...\"",
+    3: "LEVEL 3 (Direct): Clear ask with specific action.\nExample: \"Would you consider redirecting $X to your dream today?\"",
+    4: "LEVEL 4 (Urgent): Loss aversion framing. Show what's at stake.\nExample: \"Your Hawaii trip date is slipping. Here's how to get back on track.\"",
+    5: "LEVEL 5 (Intervention): Strong but caring. Show the bigger picture.\nExample: \"Let's pause and look at the last month together. Your dream needs attention.\""
+  };
+  return levels[level as keyof typeof levels] || levels[1];
+}
+
+export function buildDailyAnalysisPrompt(
+  familyProfile: FamilyProfile | null,
+  partnerPrefs: PartnerPreferences | null,
+  context: DailyContext,
+  goals: Array<{ name: string; emoji: string; targetAmount: number; savedAmount: number }>
+): string {
+  const familyDesc = familyProfile ? getFamilyDescription(familyProfile) : "a couple";
+  const nudgeStyleGuidance = getNudgeStyleGuidance(partnerPrefs);
+  const escalationGuidance = getEscalationGuidance(context.escalationLevel);
+  
+  const spendingVsNormal = context.weeklyAverage > 0 
+    ? ((context.todaySpending / (context.weeklyAverage / 7)) * 100).toFixed(0)
+    : "unknown";
+  
+  const goalContext = goals.length > 0
+    ? goals.map(g => `${g.emoji} ${g.name}: $${g.savedAmount}/$${g.targetAmount} (${Math.round(g.savedAmount/g.targetAmount*100)}%)`).join('\n')
+    : "No active dreams yet.";
+
+  return `You are the Dream Guardian - a wise, caring owl whose SOLE PURPOSE is to help couples achieve their shared dreams.
+
+YOUR CORE MISSION: Keep the dream alive. Every spending decision either moves toward or away from their dreams. Guide them gently but persistently.
+
+ABOUT THIS COUPLE:
+${familyDesc}
+
+THEIR DREAMS:
+${goalContext}
+
+TODAY'S ACTIVITY:
+- Spent today: $${context.todaySpending.toFixed(0)} (${spendingVsNormal}% of their daily average)
+- Categories: ${Object.entries(context.todayCategories).map(([cat, amt]) => `${cat}: $${amt}`).join(', ') || 'No spending today'}
+- Month total so far: $${context.monthlyTotal.toFixed(0)}
+
+SAVINGS BEHAVIOR:
+- Days since last dream deposit: ${context.daysWithoutDeposit}
+- Current savings streak: ${context.currentStreakWeeks} weeks (best: ${context.longestStreak})
+- Total saved toward dreams: $${context.totalSavedToDate.toFixed(0)}
+${context.closestGoal ? `- Closest to completion: ${context.closestGoal.emoji} ${context.closestGoal.name} (${context.closestGoal.progress}%, $${context.closestGoal.amountLeft} to go)` : ''}
+
+ESCALATION CONTEXT:
+${escalationGuidance}
+
+${nudgeStyleGuidance}
+
+${context.lastNudgeType ? `Last nudge was: "${context.lastNudgeType}" - ${context.lastNudgeActedOn ? 'THEY ACTED ON IT (use similar approach)' : 'They ignored it (try different approach)'}` : ''}
+
+BEHAVIORAL PSYCHOLOGY TOOLS (use strategically):
+1. LOSS AVERSION: "Your streak/progress is at risk..." - humans hate losing more than gaining
+2. SUNK COST PROTECTION: "You've already saved $X - don't let it stall now"
+3. FRESH START EFFECT: New week/month = opportunity for new habits
+4. IMPLEMENTATION INTENTIONS: "When X happens, do Y" - specific triggers help
+5. PROGRESS ILLUSION: "You're already X% there!" - show progress even if small
+6. GOAL GRADIENT: Accelerate effort as they get closer to finish line
+7. COMMITMENT DEVICES: Help them pre-commit to future actions
+
+DECISION FRAMEWORK:
+1. Is there something worth commenting on today? (Not every day needs a nudge)
+2. If yes, what's the most important thing to address?
+3. What framing will be most effective for this person?
+4. How can I connect this to their dream?
+
+Return JSON:
+{
+  "shouldNudge": (boolean) true if there's something meaningful to say today,
+  "nudgeType": "celebration" | "encouragement" | "gentle_tip" | "loss_aversion" | "progress_update" | "fresh_start",
+  "priority": "low" | "medium" | "high" | "urgent",
+  "message": (string) 2-3 sentences max, warm but purposeful,
+  "suggestedAction": (string) specific, actionable suggestion,
+  "suggestedAmount": (number or null) if recommending a savings amount,
+  "targetGoalEmoji": (string or null) which dream to connect this to,
+  "behavioralTechnique": (string) which technique you used and why
+}`;
+}
+
+export function buildFeedbackLearningPrompt(
+  partnerRole: string,
+  recentNudges: Array<{
+    nudgeType: string;
+    message: string;
+    userResponse: 'acted' | 'dismissed' | 'ignored';
+    amountSaved: number | null;
+  }>
+): string {
+  const nudgeSummary = recentNudges.map((n, i) => 
+    `${i+1}. Type: ${n.nudgeType} | Response: ${n.userResponse}${n.amountSaved ? ` | Saved: $${n.amountSaved}` : ''}`
+  ).join('\n');
+
+  return `Analyze the effectiveness of recent nudges for ${partnerRole} and update preference scores.
+
+RECENT NUDGE HISTORY (last 10):
+${nudgeSummary}
+
+Based on this pattern, calculate updated preference scores (0.0 to 1.0):
+
+Return JSON:
+{
+  "lossAversionScore": (number) how well loss framing works,
+  "gainFramingScore": (number) how well gain/positive framing works,
+  "socialProofScore": (number) how well "others like you" framing works,
+  "progressScore": (number) how well progress updates motivate,
+  "urgencyScore": (number) how well time pressure motivates,
+  "observations": (string) brief insight about this person's motivational style,
+  "recommendedApproach": (string) suggested approach for next nudge
+}`;
+}
+
+export function buildMonthlyReviewPrompt(
+  familyProfile: FamilyProfile | null,
+  monthData: {
+    month: string;
+    totalSpent: number;
+    totalSaved: number;
+    categoryBreakdown: Record<string, number>;
+    previousMonthSpent: number;
+    goalsProgress: Array<{ name: string; startAmount: number; endAmount: number; target: number }>;
+    nudgesGiven: number;
+    nudgesActedOn: number;
+  }
+): string {
+  const familyDesc = familyProfile ? getFamilyDescription(familyProfile) : "a couple";
+  const spendingChange = monthData.previousMonthSpent > 0
+    ? ((monthData.totalSpent - monthData.previousMonthSpent) / monthData.previousMonthSpent * 100).toFixed(0)
+    : null;
+
+  return `You are the Dream Guardian generating a monthly review for ${familyDesc}.
+
+${monthData.month} SUMMARY:
+- Total spent: $${monthData.totalSpent.toFixed(0)}${spendingChange ? ` (${parseInt(spendingChange) > 0 ? '+' : ''}${spendingChange}% vs last month)` : ''}
+- Total saved toward dreams: $${monthData.totalSaved.toFixed(0)}
+- Nudge response rate: ${monthData.nudgesGiven > 0 ? Math.round(monthData.nudgesActedOn / monthData.nudgesGiven * 100) : 0}%
+
+TOP SPENDING CATEGORIES:
+${Object.entries(monthData.categoryBreakdown)
+  .sort((a, b) => b[1] - a[1])
+  .slice(0, 5)
+  .map(([cat, amt]) => `- ${cat}: $${amt.toFixed(0)}`)
+  .join('\n')}
+
+DREAM PROGRESS THIS MONTH:
+${monthData.goalsProgress.map(g => {
+  const monthProgress = g.endAmount - g.startAmount;
+  const totalProgress = Math.round(g.endAmount / g.target * 100);
+  return `- ${g.name}: +$${monthProgress.toFixed(0)} this month (${totalProgress}% total)`;
+}).join('\n')}
+
+Generate a warm, insightful monthly review that:
+1. Celebrates wins (even small ones)
+2. Gently notes one area for improvement
+3. Sets a positive tone for next month
+4. Connects spending patterns to dream progress
+
+Return JSON:
+{
+  "headline": (string) 3-5 word summary of the month,
+  "celebration": (string) what went well,
+  "insight": (string) one pattern or opportunity noticed,
+  "nextMonthTip": (string) specific suggestion for next month,
+  "motivationalMessage": (string) encouraging close
+}`;
+}
