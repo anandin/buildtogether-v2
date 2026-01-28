@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import OpenAI from "openai";
+import bcrypt from "bcryptjs";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "./db";
 import {
@@ -106,6 +107,205 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error: any) {
       console.error("Apple auth error:", error);
+      res.status(500).json({ error: error.message || "Authentication failed" });
+    }
+  });
+
+  // Email/Password Registration
+  app.post("/api/auth/register", async (req, res) => {
+    try {
+      const { email, password, name } = req.body;
+
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email and password are required" });
+      }
+
+      if (password.length < 6) {
+        return res.status(400).json({ error: "Password must be at least 6 characters" });
+      }
+
+      // Check if user already exists
+      const existingUser = await db.query.users.findFirst({
+        where: eq(users.email, email.toLowerCase()),
+      });
+
+      if (existingUser) {
+        return res.status(400).json({ error: "An account with this email already exists" });
+      }
+
+      // Hash password
+      const passwordHash = await bcrypt.hash(password, 10);
+
+      // Create couple and user
+      const [newCouple] = await db.insert(couples).values({
+        partner1Name: name || "You",
+        partner2Name: "Partner",
+        hasCompletedOnboarding: false,
+      }).returning();
+
+      const [newUser] = await db.insert(users).values({
+        email: email.toLowerCase(),
+        name: name || null,
+        passwordHash,
+        coupleId: newCouple.id,
+        partnerRole: "partner1",
+      }).returning();
+
+      // Create session
+      const token = generateSessionToken();
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+      await db.insert(sessions).values({
+        userId: newUser.id,
+        token,
+        expiresAt,
+      });
+
+      res.json({
+        user: {
+          id: newUser.id,
+          email: newUser.email,
+          name: newUser.name,
+          coupleId: newUser.coupleId,
+          partnerRole: newUser.partnerRole,
+        },
+        token,
+        expiresAt: expiresAt.toISOString(),
+      });
+    } catch (error: any) {
+      console.error("Registration error:", error);
+      res.status(500).json({ error: error.message || "Registration failed" });
+    }
+  });
+
+  // Email/Password Login
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+
+      if (!email || !password) {
+        return res.status(400).json({ error: "Email and password are required" });
+      }
+
+      const user = await db.query.users.findFirst({
+        where: eq(users.email, email.toLowerCase()),
+      });
+
+      if (!user || !user.passwordHash) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+
+      const isValidPassword = await bcrypt.compare(password, user.passwordHash);
+      if (!isValidPassword) {
+        return res.status(401).json({ error: "Invalid email or password" });
+      }
+
+      // Update last login
+      await db.update(users)
+        .set({ lastLoginAt: new Date() })
+        .where(eq(users.id, user.id));
+
+      // Create session
+      const token = generateSessionToken();
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+      await db.insert(sessions).values({
+        userId: user.id,
+        token,
+        expiresAt,
+      });
+
+      res.json({
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          coupleId: user.coupleId,
+          partnerRole: user.partnerRole,
+        },
+        token,
+        expiresAt: expiresAt.toISOString(),
+      });
+    } catch (error: any) {
+      console.error("Login error:", error);
+      res.status(500).json({ error: error.message || "Login failed" });
+    }
+  });
+
+  // Google Sign-In
+  app.post("/api/auth/google", async (req, res) => {
+    try {
+      const { googleId, email, name, idToken } = req.body;
+
+      if (!googleId) {
+        return res.status(400).json({ error: "Google ID is required" });
+      }
+
+      // Check if user exists by Google ID
+      let user = await db.query.users.findFirst({
+        where: eq(users.googleId, googleId),
+      });
+
+      if (user) {
+        // Update last login
+        await db.update(users)
+          .set({ lastLoginAt: new Date() })
+          .where(eq(users.id, user.id));
+      } else {
+        // Check if user exists with same email (from another provider)
+        const existingEmailUser = email ? await db.query.users.findFirst({
+          where: eq(users.email, email.toLowerCase()),
+        }) : null;
+
+        if (existingEmailUser) {
+          // Link Google ID to existing account
+          await db.update(users)
+            .set({ googleId, lastLoginAt: new Date() })
+            .where(eq(users.id, existingEmailUser.id));
+          user = { ...existingEmailUser, googleId };
+        } else {
+          // Create new user and couple
+          const [newCouple] = await db.insert(couples).values({
+            partner1Name: name || "You",
+            partner2Name: "Partner",
+            hasCompletedOnboarding: false,
+          }).returning();
+
+          const [newUser] = await db.insert(users).values({
+            googleId,
+            email: email?.toLowerCase() || null,
+            name: name || null,
+            coupleId: newCouple.id,
+            partnerRole: "partner1",
+          }).returning();
+
+          user = newUser;
+        }
+      }
+
+      // Create session
+      const token = generateSessionToken();
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+      await db.insert(sessions).values({
+        userId: user.id,
+        token,
+        expiresAt,
+      });
+
+      res.json({
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          coupleId: user.coupleId,
+          partnerRole: user.partnerRole,
+        },
+        token,
+        expiresAt: expiresAt.toISOString(),
+      });
+    } catch (error: any) {
+      console.error("Google auth error:", error);
       res.status(500).json({ error: error.message || "Authentication failed" });
     }
   });
