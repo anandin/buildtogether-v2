@@ -6,14 +6,12 @@ import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
+import { useAuth } from "@/context/AuthContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
-
-const COUPLE_ID_KEY = "@build_together_couple_id";
 
 interface GuardianInsight {
   id: string;
@@ -98,13 +96,8 @@ export default function GuardianMemoryScreen() {
   const navigation = useNavigation();
   const { theme } = useTheme();
   
-  const [coupleId, setCoupleId] = React.useState<string | null>(null);
-  
-  React.useEffect(() => {
-    AsyncStorage.getItem(COUPLE_ID_KEY).then(id => {
-      if (id) setCoupleId(id);
-    });
-  }, []);
+  const { user } = useAuth();
+  const coupleId = user?.coupleId;
   
   const { data, isLoading, error } = useQuery<GuardianMemoryData>({
     queryKey: ["/api/guardian/memory", coupleId],
