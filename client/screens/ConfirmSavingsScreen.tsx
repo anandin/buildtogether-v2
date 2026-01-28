@@ -20,6 +20,8 @@ import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
+import { useAIFeedback } from "@/context/AIFeedbackContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { getApiUrl, apiRequest } from "@/lib/query-client";
 import type { RootStackParamList } from "@/navigation/RootStackNavigator";
@@ -53,6 +55,8 @@ export default function ConfirmSavingsScreen() {
   const route = useRoute<ConfirmSavingsRouteProp>();
   const { theme } = useTheme();
   const { data, refreshData } = useApp();
+  const { user } = useAuth();
+  const { showCelebration } = useAIFeedback();
   const queryClient = useQueryClient();
   
   const [amount, setAmount] = useState(route.params?.suggestedAmount?.toString() || "");
@@ -90,7 +94,7 @@ export default function ConfirmSavingsScreen() {
         confirmationDate: new Date().toISOString().split("T")[0],
       });
     },
-    onSuccess: async () => {
+    onSuccess: async (_, variables) => {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       celebrationScale.value = withSequence(
         withSpring(1.2, { damping: 2 }),
@@ -105,9 +109,47 @@ export default function ConfirmSavingsScreen() {
         await refreshData();
       }
       
+      // Get AI celebration feedback for the deposit
+      try {
+        const goal = data?.goals?.find(g => g.id === selectedGoalId);
+        const newStreak = (streakData?.currentStreak || 0) + 1;
+        
+        const feedbackResponse = await fetch(
+          new URL("/api/guardian/deposit-feedback", getApiUrl()).toString(),
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              coupleId: user?.coupleId || coupleId,
+              amount: variables.amount,
+              goalName: goal?.name || "your dream",
+              goalProgress: goal ? {
+                current: (goal.savedAmount || 0) + variables.amount,
+                target: goal.targetAmount,
+                averageDailyRate: goal.savedAmount && goal.createdAt 
+                  ? goal.savedAmount / Math.max(1, Math.floor((Date.now() - new Date(goal.createdAt).getTime()) / (1000 * 60 * 60 * 24)))
+                  : 10,
+              } : null,
+              streakDays: newStreak,
+              previousDeposit: streakData?.totalAmountSaved && streakData?.totalConfirmations 
+                ? streakData.totalAmountSaved / streakData.totalConfirmations
+                : null,
+            }),
+          }
+        );
+        
+        if (feedbackResponse.ok) {
+          const feedback = await feedbackResponse.json();
+          showCelebration(feedback.title, feedback.message);
+        }
+      } catch (feedbackError) {
+        // Non-critical, show generic celebration
+        showCelebration("Dream Deposit!", `$${variables.amount} saved toward your dreams!`);
+      }
+      
       setTimeout(() => {
         navigation.goBack();
-      }, 2000);
+      }, 2500);
     },
   });
   

@@ -171,8 +171,11 @@ export default function AddExpenseScreen() {
       try {
         const coupleId = user?.coupleId;
         if (coupleId && data) {
-          const budgetStatus = await getCategoryBudgetStatus(category, data);
-          const monthlyTotal = await getTotalSpent(data);
+          const expenses = data.expenses || [];
+          const categoryBudgets = data.categoryBudgets || [];
+          const budgetStatuses = getCategoryBudgetStatus(expenses, categoryBudgets);
+          const categoryBudgetStatus = budgetStatuses.find(b => b.category === category);
+          const monthlyTotal = getTotalSpent(expenses);
           const partnerName = paidBy === "partner1" 
             ? data.partners?.partner1?.name 
             : data.partners?.partner2?.name;
@@ -186,9 +189,9 @@ export default function AddExpenseScreen() {
               body: JSON.stringify({
                 coupleId,
                 expense: expenseData,
-                budgetStatus: budgetStatus ? {
-                  spent: budgetStatus.spent,
-                  limit: budgetStatus.limit,
+                budgetStatus: categoryBudgetStatus ? {
+                  spent: categoryBudgetStatus.spent,
+                  limit: categoryBudgetStatus.limit,
                 } : null,
                 monthlyTotal,
                 partnerName,
