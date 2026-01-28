@@ -5,22 +5,29 @@ import { NavigationContainer } from "@react-navigation/native";
 import RootStackNavigator from "@/navigation/RootStackNavigator";
 import { WelcomeScreen } from "@/screens/WelcomeScreen";
 import { OnboardingScreen } from "@/screens/OnboardingScreen";
+import SignInScreen from "@/screens/SignInScreen";
 import { useApp } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
 import { useTheme } from "@/hooks/useTheme";
 
 type OnboardingStep = "welcome" | "onboarding" | "complete";
 
 export function AppContent() {
   const { data, loading, completeOnboarding } = useApp();
+  const { user, isLoading: authLoading, isAuthenticated } = useAuth();
   const { theme } = useTheme();
   const [step, setStep] = useState<OnboardingStep>("welcome");
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <View style={[styles.loading, { backgroundColor: theme.backgroundRoot }]}>
         <ActivityIndicator size="large" color={theme.primary} />
       </View>
     );
+  }
+
+  if (!isAuthenticated) {
+    return <SignInScreen />;
   }
 
   const hasCompletedOnboarding = data?.hasCompletedOnboarding === true;
