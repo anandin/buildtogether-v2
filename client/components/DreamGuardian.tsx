@@ -61,6 +61,20 @@ interface DailyNudge {
   };
 }
 
+interface PersonalizedGreeting {
+  greeting: string;
+  message: string;
+  suggestion: string;
+  mood: "celebrate" | "encourage" | "gentle-nudge" | "welcome";
+  context: {
+    timeOfDay: string;
+    currentStreak: number;
+    totalSaved: number;
+    goalsCount: number;
+    closestGoalProgress: number | null;
+  };
+}
+
 function getLastDepositDays(goals: Goal[]): number | null {
   let latestDate: Date | null = null;
   
@@ -188,6 +202,12 @@ export function DreamGuardian({ onAddToGoal, coupleId }: DreamGuardianProps) {
     staleTime: 1000 * 60 * 2,
   });
   
+  const { data: personalizedGreeting } = useQuery<PersonalizedGreeting>({
+    queryKey: ["/api/guardian/greeting", coupleId],
+    enabled: !!coupleId,
+    staleTime: 1000 * 60 * 5, // Refresh every 5 minutes
+  });
+  
   React.useEffect(() => {
     breatheScale.value = withRepeat(
       withSequence(
@@ -204,6 +224,30 @@ export function DreamGuardian({ onAddToGoal, coupleId }: DreamGuardianProps) {
   }));
   
   const guardianMood = useMemo(() => {
+    // Use personalized greeting from backend if available
+    if (personalizedGreeting) {
+      const moodColorMap = {
+        celebrate: "#10B981",
+        encourage: "#6366F1",
+        "gentle-nudge": "#F59E0B",
+        welcome: "#6366F1",
+      };
+      const moodEmojiMap = {
+        celebrate: "sun",
+        encourage: "smile",
+        "gentle-nudge": "heart",
+        welcome: "target",
+      };
+      
+      return {
+        emoji: moodEmojiMap[personalizedGreeting.mood] || "smile",
+        color: moodColorMap[personalizedGreeting.mood] || "#6366F1",
+        message: `${personalizedGreeting.greeting} ${personalizedGreeting.message}`,
+        suggestion: personalizedGreeting.suggestion,
+        priority: personalizedGreeting.mood === "gentle-nudge" ? "gentle-nudge" as const : "encourage" as const,
+      };
+    }
+    
     if (!data) {
       return {
         emoji: "smile",
@@ -222,7 +266,7 @@ export function DreamGuardian({ onAddToGoal, coupleId }: DreamGuardianProps) {
         partner2: data.partners.partner2?.name || "Partner",
       }
     );
-  }, [data]);
+  }, [data, personalizedGreeting]);
   
   const totalSaved = useMemo(() => {
     if (!data) return 0;

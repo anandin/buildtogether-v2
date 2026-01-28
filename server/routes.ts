@@ -2586,6 +2586,154 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
     }
   });
 
+  // Personalized app-open greeting based on time, context, and history
+  app.get("/api/guardian/greeting/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      
+      // Fetch couple and partner names
+      const couple = await db.query.couples.findFirst({
+        where: eq(couples.id, coupleId),
+      });
+      
+      if (!couple) {
+        return res.status(404).json({ error: "Couple not found" });
+      }
+      
+      const partnerName = couple.partner1Name || "friend";
+      
+      // Get current time context
+      const hour = new Date().getHours();
+      let timeGreeting = "Hey";
+      if (hour >= 5 && hour < 12) {
+        timeGreeting = "Good morning";
+      } else if (hour >= 12 && hour < 17) {
+        timeGreeting = "Good afternoon";
+      } else if (hour >= 17 && hour < 21) {
+        timeGreeting = "Good evening";
+      } else {
+        timeGreeting = "Late night dreams";
+      }
+      
+      // Get recent activity context
+      const recentExpenses = await db.query.expenses.findMany({
+        where: eq(expenses.coupleId, coupleId),
+        orderBy: desc(expenses.date),
+        limit: 5,
+      });
+      
+      const recentDeposits = await db.query.savingsConfirmations.findMany({
+        where: eq(savingsConfirmations.coupleId, coupleId),
+        orderBy: desc(savingsConfirmations.confirmationDate),
+        limit: 3,
+      });
+      
+      const userGoals = await db.query.goals.findMany({
+        where: eq(goals.coupleId, coupleId),
+      });
+      
+      // Get streak data
+      const streak = await db.query.savingsStreaks.findFirst({
+        where: eq(savingsStreaks.coupleId, coupleId),
+      });
+      
+      // Calculate context metrics
+      const hasRecentExpenses = recentExpenses.length > 0;
+      const hasRecentDeposits = recentDeposits.length > 0;
+      const hasGoals = userGoals.length > 0;
+      const currentStreak = streak?.currentStreak || 0;
+      const totalSaved = userGoals.reduce((sum, g) => sum + Number(g.savedAmount || 0), 0);
+      
+      // Find closest goal to completion
+      let closestGoal = null;
+      let closestProgress = 0;
+      for (const goal of userGoals) {
+        const progress = Number(goal.savedAmount || 0) / Number(goal.targetAmount);
+        if (progress > closestProgress && progress < 1) {
+          closestProgress = progress;
+          closestGoal = goal;
+        }
+      }
+      
+      // Generate contextual message
+      let greeting = `${timeGreeting}, ${partnerName}!`;
+      let message = "";
+      let suggestion = "";
+      let mood: "celebrate" | "encourage" | "gentle-nudge" | "welcome" = "encourage";
+      
+      // Priority-based message selection
+      if (!hasGoals) {
+        mood = "welcome";
+        message = "Ready to start dreaming together?";
+        suggestion = "Create your first shared dream to get started!";
+      } else if (closestGoal && closestProgress >= 0.9) {
+        mood = "celebrate";
+        message = `You're so close to "${closestGoal.name}"! Just ${Math.round((1 - closestProgress) * 100)}% to go.`;
+        suggestion = "One more push and this dream becomes reality!";
+      } else if (currentStreak >= 7) {
+        mood = "celebrate";
+        message = `${currentStreak} day streak! You're on fire.`;
+        suggestion = "Your consistency is paying off. Keep it going!";
+      } else if (currentStreak >= 3) {
+        mood = "encourage";
+        message = `${currentStreak} days strong! Building great habits.`;
+        suggestion = "Let's keep the momentum going today.";
+      } else if (hasRecentDeposits && recentDeposits.length > 0) {
+        const lastDeposit = recentDeposits[0];
+        const daysSince = Math.floor((Date.now() - new Date(lastDeposit.confirmationDate).getTime()) / (1000 * 60 * 60 * 24));
+        if (daysSince <= 1) {
+          mood = "celebrate";
+          message = `Great save yesterday! $${totalSaved.toFixed(0)} total in your dreams.`;
+          suggestion = "Every little bit adds up to something big.";
+        } else if (daysSince > 7) {
+          mood = "gentle-nudge";
+          message = `It's been ${daysSince} days since your last dream deposit.`;
+          suggestion = "Your dreams are waiting! Even a small amount helps.";
+        } else {
+          mood = "encourage";
+          message = `$${totalSaved.toFixed(0)} saved toward your dreams so far.`;
+          suggestion = "Ready to add a little more today?";
+        }
+      } else if (hasRecentExpenses && recentExpenses.length > 0) {
+        const todayTotal = recentExpenses
+          .filter(e => new Date(e.date).toDateString() === new Date().toDateString())
+          .reduce((sum, e) => sum + Number(e.amount), 0);
+        if (todayTotal > 0) {
+          mood = "encourage";
+          message = `$${todayTotal.toFixed(0)} tracked today. Nice work staying on top!`;
+          suggestion = "Awareness is the first step to better habits.";
+        } else {
+          mood = "encourage";
+          message = "Let's make today count!";
+          suggestion = hasGoals 
+            ? `Your "${userGoals[0].name}" dream is waiting.`
+            : "Track expenses to see where your money goes.";
+        }
+      } else {
+        mood = "encourage";
+        message = "Ready to build something beautiful together?";
+        suggestion = "Start by tracking an expense or saving toward a dream.";
+      }
+      
+      res.json({
+        greeting,
+        message,
+        suggestion,
+        mood,
+        context: {
+          timeOfDay: hour >= 5 && hour < 12 ? "morning" : hour >= 12 && hour < 17 ? "afternoon" : hour >= 17 && hour < 21 ? "evening" : "night",
+          currentStreak,
+          totalSaved,
+          goalsCount: userGoals.length,
+          closestGoalProgress: closestProgress > 0 ? Math.round(closestProgress * 100) : null,
+        },
+      });
+    } catch (error: any) {
+      console.error("Greeting error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;
