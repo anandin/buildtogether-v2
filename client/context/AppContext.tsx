@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import type { AppData, Expense, Goal, Budget, CategoryBudget, CustomCategory, AIInsight, BudgetType } from "@/types";
-import * as storage from "@/lib/storage";
+import * as storage from "@/lib/cloudStorage";
 
 interface AppContextType {
   data: AppData | null;

@@ -1,6 +1,17 @@
 import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import OpenAI from "openai";
+import { eq, and, desc } from "drizzle-orm";
+import { db } from "./db";
+import {
+  couples,
+  expenses,
+  goals,
+  goalContributions,
+  categoryBudgets,
+  customCategories,
+  settlements,
+} from "@shared/schema";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -424,6 +435,400 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
       return res.status(500).json({ 
         error: error.message || "Failed to detect ego spends" 
       });
+    }
+  });
+
+  // ===== DATA SYNC API ENDPOINTS =====
+
+  // Get or create couple
+  app.get("/api/couple/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      let [couple] = await db.select().from(couples).where(eq(couples.id, coupleId));
+      
+      if (!couple) {
+        [couple] = await db.insert(couples).values({
+          id: coupleId,
+          partner1Name: "You",
+          partner2Name: "Partner",
+        }).returning();
+      }
+      
+      res.json(couple);
+    } catch (error: any) {
+      console.error("Get couple error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update couple
+  app.put("/api/couple/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const updates = req.body;
+      
+      const [couple] = await db.update(couples)
+        .set(updates)
+        .where(eq(couples.id, coupleId))
+        .returning();
+      
+      res.json(couple);
+    } catch (error: any) {
+      console.error("Update couple error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get all expenses for a couple
+  app.get("/api/expenses/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const result = await db.select().from(expenses)
+        .where(eq(expenses.coupleId, coupleId))
+        .orderBy(desc(expenses.createdAt));
+      res.json(result);
+    } catch (error: any) {
+      console.error("Get expenses error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Add expense
+  app.post("/api/expenses/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const expenseData = req.body;
+      
+      const [expense] = await db.insert(expenses).values({
+        ...expenseData,
+        coupleId,
+      }).returning();
+      
+      res.json(expense);
+    } catch (error: any) {
+      console.error("Add expense error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update expense
+  app.put("/api/expenses/:coupleId/:expenseId", async (req, res) => {
+    try {
+      const { coupleId, expenseId } = req.params;
+      const updates = req.body;
+      
+      const [expense] = await db.update(expenses)
+        .set(updates)
+        .where(and(eq(expenses.id, expenseId), eq(expenses.coupleId, coupleId)))
+        .returning();
+      
+      res.json(expense);
+    } catch (error: any) {
+      console.error("Update expense error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete expense
+  app.delete("/api/expenses/:coupleId/:expenseId", async (req, res) => {
+    try {
+      const { coupleId, expenseId } = req.params;
+      
+      await db.delete(expenses)
+        .where(and(eq(expenses.id, expenseId), eq(expenses.coupleId, coupleId)));
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete expense error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get all goals for a couple
+  app.get("/api/goals/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const goalsResult = await db.select().from(goals)
+        .where(eq(goals.coupleId, coupleId))
+        .orderBy(desc(goals.createdAt));
+      
+      const goalsWithContributions = await Promise.all(
+        goalsResult.map(async (goal) => {
+          const contributions = await db.select().from(goalContributions)
+            .where(eq(goalContributions.goalId, goal.id))
+            .orderBy(desc(goalContributions.createdAt));
+          return { ...goal, contributions };
+        })
+      );
+      
+      res.json(goalsWithContributions);
+    } catch (error: any) {
+      console.error("Get goals error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Add goal
+  app.post("/api/goals/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const goalData = req.body;
+      
+      const [goal] = await db.insert(goals).values({
+        ...goalData,
+        coupleId,
+        savedAmount: 0,
+      }).returning();
+      
+      res.json({ ...goal, contributions: [] });
+    } catch (error: any) {
+      console.error("Add goal error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update goal
+  app.put("/api/goals/:coupleId/:goalId", async (req, res) => {
+    try {
+      const { coupleId, goalId } = req.params;
+      const updates = req.body;
+      
+      const [goal] = await db.update(goals)
+        .set(updates)
+        .where(and(eq(goals.id, goalId), eq(goals.coupleId, coupleId)))
+        .returning();
+      
+      res.json(goal);
+    } catch (error: any) {
+      console.error("Update goal error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete goal
+  app.delete("/api/goals/:coupleId/:goalId", async (req, res) => {
+    try {
+      const { coupleId, goalId } = req.params;
+      
+      await db.delete(goals)
+        .where(and(eq(goals.id, goalId), eq(goals.coupleId, coupleId)));
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete goal error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Add goal contribution
+  app.post("/api/goals/:coupleId/:goalId/contribute", async (req, res) => {
+    try {
+      const { coupleId, goalId } = req.params;
+      const { amount, contributor, date } = req.body;
+      
+      const [contribution] = await db.insert(goalContributions).values({
+        goalId,
+        amount,
+        contributor,
+        date,
+      }).returning();
+      
+      const [goal] = await db.select().from(goals).where(eq(goals.id, goalId));
+      if (goal) {
+        await db.update(goals)
+          .set({ savedAmount: goal.savedAmount + amount })
+          .where(eq(goals.id, goalId));
+      }
+      
+      res.json(contribution);
+    } catch (error: any) {
+      console.error("Add contribution error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get category budgets
+  app.get("/api/budgets/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const result = await db.select().from(categoryBudgets)
+        .where(eq(categoryBudgets.coupleId, coupleId));
+      res.json(result);
+    } catch (error: any) {
+      console.error("Get budgets error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Add or update category budget
+  app.post("/api/budgets/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const budgetData = req.body;
+      
+      const [existing] = await db.select().from(categoryBudgets)
+        .where(and(
+          eq(categoryBudgets.coupleId, coupleId),
+          eq(categoryBudgets.category, budgetData.category)
+        ));
+      
+      let result;
+      if (existing) {
+        [result] = await db.update(categoryBudgets)
+          .set(budgetData)
+          .where(eq(categoryBudgets.id, existing.id))
+          .returning();
+      } else {
+        [result] = await db.insert(categoryBudgets).values({
+          ...budgetData,
+          coupleId,
+        }).returning();
+      }
+      
+      res.json(result);
+    } catch (error: any) {
+      console.error("Update budget error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get custom categories
+  app.get("/api/categories/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const result = await db.select().from(customCategories)
+        .where(eq(customCategories.coupleId, coupleId));
+      res.json(result);
+    } catch (error: any) {
+      console.error("Get categories error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Add custom category
+  app.post("/api/categories/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const { name, icon, color } = req.body;
+      
+      const [category] = await db.insert(customCategories).values({
+        coupleId,
+        name,
+        icon,
+        color,
+      }).returning();
+      
+      res.json(category);
+    } catch (error: any) {
+      console.error("Add category error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Delete custom category
+  app.delete("/api/categories/:coupleId/:categoryId", async (req, res) => {
+    try {
+      const { coupleId, categoryId } = req.params;
+      
+      await db.delete(customCategories)
+        .where(and(eq(customCategories.id, categoryId), eq(customCategories.coupleId, coupleId)));
+      
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete category error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Add settlement
+  app.post("/api/settlements/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const settlementData = req.body;
+      
+      const [settlement] = await db.insert(settlements).values({
+        ...settlementData,
+        coupleId,
+      }).returning();
+      
+      if (settlementData.expenseIds?.length) {
+        for (const expenseId of settlementData.expenseIds) {
+          await db.update(expenses)
+            .set({ isSettled: true })
+            .where(eq(expenses.id, expenseId));
+        }
+      }
+      
+      res.json(settlement);
+    } catch (error: any) {
+      console.error("Add settlement error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get settlements
+  app.get("/api/settlements/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const result = await db.select().from(settlements)
+        .where(eq(settlements.coupleId, coupleId))
+        .orderBy(desc(settlements.createdAt));
+      res.json(result);
+    } catch (error: any) {
+      console.error("Get settlements error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Sync all data for a couple (for initial load)
+  app.get("/api/sync/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      
+      let [couple] = await db.select().from(couples).where(eq(couples.id, coupleId));
+      if (!couple) {
+        [couple] = await db.insert(couples).values({
+          id: coupleId,
+          partner1Name: "You",
+          partner2Name: "Partner",
+        }).returning();
+      }
+      
+      const expensesData = await db.select().from(expenses)
+        .where(eq(expenses.coupleId, coupleId))
+        .orderBy(desc(expenses.createdAt));
+      
+      const goalsData = await db.select().from(goals)
+        .where(eq(goals.coupleId, coupleId));
+      
+      const goalsWithContributions = await Promise.all(
+        goalsData.map(async (goal) => {
+          const contributions = await db.select().from(goalContributions)
+            .where(eq(goalContributions.goalId, goal.id));
+          return { ...goal, contributions };
+        })
+      );
+      
+      const budgetsData = await db.select().from(categoryBudgets)
+        .where(eq(categoryBudgets.coupleId, coupleId));
+      
+      const categoriesData = await db.select().from(customCategories)
+        .where(eq(customCategories.coupleId, coupleId));
+      
+      const settlementsData = await db.select().from(settlements)
+        .where(eq(settlements.coupleId, coupleId));
+      
+      res.json({
+        couple,
+        expenses: expensesData,
+        goals: goalsWithContributions,
+        categoryBudgets: budgetsData,
+        customCategories: categoriesData,
+        settlements: settlementsData,
+      });
+    } catch (error: any) {
+      console.error("Sync error:", error);
+      res.status(500).json({ error: error.message });
     }
   });
 

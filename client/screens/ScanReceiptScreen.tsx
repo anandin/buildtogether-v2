@@ -26,18 +26,27 @@ export default function ScanReceiptScreen() {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const compressImage = async (uri: string): Promise<string> => {
+    const manipulated = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 1024 } }],
+      { compress: 0.5, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+    );
+    return manipulated.base64!;
+  };
+
   const handleCapture = async () => {
     if (!cameraRef.current) return;
 
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.8,
-        base64: true,
+        quality: 0.7,
       });
       if (photo) {
         setCapturedImage(photo.uri);
-        await processReceipt(photo.base64!);
+        const compressed = await compressImage(photo.uri);
+        await processReceipt(compressed);
       }
     } catch (err) {
       setError("Failed to capture image");
@@ -48,13 +57,13 @@ export default function ScanReceiptScreen() {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        quality: 0.8,
-        base64: true,
+        quality: 0.7,
       });
 
       if (!result.canceled && result.assets[0]) {
         setCapturedImage(result.assets[0].uri);
-        await processReceipt(result.assets[0].base64!);
+        const compressed = await compressImage(result.assets[0].uri);
+        await processReceipt(compressed);
       }
     } catch (err) {
       setError("Failed to pick image");

@@ -1,3 +1,4 @@
+import "react-native-get-random-values";
 import React, { useEffect } from "react";
 import { StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
