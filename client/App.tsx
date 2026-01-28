@@ -19,6 +19,7 @@ import { queryClient } from "@/lib/query-client";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AppProvider } from "@/context/AppContext";
 import { AuthProvider } from "@/context/AuthContext";
+import { AIFeedbackProvider } from "@/context/AIFeedbackContext";
 import { AppContent } from "@/components/AppContent";
 
 SplashScreen.preventAutoHideAsync();
@@ -45,14 +46,16 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <AppProvider>
-            <SafeAreaProvider>
-              <GestureHandlerRootView style={styles.root}>
-                <KeyboardProvider>
-                  <AppContent />
-                  <StatusBar style="auto" />
-                </KeyboardProvider>
-              </GestureHandlerRootView>
-            </SafeAreaProvider>
+            <AIFeedbackProvider>
+              <SafeAreaProvider>
+                <GestureHandlerRootView style={styles.root}>
+                  <KeyboardProvider>
+                    <AppContent />
+                    <StatusBar style="auto" />
+                  </KeyboardProvider>
+                </GestureHandlerRootView>
+              </SafeAreaProvider>
+            </AIFeedbackProvider>
           </AppProvider>
         </AuthProvider>
       </QueryClientProvider>

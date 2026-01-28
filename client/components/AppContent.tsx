@@ -6,8 +6,10 @@ import RootStackNavigator from "@/navigation/RootStackNavigator";
 import { WelcomeScreen } from "@/screens/WelcomeScreen";
 import { OnboardingScreen } from "@/screens/OnboardingScreen";
 import SignInScreen from "@/screens/SignInScreen";
+import { AIFeedbackToast } from "@/components/AIFeedbackToast";
 import { useApp } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
+import { useAIFeedback } from "@/context/AIFeedbackContext";
 import { useTheme } from "@/hooks/useTheme";
 
 type OnboardingStep = "welcome" | "onboarding" | "complete";
@@ -15,6 +17,7 @@ type OnboardingStep = "welcome" | "onboarding" | "complete";
 export function AppContent() {
   const { data, loading, completeOnboarding } = useApp();
   const { user, isLoading: authLoading, isAuthenticated } = useAuth();
+  const { currentFeedback, dismissFeedback } = useAIFeedback();
   const { theme } = useTheme();
   const [step, setStep] = useState<OnboardingStep>("welcome");
 
@@ -54,13 +57,22 @@ export function AppContent() {
   }
 
   return (
-    <NavigationContainer>
-      <RootStackNavigator />
-    </NavigationContainer>
+    <View style={styles.container}>
+      <NavigationContainer>
+        <RootStackNavigator />
+      </NavigationContainer>
+      <AIFeedbackToast 
+        feedback={currentFeedback} 
+        onDismiss={dismissFeedback} 
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
   loading: {
     flex: 1,
     justifyContent: "center",
