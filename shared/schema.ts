@@ -102,7 +102,38 @@ export const couples = pgTable("couples", {
   partner2Name: text("partner2_name").default("Partner").notNull(),
   partner1Color: text("partner1_color").default("#FF9AA2"),
   partner2Color: text("partner2_color").default("#C7CEEA"),
+  numAdults: integer("num_adults").default(2),
+  numKidsUnder5: integer("num_kids_under_5").default(0),
+  numKids5to12: integer("num_kids_5_to_12").default(0),
+  numTeens: integer("num_teens").default(0),
+  city: text("city"),
+  country: text("country").default("US"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const lineItems = pgTable("line_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  expenseId: varchar("expense_id").notNull().references(() => expenses.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  quantity: real("quantity").default(1),
+  unitPrice: real("unit_price"),
+  totalPrice: real("total_price").notNull(),
+  classification: text("classification").notNull(),
+  isEssential: boolean("is_essential").default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const spendingBenchmarks = pgTable("spending_benchmarks", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  category: text("category").notNull(),
+  familySize: integer("family_size").notNull(),
+  hasKids: boolean("has_kids").default(false),
+  country: text("country").notNull().default("US"),
+  monthlyAverage: real("monthly_average").notNull(),
+  lowRange: real("low_range").notNull(),
+  highRange: real("high_range").notNull(),
+  source: text("source"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 export const goalsRelations = relations(goals, ({ many }) => ({
@@ -146,3 +177,5 @@ export type CategoryBudget = typeof categoryBudgets.$inferSelect;
 export type CustomCategory = typeof customCategories.$inferSelect;
 export type Settlement = typeof settlements.$inferSelect;
 export type Couple = typeof couples.$inferSelect;
+export type LineItem = typeof lineItems.$inferSelect;
+export type SpendingBenchmark = typeof spendingBenchmarks.$inferSelect;

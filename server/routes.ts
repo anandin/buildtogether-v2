@@ -11,6 +11,8 @@ import {
   categoryBudgets,
   customCategories,
   settlements,
+  lineItems,
+  spendingBenchmarks,
 } from "@shared/schema";
 
 const openai = new OpenAI({
@@ -19,7 +21,7 @@ const openai = new OpenAI({
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Receipt scanning endpoint - enhanced with merchant extraction
+  // Receipt scanning endpoint - enhanced with line item extraction
   app.post("/api/scan-receipt", async (req, res) => {
     try {
       const { image } = req.body;
@@ -34,14 +36,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
           {
             role: "system",
             content: `You are a receipt scanning assistant for a couples expense tracking app. Analyze the receipt image and extract:
+
 1. Total amount (as a number, e.g., 25.99)
-2. Merchant name (the store/business name, e.g., "Whole Foods", "Starbucks", "Target")
-3. A brief description of the purchase (e.g., "Weekly groceries", "Coffee and snacks")
+2. Merchant name (the store/business name)
+3. A brief description of the purchase
 4. Category (one of: food, groceries, transport, utilities, internet, entertainment, shopping, health, travel, home, restaurants, subscriptions, pets, gifts, personal, other)
-5. Suggested split method based on the purchase type:
-   - "even" for shared household items (groceries, utilities, rent)
-   - "joint" if it looks like a joint purchase or date night
-   - "single" for personal items
+5. Suggested split method: "even" for shared items, "joint" for date nights, "single" for personal
+6. ALL individual line items from the receipt with:
+   - name: item description
+   - quantity: number of items (default 1)
+   - totalPrice: price for this line
+   - classification: one of "staple" (essentials like produce, dairy, bread), "treat" (snacks, candy, desserts), "beverage" (drinks, coffee), "household" (cleaning, toiletries), "prepared" (ready-made meals), "luxury" (premium/expensive items), "kids" (children's items), "other"
+   - isEssential: true for staples/household, false for treats/luxury
 
 Respond in JSON format:
 {
@@ -49,7 +55,16 @@ Respond in JSON format:
   "merchant": "string",
   "description": "string",
   "category": "string",
-  "suggestedSplit": "even" | "joint" | "single"
+  "suggestedSplit": "even" | "joint" | "single",
+  "lineItems": [
+    {
+      "name": "string",
+      "quantity": number,
+      "totalPrice": number,
+      "classification": "staple" | "treat" | "beverage" | "household" | "prepared" | "luxury" | "kids" | "other",
+      "isEssential": boolean
+    }
+  ]
 }
 
 If you cannot read the receipt clearly, still try to provide your best guess. If completely unreadable, respond with:
@@ -68,12 +83,12 @@ If you cannot read the receipt clearly, still try to provide your best guess. If
               },
               {
                 type: "text",
-                text: "Please analyze this receipt and extract the total amount, merchant name, description, category, and suggest a split method.",
+                text: "Please analyze this receipt and extract all details including individual line items.",
               },
             ],
           },
         ],
-        max_completion_tokens: 500,
+        max_completion_tokens: 2000,
       });
 
       const content = response.choices[0]?.message?.content;
@@ -94,6 +109,7 @@ If you cannot read the receipt clearly, still try to provide your best guess. If
             description: parsed.description,
             category: parsed.category,
             suggestedSplit: parsed.suggestedSplit || "even",
+            lineItems: parsed.lineItems || [],
           });
         }
         return res.status(500).json({ error: "Failed to parse receipt data" });
@@ -828,6 +844,234 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
       });
     } catch (error: any) {
       console.error("Sync error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Update family profile
+  app.put("/api/family/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const { numAdults, numKidsUnder5, numKids5to12, numTeens, city, country } = req.body;
+      
+      const [couple] = await db.update(couples)
+        .set({ numAdults, numKidsUnder5, numKids5to12, numTeens, city, country })
+        .where(eq(couples.id, coupleId))
+        .returning();
+      
+      res.json(couple);
+    } catch (error: any) {
+      console.error("Update family error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Save line items for an expense
+  app.post("/api/expenses/:coupleId/:expenseId/line-items", async (req, res) => {
+    try {
+      const { expenseId } = req.params;
+      const { items } = req.body;
+      
+      if (items && items.length > 0) {
+        const insertedItems = await db.insert(lineItems).values(
+          items.map((item: any) => ({
+            expenseId,
+            name: item.name,
+            quantity: item.quantity || 1,
+            unitPrice: item.unitPrice,
+            totalPrice: item.totalPrice,
+            classification: item.classification || "other",
+            isEssential: item.isEssential ?? true,
+          }))
+        ).returning();
+        
+        res.json(insertedItems);
+      } else {
+        res.json([]);
+      }
+    } catch (error: any) {
+      console.error("Save line items error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get line items for an expense
+  app.get("/api/expenses/:coupleId/:expenseId/line-items", async (req, res) => {
+    try {
+      const { expenseId } = req.params;
+      const items = await db.select().from(lineItems)
+        .where(eq(lineItems.expenseId, expenseId));
+      res.json(items);
+    } catch (error: any) {
+      console.error("Get line items error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get spending benchmarks
+  app.get("/api/benchmarks", async (req, res) => {
+    try {
+      const { familySize, hasKids, country } = req.query;
+      let query = db.select().from(spendingBenchmarks);
+      
+      if (familySize) {
+        query = query.where(eq(spendingBenchmarks.familySize, parseInt(familySize as string)));
+      }
+      
+      const benchmarks = await query;
+      res.json(benchmarks);
+    } catch (error: any) {
+      console.error("Get benchmarks error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // AI-powered spending insights with benchmarks
+  app.post("/api/spending-insights/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      
+      const [couple] = await db.select().from(couples).where(eq(couples.id, coupleId));
+      const expensesData = await db.select().from(expenses)
+        .where(eq(expenses.coupleId, coupleId))
+        .orderBy(desc(expenses.createdAt));
+      
+      const familySize = (couple?.numAdults || 2) + (couple?.numKidsUnder5 || 0) + (couple?.numKids5to12 || 0) + (couple?.numTeens || 0);
+      const hasKids = (couple?.numKidsUnder5 || 0) + (couple?.numKids5to12 || 0) + (couple?.numTeens || 0) > 0;
+      
+      const allLineItems = await Promise.all(
+        expensesData.slice(0, 50).map(async (expense) => {
+          const items = await db.select().from(lineItems)
+            .where(eq(lineItems.expenseId, expense.id));
+          return { expense, items };
+        })
+      );
+      
+      const spendingByCategory: Record<string, number> = {};
+      expensesData.forEach(e => {
+        spendingByCategory[e.category] = (spendingByCategory[e.category] || 0) + e.amount;
+      });
+      
+      const benchmarksData = await db.select().from(spendingBenchmarks)
+        .where(eq(spendingBenchmarks.familySize, familySize));
+      
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are a friendly financial wellness coach for couples. Analyze their spending patterns and provide gentle, supportive insights.
+
+IMPORTANT PRINCIPLES:
+- Never shame spending. People work hard and deserve to enjoy their money.
+- Use social proof: "Families like yours typically spend..." 
+- Focus on unusual patterns, not all spending
+- If they have kids, normalize snacks and treats
+- Celebrate mindful choices
+- Only flag truly unusual spending compared to benchmarks
+
+Family context:
+- Family size: ${familySize} people
+- Has kids: ${hasKids}
+- Kids under 5: ${couple?.numKidsUnder5 || 0}
+- Kids 5-12: ${couple?.numKids5to12 || 0}
+- Teens: ${couple?.numTeens || 0}
+- Location: ${couple?.city || "Unknown"}, ${couple?.country || "US"}
+
+Respond in JSON:
+{
+  "overallHealthScore": number (1-100),
+  "insights": [
+    {
+      "type": "celebration" | "observation" | "suggestion",
+      "category": "string",
+      "title": "string (short, friendly)",
+      "message": "string (supportive, max 2 sentences)",
+      "benchmarkComparison": "below" | "average" | "above" | null,
+      "potentialSavings": number | null
+    }
+  ],
+  "frequentItems": [
+    {
+      "name": "string",
+      "frequency": "weekly" | "biweekly" | "monthly",
+      "totalSpent": number,
+      "suggestion": "string" | null
+    }
+  ],
+  "spendingBreakdown": {
+    "essential": number (percentage),
+    "discretionary": number (percentage),
+    "treats": number (percentage)
+  }
+}`
+          },
+          {
+            role: "user",
+            content: `Analyze this spending data:
+
+Monthly spending by category: ${JSON.stringify(spendingByCategory)}
+
+Benchmarks for similar families: ${JSON.stringify(benchmarksData)}
+
+Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 20).map(({ expense, items }) => ({
+              merchant: expense.merchant,
+              category: expense.category,
+              items: items.map(i => ({ name: i.name, price: i.totalPrice, classification: i.classification }))
+            })))}`
+          }
+        ],
+        max_completion_tokens: 1500,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (content) {
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          const insights = JSON.parse(jsonMatch[0]);
+          return res.json(insights);
+        }
+      }
+      
+      res.status(500).json({ error: "Failed to generate insights" });
+    } catch (error: any) {
+      console.error("Spending insights error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Seed default spending benchmarks (run once)
+  app.post("/api/benchmarks/seed", async (req, res) => {
+    try {
+      const defaultBenchmarks = [
+        { category: "groceries", familySize: 2, hasKids: false, country: "US", monthlyAverage: 550, lowRange: 400, highRange: 750, source: "BLS 2024" },
+        { category: "groceries", familySize: 3, hasKids: true, country: "US", monthlyAverage: 750, lowRange: 550, highRange: 1000, source: "BLS 2024" },
+        { category: "groceries", familySize: 4, hasKids: true, country: "US", monthlyAverage: 950, lowRange: 700, highRange: 1300, source: "BLS 2024" },
+        { category: "groceries", familySize: 5, hasKids: true, country: "US", monthlyAverage: 1100, lowRange: 850, highRange: 1500, source: "BLS 2024" },
+        { category: "restaurants", familySize: 2, hasKids: false, country: "US", monthlyAverage: 350, lowRange: 150, highRange: 600, source: "BLS 2024" },
+        { category: "restaurants", familySize: 3, hasKids: true, country: "US", monthlyAverage: 400, lowRange: 200, highRange: 700, source: "BLS 2024" },
+        { category: "restaurants", familySize: 4, hasKids: true, country: "US", monthlyAverage: 500, lowRange: 250, highRange: 850, source: "BLS 2024" },
+        { category: "entertainment", familySize: 2, hasKids: false, country: "US", monthlyAverage: 250, lowRange: 100, highRange: 500, source: "BLS 2024" },
+        { category: "entertainment", familySize: 4, hasKids: true, country: "US", monthlyAverage: 350, lowRange: 150, highRange: 600, source: "BLS 2024" },
+        { category: "transport", familySize: 2, hasKids: false, country: "US", monthlyAverage: 400, lowRange: 200, highRange: 700, source: "BLS 2024" },
+        { category: "transport", familySize: 4, hasKids: true, country: "US", monthlyAverage: 550, lowRange: 300, highRange: 900, source: "BLS 2024" },
+        { category: "utilities", familySize: 2, hasKids: false, country: "US", monthlyAverage: 200, lowRange: 120, highRange: 350, source: "BLS 2024" },
+        { category: "utilities", familySize: 4, hasKids: true, country: "US", monthlyAverage: 280, lowRange: 180, highRange: 450, source: "BLS 2024" },
+        { category: "health", familySize: 2, hasKids: false, country: "US", monthlyAverage: 300, lowRange: 100, highRange: 600, source: "BLS 2024" },
+        { category: "health", familySize: 4, hasKids: true, country: "US", monthlyAverage: 450, lowRange: 200, highRange: 800, source: "BLS 2024" },
+        { category: "shopping", familySize: 2, hasKids: false, country: "US", monthlyAverage: 200, lowRange: 50, highRange: 500, source: "BLS 2024" },
+        { category: "shopping", familySize: 4, hasKids: true, country: "US", monthlyAverage: 350, lowRange: 100, highRange: 700, source: "BLS 2024" },
+        { category: "groceries", familySize: 2, hasKids: false, country: "CA", monthlyAverage: 650, lowRange: 450, highRange: 900, source: "StatsCan 2024" },
+        { category: "groceries", familySize: 4, hasKids: true, country: "CA", monthlyAverage: 1100, lowRange: 800, highRange: 1500, source: "StatsCan 2024" },
+      ];
+      
+      for (const benchmark of defaultBenchmarks) {
+        await db.insert(spendingBenchmarks).values(benchmark).onConflictDoNothing();
+      }
+      
+      res.json({ success: true, count: defaultBenchmarks.length });
+    } catch (error: any) {
+      console.error("Seed benchmarks error:", error);
       res.status(500).json({ error: error.message });
     }
   });
