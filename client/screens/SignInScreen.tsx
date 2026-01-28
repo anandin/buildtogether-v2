@@ -50,27 +50,27 @@ export default function SignInScreen() {
           Build Together
         </ThemedText>
         <ThemedText type="body" style={[styles.subtitle, { color: theme.textSecondary }]}>
-          Manage money as a team.{"\n"}Save for your dreams together.
+          Your personal finance companion{"\n"}that learns what works for you
         </ThemedText>
       </View>
 
       <View style={styles.features}>
         <FeatureItem 
-          icon="credit-card" 
-          title="Track Expenses Together"
-          description="See who paid and split bills fairly"
-          theme={theme}
-        />
-        <FeatureItem 
-          icon="target" 
-          title="Shared Savings Dreams"
-          description="Save for vacations, home, and more"
-          theme={theme}
-        />
-        <FeatureItem 
           icon="cpu" 
-          title="AI-Powered Insights"
-          description="Smart tips to help you save more"
+          title="AI that knows you"
+          description="Learns your habits and gives personalized tips"
+          theme={theme}
+        />
+        <FeatureItem 
+          icon="star" 
+          title="Shared savings dreams"
+          description="Track goals together - from date nights to homes"
+          theme={theme}
+        />
+        <FeatureItem 
+          icon="heart" 
+          title="Your Dream Guardian"
+          description="A friendly owl companion cheering you on"
           theme={theme}
         />
       </View>
