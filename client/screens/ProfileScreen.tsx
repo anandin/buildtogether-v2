@@ -344,6 +344,28 @@ export default function ProfileScreen() {
 
       <Card style={styles.settingsCard}>
         <ThemedText type="heading" style={styles.sectionTitle}>
+          AI & Transparency
+        </ThemedText>
+        
+        <Pressable 
+          style={styles.settingRow}
+          onPress={() => navigation.navigate("GuardianMemory")}
+        >
+          <View style={[styles.settingIcon, { backgroundColor: "#8B5CF6" + "20" }]}>
+            <Feather name="cpu" size={18} color="#8B5CF6" />
+          </View>
+          <View style={styles.settingContent}>
+            <ThemedText type="body">AI Memory</ThemedText>
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              See what your AI has learned about you
+            </ThemedText>
+          </View>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
+      </Card>
+
+      <Card style={styles.settingsCard}>
+        <ThemedText type="heading" style={styles.sectionTitle}>
           Partner
         </ThemedText>
         
