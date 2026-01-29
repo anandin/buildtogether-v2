@@ -306,6 +306,97 @@
         line-height: 1.6;
       }
       
+      /* Screenshot Showcase Section */
+      .screenshots-section {
+        padding: 80px 24px;
+        background: linear-gradient(180deg, #F7F8FC 0%, #FFF9F9 100%);
+        text-align: center;
+        overflow: hidden;
+      }
+      
+      .screenshots-grid {
+        display: flex;
+        gap: 24px;
+        max-width: 1200px;
+        margin: 0 auto;
+        overflow-x: auto;
+        padding: 20px 0;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+      }
+      
+      .screenshot-card {
+        flex: 0 0 280px;
+        scroll-snap-align: center;
+        background: white;
+        border-radius: 24px;
+        padding: 24px;
+        box-shadow: var(--shadow-medium);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+      }
+      
+      .screenshot-card:hover {
+        transform: translateY(-8px) scale(1.02);
+        box-shadow: var(--shadow-float);
+      }
+      
+      .screenshot-image {
+        width: 100%;
+        height: 400px;
+        object-fit: cover;
+        border-radius: 16px;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      }
+      
+      .screenshot-card h4 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--text-dark);
+        margin-bottom: 8px;
+      }
+      
+      .screenshot-card p {
+        font-size: 0.95rem;
+        color: var(--text-medium);
+        line-height: 1.5;
+      }
+      
+      .feature-tag {
+        display: inline-block;
+        background: var(--gradient-hero);
+        color: var(--text-dark);
+        font-size: 0.75rem;
+        font-weight: 700;
+        padding: 4px 12px;
+        border-radius: 50px;
+        margin-bottom: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      
+      @media (min-width: 768px) {
+        .screenshots-grid {
+          justify-content: center;
+          flex-wrap: wrap;
+          overflow-x: visible;
+        }
+        
+        .screenshot-card {
+          flex: 0 0 300px;
+        }
+      }
+      
+      @media (min-width: 1200px) {
+        .screenshot-card {
+          flex: 0 0 320px;
+        }
+        
+        .screenshot-image {
+          height: 450px;
+        }
+      }
+      
       /* Dream Guardian Section */
       .guardian-section {
         padding: 80px 24px;
@@ -791,6 +882,49 @@
             <h3>Watch Dreams Grow</h3>
             <p>Every saved dollar brings you closer. See real-time progress toward your shared goals and celebrate together.</p>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screenshot Showcase Section -->
+    <section class="screenshots-section">
+      <h2 class="section-title">See the Magic in Action</h2>
+      <p class="section-subtitle">A sleek, intuitive experience that makes managing money together actually enjoyable.</p>
+      
+      <div class="screenshots-grid">
+        <div class="screenshot-card">
+          <span class="feature-tag">Smart Dashboard</span>
+          <img src="assets/screenshots/dashboard.png" alt="Dashboard showing spending insights and dream progress" class="screenshot-image" />
+          <h4>Your Financial Command Center</h4>
+          <p>See spending patterns, dream progress, and gentle AI insights all in one beautiful view.</p>
+        </div>
+        
+        <div class="screenshot-card">
+          <span class="feature-tag">AI Receipt Scanner</span>
+          <img src="assets/screenshots/receipt-scan.png" alt="Receipt scanning with item classification" class="screenshot-image" />
+          <h4>Snap & Classify Instantly</h4>
+          <p>AI reads every line item, categorizes spending, and learns your shopping patterns automatically.</p>
+        </div>
+        
+        <div class="screenshot-card">
+          <span class="feature-tag">Smart Insights</span>
+          <img src="assets/screenshots/insights.png" alt="AI-powered spending insights and analytics" class="screenshot-image" />
+          <h4>Insights That Actually Help</h4>
+          <p>Not just charts - actionable AI analysis that finds real opportunities to save more together.</p>
+        </div>
+        
+        <div class="screenshot-card">
+          <span class="feature-tag">AI Memory</span>
+          <img src="assets/screenshots/ai-memory.png" alt="Guardian Memory showing AI transparency" class="screenshot-image" />
+          <h4>Full AI Transparency</h4>
+          <p>See exactly what your Guardian has learned and why it makes each suggestion. Trust through openness.</p>
+        </div>
+        
+        <div class="screenshot-card">
+          <span class="feature-tag">Gentle Nudges</span>
+          <img src="assets/screenshots/nudge.png" alt="Dream Guardian nudge notification" class="screenshot-image" />
+          <h4>Psychology-Powered Motivation</h4>
+          <p>Timely nudges using behavioral science - not guilt trips, but genuine encouragement that works.</p>
         </div>
       </div>
     </section>
