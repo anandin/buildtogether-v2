@@ -289,6 +289,11 @@ export const dailyAnalysis = pgTable("daily_analysis", {
   suggestedAction: text("suggested_action"),
   targetGoalId: varchar("target_goal_id"), // Which dream to nudge toward
   
+  // AI Transparency: WHY the recommendation was made
+  rationale: text("rationale"), // Human-readable explanation of why AI made this recommendation
+  evidenceData: jsonb("evidence_data"), // Specific data: {triggerPattern, dataPoints[], comparisonContext, confidenceLevel}
+  behavioralTechnique: text("behavioral_technique"), // Which psychology technique was used
+  
   // Behavioral context used
   daysWithoutDeposit: integer("days_without_deposit"),
   currentStreakDays: integer("current_streak_days"),

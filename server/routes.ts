@@ -2036,6 +2036,22 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
         partner2Name: couple[0].partner2Name,
       } : null;
       
+      // Fetch learning history for transparency
+      const learningHistoryData = await db.select().from(behavioralLearningHistory)
+        .where(eq(behavioralLearningHistory.coupleId, coupleId))
+        .orderBy(desc(behavioralLearningHistory.createdAt))
+        .limit(10);
+      
+      // Fetch recent analyses with rationale for transparency
+      const recentAnalyses = await db.select().from(dailyAnalysis)
+        .where(eq(dailyAnalysis.coupleId, coupleId))
+        .orderBy(desc(dailyAnalysis.createdAt))
+        .limit(10);
+      
+      // Get nudge preferences for "What AI knows about you"
+      const [nudgePrefs] = await db.select().from(partnerNudgePreferences)
+        .where(eq(partnerNudgePreferences.coupleId, coupleId));
+      
       res.json({
         insights: insights.slice(0, 10), // Last 10 active insights
         recentRecommendations: recommendations.slice(0, 5), // Last 5 recommendations
@@ -2049,9 +2065,143 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
           weekAgo.setDate(weekAgo.getDate() - 7);
           return expDate >= weekAgo;
         }).length,
+        // AI Transparency additions
+        learningHistory: learningHistoryData.map(lh => ({
+          id: lh.id,
+          createdAt: lh.createdAt,
+          aiObservation: lh.aiObservation,
+          recommendedApproach: lh.recommendedApproach,
+          effectiveTechniques: lh.effectiveTechniques,
+          ineffectiveTechniques: lh.ineffectiveTechniques,
+          nudgesAnalyzed: lh.nudgesAnalyzed,
+          scores: {
+            lossAversion: lh.lossAversionScore,
+            gainFraming: lh.gainFramingScore,
+            progress: lh.progressScore,
+            urgency: lh.urgencyScore,
+          }
+        })),
+        recentNudgesWithRationale: recentAnalyses
+          .filter(a => a.dailyNudge)
+          .map(a => ({
+            id: a.id,
+            date: a.analysisDate,
+            message: a.dailyNudge,
+            rationale: a.rationale,
+            evidenceData: a.evidenceData,
+            behavioralTechnique: a.behavioralTechnique,
+            userResponse: a.userResponse,
+          })),
+        nudgePreferences: nudgePrefs ? {
+          lossAversionScore: nudgePrefs.lossAversionScore,
+          gainFramingScore: nudgePrefs.gainFramingScore,
+          progressScore: nudgePrefs.progressScore,
+          urgencyScore: nudgePrefs.urgencyScore,
+          totalNudgesReceived: nudgePrefs.totalNudgesReceived,
+          nudgesActedOn: nudgePrefs.nudgesActedOn,
+          totalSavedFromNudges: nudgePrefs.totalSavedFromNudges,
+        } : null,
       });
     } catch (error: any) {
       console.error("Get guardian memory error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Get AI learning history with full transparency
+  app.get("/api/guardian/learning-history/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      
+      const [learningHistory, nudgePrefs, recentNudges] = await Promise.all([
+        db.select().from(behavioralLearningHistory)
+          .where(eq(behavioralLearningHistory.coupleId, coupleId))
+          .orderBy(desc(behavioralLearningHistory.createdAt))
+          .limit(20),
+        db.select().from(partnerNudgePreferences)
+          .where(eq(partnerNudgePreferences.coupleId, coupleId)),
+        db.select().from(dailyAnalysis)
+          .where(eq(dailyAnalysis.coupleId, coupleId))
+          .orderBy(desc(dailyAnalysis.createdAt))
+          .limit(20),
+      ]);
+      
+      const prefs = nudgePrefs[0];
+      
+      // Calculate habit tracking stats
+      const nudgesWithResponses = recentNudges.filter(n => n.userResponse);
+      const actedCount = nudgesWithResponses.filter(n => n.userResponse === 'acted').length;
+      const dismissedCount = nudgesWithResponses.filter(n => n.userResponse === 'dismissed').length;
+      const ignoredCount = nudgesWithResponses.filter(n => n.userResponse === 'ignored').length;
+      
+      res.json({
+        // Current AI understanding of this user
+        currentProfile: prefs ? {
+          lossAversionScore: prefs.lossAversionScore,
+          gainFramingScore: prefs.gainFramingScore,
+          socialProofScore: prefs.socialProofScore,
+          progressScore: prefs.progressScore,
+          urgencyScore: prefs.urgencyScore,
+          totalNudgesReceived: prefs.totalNudgesReceived,
+          nudgesActedOn: prefs.nudgesActedOn,
+          nudgesDismissed: prefs.nudgesDismissed,
+          totalSavedFromNudges: prefs.totalSavedFromNudges,
+          effectivenessRate: (prefs.totalNudgesReceived || 0) > 0 
+            ? (prefs.nudgesActedOn || 0) / (prefs.totalNudgesReceived || 1) 
+            : 0,
+        } : null,
+        
+        // Learning events over time (shows AI evolving its understanding)
+        learningEvents: learningHistory.map(lh => ({
+          id: lh.id,
+          date: lh.createdAt,
+          triggerEvent: lh.triggerEvent,
+          nudgesAnalyzed: lh.nudgesAnalyzed,
+          aiObservation: lh.aiObservation,
+          recommendedApproach: lh.recommendedApproach,
+          effectiveTechniques: lh.effectiveTechniques,
+          ineffectiveTechniques: lh.ineffectiveTechniques,
+          scoresAtTime: {
+            lossAversion: lh.lossAversionScore,
+            gainFraming: lh.gainFramingScore,
+            progress: lh.progressScore,
+            urgency: lh.urgencyScore,
+          }
+        })),
+        
+        // Habit tracking: how user responds to suggestions
+        habitTracking: {
+          totalNudges: nudgesWithResponses.length,
+          actedOn: actedCount,
+          dismissed: dismissedCount,
+          ignored: ignoredCount,
+          acceptanceRate: nudgesWithResponses.length > 0 
+            ? actedCount / nudgesWithResponses.length 
+            : 0,
+          recentTrend: nudgesWithResponses.slice(0, 5).map(n => ({
+            date: n.analysisDate,
+            response: n.userResponse,
+            nudgeType: n.nudgeType,
+          })),
+        },
+        
+        // Recent nudges with full rationale for transparency
+        recentNudgesWithContext: recentNudges
+          .filter(n => n.dailyNudge)
+          .slice(0, 10)
+          .map(n => ({
+            id: n.id,
+            date: n.analysisDate,
+            message: n.dailyNudge,
+            rationale: n.rationale,
+            evidenceData: n.evidenceData,
+            behavioralTechnique: n.behavioralTechnique,
+            userResponse: n.userResponse,
+            priority: n.nudgePriority,
+          })),
+      });
+    } catch (error: any) {
+      console.error("Get learning history error:", error);
       res.status(500).json({ error: error.message });
     }
   });
@@ -2236,6 +2386,9 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
         nudgePriority: aiResponse.priority || "medium",
         suggestedAction: aiResponse.suggestedAction || null,
         targetGoalId: goalsData.find(g => g.emoji === aiResponse.targetGoalEmoji)?.id || null,
+        rationale: aiResponse.rationale || null,
+        evidenceData: aiResponse.evidenceData || null,
+        behavioralTechnique: aiResponse.behavioralTechnique || null,
         daysWithoutDeposit,
         currentStreakDays: (streakData[0]?.currentStreak || 0) * 7,
         spendingVsAverage: weeklyTotal > 0 ? todaySpending / (weeklyTotal / 7) : 1,

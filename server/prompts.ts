@@ -511,7 +511,14 @@ Return JSON:
   "suggestedAction": (string) specific, actionable suggestion,
   "suggestedAmount": (number or null) if recommending a savings amount,
   "targetGoalEmoji": (string or null) which dream to connect this to,
-  "behavioralTechnique": (string) which technique you used and why
+  "behavioralTechnique": (string) which technique you used and why,
+  "rationale": (string) IMPORTANT: Explain WHY you made this recommendation - what specific data led to it. Example: "I noticed you spent $85 at restaurants this week compared to your usual $45. This is a pattern I've seen over the last 3 weekends.",
+  "evidenceData": {
+    "triggerPattern": (string) what pattern triggered this recommendation,
+    "dataPoints": [(string)] specific observations like "Restaurant spending up 89% this week", "3 consecutive weekend dining events",
+    "comparisonContext": (string) what you're comparing against (last week, monthly average, etc.),
+    "confidenceLevel": "high" | "medium" | "low" - how confident you are in this recommendation
+  }
 }`;
 }
 
@@ -535,15 +542,25 @@ ${nudgeSummary}
 
 Based on this pattern, calculate updated preference scores (0.0 to 1.0):
 
+SCORING GUIDE:
+- Look at which nudge TYPES led to "acted" responses
+- "celebration", "encouragement", "progress_update" → favor progressScore and gainFramingScore
+- "loss_aversion", "urgent" → favor lossAversionScore and urgencyScore  
+- "gentle_tip" → neutral, look at the specific message content
+- If they ignored/dismissed most nudges, lower all scores slightly and note what didn't work
+
 Return JSON:
 {
-  "lossAversionScore": (number) how well loss framing works,
-  "gainFramingScore": (number) how well gain/positive framing works,
-  "socialProofScore": (number) how well "others like you" framing works,
-  "progressScore": (number) how well progress updates motivate,
-  "urgencyScore": (number) how well time pressure motivates,
-  "observations": (string) brief insight about this person's motivational style,
-  "recommendedApproach": (string) suggested approach for next nudge
+  "lossAversionScore": (number 0-1) how well loss framing works,
+  "gainFramingScore": (number 0-1) how well gain/positive framing works,
+  "socialProofScore": (number 0-1) how well "others like you" framing works,
+  "progressScore": (number 0-1) how well progress updates motivate,
+  "urgencyScore": (number 0-1) how well time pressure motivates,
+  "observations": (string) brief insight about this person's motivational style - be specific! e.g., "Responds strongly to progress updates (3/3 acted) but ignores urgency framing (0/2 acted)",
+  "recommendedApproach": (string) specific tactical advice for next nudge,
+  "effectiveTechniques": [(string)] list techniques that worked - e.g., ["progress_update", "celebration"],
+  "ineffectiveTechniques": [(string)] list techniques that didn't work - e.g., ["loss_aversion", "urgency"],
+  "learningInsight": (string) what the AI just learned about this user that it will remember - this gets shown to the user for transparency
 }`;
 }
 
