@@ -16,21 +16,21 @@
       }
       
       :root {
-        --primary: #FF9AA2;
-        --primary-dark: #E8888F;
-        --accent: #C7CEEA;
-        --accent-dark: #A8B2D9;
-        --success: #7CB97C;
-        --text-dark: #2D3748;
-        --text-medium: #4A5568;
-        --text-light: #718096;
-        --bg-warm: #FFF9F9;
+        --primary: #D64550;
+        --primary-dark: #B83640;
+        --accent: #5B6BC2;
+        --accent-dark: #4A58A5;
+        --success: #2E7D32;
+        --text-dark: #1A1A2E;
+        --text-medium: #2D3748;
+        --text-light: #4A5568;
+        --bg-warm: #FEFEFE;
         --bg-white: #FFFFFF;
-        --gradient-hero: linear-gradient(135deg, #FF9AA2 0%, #FFDAC1 50%, #C7CEEA 100%);
-        --gradient-card: linear-gradient(145deg, #FFFFFF 0%, #FFF5F5 100%);
-        --shadow-soft: 0 4px 20px rgba(255, 154, 162, 0.15);
-        --shadow-medium: 0 8px 30px rgba(199, 206, 234, 0.25);
-        --shadow-float: 0 20px 60px rgba(255, 154, 162, 0.2);
+        --gradient-hero: linear-gradient(135deg, #FFEEF0 0%, #FFF5E6 50%, #EEF1FF 100%);
+        --gradient-card: linear-gradient(145deg, #FFFFFF 0%, #FAFAFA 100%);
+        --shadow-soft: 0 4px 20px rgba(0, 0, 0, 0.08);
+        --shadow-medium: 0 8px 30px rgba(0, 0, 0, 0.12);
+        --shadow-float: 0 20px 60px rgba(0, 0, 0, 0.15);
       }
       
       body {
@@ -196,7 +196,7 @@
       
       .section-subtitle {
         font-size: 1.1rem;
-        color: var(--text-light);
+        color: var(--text-medium);
         max-width: 500px;
         margin: 0 auto 48px;
       }
@@ -235,9 +235,9 @@
         font-size: 28px;
       }
       
-      .uvp-icon.snap { background: linear-gradient(135deg, #FF9AA2 0%, #FFB7B2 100%); }
-      .uvp-icon.guardian { background: linear-gradient(135deg, #C7CEEA 0%, #B5B9E3 100%); }
-      .uvp-icon.dreams { background: linear-gradient(135deg, #FFDAC1 0%, #FFE4B5 100%); }
+      .uvp-icon.snap { background: linear-gradient(135deg, #D64550 0%, #E05A65 100%); }
+      .uvp-icon.guardian { background: linear-gradient(135deg, #5B6BC2 0%, #6B7AD2 100%); }
+      .uvp-icon.dreams { background: linear-gradient(135deg, #E6983A 0%, #F0A850 100%); }
       
       .uvp-card h3 {
         font-size: 1.3rem;
@@ -364,11 +364,11 @@
       
       .feature-tag {
         display: inline-block;
-        background: var(--gradient-hero);
-        color: var(--text-dark);
+        background: #1A1A2E;
+        color: #FFFFFF;
         font-size: 0.75rem;
         font-weight: 700;
-        padding: 4px 12px;
+        padding: 6px 14px;
         border-radius: 50px;
         margin-bottom: 12px;
         text-transform: uppercase;
@@ -455,7 +455,7 @@
       
       .guardian-description {
         font-size: 1.15rem;
-        color: rgba(255,255,255,0.85);
+        color: rgba(255,255,255,0.95);
         margin-bottom: 40px;
         line-height: 1.8;
       }
@@ -468,12 +468,13 @@
       }
       
       .badge {
-        background: rgba(255,255,255,0.1);
-        border: 1px solid rgba(255,255,255,0.2);
+        background: rgba(255,255,255,0.2);
+        border: 1px solid rgba(255,255,255,0.4);
+        color: #FFFFFF;
         padding: 10px 20px;
         border-radius: 50px;
         font-size: 0.9rem;
-        font-weight: 600;
+        font-weight: 700;
         backdrop-filter: blur(10px);
       }
       
@@ -489,7 +490,7 @@
         margin: 0 auto;
         font-size: 1.3rem;
         font-style: italic;
-        color: var(--text-medium);
+        color: var(--text-dark);
         line-height: 1.8;
       }
       
