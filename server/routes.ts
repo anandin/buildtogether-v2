@@ -2385,12 +2385,9 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
       // LEARNING ALGORITHM: Trigger AI learning after every 5 nudge responses
       if (newTotalNudges > 0 && newTotalNudges % 5 === 0) {
         try {
-          // Fetch recent nudges with their responses
+          // Fetch recent nudges with their responses (dailyNudge is text, check if not null)
           const recentAnalyses = await db.select().from(dailyAnalysis)
-            .where(and(
-              eq(dailyAnalysis.coupleId, coupleId),
-              eq(dailyAnalysis.dailyNudge, true)
-            ))
+            .where(eq(dailyAnalysis.coupleId, coupleId))
             .orderBy(desc(dailyAnalysis.analysisDate))
             .limit(10);
           
