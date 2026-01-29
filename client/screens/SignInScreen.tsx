@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, StyleSheet, Platform, Pressable, TextInput, ScrollView, KeyboardAvoidingView } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as WebBrowser from "expo-web-browser";
+import * as Google from "expo-auth-session/providers/google";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
@@ -13,12 +14,14 @@ import { Spacing, BorderRadius } from "@/constants/theme";
 
 WebBrowser.maybeCompleteAuthSession();
 
+const GOOGLE_CLIENT_ID = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID || "";
+
 type AuthMode = "signin" | "signup";
 
 export default function SignInScreen() {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { signInWithApple, signInWithEmail, signUpWithEmail } = useAuth();
+  const { signInWithApple, signInWithEmail, signUpWithEmail, signInWithGoogle } = useAuth();
   
   const [mode, setMode] = useState<AuthMode>("signin");
   const [email, setEmail] = useState("");
@@ -27,6 +30,62 @@ export default function SignInScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    clientId: GOOGLE_CLIENT_ID,
+    scopes: ["openid", "profile", "email"],
+  });
+
+  useEffect(() => {
+    if (response?.type === "success") {
+      handleGoogleSuccess(response.authentication);
+    } else if (response?.type === "error") {
+      setError("Google sign in failed. Please try again.");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+  }, [response]);
+
+  const handleGoogleSuccess = async (authentication: any) => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const userInfoResponse = await fetch(
+        "https://www.googleapis.com/oauth2/v3/userinfo",
+        {
+          headers: { Authorization: `Bearer ${authentication.accessToken}` },
+        }
+      );
+      
+      const userInfo = await userInfoResponse.json();
+      
+      await signInWithGoogle(
+        userInfo.sub,
+        userInfo.email || null,
+        userInfo.name || null,
+        authentication.idToken || authentication.accessToken
+      );
+      
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err: any) {
+      setError("Google sign in failed. Please try again.");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      await promptAsync();
+    } catch (err: any) {
+      setError("Google sign in failed. Please try again.");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setLoading(false);
+    }
+  };
 
   const handleAppleSignIn = async () => {
     try {
@@ -229,12 +288,12 @@ export default function SignInScreen() {
 
             <Pressable
               style={[styles.socialButtonAlt, { backgroundColor: theme.backgroundSecondary, borderWidth: 1, borderColor: theme.border }]}
-              onPress={() => setError("Google Sign-In coming soon!")}
-              disabled={loading}
+              onPress={handleGoogleSignIn}
+              disabled={loading || !request}
               testID="button-google"
             >
               <View style={styles.googleIcon}>
-                <ThemedText style={{ fontSize: 16, fontWeight: "bold" }}>G</ThemedText>
+                <ThemedText style={{ fontSize: 16, fontWeight: "bold", color: "#4285F4" }}>G</ThemedText>
               </View>
               <ThemedText type="body" style={{ color: theme.text, fontWeight: "600" }}>
                 Google
