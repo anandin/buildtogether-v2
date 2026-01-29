@@ -25,8 +25,9 @@ import {
   dailyAnalysis,
   partnerNudgePreferences,
   nudgeEscalation,
+  behavioralLearningHistory,
 } from "@shared/schema";
-import { buildDailyAnalysisPrompt } from "./prompts";
+import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt } from "./prompts";
 import crypto from "crypto";
 
 function generateInviteCode(): string {
@@ -2323,7 +2324,11 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   app.post("/api/guardian/nudge-response/:coupleId/:analysisId", async (req, res) => {
     try {
       const { coupleId, analysisId } = req.params;
-      const { response, savedAmount } = req.body; // response: 'acted' | 'dismissed' | 'ignored'
+      const { response, savedAmount, nudgeType } = req.body; // response: 'acted' | 'dismissed' | 'ignored'
+      
+      // Get the analysis to know which behavioral technique was used
+      const [analysisRecord] = await db.select().from(dailyAnalysis)
+        .where(eq(dailyAnalysis.id, analysisId));
       
       await db.update(dailyAnalysis)
         .set({ 
@@ -2336,9 +2341,12 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
       const [prefs] = await db.select().from(partnerNudgePreferences)
         .where(eq(partnerNudgePreferences.coupleId, coupleId));
       
+      let newTotalNudges = 1;
+      
       if (prefs) {
+        newTotalNudges = (prefs.totalNudgesReceived || 0) + 1;
         const updates: any = {
-          totalNudgesReceived: (prefs.totalNudgesReceived || 0) + 1,
+          totalNudgesReceived: newTotalNudges,
           updatedAt: new Date()
         };
         
@@ -2374,7 +2382,91 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
           ));
       }
       
-      res.json({ success: true });
+      // LEARNING ALGORITHM: Trigger AI learning after every 5 nudge responses
+      if (newTotalNudges > 0 && newTotalNudges % 5 === 0) {
+        try {
+          // Fetch recent nudges with their responses
+          const recentAnalyses = await db.select().from(dailyAnalysis)
+            .where(and(
+              eq(dailyAnalysis.coupleId, coupleId),
+              eq(dailyAnalysis.dailyNudge, true)
+            ))
+            .orderBy(desc(dailyAnalysis.analysisDate))
+            .limit(10);
+          
+          const recentNudges = recentAnalyses
+            .filter(a => a.userResponse)
+            .map(a => ({
+              nudgeType: a.nudgeType || 'general',
+              message: a.dailyNudge ? 'nudge sent' : '',
+              userResponse: a.userResponse as 'acted' | 'dismissed' | 'ignored',
+              amountSaved: null as number | null
+            }));
+          
+          if (recentNudges.length >= 5) {
+            // Call AI to analyze patterns and learn
+            const learningPrompt = buildFeedbackLearningPrompt(
+              prefs?.partnerRole || 'partner1',
+              recentNudges
+            );
+            
+            const learningCompletion = await openai.chat.completions.create({
+              model: "gpt-4o",
+              messages: [
+                { role: "system", content: learningPrompt },
+                { role: "user", content: `Analyze these ${recentNudges.length} nudge responses and update the behavioral preference scores.` }
+              ],
+              response_format: { type: "json_object" },
+              temperature: 0.3,
+            });
+            
+            const learningResult = JSON.parse(learningCompletion.choices[0].message.content || "{}");
+            
+            // Update the preference scores based on AI analysis
+            if (learningResult.lossAversionScore !== undefined) {
+              const [currentPrefs] = await db.select().from(partnerNudgePreferences)
+                .where(eq(partnerNudgePreferences.coupleId, coupleId));
+              
+              if (currentPrefs) {
+                await db.update(partnerNudgePreferences)
+                  .set({
+                    lossAversionScore: learningResult.lossAversionScore,
+                    gainFramingScore: learningResult.gainFramingScore,
+                    socialProofScore: learningResult.socialProofScore,
+                    progressScore: learningResult.progressScore,
+                    urgencyScore: learningResult.urgencyScore,
+                    updatedAt: new Date()
+                  })
+                  .where(eq(partnerNudgePreferences.id, currentPrefs.id));
+              }
+              
+              // Record the learning event in history for transparency
+              await db.insert(behavioralLearningHistory).values({
+                coupleId,
+                partnerRole: currentPrefs?.partnerRole || 'partner1',
+                lossAversionScore: learningResult.lossAversionScore,
+                gainFramingScore: learningResult.gainFramingScore,
+                socialProofScore: learningResult.socialProofScore,
+                progressScore: learningResult.progressScore,
+                urgencyScore: learningResult.urgencyScore,
+                triggerEvent: 'periodic_analysis',
+                nudgesAnalyzed: recentNudges.length,
+                aiObservation: learningResult.observations || null,
+                recommendedApproach: learningResult.recommendedApproach || null,
+                effectiveTechniques: learningResult.effectiveTechniques || [],
+                ineffectiveTechniques: learningResult.ineffectiveTechniques || [],
+              });
+              
+              console.log(`AI Learning updated for couple ${coupleId}:`, learningResult);
+            }
+          }
+        } catch (learningError) {
+          console.error("AI Learning error (non-blocking):", learningError);
+          // Don't fail the main request if learning fails
+        }
+      }
+      
+      res.json({ success: true, learningTriggered: newTotalNudges % 5 === 0 });
     } catch (error: any) {
       console.error("Record nudge response error:", error);
       res.status(500).json({ error: error.message });

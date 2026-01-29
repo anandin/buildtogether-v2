@@ -208,6 +208,38 @@ export const guardianRecommendations = pgTable("guardian_recommendations", {
   actedAt: timestamp("acted_at"),
   dismissedAt: timestamp("dismissed_at"),
   userFeedback: text("user_feedback"), // helpful, not_helpful, already_knew
+  rationale: text("rationale"), // WHY the AI made this recommendation
+  evidenceData: jsonb("evidence_data"), // specific data points that led to this: {spendingPattern, amounts, dates}
+  behavioralTechnique: text("behavioral_technique"), // which psychology technique was used
+  techniqueEffective: boolean("technique_effective"), // was this technique effective? (set after response)
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const behavioralLearningHistory = pgTable("behavioral_learning_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull(),
+  partnerRole: text("partner_role"), // partner1, partner2, or null for couple-level
+  
+  // Score snapshots at this learning event
+  lossAversionScore: real("loss_aversion_score"),
+  gainFramingScore: real("gain_framing_score"),
+  socialProofScore: real("social_proof_score"),
+  progressScore: real("progress_score"),
+  urgencyScore: real("urgency_score"),
+  
+  // What triggered this learning event
+  triggerEvent: text("trigger_event").notNull(), // periodic_analysis, major_response, manual_reset
+  nudgesAnalyzed: integer("nudges_analyzed").default(0),
+  
+  // AI's observations about this learning cycle
+  aiObservation: text("ai_observation"), // "User responds well to progress framing, ignores urgency"
+  recommendedApproach: text("recommended_approach"), // "Use progress updates, avoid time pressure"
+  
+  // Specific patterns detected
+  effectiveTechniques: jsonb("effective_techniques"), // ["progress", "loss_aversion"]
+  ineffectiveTechniques: jsonb("ineffective_techniques"), // ["urgency", "social_proof"]
+  categoryPatterns: jsonb("category_patterns"), // {restaurants: "responds to cooking suggestions"}
+  
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -415,3 +447,4 @@ export type SavingsStreak = typeof savingsStreaks.$inferSelect;
 export type DailyAnalysis = typeof dailyAnalysis.$inferSelect;
 export type PartnerNudgePreference = typeof partnerNudgePreferences.$inferSelect;
 export type NudgeEscalation = typeof nudgeEscalation.$inferSelect;
+export type BehavioralLearningHistory = typeof behavioralLearningHistory.$inferSelect;
