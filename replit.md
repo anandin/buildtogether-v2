@@ -76,6 +76,12 @@ Preferred communication style: Simple, everyday language.
   - **Guardian Memory Screen**: Full transparency into what AI has learned - shows insights history, recommendation audit trail, effectiveness tracking, and behavioral pattern analysis
   - **Personalized Greetings**: Context-aware app-open messages from Dream Guardian considering time of day, recent activity, streaks, and goal progress
   - **WCAG AA Accessibility**: Updated color palette meeting 4.5:1 contrast ratios while maintaining warm pastel personality
+- **AI Transparency & Learning System (Jan 2026)**:
+  - **Behavioral Learning Loop**: AI analyzes user responses every 5 nudges and updates behavioral preference scores (lossAversionScore, gainFramingScore, progressScore, urgencyScore)
+  - **Rationale Storage**: Every AI recommendation stores WHY it was made (rationale), WHAT data triggered it (evidenceData with triggerPattern, dataPoints, comparisonContext, confidenceLevel), and which behavioral technique was used
+  - **Learning History Table**: Tracks AI score changes over time with observations and recommended approaches
+  - **Enhanced Guardian Memory Screen**: Shows "What AI Knows About You" with behavioral score bars, learning history events, recent nudges with tap-to-expand rationale, and habit tracking stats
+  - **API Endpoints**: `/api/guardian/memory/:coupleId` returns full transparency data; `/api/guardian/learning-history/:coupleId` returns detailed learning events
 
 **State Management**: 
 - React Context (AppContext) for global app data including expenses, goals, budget, and partner information
