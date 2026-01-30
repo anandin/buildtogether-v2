@@ -47,27 +47,63 @@ export function WelcomeScreen({ onGetStarted }: WelcomeScreenProps) {
         </View>
         
         <View style={styles.featuresSection}>
-          <FeatureItem 
-            icon="cpu" 
-            title="AI that knows you"
-            description="Learns your habits and gives personalized tips"
-            color={theme.primary}
-            theme={theme}
-          />
-          <FeatureItem 
-            icon="star" 
-            title="Shared savings dreams"
-            description="Track goals together - from date nights to dream homes"
-            color={theme.success}
-            theme={theme}
-          />
-          <FeatureItem 
-            icon="heart" 
-            title="Friendly Dream Guardian"
-            description="Your cheerful owl companion keeps you on track"
-            color={theme.warning}
-            theme={theme}
-          />
+          <ThemedText type="small" style={[styles.sectionLabel, { color: theme.textSecondary }]}>
+            HOW IT WORKS
+          </ThemedText>
+          
+          <View style={styles.layerItem}>
+            <View style={[styles.layerNumber, { backgroundColor: theme.primary + "15" }]}>
+              <ThemedText type="small" style={{ color: theme.primary, fontWeight: "700" }}>1</ThemedText>
+            </View>
+            <View style={styles.layerContent}>
+              <ThemedText type="body" style={{ fontWeight: "600" }}>You just add expenses</ThemedText>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                Snap receipts or type naturally
+              </ThemedText>
+            </View>
+          </View>
+          
+          <View style={[styles.layerDivider, { backgroundColor: theme.border }]} />
+          
+          <View style={styles.layerItem}>
+            <View style={[styles.layerNumber, { backgroundColor: theme.accent + "15" }]}>
+              <ThemedText type="small" style={{ color: theme.accent, fontWeight: "700" }}>2</ThemedText>
+            </View>
+            <View style={styles.layerContent}>
+              <ThemedText type="body" style={{ fontWeight: "600" }}>We handle the rest</ThemedText>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                Categorize, split, settle, track
+              </ThemedText>
+            </View>
+          </View>
+          
+          <View style={[styles.layerDivider, { backgroundColor: theme.border }]} />
+          
+          <View style={styles.layerItem}>
+            <View style={[styles.layerNumber, { backgroundColor: theme.aiPrimary + "15" }]}>
+              <ThemedText type="small" style={{ color: theme.aiPrimary, fontWeight: "700" }}>3</ThemedText>
+            </View>
+            <View style={styles.layerContent}>
+              <ThemedText type="body" style={{ fontWeight: "600" }}>Dream Guardian learns you</ThemedText>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                Observes, learns, nudges, adapts
+              </ThemedText>
+            </View>
+          </View>
+          
+          <View style={[styles.layerDivider, { backgroundColor: theme.border }]} />
+          
+          <View style={styles.layerItem}>
+            <View style={[styles.layerNumber, { backgroundColor: theme.success + "15" }]}>
+              <ThemedText type="small" style={{ color: theme.success, fontWeight: "700" }}>4</ThemedText>
+            </View>
+            <View style={styles.layerContent}>
+              <ThemedText type="body" style={{ fontWeight: "600" }}>Dreams become real</ThemedText>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                Without stress or awkward money talks
+              </ThemedText>
+            </View>
+          </View>
         </View>
       </View>
       
@@ -90,35 +126,6 @@ export function WelcomeScreen({ onGetStarted }: WelcomeScreenProps) {
   );
 }
 
-function FeatureItem({ 
-  icon, 
-  title, 
-  description, 
-  color,
-  theme 
-}: { 
-  icon: string; 
-  title: string; 
-  description: string; 
-  color: string;
-  theme: any;
-}) {
-  return (
-    <View style={styles.featureItem}>
-      <View style={[styles.featureIcon, { backgroundColor: color + "15" }]}>
-        <Feather name={icon as any} size={20} color={color} />
-      </View>
-      <View style={styles.featureText}>
-        <ThemedText type="body" style={{ fontWeight: "600" }}>
-          {title}
-        </ThemedText>
-        <ThemedText type="small" style={{ color: theme.textSecondary }}>
-          {description}
-        </ThemedText>
-      </View>
-    </View>
-  );
-}
 
 const styles = StyleSheet.create({
   container: {
@@ -156,23 +163,35 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   featuresSection: {
-    gap: Spacing.lg,
+    gap: Spacing.md,
+    marginTop: Spacing.lg,
   },
-  featureItem: {
+  sectionLabel: {
+    textAlign: "center",
+    letterSpacing: 1,
+    marginBottom: Spacing.sm,
+  },
+  layerItem: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.md,
   },
-  featureIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  layerNumber: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: "center",
     alignItems: "center",
   },
-  featureText: {
+  layerContent: {
     flex: 1,
     gap: 2,
+  },
+  layerDivider: {
+    width: 2,
+    height: 16,
+    marginLeft: 15,
+    borderRadius: 1,
   },
   footer: {
     paddingHorizontal: Spacing.xl,

@@ -74,6 +74,33 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
     >
       <View style={[styles.content, { paddingTop: insets.top + Spacing["2xl"], paddingBottom: insets.bottom + Spacing.lg }]}>
         
+        {/* Progress indicator */}
+        {step !== "complete" ? (
+          <View style={styles.progressContainer}>
+            <View style={styles.progressBar}>
+              <View style={[
+                styles.progressStep, 
+                { backgroundColor: theme.primary }
+              ]}>
+                <ThemedText type="tiny" style={{ color: "#FFFFFF", fontWeight: "600" }}>1</ThemedText>
+              </View>
+              <View style={[
+                styles.progressLine, 
+                { backgroundColor: step === "first-goal" ? theme.primary : theme.border }
+              ]} />
+              <View style={[
+                styles.progressStep, 
+                { backgroundColor: step === "first-goal" ? theme.primary : theme.border }
+              ]}>
+                <ThemedText type="tiny" style={{ color: step === "first-goal" ? "#FFFFFF" : theme.textSecondary, fontWeight: "600" }}>2</ThemedText>
+              </View>
+            </View>
+            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+              Step {step === "names" ? "1" : "2"} of 2
+            </ThemedText>
+          </View>
+        ) : null}
+        
         {step === "names" ? (
           <Animated.View 
             key="names"
@@ -82,12 +109,9 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
             style={styles.stepContainer}
           >
             <View style={styles.header}>
-              <View style={[styles.stepIndicator, { backgroundColor: theme.primary }]}>
-                <ThemedText type="small" style={{ color: "#FFFFFF", fontWeight: "600" }}>1</ThemedText>
-              </View>
               <ThemedText type="h2">Who's building together?</ThemedText>
               <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "center" }}>
-                Your friendly owl guardian will learn your{"\n"}spending patterns and cheer you on!
+                Dream Guardian will learn each of your{"\n"}spending patterns and adapt its tips for you
               </ThemedText>
             </View>
             
@@ -164,12 +188,9 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
             style={styles.stepContainer}
           >
             <View style={styles.header}>
-              <View style={[styles.stepIndicator, { backgroundColor: theme.success }]}>
-                <ThemedText type="small" style={{ color: "#FFFFFF", fontWeight: "600" }}>2</ThemedText>
-              </View>
               <ThemedText type="h2">What's your first dream?</ThemedText>
               <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "center" }}>
-                Your guardian will track your progress{"\n"}and give smart tips to get there faster!
+                Dream Guardian will observe your habits{"\n"}and nudge you toward this goal
               </ThemedText>
             </View>
             
@@ -274,13 +295,27 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     marginBottom: Spacing.xl,
   },
-  stepIndicator: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  progressContainer: {
+    alignItems: "center",
+    gap: Spacing.sm,
+    marginBottom: Spacing.xl,
+  },
+  progressBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 0,
+  },
+  progressStep: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: Spacing.sm,
+  },
+  progressLine: {
+    width: 60,
+    height: 3,
+    borderRadius: 2,
   },
   inputCard: {
     padding: Spacing.lg,
