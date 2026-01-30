@@ -158,7 +158,29 @@ export default function GoalDetailScreen() {
           <Feather name={goal.emoji as any} size={32} color={goal.color} />
         </View>
         <ThemedText type="h3">{goal.name}</ThemedText>
+        {goal.targetDate ? (
+          <View style={styles.targetDateRow}>
+            <Feather name="calendar" size={14} color={theme.textSecondary} />
+            <ThemedText type="small" style={{ color: theme.textSecondary, marginLeft: Spacing.xs }}>
+              Target: {format(new Date(goal.targetDate), "MMMM d, yyyy")}
+            </ThemedText>
+          </View>
+        ) : null}
       </View>
+
+      {goal.whyItMatters ? (
+        <Card style={styles.whyCard}>
+          <View style={styles.whyHeader}>
+            <Feather name="heart" size={16} color={goal.color} />
+            <ThemedText type="small" style={{ marginLeft: Spacing.sm, fontWeight: "600" }}>
+              Why This Dream Matters
+            </ThemedText>
+          </View>
+          <ThemedText type="body" style={{ color: theme.textSecondary, fontStyle: "italic" }}>
+            "{goal.whyItMatters}"
+          </ThemedText>
+        </Card>
+      ) : null}
 
       {showCoachBanner ? (
         <Card style={StyleSheet.flatten([styles.coachBanner, { borderColor: theme.primary + "40" }])}>
@@ -552,5 +574,18 @@ const styles = StyleSheet.create({
   coachText: {
     flex: 1,
     gap: 2,
+  },
+  targetDateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: Spacing.xs,
+  },
+  whyCard: {
+    marginBottom: Spacing.lg,
+  },
+  whyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: Spacing.sm,
   },
 });

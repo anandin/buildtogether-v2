@@ -62,6 +62,8 @@ export interface Goal {
   emoji: string;
   color: string;
   createdAt: string;
+  targetDate?: string;
+  whyItMatters?: string;
   contributions: GoalContribution[];
 }
 

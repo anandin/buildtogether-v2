@@ -77,6 +77,8 @@ export const goals = pgTable("goals", {
   savedAmount: real("saved_amount").default(0).notNull(),
   emoji: text("emoji").notNull(),
   color: text("color").notNull(),
+  targetDate: text("target_date"),
+  whyItMatters: text("why_it_matters"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

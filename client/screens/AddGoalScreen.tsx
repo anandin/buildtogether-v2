@@ -1,10 +1,12 @@
 import React, { useState } from "react";
-import { View, StyleSheet, TextInput, Pressable, ScrollView } from "react-native";
+import { View, StyleSheet, TextInput, Pressable, ScrollView, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { format, addMonths } from "date-fns";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
@@ -24,6 +26,9 @@ export default function AddGoalScreen() {
   const [targetAmount, setTargetAmount] = useState("");
   const [selectedEmoji, setSelectedEmoji] = useState(GOAL_EMOJIS[0]);
   const [selectedColor, setSelectedColor] = useState(GOAL_COLORS[0]);
+  const [targetDate, setTargetDate] = useState<Date | null>(addMonths(new Date(), 6));
+  const [whyItMatters, setWhyItMatters] = useState("");
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -44,6 +49,8 @@ export default function AddGoalScreen() {
         targetAmount: amount,
         emoji: selectedEmoji,
         color: selectedColor,
+        targetDate: targetDate ? format(targetDate, "yyyy-MM-dd") : undefined,
+        whyItMatters: whyItMatters.trim() || undefined,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       navigation.goBack();
@@ -51,6 +58,15 @@ export default function AddGoalScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    if (Platform.OS === "android") {
+      setShowDatePicker(false);
+    }
+    if (selectedDate) {
+      setTargetDate(selectedDate);
     }
   };
 
@@ -176,12 +192,76 @@ export default function AddGoalScreen() {
         </View>
       </View>
 
+      <View style={styles.section}>
+        <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>
+          Target Date (optional)
+        </ThemedText>
+        <Pressable
+          onPress={() => setShowDatePicker(true)}
+          style={[
+            styles.dateButton,
+            {
+              backgroundColor: theme.backgroundDefault,
+              borderColor: theme.border,
+            },
+          ]}
+        >
+          <Feather name="calendar" size={20} color={theme.textSecondary} />
+          <ThemedText style={{ marginLeft: Spacing.md }}>
+            {targetDate ? format(targetDate, "MMMM d, yyyy") : "Pick a date"}
+          </ThemedText>
+        </Pressable>
+        {showDatePicker && (
+          <DateTimePicker
+            value={targetDate || new Date()}
+            mode="date"
+            display={Platform.OS === "ios" ? "spinner" : "default"}
+            onChange={handleDateChange}
+            minimumDate={new Date()}
+          />
+        )}
+        {Platform.OS === "ios" && showDatePicker && (
+          <Pressable
+            onPress={() => setShowDatePicker(false)}
+            style={[styles.doneButton, { backgroundColor: theme.primary }]}
+          >
+            <ThemedText style={{ color: "#FFFFFF" }}>Done</ThemedText>
+          </Pressable>
+        )}
+      </View>
+
+      <View style={styles.section}>
+        <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>
+          Why Does This Dream Matter? (optional)
+        </ThemedText>
+        <TextInput
+          style={[
+            styles.whyInput,
+            {
+              color: theme.text,
+              backgroundColor: theme.backgroundDefault,
+              borderColor: theme.border,
+            },
+          ]}
+          value={whyItMatters}
+          onChangeText={setWhyItMatters}
+          placeholder="This helps us motivate you when things get tough..."
+          placeholderTextColor={theme.textSecondary}
+          multiline
+          numberOfLines={3}
+          textAlignVertical="top"
+        />
+        <ThemedText type="small" style={{ color: theme.textSecondary, marginTop: Spacing.xs }}>
+          The Dream Guardian will remind you of this when you need motivation
+        </ThemedText>
+      </View>
+
       <Button
         onPress={handleSave}
         disabled={saving || !name.trim() || !targetAmount}
         style={styles.saveButton}
       >
-        {saving ? "Creating..." : "Create Goal"}
+        {saving ? "Creating..." : "Create Dream"}
       </Button>
     </ScrollView>
   );
@@ -256,6 +336,29 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
+  },
+  dateButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    height: Spacing.inputHeight,
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.lg,
+    borderWidth: 1,
+  },
+  doneButton: {
+    alignSelf: "flex-end",
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.sm,
+    marginTop: Spacing.sm,
+  },
+  whyInput: {
+    borderRadius: BorderRadius.sm,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderWidth: 1,
+    fontSize: 16,
+    minHeight: 100,
   },
   saveButton: {
     marginTop: Spacing.xl,
