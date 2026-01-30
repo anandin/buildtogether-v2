@@ -41,14 +41,14 @@ const LINE_ITEM_CLASSIFICATION_LABELS: Record<string, string> = {
 };
 
 const LINE_ITEM_CLASSIFICATION_COLORS: Record<string, string> = {
-  staple: "#B5EAD7",
-  treat: "#FFB7B2",
-  beverage: "#A2D2FF",
-  household: "#FFDAC1",
-  prepared: "#C7CEEA",
-  luxury: "#CDB4DB",
-  kids: "#FFD93D",
-  other: "#D4D4D4",
+  staple: "#059669",
+  treat: "#EC4899",
+  beverage: "#0EA5E9",
+  household: "#D97706",
+  prepared: "#8B5CF6",
+  luxury: "#A855F7",
+  kids: "#EAB308",
+  other: "#78716C",
 };
 
 export default function AddExpenseScreen() {

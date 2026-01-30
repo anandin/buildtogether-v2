@@ -22,10 +22,10 @@ const AVAILABLE_ICONS = [
 ];
 
 const AVAILABLE_COLORS = [
-  "#FF9AA2", "#FFB7B2", "#FFDAC1", "#E2F0CB", "#B5EAD7",
-  "#C7CEEA", "#A2D2FF", "#CDB4DB", "#F8B4D9", "#FFD93D",
-  "#FF6B6B", "#D4A574", "#6366F1", "#10B981", "#F59E0B",
-  "#8B5CF6", "#EC4899", "#06B6D4", "#84CC16", "#F97316",
+  "#7C3AED", "#8B5CF6", "#A855F7", "#6366F1", "#3B82F6",
+  "#0EA5E9", "#06B6D4", "#14B8A6", "#10B981", "#059669",
+  "#22C55E", "#84CC16", "#EAB308", "#F97316", "#F59E0B",
+  "#EC4899", "#DB2777", "#E11D48", "#A16207", "#78716C",
 ];
 
 export default function AddCategoryScreen() {
@@ -37,7 +37,7 @@ export default function AddCategoryScreen() {
 
   const [name, setName] = useState("");
   const [selectedIcon, setSelectedIcon] = useState("shopping-bag");
-  const [selectedColor, setSelectedColor] = useState("#C7CEEA");
+  const [selectedColor, setSelectedColor] = useState("#7C3AED");
   const [monthlyLimit, setMonthlyLimit] = useState("200");
   const [saving, setSaving] = useState(false);
 

@@ -1,47 +1,47 @@
 import { Platform } from "react-native";
 
 // WCAG AA Compliant Color Palette
-// Maintains warm, friendly personality while ensuring 4.5:1+ contrast ratios
+// Trust-focused purple primary with warm accents - signals stability for finance
 export const AppColors = {
-  // Primary colors - accessible versions
-  primary: "#D64D5B",           // Deeper coral-rose (4.5:1 on white)
-  primaryLight: "#FF9AA2",      // Original soft pink (backgrounds only)
-  primaryDark: "#B33D4A",       // Dark rose for emphasis
+  // Primary colors - purple for trust and stability (finance-appropriate)
+  primary: "#7C3AED",           // Vibrant purple (5:1 on white)
+  primaryLight: "#EDE9FE",      // Soft violet (backgrounds only)
+  primaryDark: "#5B21B6",       // Deep purple for emphasis
   
-  // Accent colors - accessible versions  
-  accent: "#6B7ACC",            // Deeper lavender-blue (4.5:1 on white)
-  accentLight: "#C7CEEA",       // Original soft lavender (backgrounds only)
-  accentDark: "#4A5499",        // Dark indigo for emphasis
+  // Accent colors - warm coral for partnership/warmth
+  accent: "#F97316",            // Warm orange for secondary actions
+  accentLight: "#FFEDD5",       // Soft peach (backgrounds only)
+  accentDark: "#C2410C",        // Deep orange for emphasis
   
   // Semantic colors - WCAG compliant
-  success: "#2E7D5A",           // Forest green (7:1 on white)
-  successLight: "#B5EAD7",      // Soft green (backgrounds only)
-  successDark: "#1E5A3D",       // Deep green
+  success: "#059669",           // Emerald green (5:1 on white)
+  successLight: "#D1FAE5",      // Soft green (backgrounds only)
+  successDark: "#047857",       // Deep green
   
-  warning: "#B86A00",           // Burnt orange (4.5:1 on white)
-  warningLight: "#FFDAC1",      // Soft peach (backgrounds only)
-  warningDark: "#8A5000",       // Dark amber
+  warning: "#D97706",           // Amber (4.5:1 on white)
+  warningLight: "#FEF3C7",      // Soft yellow (backgrounds only)
+  warningDark: "#B45309",       // Dark amber
   
-  error: "#C62828",             // Deep red (6:1 on white)
-  errorLight: "#FFCDD2",        // Soft red (backgrounds only)
-  errorDark: "#8E0000",         // Dark red
+  error: "#DC2626",             // Red for destructive actions only
+  errorLight: "#FEE2E2",        // Soft red (backgrounds only)
+  errorDark: "#B91C1C",         // Dark red
   
   // Neutral colors
-  background: "#FFFBF7",
+  background: "#FAFAF9",        // Warm off-white
   surface: "#FFFFFF",
-  textPrimary: "#1A1A1A",       // Near black (15:1+ on white)
-  textSecondary: "#5C5C5C",     // Dark gray (7:1 on white)
-  textTertiary: "#757575",      // Medium gray (4.6:1 on white)
-  border: "#D1D1D6",
+  textPrimary: "#1C1917",       // Near black (15:1+ on white)
+  textSecondary: "#57534E",     // Dark gray (7:1 on white)
+  textTertiary: "#78716C",      // Medium gray (4.6:1 on white)
+  border: "#E7E5E4",
   
-  // AI-specific colors
-  aiPrimary: "#5B4FCF",         // AI purple (accessible)
-  aiLight: "#E8E5FF",           // AI background
-  aiDark: "#3D3494",            // AI emphasis
+  // AI/Dream Guardian colors - distinct purple tint
+  aiPrimary: "#8B5CF6",         // Violet for AI features
+  aiLight: "#F5F3FF",           // AI background
+  aiDark: "#6D28D9",            // AI emphasis
 };
 
 const tintColorLight = AppColors.primary;
-const tintColorDark = "#FFB4BA";
+const tintColorDark = "#A78BFA";  // Light violet for dark mode
 
 export const Colors = {
   light: {
@@ -75,34 +75,34 @@ export const Colors = {
     aiDark: AppColors.aiDark,
   },
   dark: {
-    text: "#ECEDEE",
-    textSecondary: "#A0A0A5",
-    textTertiary: "#808085",
+    text: "#FAFAF9",
+    textSecondary: "#A8A29E",
+    textTertiary: "#78716C",
     buttonText: "#FFFFFF",
-    tabIconDefault: "#A0A0A5",
+    tabIconDefault: "#A8A29E",
     tabIconSelected: tintColorDark,
     link: tintColorDark,
     primary: tintColorDark,
-    primaryLight: "#4A3035",
-    primaryDark: "#FFD0D4",
-    accent: "#B4BDEE",
-    accentLight: "#2A2D40",
-    accentDark: "#D4D9F0",
-    success: "#6FCF97",
-    successLight: "#1E3A2F",
-    warning: "#FFB74D",
-    warningLight: "#3A2A1A",
-    error: "#EF5350",
-    errorLight: "#3A1A1A",
-    border: "#3A3A3C",
-    backgroundRoot: "#1C1C1E",
-    backgroundDefault: "#2C2C2E",
-    backgroundSecondary: "#3A3A3C",
-    backgroundTertiary: "#48484A",
+    primaryLight: "#2E1065",
+    primaryDark: "#C4B5FD",
+    accent: "#FB923C",
+    accentLight: "#431407",
+    accentDark: "#FDBA74",
+    success: "#34D399",
+    successLight: "#064E3B",
+    warning: "#FBBF24",
+    warningLight: "#451A03",
+    error: "#F87171",
+    errorLight: "#450A0A",
+    border: "#44403C",
+    backgroundRoot: "#1C1917",
+    backgroundDefault: "#292524",
+    backgroundSecondary: "#44403C",
+    backgroundTertiary: "#57534E",
     // AI colors
-    aiPrimary: "#9D8FFF",
-    aiLight: "#2A2640",
-    aiDark: "#C4BAFF",
+    aiPrimary: "#A78BFA",
+    aiLight: "#2E1065",
+    aiDark: "#C4B5FD",
   },
 };
 

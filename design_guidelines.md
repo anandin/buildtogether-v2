@@ -68,14 +68,18 @@
 
 ## Color Palette
 
-- **Primary**: #FF9AA2 (warm coral pink - partnership warmth)
-- **Accent**: #C7CEEA (soft lavender - calm trust)
-- **Success**: #B5EAD7 (mint - growth/savings)
-- **Warning**: #FFDAC1 (peachy - alerts)
-- **Background**: #FFFBF7 (warm off-white)
+- **Primary**: #7C3AED (vibrant purple - trust & stability for finance)
+- **Accent**: #F97316 (warm orange - warmth & partnership)
+- **Success**: #059669 (emerald - growth/savings)
+- **Warning**: #D97706 (amber - alerts)
+- **Error**: #DC2626 (red - destructive actions ONLY)
+- **Background**: #FAFAF9 (warm off-white)
 - **Surface**: #FFFFFF (pure white cards)
-- **Text Primary**: #2D2D2D (soft black)
-- **Text Secondary**: #8E8E93 (gray)
+- **Text Primary**: #1C1917 (near black)
+- **Text Secondary**: #57534E (warm gray)
+- **AI/Guardian**: #8B5CF6 (violet - Dream Guardian features)
+
+**Color Philosophy**: Purple primary signals trust and financial stability. Red is reserved ONLY for destructive/error actions (delete, cancel). Orange accent adds warmth for partnership elements.
 
 ## Typography
 

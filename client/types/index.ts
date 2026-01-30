@@ -225,22 +225,22 @@ export const CATEGORY_LABELS: Record<string, string> = {
 };
 
 export const CATEGORY_COLORS: Record<string, string> = {
-  food: "#FF9AA2",
-  groceries: "#B5EAD7",
-  transport: "#C7CEEA",
-  utilities: "#FFDAC1",
-  internet: "#A2D2FF",
-  entertainment: "#B5EAD7",
-  shopping: "#FFB7B2",
-  health: "#E2F0CB",
-  travel: "#C7CEEA",
-  home: "#D4A574",
-  restaurants: "#FF9AA2",
-  subscriptions: "#CDB4DB",
-  pets: "#FFD93D",
-  gifts: "#FF6B6B",
-  personal: "#F8B4D9",
-  other: "#D4D4D4",
+  food: "#F97316",
+  groceries: "#059669",
+  transport: "#8B5CF6",
+  utilities: "#D97706",
+  internet: "#0EA5E9",
+  entertainment: "#10B981",
+  shopping: "#EC4899",
+  health: "#22C55E",
+  travel: "#6366F1",
+  home: "#A16207",
+  restaurants: "#F97316",
+  subscriptions: "#A855F7",
+  pets: "#EAB308",
+  gifts: "#EF4444",
+  personal: "#DB2777",
+  other: "#78716C",
 };
 
 export const DEFAULT_CATEGORY_BUDGETS: { category: string; limit: number; budgetType: BudgetType }[] = [
@@ -274,14 +274,14 @@ export const BUDGET_TYPE_INFO: Record<BudgetType, { label: string; description: 
 };
 
 export const GOAL_COLORS = [
-  "#FF9AA2",
-  "#C7CEEA",
-  "#B5EAD7",
-  "#FFDAC1",
-  "#FFB7B2",
-  "#E2F0CB",
-  "#A2D2FF",
-  "#CDB4DB",
+  "#7C3AED",
+  "#F97316",
+  "#059669",
+  "#0EA5E9",
+  "#EC4899",
+  "#8B5CF6",
+  "#10B981",
+  "#6366F1",
 ];
 
 export const GOAL_EMOJIS = [
