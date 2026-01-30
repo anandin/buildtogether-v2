@@ -14,6 +14,7 @@ import { Card } from "@/components/Card";
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
 import { getCurrentMonthExpenses, getTotalSpent } from "@/lib/cloudStorage";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS } from "@/types";
@@ -25,6 +26,7 @@ export default function HomeScreen() {
   const navigation = useNavigation<any>();
   const { theme } = useTheme();
   const { data, loading, refreshData } = useApp();
+  const { user } = useAuth();
 
   const currentMonthExpenses = data ? getCurrentMonthExpenses(data.expenses) : [];
   const totalSpent = getTotalSpent(currentMonthExpenses);
@@ -62,18 +64,22 @@ export default function HomeScreen() {
 
   const renderContent = () => (
     <View style={styles.content}>
-      <DreamGuardian onAddToGoal={handleAddToDream} />
-
-      <BudgetCard
-        spent={totalSpent}
-        limit={totalBudget}
-        month={new Date().toLocaleString("default", { month: "long" })}
+      <DreamGuardian 
+        onAddToGoal={handleAddToDream} 
+        coupleId={user?.coupleId ?? undefined}
       />
 
       <QuickActions
         onAddExpense={handleAddExpense}
         onScanReceipt={handleScanReceipt}
         onAddGoal={handleAddDream}
+      />
+
+      <BudgetCard
+        spent={totalSpent}
+        limit={totalBudget}
+        month={new Date().toLocaleString("default", { month: "long" })}
+        compact
       />
 
       <Card style={styles.recentCard}>

@@ -18,11 +18,12 @@ interface BudgetCardProps {
   limit: number;
   month: string;
   onPress?: () => void;
+  compact?: boolean;
 }
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-export function BudgetCard({ spent, limit, month, onPress }: BudgetCardProps) {
+export function BudgetCard({ spent, limit, month, onPress, compact }: BudgetCardProps) {
   const { theme } = useTheme();
   const progress = useSharedValue(0);
   const percentage = limit > 0 ? Math.min(spent / limit, 1) : 0;
@@ -46,6 +47,44 @@ export function BudgetCard({ spent, limit, month, onPress }: BudgetCardProps) {
     if (percentage >= 0.75) return theme.warning;
     return theme.success;
   };
+
+  if (compact) {
+    return (
+      <Card style={styles.compactCard} onPress={onPress}>
+        <View style={styles.compactContent}>
+          <View style={styles.compactProgress}>
+            <View 
+              style={[
+                styles.compactProgressBar, 
+                { backgroundColor: theme.border }
+              ]}
+            >
+              <Animated.View
+                style={[
+                  styles.compactProgressFill,
+                  { 
+                    backgroundColor: getProgressColor(),
+                    width: `${Math.min(percentage * 100, 100)}%`,
+                  },
+                ]}
+              />
+            </View>
+          </View>
+          <View style={styles.compactStats}>
+            <ThemedText type="body" style={{ fontWeight: "600" }}>
+              ${spent.toLocaleString()}
+            </ThemedText>
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              of ${limit.toLocaleString()} this month
+            </ThemedText>
+          </View>
+          <ThemedText type="small" style={{ color: getProgressColor(), fontWeight: "600" }}>
+            ${remaining.toLocaleString()} left
+          </ThemedText>
+        </View>
+      </Card>
+    );
+  }
 
   return (
     <Card style={styles.card} onPress={onPress}>
@@ -171,5 +210,31 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
+  },
+  compactCard: {
+    marginTop: Spacing.md,
+    marginBottom: Spacing.lg,
+  },
+  compactContent: {
+    gap: Spacing.sm,
+  },
+  compactProgress: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  compactProgressBar: {
+    flex: 1,
+    height: 8,
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  compactProgressFill: {
+    height: "100%",
+    borderRadius: 4,
+  },
+  compactStats: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
   },
 });
