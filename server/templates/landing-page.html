@@ -366,6 +366,110 @@
         }
       }
       
+      /* Why This Is Different Section */
+      .why-different-section {
+        padding: 80px 24px;
+        background: linear-gradient(135deg, #F3F4F6 0%, #E5E7EB 100%);
+        text-align: center;
+      }
+      
+      .why-different-content {
+        max-width: 600px;
+        margin: 0 auto;
+      }
+      
+      .why-different-lead {
+        font-size: 1.4rem;
+        color: var(--text-body);
+        margin-bottom: 24px;
+        line-height: 1.6;
+      }
+      
+      .why-different-lead strong {
+        color: var(--primary);
+      }
+      
+      .why-different-description {
+        font-size: 1.1rem;
+        color: var(--text-body);
+        line-height: 1.6;
+        margin-bottom: 8px;
+      }
+      
+      .why-different-highlight {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: var(--primary);
+        margin: 20px 0;
+        padding: 16px 24px;
+        background: var(--bg-white);
+        border-radius: 12px;
+        display: inline-block;
+        box-shadow: var(--shadow-card);
+      }
+      
+      /* Dreams Section */
+      .dreams-section {
+        padding: 80px 24px;
+        background: var(--bg-white);
+        text-align: center;
+      }
+      
+      .dreams-content {
+        max-width: 600px;
+        margin: 0 auto;
+      }
+      
+      .dreams-description {
+        font-size: 1.2rem;
+        color: var(--text-body);
+        line-height: 1.7;
+        margin-bottom: 32px;
+      }
+      
+      .dreams-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      
+      .dreams-list li {
+        font-size: 1.1rem;
+        color: var(--text-heading);
+        font-weight: 600;
+        padding: 16px 24px;
+        background: var(--bg-light);
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+      }
+      
+      .dreams-list li::before {
+        content: '';
+        width: 8px;
+        height: 8px;
+        background: var(--success);
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      
+      @media (min-width: 768px) {
+        .dreams-list {
+          flex-direction: row;
+          justify-content: center;
+        }
+        
+        .dreams-list li {
+          flex: 1;
+          max-width: 220px;
+        }
+      }
+      
       /* How It Works Section */
       .how-it-works {
         padding: 80px 24px;
@@ -573,8 +677,16 @@
       .guardian-description {
         font-size: 1.15rem;
         color: rgba(255,255,255,0.95);
-        margin-bottom: 40px;
+        margin-bottom: 20px;
         line-height: 1.8;
+      }
+      
+      .guardian-tagline {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #FFFFFF;
+        margin-bottom: 40px;
+        font-style: italic;
       }
       
       .science-badges {
@@ -912,10 +1024,11 @@
         <h1>
           <span>Build Together</span>
         </h1>
-        <p class="tagline">Dreams Become Real. Without the Stress.</p>
+        <p class="tagline">Shared expenses, made simple.<br/>Saving together, made possible.</p>
         <p class="hero-description">
-          All you do is add expenses. Build Together handles the rest. 
-          Your Dream Guardian AI observes, learns, nudges, and adapts to help you save more together.
+          Build Together automatically categorizes, splits, and tracks shared expenses — 
+          while an adaptive AI helps you and your partner stay on track toward your financial goals.
+          <strong style="display: block; margin-top: 12px; color: var(--primary);">No bank linking required.</strong>
         </p>
         <div class="cta-buttons">
           <a href="#download" class="btn-primary">
@@ -924,7 +1037,7 @@
               <polyline points="7 10 12 15 17 10"></polyline>
               <line x1="12" y1="15" x2="12" y2="3"></line>
             </svg>
-            Get Started Free
+            Get Started
           </a>
           <a href="#how-it-works" class="btn-secondary">
             See how it works
@@ -1027,32 +1140,49 @@
 
     <!-- How It Works Section -->
     <section class="how-it-works" id="how-it-works">
-      <h2 class="section-title" style="text-align: center; margin-bottom: 48px;">Three Simple Steps</h2>
+      <h2 class="section-title" style="text-align: center; margin-bottom: 48px;">How It Works</h2>
       
       <div class="steps-container">
         <div class="step">
           <div class="step-number">1</div>
           <div class="step-content">
-            <h3>Snap Your Receipts</h3>
-            <p>Point your camera at any receipt. AI extracts everything automatically - amount, merchant, category. Done in seconds.</p>
+            <h3>Add Expenses</h3>
+            <p>Snap a receipt or type "Dinner $68".</p>
           </div>
         </div>
         
         <div class="step">
           <div class="step-number">2</div>
           <div class="step-content">
-            <h3>Get Gentle Nudges</h3>
-            <p>Your Dream Guardian sends personalized tips using behavioral science. Small changes that lead to big results.</p>
+            <h3>Build Together Handles the Rest</h3>
+            <p>Expenses are categorized, split, and tracked automatically.</p>
           </div>
         </div>
         
         <div class="step">
           <div class="step-number">3</div>
           <div class="step-content">
-            <h3>Watch Dreams Grow</h3>
-            <p>Every saved dollar brings you closer. See real-time progress toward your shared goals and celebrate together.</p>
+            <h3>Stay on Track Toward Your Dreams</h3>
+            <p>Dream Guardian learns what motivates you and nudges gently when progress slows.</p>
           </div>
         </div>
+      </div>
+    </section>
+    
+    <!-- Why This Is Different Section -->
+    <section class="why-different-section">
+      <div class="why-different-content">
+        <h2 class="section-title">More Than Expense Tracking</h2>
+        <p class="why-different-lead">Most apps stop at tracking.<br/><strong>Build Together goes further.</strong></p>
+        <p class="why-different-description">
+          Dream Guardian observes how you and your partner respond to suggestions.
+        </p>
+        <p class="why-different-highlight">
+          If a nudge doesn't work, it adapts.
+        </p>
+        <p class="why-different-description">
+          Helping you save more without pressure or guilt.
+        </p>
       </div>
     </section>
 
@@ -1127,6 +1257,22 @@
       </div>
     </section>
 
+    <!-- Dreams Section -->
+    <section class="dreams-section">
+      <div class="dreams-content">
+        <h2 class="section-title">Turn Shared Goals Into Real Progress</h2>
+        <p class="dreams-description">
+          Vacations, homes, emergencies, or something meaningful to both of you — 
+          Build Together keeps your dreams visible and moving forward.
+        </p>
+        <ul class="dreams-list">
+          <li>Set shared dreams together</li>
+          <li>Track progress automatically</li>
+          <li>Get timely nudges when momentum slows</li>
+        </ul>
+      </div>
+    </section>
+
     <!-- Dream Guardian Section -->
     <section class="guardian-section">
       <div class="guardian-content">
@@ -1138,12 +1284,13 @@
             <line x1="15" y1="9" x2="15.01" y2="9"></line>
           </svg>
         </div>
-        <h2>Meet Your <span class="highlight">Dream Guardian</span></h2>
+        <h2>Meet <span class="highlight">Dream Guardian</span></h2>
         <p class="guardian-description">
-          A self-learning AI that adapts to each partner's unique motivations. 
-          It observes your patterns, learns what works, sends personalized nudges, 
-          and continuously adapts based on your responses. Full transparency on what it learns.
+          Dream Guardian quietly watches the big picture. 
+          When spending patterns change or motivation drops, it suggests small adjustments — 
+          and learns from how you respond.
         </p>
+        <p class="guardian-tagline">No lectures. No shame. Just steady guidance.</p>
         <div class="science-badges">
           <span class="badge">Observes Patterns</span>
           <span class="badge">Learns What Works</span>
@@ -1165,8 +1312,8 @@
     <!-- CTA Section -->
     <section class="cta-section" id="download">
       <div class="cta-content">
-        <h2>Start Building Your Dreams Today</h2>
-        <p>Join couples who are achieving their financial goals together. Free to start, no bank linking required.</p>
+        <h2>Stop worrying about shared money.<br/>Start building together.</h2>
+        <p>Free to start. No bank linking required.</p>
         
         <div class="download-options">
           <div class="qr-container">
