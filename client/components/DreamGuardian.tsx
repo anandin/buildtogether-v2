@@ -118,8 +118,8 @@ function getGuardianMood(
     return {
       emoji: "target",
       color: "#6366F1",
-      message: `Hey ${partnerNames.partner1} & ${partnerNames.partner2}! Ready to dream together?`,
-      suggestion: "Tap Dreams to create your first shared dream - a vacation, home project, or anything you want to save for together!",
+      message: `Hey ${partnerNames.partner1} & ${partnerNames.partner2}! I'm your Dream Guardian - ready to learn what makes you tick.`,
+      suggestion: "Create your first dream and I'll start observing patterns to help you save smarter!",
       priority: "encourage",
     };
   }
@@ -147,8 +147,8 @@ function getGuardianMood(
     return {
       emoji: "heart",
       color: "#F59E0B",
-      message: `It's been ${daysSinceDeposit} days since your last dream deposit...`,
-      suggestion: "Your dreams are waiting! Even $5 keeps the spark alive. Want to add a little something today?",
+      message: `I've noticed it's been ${daysSinceDeposit} days since your last dream deposit...`,
+      suggestion: "I'm learning your rhythms - even $5 keeps momentum going. Shall we add something today?",
       priority: "gentle-nudge",
     };
   }
@@ -158,8 +158,8 @@ function getGuardianMood(
     return {
       emoji: "alert-circle",
       color: "#EF4444",
-      message: `Heads up: $${formattedAmount} on nice-to-haves this week.`,
-      suggestion: "No judgment! But imagine if even half of that went to your dreams. Want to redirect some?",
+      message: `I've observed $${formattedAmount} on treats this week - above your usual pattern.`,
+      suggestion: "I'm not judging! But I've learned that redirecting half could boost your dreams. Want to try?",
       priority: "urgent",
     };
   }
@@ -177,7 +177,7 @@ function getGuardianMood(
   return {
     emoji: "smile",
     color: "#6366F1",
-    message: "Looking good! You're being mindful with your spending.",
+    message: "I've been watching - you're being mindful with spending. I'm learning your good habits!",
     suggestion: "Ready to grow your dreams a little more today?",
     priority: "encourage",
   };
