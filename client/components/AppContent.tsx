@@ -34,8 +34,10 @@ export function AppContent() {
   }
 
   const hasCompletedOnboarding = data?.hasCompletedOnboarding === true;
+  const isPartnerB = user?.partnerRole === "partner2";
+  const joinedExistingCouple = data?.connectedSince !== null && isPartnerB;
 
-  if (!hasCompletedOnboarding) {
+  if (!hasCompletedOnboarding && !joinedExistingCouple) {
     if (step === "welcome") {
       return (
         <WelcomeScreen 

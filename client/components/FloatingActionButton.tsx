@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { View, StyleSheet, Pressable, Modal } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { Feather } from "@expo/vector-icons";
 import Animated, {
   useAnimatedStyle,
@@ -26,10 +28,14 @@ export function FloatingActionButton({
   onScanReceipt,
 }: FloatingActionButtonProps) {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
   const [isOpen, setIsOpen] = useState(false);
   const scale = useSharedValue(1);
   const rotation = useSharedValue(0);
   const menuOpacity = useSharedValue(0);
+  
+  const fabBottom = tabBarHeight + Spacing.md;
 
   const animatedButtonStyle = useAnimatedStyle(() => ({
     transform: [
@@ -81,7 +87,7 @@ export function FloatingActionButton({
         />
       ) : null}
 
-      <View style={styles.container}>
+      <View style={[styles.container, { bottom: fabBottom }]}>
         {isOpen ? (
           <Animated.View style={[styles.menu, animatedMenuStyle]}>
             <Pressable
@@ -130,7 +136,6 @@ const styles = StyleSheet.create({
   },
   container: {
     position: "absolute",
-    bottom: Spacing["3xl"],
     right: Spacing.lg,
     alignItems: "flex-end",
   },

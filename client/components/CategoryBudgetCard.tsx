@@ -22,6 +22,30 @@ export function CategoryBudgetCard() {
 
   if (!data) return null;
 
+  const getCategoryName = (categoryId: string): string => {
+    const customCategory = data.customCategories?.find((c) => c.id === categoryId);
+    if (customCategory) {
+      return customCategory.name;
+    }
+    return CATEGORY_LABELS[categoryId] || categoryId;
+  };
+
+  const getCategoryIcon = (categoryId: string): string => {
+    const customCategory = data.customCategories?.find((c) => c.id === categoryId);
+    if (customCategory) {
+      return customCategory.icon;
+    }
+    return CATEGORY_ICONS[categoryId] || "circle";
+  };
+
+  const getCategoryColor = (categoryId: string): string => {
+    const customCategory = data.customCategories?.find((c) => c.id === categoryId);
+    if (customCategory) {
+      return customCategory.color;
+    }
+    return CATEGORY_COLORS[categoryId] || theme.primary;
+  };
+
   const budgetStatus = storage.getCategoryBudgetStatus(data.expenses, data.categoryBudgets).map(b => {
     const budgetConfig = data.categoryBudgets.find(cb => cb.category === b.category);
     const effectiveBudget = budgetConfig ? getEffectiveBudget(budgetConfig) : b.limit;
@@ -96,12 +120,12 @@ export function CategoryBudgetCard() {
           >
             <View style={[
               styles.categoryIcon, 
-              { backgroundColor: (CATEGORY_COLORS[budget.category] || theme.primary) + "20" }
+              { backgroundColor: getCategoryColor(budget.category) + "20" }
             ]}>
               <Feather 
-                name={(CATEGORY_ICONS[budget.category] || "circle") as any} 
+                name={getCategoryIcon(budget.category) as any} 
                 size={14} 
-                color={CATEGORY_COLORS[budget.category] || theme.primary} 
+                color={getCategoryColor(budget.category)} 
               />
             </View>
             
@@ -109,7 +133,7 @@ export function CategoryBudgetCard() {
               <View style={styles.budgetHeader}>
                 <View style={styles.categoryNameRow}>
                   <ThemedText type="small">
-                    {CATEGORY_LABELS[budget.category] || budget.category}
+                    {getCategoryName(budget.category)}
                   </ThemedText>
                   {budget.budgetType !== 'recurring' ? (
                     <View style={[styles.budgetTypeBadge, { backgroundColor: theme.accent + "20" }]}>
@@ -169,7 +193,7 @@ export function CategoryBudgetCard() {
         >
           <View style={[styles.modalContent, { backgroundColor: theme.backgroundDefault }]}>
             <ThemedText type="h4" style={styles.modalTitle}>
-              Edit {CATEGORY_LABELS[editingCategory || ""] || editingCategory} Budget
+              Edit {getCategoryName(editingCategory || "")} Budget
             </ThemedText>
             
             <View style={styles.inputRow}>

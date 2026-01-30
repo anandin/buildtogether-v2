@@ -527,7 +527,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ 
         success: true, 
         coupleId: invite.coupleId,
-        message: "Successfully connected with your partner!" 
+        message: "Successfully connected with your partner!",
+        skipOnboarding: true  // Partner B should skip onboarding since they're joining existing couple
       });
     } catch (error: any) {
       console.error("Accept invite error:", error);
@@ -2356,6 +2357,23 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
       // Generate AI insight
       const prompt = buildDailyAnalysisPrompt(familyProfile, partnerPreferences, context, goalsForPrompt);
       
+      console.log("\n========== AI DAILY ANALYSIS ==========");
+      console.log("📊 Context being sent to AI:");
+      console.log(JSON.stringify({
+        todaySpending: context.todaySpending,
+        daysWithoutDeposit: context.daysWithoutDeposit,
+        streakWeeks: context.currentStreakWeeks,
+        closestGoal: context.closestGoal,
+        escalationLevel: context.escalationLevel,
+        familyProfile: { adults: familyProfile.numAdults, kids: familyProfile.numKidsUnder5 + familyProfile.numKids5to12 + familyProfile.numTeens },
+        partnerPreferences: partnerPreferences ? {
+          lossAversion: partnerPreferences.lossAversionScore,
+          gainFraming: partnerPreferences.gainFramingScore,
+          progress: partnerPreferences.progressScore,
+          urgency: partnerPreferences.urgencyScore,
+        } : "No preferences yet"
+      }, null, 2));
+      
       const completion = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
@@ -2373,6 +2391,17 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
       } catch {
         aiResponse = { shouldNudge: false, message: "Keep up the great work!" };
       }
+      
+      console.log("\n🤖 AI Response:");
+      console.log(JSON.stringify({
+        shouldNudge: aiResponse.shouldNudge,
+        message: aiResponse.message?.substring(0, 100) + "...",
+        nudgeType: aiResponse.nudgeType,
+        behavioralTechnique: aiResponse.behavioralTechnique,
+        rationale: aiResponse.rationale?.substring(0, 100) + "...",
+        evidenceData: aiResponse.evidenceData,
+      }, null, 2));
+      console.log("========================================\n");
       
       // Save the analysis
       const [newAnalysis] = await db.insert(dailyAnalysis).values({
@@ -2479,6 +2508,11 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
       const { coupleId, analysisId } = req.params;
       const { response, savedAmount, nudgeType } = req.body; // response: 'acted' | 'dismissed' | 'ignored'
       
+      console.log("\n========== NUDGE RESPONSE RECORDED ==========");
+      console.log(`📝 User Response: ${response}`);
+      console.log(`💰 Saved Amount: $${savedAmount || 0}`);
+      console.log(`📊 Nudge Type: ${nudgeType}`);
+      
       // Get the analysis to know which behavioral technique was used
       const [analysisRecord] = await db.select().from(dailyAnalysis)
         .where(eq(dailyAnalysis.id, analysisId));
@@ -2537,6 +2571,9 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
       
       // LEARNING ALGORITHM: Trigger AI learning after every 5 nudge responses
       if (newTotalNudges > 0 && newTotalNudges % 5 === 0) {
+        console.log("\n🧠 LEARNING ALGORITHM TRIGGERED!");
+        console.log(`📈 Total nudges: ${newTotalNudges} (every 5 triggers learning)`);
+        
         try {
           // Fetch recent nudges with their responses (dailyNudge is text, check if not null)
           const recentAnalyses = await db.select().from(dailyAnalysis)
@@ -2552,6 +2589,8 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
               userResponse: a.userResponse as 'acted' | 'dismissed' | 'ignored',
               amountSaved: null as number | null
             }));
+          
+          console.log(`📊 Analyzing ${recentNudges.length} recent nudge responses...`);
           
           if (recentNudges.length >= 5) {
             // Call AI to analyze patterns and learn
@@ -2571,6 +2610,17 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
             });
             
             const learningResult = JSON.parse(learningCompletion.choices[0].message.content || "{}");
+            
+            console.log("\n🎯 AI LEARNING RESULTS:");
+            console.log(JSON.stringify({
+              lossAversionScore: learningResult.lossAversionScore,
+              gainFramingScore: learningResult.gainFramingScore,
+              progressScore: learningResult.progressScore,
+              urgencyScore: learningResult.urgencyScore,
+              observation: learningResult.observation?.substring(0, 100) + "...",
+              recommendedApproach: learningResult.recommendedApproach?.substring(0, 100) + "..."
+            }, null, 2));
+            console.log("==========================================\n");
             
             // Update the preference scores based on AI analysis
             if (learningResult.lossAversionScore !== undefined) {
