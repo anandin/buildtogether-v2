@@ -259,6 +259,113 @@
         font-weight: 500;
       }
       
+      /* 4-Layer Value Proposition */
+      .layers-container {
+        max-width: 600px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        align-items: center;
+      }
+      
+      .layer-card {
+        display: flex;
+        align-items: flex-start;
+        gap: 20px;
+        background: var(--bg-white);
+        border-radius: 20px;
+        padding: 24px;
+        width: 100%;
+        text-align: left;
+        box-shadow: var(--shadow-card);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        border-left: 4px solid transparent;
+      }
+      
+      .layer-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      }
+      
+      .layer-1 { border-left-color: var(--primary); }
+      .layer-2 { border-left-color: #0EA5E9; }
+      .layer-3 { border-left-color: #8B5CF6; }
+      .layer-4 { border-left-color: var(--success); }
+      
+      .layer-number {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1rem;
+        font-weight: 800;
+        color: #FFFFFF;
+      }
+      
+      .layer-1 .layer-number { background: var(--primary); }
+      .layer-2 .layer-number { background: #0EA5E9; }
+      .layer-3 .layer-number { background: #8B5CF6; }
+      .layer-4 .layer-number { background: var(--success); }
+      
+      .layer-content h3 {
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: var(--text-heading);
+        margin-bottom: 8px;
+      }
+      
+      .layer-content p {
+        color: var(--text-body);
+        line-height: 1.6;
+        font-weight: 500;
+        margin-bottom: 12px;
+      }
+      
+      .layer-bullets {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      
+      .layer-bullets li {
+        position: relative;
+        padding-left: 20px;
+        color: var(--text-body);
+        font-size: 0.95rem;
+        line-height: 1.8;
+        font-weight: 500;
+      }
+      
+      .layer-bullets li::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 10px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--text-light);
+      }
+      
+      .layer-arrow {
+        color: var(--text-light);
+        opacity: 0.5;
+      }
+      
+      @media (min-width: 768px) {
+        .layers-container {
+          max-width: 700px;
+        }
+        
+        .layer-card {
+          padding: 28px 32px;
+        }
+      }
+      
       /* How It Works Section */
       .how-it-works {
         padding: 80px 24px;
@@ -805,10 +912,10 @@
         <h1>
           <span>Build Together</span>
         </h1>
-        <p class="tagline">Achieve Your Dreams, Faster</p>
+        <p class="tagline">Dreams Become Real. Without the Stress.</p>
         <p class="hero-description">
-          The couples finance app where all you do is snap receipts. 
-          Your Dream Guardian AI handles the rest, using behavioral science to help you save more and spend smarter.
+          All you do is add expenses. Build Together handles the rest. 
+          Your Dream Guardian AI observes, learns, nudges, and adapts to help you save more together.
         </p>
         <div class="cta-buttons">
           <a href="#download" class="btn-primary">
@@ -834,44 +941,86 @@
       </div>
     </section>
 
-    <!-- Value Proposition Section -->
+    <!-- 4-Layer Value Proposition Section -->
     <section class="uvp-section">
-      <h2 class="section-title">Finally, a finance app that works</h2>
-      <p class="section-subtitle">No complicated budgets. No endless spreadsheets. Just snap, follow, and dream.</p>
+      <h2 class="section-title">How It Actually Works</h2>
+      <p class="section-subtitle">Four layers. One simple experience. Dreams that become real.</p>
       
-      <div class="uvp-grid">
-        <div class="uvp-card">
-          <div class="uvp-icon snap">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-              <circle cx="12" cy="13" r="4"></circle>
-            </svg>
+      <div class="layers-container">
+        <div class="layer-card layer-1">
+          <div class="layer-number">1</div>
+          <div class="layer-content">
+            <h3>You Just Add Expenses</h3>
+            <p>Snap a receipt or type a quick note. That's literally all you do.</p>
+            <ul class="layer-bullets">
+              <li>Photo of any receipt works</li>
+              <li>Voice notes work too</li>
+              <li>Takes under 5 seconds</li>
+            </ul>
           </div>
-          <h3>Just Snap Receipts</h3>
-          <p>Take a photo of any receipt. Our AI instantly extracts amounts, merchants, and categories. That's literally all you need to do.</p>
         </div>
         
-        <div class="uvp-card">
-          <div class="uvp-icon guardian">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <path d="M8 14s1.5 2 4 2 4-2 4-2"></path>
-              <line x1="9" y1="9" x2="9.01" y2="9"></line>
-              <line x1="15" y1="9" x2="15.01" y2="9"></line>
-            </svg>
-          </div>
-          <h3>Follow Your Guardian</h3>
-          <p>Your personal Dream Guardian learns your patterns and sends gentle nudges at just the right moment to keep you on track.</p>
+        <div class="layer-arrow">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <polyline points="19 12 12 19 5 12"></polyline>
+          </svg>
         </div>
         
-        <div class="uvp-card">
-          <div class="uvp-icon dreams">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-            </svg>
+        <div class="layer-card layer-2">
+          <div class="layer-number">2</div>
+          <div class="layer-content">
+            <h3>Build Together Handles Everything</h3>
+            <p>We do the tedious work automatically so you don't have to.</p>
+            <ul class="layer-bullets">
+              <li>Categorizes every purchase</li>
+              <li>Splits bills between partners</li>
+              <li>Tracks who owes what</li>
+              <li>Settles up monthly</li>
+            </ul>
           </div>
-          <h3>Achieve Dreams Together</h3>
-          <p>Whether it's a vacation, a home, or starting a family, track your shared dreams and celebrate every milestone together.</p>
+        </div>
+        
+        <div class="layer-arrow">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <polyline points="19 12 12 19 5 12"></polyline>
+          </svg>
+        </div>
+        
+        <div class="layer-card layer-3">
+          <div class="layer-number">3</div>
+          <div class="layer-content">
+            <h3>Dream Guardian Learns & Adapts</h3>
+            <p>Your AI companion quietly observes, learns what motivates you, and nudges at the right moments.</p>
+            <ul class="layer-bullets">
+              <li>Observes your patterns</li>
+              <li>Learns what works for you</li>
+              <li>Sends personalized nudges</li>
+              <li>Adapts to your responses</li>
+            </ul>
+          </div>
+        </div>
+        
+        <div class="layer-arrow">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <polyline points="19 12 12 19 5 12"></polyline>
+          </svg>
+        </div>
+        
+        <div class="layer-card layer-4">
+          <div class="layer-number">4</div>
+          <div class="layer-content">
+            <h3>Dreams Become Real</h3>
+            <p>Without stress, guilt, or complicated spreadsheets. Just progress toward what matters most.</p>
+            <ul class="layer-bullets">
+              <li>See your goals grow daily</li>
+              <li>Celebrate milestones together</li>
+              <li>No bank linking required</li>
+              <li>Your data stays private</li>
+            </ul>
+          </div>
         </div>
       </div>
     </section>
@@ -991,16 +1140,16 @@
         </div>
         <h2>Meet Your <span class="highlight">Dream Guardian</span></h2>
         <p class="guardian-description">
-          Powered by behavioral economics and psychology, your Dream Guardian learns what motivates you. 
-          It uses proven techniques like loss aversion, fresh start effects, and goal gradients 
-          to help you build lasting money habits without the guilt or stress.
+          A self-learning AI that adapts to each partner's unique motivations. 
+          It observes your patterns, learns what works, sends personalized nudges, 
+          and continuously adapts based on your responses. Full transparency on what it learns.
         </p>
         <div class="science-badges">
-          <span class="badge">Loss Aversion</span>
-          <span class="badge">Goal Gradient</span>
-          <span class="badge">Fresh Start Effect</span>
-          <span class="badge">Commitment Devices</span>
-          <span class="badge">Social Proof</span>
+          <span class="badge">Observes Patterns</span>
+          <span class="badge">Learns What Works</span>
+          <span class="badge">Personalized Nudges</span>
+          <span class="badge">Adapts Over Time</span>
+          <span class="badge">Full Transparency</span>
         </div>
       </div>
     </section>
