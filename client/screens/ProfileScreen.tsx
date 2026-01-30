@@ -136,9 +136,10 @@ export default function ProfileScreen() {
       }}
       scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
-      <Card style={styles.partnersCard}>
+      {/* ACCOUNT SECTION */}
+      <Card style={styles.sectionCard}>
         <ThemedText type="heading" style={styles.sectionTitle}>
-          Partners
+          Account
         </ThemedText>
         
         {(["partner1", "partner2"] as const).map((partnerId) => {
@@ -205,18 +206,65 @@ export default function ProfileScreen() {
             </ThemedText>
           </View>
         ) : null}
+
+        <View style={styles.sectionDivider} />
+
+        <Pressable 
+          style={styles.settingRow}
+          onPress={() => rootNavigation.navigate("PartnerInvite")}
+        >
+          <View style={[styles.settingIcon, { backgroundColor: theme.primary + "20" }]}>
+            <Feather name="user-plus" size={18} color={theme.primary} />
+          </View>
+          <View style={styles.settingContent}>
+            <ThemedText type="body">Connect Partner</ThemedText>
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              Invite your partner or enter their code
+            </ThemedText>
+          </View>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
+
+        {user ? (
+          <>
+            <Pressable 
+              style={styles.settingRow}
+              onPress={handleSignOut}
+            >
+              <View style={[styles.settingIcon, { backgroundColor: theme.textSecondary + "15" }]}>
+                <Feather name="log-out" size={18} color={theme.textSecondary} />
+              </View>
+              <View style={styles.settingContent}>
+                <ThemedText type="body">Sign Out</ThemedText>
+                <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                  {user.email || "Signed in with Apple"}
+                </ThemedText>
+              </View>
+            </Pressable>
+
+            <Pressable 
+              style={styles.settingRow}
+              onPress={handleDeleteAccount}
+            >
+              <View style={[styles.settingIcon, { backgroundColor: theme.error + "10" }]}>
+                <Feather name="trash-2" size={18} color={theme.error} />
+              </View>
+              <View style={styles.settingContent}>
+                <ThemedText type="body" style={{ color: theme.error }}>Delete Account</ThemedText>
+                <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                  Permanently delete all your data
+                </ThemedText>
+              </View>
+            </Pressable>
+          </>
+        ) : null}
       </Card>
 
-      <Card style={styles.budgetCard}>
-        <View style={styles.budgetHeader}>
-          <ThemedText type="heading">Category Budgets</ThemedText>
-          <Pressable
-            onPress={() => navigation.navigate("BudgetSettings")}
-            style={[styles.editBudgetButton, { backgroundColor: theme.primary + "15" }]}
-          >
-            <ThemedText type="small" style={{ color: theme.primary }}>Edit</ThemedText>
-          </Pressable>
-        </View>
+      {/* MONEY SECTION */}
+      <Card style={styles.sectionCard}>
+        <ThemedText type="heading" style={styles.sectionTitle}>
+          Money
+        </ThemedText>
         
         <View style={styles.budgetStats}>
           <View style={styles.budgetStat}>
@@ -224,7 +272,7 @@ export default function ProfileScreen() {
               ${budgetSummary.total.toFixed(0)}
             </ThemedText>
             <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
-              Total Budget
+              Budget
             </ThemedText>
           </View>
           <View style={styles.budgetStatDivider} />
@@ -242,42 +290,22 @@ export default function ProfileScreen() {
               ${(budgetSummary.total - budgetSummary.spent).toFixed(0)}
             </ThemedText>
             <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
-              Remaining
+              Left
             </ThemedText>
           </View>
         </View>
-        
-        <Pressable
-          onPress={() => navigation.navigate("BudgetSettings")}
-          style={[styles.budgetLink, { backgroundColor: theme.backgroundSecondary }]}
-        >
-          <Feather name="sliders" size={18} color={theme.primary} />
-          <View style={styles.budgetLinkText}>
-            <ThemedText type="body">Manage {budgetSummary.categories} category budgets</ThemedText>
-            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
-              Set limits, rollover rules & alerts
-            </ThemedText>
-          </View>
-          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-        </Pressable>
-      </Card>
 
-      <Card style={styles.settingsCard}>
-        <ThemedText type="heading" style={styles.sectionTitle}>
-          Settings
-        </ThemedText>
-        
         <Pressable 
           style={styles.settingRow}
-          onPress={() => navigation.navigate("FamilyProfile")}
+          onPress={() => navigation.navigate("BudgetSettings")}
         >
-          <View style={[styles.settingIcon, { backgroundColor: "#6366F1" + "20" }]}>
-            <Feather name="users" size={18} color="#6366F1" />
+          <View style={[styles.settingIcon, { backgroundColor: theme.primary + "20" }]}>
+            <Feather name="sliders" size={18} color={theme.primary} />
           </View>
           <View style={styles.settingContent}>
-            <ThemedText type="body">Family Profile</ThemedText>
+            <ThemedText type="body">Category Budgets</ThemedText>
             <ThemedText type="small" style={{ color: theme.textSecondary }}>
-              Family size for personalized insights
+              {budgetSummary.categories} categories, limits & alerts
             </ThemedText>
           </View>
           <Feather name="chevron-right" size={20} color={theme.textSecondary} />
@@ -293,23 +321,7 @@ export default function ProfileScreen() {
           <View style={styles.settingContent}>
             <ThemedText type="body">Bill Splitting</ThemedText>
             <ThemedText type="small" style={{ color: theme.textSecondary }}>
-              Configure how expenses are divided
-            </ThemedText>
-          </View>
-          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-        </Pressable>
-
-        <Pressable 
-          style={styles.settingRow}
-          onPress={() => navigation.navigate("NotificationSettings")}
-        >
-          <View style={[styles.settingIcon, { backgroundColor: theme.accent + "20" }]}>
-            <Feather name="bell" size={18} color={theme.accent} />
-          </View>
-          <View style={styles.settingContent}>
-            <ThemedText type="body">Notifications</ThemedText>
-            <ThemedText type="small" style={{ color: theme.textSecondary }}>
-              Manage alerts and reminders
+              How expenses are divided between you
             </ThemedText>
           </View>
           <Feather name="chevron-right" size={20} color={theme.textSecondary} />
@@ -327,24 +339,12 @@ export default function ProfileScreen() {
           </View>
           <Feather name="chevron-right" size={20} color={theme.textSecondary} />
         </Pressable>
-
-        <Pressable style={styles.settingRow}>
-          <View style={[styles.settingIcon, { backgroundColor: theme.primary + "20" }]}>
-            <Feather name="help-circle" size={18} color={theme.primary} />
-          </View>
-          <View style={styles.settingContent}>
-            <ThemedText type="body">Help & Support</ThemedText>
-            <ThemedText type="small" style={{ color: theme.textSecondary }}>
-              Get help with the app
-            </ThemedText>
-          </View>
-          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-        </Pressable>
       </Card>
 
-      <Card style={styles.settingsCard}>
+      {/* AI & LEARNING SECTION */}
+      <Card style={styles.sectionCard}>
         <ThemedText type="heading" style={styles.sectionTitle}>
-          AI & Transparency
+          AI & Learning
         </ThemedText>
         
         <Pressable 
@@ -355,40 +355,51 @@ export default function ProfileScreen() {
             <Feather name="cpu" size={18} color="#8B5CF6" />
           </View>
           <View style={styles.settingContent}>
-            <ThemedText type="body">AI Memory</ThemedText>
+            <ThemedText type="body">What AI Knows About You</ThemedText>
             <ThemedText type="small" style={{ color: theme.textSecondary }}>
-              See what your AI has learned about you
+              View learned patterns & insights history
             </ThemedText>
           </View>
           <Feather name="chevron-right" size={20} color={theme.textSecondary} />
         </Pressable>
-      </Card>
 
-      <Card style={styles.settingsCard}>
-        <ThemedText type="heading" style={styles.sectionTitle}>
-          Partner
-        </ThemedText>
-        
         <Pressable 
           style={styles.settingRow}
-          onPress={() => rootNavigation.navigate("PartnerInvite")}
+          onPress={() => navigation.navigate("FamilyProfile")}
         >
-          <View style={[styles.settingIcon, { backgroundColor: theme.primary + "20" }]}>
-            <Feather name="user-plus" size={18} color={theme.primary} />
+          <View style={[styles.settingIcon, { backgroundColor: "#6366F1" + "20" }]}>
+            <Feather name="users" size={18} color="#6366F1" />
           </View>
           <View style={styles.settingContent}>
-            <ThemedText type="body">Connect Partner</ThemedText>
+            <ThemedText type="body">Family Profile</ThemedText>
             <ThemedText type="small" style={{ color: theme.textSecondary }}>
-              Invite your partner or enter their code
+              Helps AI personalize recommendations
+            </ThemedText>
+          </View>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
+
+        <Pressable 
+          style={styles.settingRow}
+          onPress={() => navigation.navigate("NotificationSettings")}
+        >
+          <View style={[styles.settingIcon, { backgroundColor: theme.accent + "20" }]}>
+            <Feather name="bell" size={18} color={theme.accent} />
+          </View>
+          <View style={styles.settingContent}>
+            <ThemedText type="body">AI Nudges & Alerts</ThemedText>
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              When and how AI reaches out to you
             </ThemedText>
           </View>
           <Feather name="chevron-right" size={20} color={theme.textSecondary} />
         </Pressable>
       </Card>
 
-      <Card style={styles.settingsCard}>
+      {/* PRIVACY SECTION */}
+      <Card style={styles.sectionCard}>
         <ThemedText type="heading" style={styles.sectionTitle}>
-          Legal
+          Privacy
         </ThemedText>
         
         <Pressable 
@@ -422,45 +433,20 @@ export default function ProfileScreen() {
           </View>
           <Feather name="chevron-right" size={20} color={theme.textSecondary} />
         </Pressable>
+
+        <Pressable style={styles.settingRow}>
+          <View style={[styles.settingIcon, { backgroundColor: theme.primary + "20" }]}>
+            <Feather name="help-circle" size={18} color={theme.primary} />
+          </View>
+          <View style={styles.settingContent}>
+            <ThemedText type="body">Help & Support</ThemedText>
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              Get help with the app
+            </ThemedText>
+          </View>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
       </Card>
-
-      {user ? (
-        <Card style={styles.settingsCard}>
-          <ThemedText type="heading" style={styles.sectionTitle}>
-            Account
-          </ThemedText>
-          
-          <Pressable 
-            style={styles.settingRow}
-            onPress={handleSignOut}
-          >
-            <View style={[styles.settingIcon, { backgroundColor: theme.error + "20" }]}>
-              <Feather name="log-out" size={18} color={theme.error} />
-            </View>
-            <View style={styles.settingContent}>
-              <ThemedText type="body" style={{ color: theme.error }}>Sign Out</ThemedText>
-              <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                {user.email || "Signed in with Apple"}
-              </ThemedText>
-            </View>
-          </Pressable>
-
-          <Pressable 
-            style={styles.settingRow}
-            onPress={handleDeleteAccount}
-          >
-            <View style={[styles.settingIcon, { backgroundColor: theme.error + "10" }]}>
-              <Feather name="trash-2" size={18} color={theme.error} />
-            </View>
-            <View style={styles.settingContent}>
-              <ThemedText type="body" style={{ color: theme.error }}>Delete Account</ThemedText>
-              <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                Permanently delete all your data
-              </ThemedText>
-            </View>
-          </Pressable>
-        </Card>
-      ) : null}
 
       <ThemedText
         type="small"
@@ -476,11 +462,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  sectionCard: {
+    marginBottom: Spacing.lg,
+  },
   partnersCard: {
     marginBottom: Spacing.lg,
   },
   sectionTitle: {
     marginBottom: Spacing.lg,
+  },
+  sectionDivider: {
+    height: 1,
+    backgroundColor: "rgba(0,0,0,0.08)",
+    marginVertical: Spacing.md,
   },
   partnerRow: {
     flexDirection: "row",
