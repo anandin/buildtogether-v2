@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { View, StyleSheet, Platform, Pressable, TextInput, ScrollView, KeyboardAvoidingView } from "react-native";
+import { View, StyleSheet, Platform, Pressable, TextInput, ScrollView, KeyboardAvoidingView, Image } from "react-native";
+
+import appLogo from "../../assets/images/icon.png";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as WebBrowser from "expo-web-browser";
@@ -153,7 +155,7 @@ export default function SignInScreen() {
       >
         <View style={styles.header}>
           <View style={[styles.logoContainer, { backgroundColor: theme.primary + "15" }]}>
-            <Feather name="heart" size={48} color={theme.primary} />
+            <Image source={appLogo} style={styles.logoImage} resizeMode="contain" />
           </View>
           <ThemedText type="h1" style={styles.title}>
             Build Together
@@ -325,6 +327,11 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     alignItems: "center",
     justifyContent: "center",
+  },
+  logoImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 12,
     marginBottom: Spacing.lg,
   },
   title: {

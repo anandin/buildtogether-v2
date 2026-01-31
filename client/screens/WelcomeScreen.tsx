@@ -9,6 +9,8 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 
+import appLogo from "../../assets/images/icon.png";
+
 interface WelcomeScreenProps {
   onGetStarted: () => void;
 }
@@ -34,7 +36,7 @@ export function WelcomeScreen({ onGetStarted }: WelcomeScreenProps) {
       <View style={[styles.content, { paddingTop: insets.top + Spacing["2xl"] }]}>
         <View style={styles.heroSection}>
           <View style={[styles.iconContainer, { backgroundColor: theme.primary + "20" }]}>
-            <Feather name="heart" size={48} color={theme.primary} />
+            <Image source={appLogo} style={styles.logoImage} resizeMode="contain" />
           </View>
           
           <ThemedText type="h1" style={styles.title}>
@@ -152,6 +154,11 @@ const styles = StyleSheet.create({
     borderRadius: 48,
     justifyContent: "center",
     alignItems: "center",
+  },
+  logoImage: {
+    width: 64,
+    height: 64,
+    borderRadius: 12,
     marginBottom: Spacing.lg,
   },
   title: {
