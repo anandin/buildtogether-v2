@@ -9,8 +9,10 @@ import { format } from "date-fns";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
+import { PremiumGate } from "@/components/PremiumGate";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/context/AuthContext";
+import { useSubscription } from "@/context/SubscriptionContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
 
 interface GuardianInsight {
@@ -182,6 +184,7 @@ export default function GuardianMemoryScreen() {
   const headerHeight = useHeaderHeight();
   const navigation = useNavigation();
   const { theme } = useTheme();
+  const { isPremium } = useSubscription();
   const [expandedNudge, setExpandedNudge] = useState<string | null>(null);
   
   const { user } = useAuth();
@@ -189,8 +192,21 @@ export default function GuardianMemoryScreen() {
   
   const { data, isLoading, error } = useQuery<GuardianMemoryData>({
     queryKey: ["/api/guardian/memory", coupleId],
-    enabled: !!coupleId,
+    enabled: !!coupleId && isPremium,
   });
+
+  if (!isPremium) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: theme.backgroundRoot, paddingTop: headerHeight }]}>
+        <PremiumGate 
+          feature="Guardian Memory"
+          description="See exactly how Dream Guardian learns about you - every pattern it observes, every insight it gains, and every nudge it sends"
+        >
+          <View />
+        </PremiumGate>
+      </View>
+    );
+  }
   
   if (isLoading) {
     return (

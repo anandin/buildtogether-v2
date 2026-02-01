@@ -12,9 +12,11 @@ import { QuickActions } from "@/components/QuickActions";
 import { DreamGuardian } from "@/components/DreamGuardian";
 import { Card } from "@/components/Card";
 import { ThemedText } from "@/components/ThemedText";
+import { PremiumGate } from "@/components/PremiumGate";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
+import { useSubscription } from "@/context/SubscriptionContext";
 import { getCurrentMonthExpenses, getTotalSpent } from "@/lib/cloudStorage";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS } from "@/types";
@@ -27,6 +29,7 @@ export default function HomeScreen() {
   const { theme } = useTheme();
   const { data, loading, refreshData } = useApp();
   const { user } = useAuth();
+  const { isPremium } = useSubscription();
 
   const currentMonthExpenses = data ? getCurrentMonthExpenses(data.expenses) : [];
   const totalSpent = getTotalSpent(currentMonthExpenses);
@@ -64,10 +67,22 @@ export default function HomeScreen() {
 
   const renderContent = () => (
     <View style={styles.content}>
-      <DreamGuardian 
-        onAddToGoal={handleAddToDream} 
-        coupleId={user?.coupleId ?? undefined}
-      />
+      {isPremium ? (
+        <DreamGuardian 
+          onAddToGoal={handleAddToDream} 
+          coupleId={user?.coupleId ?? undefined}
+        />
+      ) : (
+        <PremiumGate 
+          feature="Dream Guardian AI"
+          description="Your self-learning AI companion that observes your habits and delivers hyper-personalized nudges to help you save"
+        >
+          <DreamGuardian 
+            onAddToGoal={handleAddToDream} 
+            coupleId={user?.coupleId ?? undefined}
+          />
+        </PremiumGate>
+      )}
 
       <QuickActions
         onAddExpense={handleAddExpense}

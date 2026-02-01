@@ -11,7 +11,9 @@ import * as Linking from "expo-linking";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
+import { PremiumGate } from "@/components/PremiumGate";
 import { useTheme } from "@/hooks/useTheme";
+import { useSubscription } from "@/context/SubscriptionContext";
 import { apiRequest } from "@/lib/query-client";
 import { Spacing, BorderRadius } from "@/constants/theme";
 
@@ -19,12 +21,32 @@ export default function ScanReceiptScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { theme } = useTheme();
+  const { isPremium } = useSubscription();
   const cameraRef = useRef<CameraView>(null);
 
   const [permission, requestPermission] = useCameraPermissions();
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  if (!isPremium) {
+    return (
+      <View style={[styles.container, styles.centered, { backgroundColor: theme.backgroundRoot, paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+        <Pressable 
+          style={[styles.closeButton, { top: insets.top + Spacing.md }]} 
+          onPress={() => navigation.goBack()}
+        >
+          <Feather name="x" size={24} color={theme.text} />
+        </Pressable>
+        <PremiumGate 
+          feature="AI Receipt Scanner"
+          description="Snap a photo and let AI automatically extract the amount, merchant, and category from your receipts"
+        >
+          <View />
+        </PremiumGate>
+      </View>
+    );
+  }
 
   const compressImage = async (uri: string): Promise<string> => {
     const manipulated = await ImageManipulator.manipulateAsync(
