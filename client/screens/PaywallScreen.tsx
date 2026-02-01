@@ -5,11 +5,14 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useNavigation } from "@react-navigation/native";
+import Animated, { useAnimatedStyle, withSpring } from "react-native-reanimated";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useSubscription } from "@/context/SubscriptionContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
+
+type PlanType = "monthly" | "annual";
 
 const PREMIUM_FEATURES = [
   {
@@ -47,6 +50,17 @@ export default function PaywallScreen() {
   
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<PlanType>("annual");
+
+  const monthlyPrice = "$7.99";
+  const annualPrice = "$59.99";
+  const annualMonthlyEquivalent = "$5.00";
+  const savingsPercent = "37%";
+
+  const handleSelectPlan = (plan: PlanType) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedPlan(plan);
+  };
 
   const handlePurchase = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -80,8 +94,6 @@ export default function PaywallScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     navigation.goBack();
   };
-
-  const price = currentOffering?.product?.priceString || "$6.99";
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
@@ -146,24 +158,79 @@ export default function PaywallScreen() {
         </View>
 
         <View style={styles.pricingSection}>
-          <View style={[styles.pricingCard, { backgroundColor: theme.primary + "10", borderColor: theme.primary }]}>
-            <View style={styles.trialBadge}>
-              <ThemedText type="small" style={[styles.trialText, { color: theme.primary }]}>
-                14-DAY FREE TRIAL
+          <View style={styles.planSelector}>
+            <Pressable
+              style={[
+                styles.planOption,
+                { 
+                  backgroundColor: selectedPlan === "annual" ? theme.primary + "15" : theme.backgroundSecondary,
+                  borderColor: selectedPlan === "annual" ? theme.primary : "transparent",
+                }
+              ]}
+              onPress={() => handleSelectPlan("annual")}
+            >
+              <View style={styles.planHeader}>
+                <ThemedText type="body" style={styles.planLabel}>Annual</ThemedText>
+                <View style={[styles.savingsBadge, { backgroundColor: theme.success + "20" }]}>
+                  <ThemedText type="small" style={[styles.savingsText, { color: theme.success }]}>
+                    SAVE {savingsPercent}
+                  </ThemedText>
+                </View>
+              </View>
+              <View style={styles.planPriceRow}>
+                <ThemedText type="h2" style={[styles.planPrice, { color: selectedPlan === "annual" ? theme.primary : theme.text }]}>
+                  {annualPrice}
+                </ThemedText>
+                <ThemedText type="small" style={{ color: theme.textSecondary }}>/year</ThemedText>
+              </View>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                Just {annualMonthlyEquivalent}/month
               </ThemedText>
-            </View>
-            
-            <View style={styles.priceRow}>
-              <ThemedText type="h1" style={[styles.price, { color: theme.primary }]}>
-                {price}
+              {selectedPlan === "annual" ? (
+                <View style={[styles.checkCircle, { backgroundColor: theme.primary }]}>
+                  <Feather name="check" size={14} color="#FFFFFF" />
+                </View>
+              ) : (
+                <View style={[styles.emptyCircle, { borderColor: theme.border }]} />
+              )}
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.planOption,
+                { 
+                  backgroundColor: selectedPlan === "monthly" ? theme.primary + "15" : theme.backgroundSecondary,
+                  borderColor: selectedPlan === "monthly" ? theme.primary : "transparent",
+                }
+              ]}
+              onPress={() => handleSelectPlan("monthly")}
+            >
+              <View style={styles.planHeader}>
+                <ThemedText type="body" style={styles.planLabel}>Monthly</ThemedText>
+              </View>
+              <View style={styles.planPriceRow}>
+                <ThemedText type="h2" style={[styles.planPrice, { color: selectedPlan === "monthly" ? theme.primary : theme.text }]}>
+                  {monthlyPrice}
+                </ThemedText>
+                <ThemedText type="small" style={{ color: theme.textSecondary }}>/month</ThemedText>
+              </View>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                Flexible, cancel anytime
               </ThemedText>
-              <ThemedText type="body" style={{ color: theme.textSecondary }}>
-                /month
-              </ThemedText>
-            </View>
-            
-            <ThemedText type="small" style={[styles.priceNote, { color: theme.textSecondary }]}>
-              Cancel anytime during trial. No charge until trial ends.
+              {selectedPlan === "monthly" ? (
+                <View style={[styles.checkCircle, { backgroundColor: theme.primary }]}>
+                  <Feather name="check" size={14} color="#FFFFFF" />
+                </View>
+              ) : (
+                <View style={[styles.emptyCircle, { borderColor: theme.border }]} />
+              )}
+            </Pressable>
+          </View>
+
+          <View style={[styles.trialBanner, { backgroundColor: theme.accent + "20" }]}>
+            <Feather name="gift" size={18} color={theme.accent} />
+            <ThemedText type="body" style={{ color: theme.text, flex: 1 }}>
+              Start with a <ThemedText type="body" style={{ fontWeight: "700" }}>14-day free trial</ThemedText>
             </ThemedText>
           </View>
         </View>
@@ -279,31 +346,71 @@ const styles = StyleSheet.create({
   },
   pricingSection: {
     marginBottom: Spacing.xl,
+    gap: Spacing.md,
   },
-  pricingCard: {
-    padding: Spacing.lg,
-    borderRadius: BorderRadius.xl,
-    borderWidth: 2,
-    alignItems: "center",
-  },
-  trialBadge: {
-    marginBottom: Spacing.sm,
-  },
-  trialText: {
-    fontWeight: "700",
-    letterSpacing: 1,
-  },
-  priceRow: {
+  planSelector: {
     flexDirection: "row",
-    alignItems: "baseline",
+    gap: Spacing.sm,
+  },
+  planOption: {
+    flex: 1,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 2,
+    position: "relative",
+  },
+  planHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
     marginBottom: Spacing.xs,
   },
-  price: {
-    fontSize: 48,
-    fontWeight: "800",
+  planLabel: {
+    fontWeight: "600",
   },
-  priceNote: {
-    textAlign: "center",
+  savingsBadge: {
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.sm,
+  },
+  savingsText: {
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  planPriceRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 2,
+  },
+  planPrice: {
+    fontSize: 24,
+    fontWeight: "700",
+  },
+  checkCircle: {
+    position: "absolute",
+    top: Spacing.sm,
+    right: Spacing.sm,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyCircle: {
+    position: "absolute",
+    top: Spacing.sm,
+    right: Spacing.sm,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+  },
+  trialBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    gap: Spacing.sm,
   },
   actions: {
     gap: Spacing.md,

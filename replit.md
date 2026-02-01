@@ -64,7 +64,8 @@ Key backend components include:
 
 ### Pricing
 - **14-day free trial** with full access to all premium features
-- **$6.99/month** after trial ends
+- **$7.99/month** - flexible monthly billing
+- **$59.99/year** - best value, saves 37% (~$5/month equivalent)
 - Cancel anytime during trial with no charge
 
 ### Premium Features (Gated)
