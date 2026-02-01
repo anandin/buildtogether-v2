@@ -141,7 +141,7 @@ export default function ProfileScreen() {
     >
       {/* SUBSCRIPTION SECTION */}
       {isPremium ? (
-        <Card style={[styles.sectionCard, { marginBottom: Spacing.lg }]}>
+        <Card style={{ ...styles.sectionCard, marginBottom: Spacing.lg }}>
           <View style={styles.premiumHeader}>
             <View style={[styles.premiumBadge, { backgroundColor: theme.primary }]}>
               <Feather name="star" size={14} color="#FFFFFF" />
@@ -157,7 +157,7 @@ export default function ProfileScreen() {
         </Card>
       ) : (
         <Pressable onPress={() => rootNav.navigate("Paywall")}>
-          <Card style={[styles.sectionCard, styles.upgradeCard, { marginBottom: Spacing.lg, borderColor: theme.primary }]}>
+          <Card style={{ ...styles.sectionCard, ...styles.upgradeCard, marginBottom: Spacing.lg, borderColor: theme.primary }}>
             <View style={styles.upgradeContent}>
               <View style={[styles.upgradeIcon, { backgroundColor: theme.primary + "15" }]}>
                 <Feather name="star" size={24} color={theme.primary} />
