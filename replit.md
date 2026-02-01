@@ -58,3 +58,29 @@ Key backend components include:
 - **react-native-gesture-handler**: For advanced touch handling.
 - **date-fns**: For date manipulation.
 - **zod**: For schema validation.
+- **react-native-purchases**: RevenueCat SDK for subscription management.
+
+## Subscription Model
+
+### Pricing
+- **14-day free trial** with full access to all premium features
+- **$6.99/month** after trial ends
+- Cancel anytime during trial with no charge
+
+### Premium Features (Gated)
+1. **Dream Guardian AI**: Self-learning AI companion with hyper-personalized nudges
+2. **AI Receipt Scanner**: Unlimited receipt scans with automatic extraction
+3. **Guardian Memory**: Full transparency into AI's learning process
+4. **Smart Insights**: AI-powered spending analysis
+
+### Implementation
+- **RevenueCat SDK**: `react-native-purchases` handles all subscription logic
+- **SubscriptionContext**: `client/context/SubscriptionContext.tsx` provides subscription state
+- **PaywallScreen**: `client/screens/PaywallScreen.tsx` shows upgrade options
+- **PremiumGate**: `client/components/PremiumGate.tsx` wraps premium features
+
+### Environment Variables Required
+- `EXPO_PUBLIC_REVENUECAT_IOS_KEY`: RevenueCat API key for iOS
+- `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY`: RevenueCat API key for Android
+
+Note: Without API keys, the app runs in "preview mode" where all premium features are accessible (for development/testing).
