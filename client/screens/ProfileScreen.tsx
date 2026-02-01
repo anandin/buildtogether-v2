@@ -15,6 +15,7 @@ import { Button } from "@/components/Button";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
+import { useSubscription } from "@/context/SubscriptionContext";
 import { getCurrentMonthExpenses, getTotalSpent, getEffectiveBudget } from "@/lib/cloudStorage";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import type { ProfileStackParamList } from "@/navigation/ProfileStackNavigator";
@@ -37,6 +38,8 @@ export default function ProfileScreen() {
   const { theme } = useTheme();
   const { data, updatePartnerName, setBudget } = useApp();
   const { user, signOut, deleteAccount } = useAuth();
+  const { isPremium } = useSubscription();
+  const rootNav = useNavigation<RootNavigationProp>();
 
   const [editingPartner, setEditingPartner] = useState<"partner1" | "partner2" | null>(null);
   const [partnerName, setPartnerName] = useState("");
@@ -136,6 +139,46 @@ export default function ProfileScreen() {
       }}
       scrollIndicatorInsets={{ bottom: insets.bottom }}
     >
+      {/* SUBSCRIPTION SECTION */}
+      {isPremium ? (
+        <Card style={[styles.sectionCard, { marginBottom: Spacing.lg }]}>
+          <View style={styles.premiumHeader}>
+            <View style={[styles.premiumBadge, { backgroundColor: theme.primary }]}>
+              <Feather name="star" size={14} color="#FFFFFF" />
+              <ThemedText type="small" style={styles.premiumBadgeText}>PREMIUM</ThemedText>
+            </View>
+          </View>
+          <ThemedText type="heading" style={{ marginBottom: Spacing.xs }}>
+            Dream Guardian Active
+          </ThemedText>
+          <ThemedText type="small" style={{ color: theme.textSecondary }}>
+            Your AI companion is learning and adapting to help you reach your dreams
+          </ThemedText>
+        </Card>
+      ) : (
+        <Pressable onPress={() => rootNav.navigate("Paywall")}>
+          <Card style={[styles.sectionCard, styles.upgradeCard, { marginBottom: Spacing.lg, borderColor: theme.primary }]}>
+            <View style={styles.upgradeContent}>
+              <View style={[styles.upgradeIcon, { backgroundColor: theme.primary + "15" }]}>
+                <Feather name="star" size={24} color={theme.primary} />
+              </View>
+              <View style={styles.upgradeText}>
+                <ThemedText type="heading">Unlock Premium</ThemedText>
+                <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                  Get Dream Guardian AI, unlimited scans, and more
+                </ThemedText>
+              </View>
+              <Feather name="chevron-right" size={24} color={theme.primary} />
+            </View>
+            <View style={[styles.trialBanner, { backgroundColor: theme.primary + "10" }]}>
+              <ThemedText type="small" style={{ color: theme.primary, fontWeight: "600" }}>
+                Start 14-day free trial
+              </ThemedText>
+            </View>
+          </Card>
+        </Pressable>
+      )}
+
       {/* ACCOUNT SECTION */}
       <Card style={styles.sectionCard}>
         <ThemedText type="heading" style={styles.sectionTitle}>
@@ -581,5 +624,47 @@ const styles = StyleSheet.create({
   version: {
     textAlign: "center",
     marginTop: Spacing.lg,
+  },
+  premiumHeader: {
+    flexDirection: "row",
+    marginBottom: Spacing.md,
+  },
+  premiumBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+    gap: 4,
+  },
+  premiumBadgeText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  upgradeCard: {
+    borderWidth: 2,
+    overflow: "hidden",
+  },
+  upgradeContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.md,
+  },
+  upgradeIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  upgradeText: {
+    flex: 1,
+  },
+  trialBanner: {
+    marginTop: Spacing.md,
+    marginHorizontal: -Spacing.lg,
+    marginBottom: -Spacing.lg,
+    paddingVertical: Spacing.sm,
+    alignItems: "center",
   },
 });
