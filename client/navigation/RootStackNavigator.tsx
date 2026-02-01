@@ -14,6 +14,7 @@ import PartnerInviteScreen from "@/screens/PartnerInviteScreen";
 import PrivacyPolicyScreen from "@/screens/PrivacyPolicyScreen";
 import TermsOfServiceScreen from "@/screens/TermsOfServiceScreen";
 import ConfirmSavingsScreen from "@/screens/ConfirmSavingsScreen";
+import PaywallScreen from "@/screens/PaywallScreen";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 
 export type RootStackParamList = {
@@ -31,6 +32,7 @@ export type RootStackParamList = {
   PrivacyPolicy: undefined;
   TermsOfService: undefined;
   ConfirmSavings: { suggestedAmount?: number; goalId?: string; recommendationId?: string } | undefined;
+  Paywall: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -140,6 +142,14 @@ export default function RootStackNavigator() {
         options={{
           presentation: "modal",
           headerTitle: "Confirm Savings",
+        }}
+      />
+      <Stack.Screen
+        name="Paywall"
+        component={PaywallScreen}
+        options={{
+          presentation: "modal",
+          headerShown: false,
         }}
       />
     </Stack.Navigator>
