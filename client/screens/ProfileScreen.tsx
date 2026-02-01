@@ -156,27 +156,28 @@ export default function ProfileScreen() {
           </ThemedText>
         </Card>
       ) : (
-        <Pressable onPress={() => rootNav.navigate("Paywall")}>
-          <Card style={{ ...styles.sectionCard, ...styles.upgradeCard, marginBottom: Spacing.lg, borderColor: theme.primary }}>
-            <View style={styles.upgradeContent}>
-              <View style={[styles.upgradeIcon, { backgroundColor: theme.primary + "15" }]}>
-                <Feather name="star" size={24} color={theme.primary} />
-              </View>
-              <View style={styles.upgradeText}>
-                <ThemedText type="heading">Unlock Premium</ThemedText>
-                <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                  Get Dream Guardian AI, unlimited scans, and more
-                </ThemedText>
-              </View>
-              <Feather name="chevron-right" size={24} color={theme.primary} />
+        <Card 
+          style={{ ...styles.sectionCard, ...styles.upgradeCard, marginBottom: Spacing.lg, borderColor: theme.primary }}
+          onPress={() => rootNav.navigate("Paywall")}
+        >
+          <View style={styles.upgradeContent}>
+            <View style={[styles.upgradeIcon, { backgroundColor: theme.primary + "15" }]}>
+              <Feather name="star" size={24} color={theme.primary} />
             </View>
-            <View style={[styles.trialBanner, { backgroundColor: theme.primary + "10" }]}>
-              <ThemedText type="small" style={{ color: theme.primary, fontWeight: "600" }}>
-                Start 14-day free trial
+            <View style={styles.upgradeText}>
+              <ThemedText type="heading">Unlock Premium</ThemedText>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                Get Dream Guardian AI, unlimited scans, and more
               </ThemedText>
             </View>
-          </Card>
-        </Pressable>
+            <Feather name="chevron-right" size={24} color={theme.primary} />
+          </View>
+          <View style={[styles.trialBanner, { backgroundColor: theme.primary + "10" }]}>
+            <ThemedText type="small" style={{ color: theme.primary, fontWeight: "600" }}>
+              Start 14-day free trial
+            </ThemedText>
+          </View>
+        </Card>
       )}
 
       {/* ACCOUNT SECTION */}
