@@ -398,6 +398,62 @@ export const partnerInvitesRelations = relations(partnerInvites, ({ one }) => ({
   }),
 }));
 
+// Admin tables for AI management
+export const adminUsers = pgTable("admin_users", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  name: text("name"),
+  role: text("role").default("admin"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  lastLoginAt: timestamp("last_login_at"),
+});
+
+export const aiPrompts = pgTable("ai_prompts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  name: text("name").notNull().unique(),
+  category: text("category").notNull(),
+  description: text("description"),
+  promptTemplate: text("prompt_template").notNull(),
+  modelId: text("model_id").default("gpt-4o"),
+  temperature: real("temperature").default(0.3),
+  isActive: boolean("is_active").default(true),
+  version: integer("version").default(1),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const aiLogs = pgTable("ai_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  promptName: text("prompt_name").notNull(),
+  coupleId: varchar("couple_id"),
+  inputData: jsonb("input_data"),
+  outputData: jsonb("output_data"),
+  tokensUsed: integer("tokens_used"),
+  latencyMs: integer("latency_ms"),
+  status: text("status").notNull(),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const aiCorrections = pgTable("ai_corrections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull(),
+  expenseId: varchar("expense_id"),
+  originalCategory: text("original_category").notNull(),
+  correctedCategory: text("corrected_category").notNull(),
+  aiConfidence: real("ai_confidence"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const benchmarkConfigs = pgTable("benchmark_configs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  configKey: text("config_key").notNull().unique(),
+  configValue: jsonb("config_value").notNull(),
+  description: text("description"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
@@ -455,3 +511,8 @@ export type DailyAnalysis = typeof dailyAnalysis.$inferSelect;
 export type PartnerNudgePreference = typeof partnerNudgePreferences.$inferSelect;
 export type NudgeEscalation = typeof nudgeEscalation.$inferSelect;
 export type BehavioralLearningHistory = typeof behavioralLearningHistory.$inferSelect;
+export type AdminUser = typeof adminUsers.$inferSelect;
+export type AiPrompt = typeof aiPrompts.$inferSelect;
+export type AiLog = typeof aiLogs.$inferSelect;
+export type AiCorrection = typeof aiCorrections.$inferSelect;
+export type BenchmarkConfig = typeof benchmarkConfigs.$inferSelect;
