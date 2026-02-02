@@ -27,6 +27,7 @@ Key features and design principles include:
 - **Guardian AI**: A personalized AI companion that observes, learns, nudges, and adapts based on user behavior, with a transparent "Guardian Memory System" showing AI's learning and rationale.
 - **Real-time Feedback**: AI feedback toasts and live budget impact previews for immediate user insights.
 - **Data Storage**: Local-first storage (AsyncStorage) with robust cloud synchronization via a PostgreSQL backend. All data synchronization and utility functions are consolidated in `@/lib/cloudStorage` for consistency.
+- **Enhanced Onboarding**: 4-step onboarding flow that collects partner names, family composition (kids by age groups), city location, and first dream. Uses AI-powered budget generation based on cost of living data.
 
 ### Backend Architecture
 
