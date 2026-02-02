@@ -46,7 +46,7 @@ export default function PaywallScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-  const { purchasePremium, restorePurchases, currentOffering, isLoading } = useSubscription();
+  const { purchasePremium, restorePurchases, isLoading, isPreviewMode, activatePreviewTrial } = useSubscription();
   
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
@@ -64,6 +64,14 @@ export default function PaywallScreen() {
 
   const handlePurchase = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    if (isPreviewMode) {
+      activatePreviewTrial();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      navigation.goBack();
+      return;
+    }
+    
     setIsPurchasing(true);
     
     const success = await purchasePremium();
@@ -78,6 +86,14 @@ export default function PaywallScreen() {
 
   const handleRestore = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    if (isPreviewMode) {
+      activatePreviewTrial();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      navigation.goBack();
+      return;
+    }
+    
     setIsRestoring(true);
     
     const success = await restorePurchases();

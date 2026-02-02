@@ -8,11 +8,13 @@ const REVENUECAT_API_KEY_ANDROID = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KE
 interface SubscriptionContextType {
   isPremium: boolean;
   isLoading: boolean;
+  isPreviewMode: boolean;
   currentOffering: PurchasesPackage | null;
   customerInfo: CustomerInfo | null;
   purchasePremium: () => Promise<boolean>;
   restorePurchases: () => Promise<boolean>;
   checkSubscriptionStatus: () => Promise<void>;
+  activatePreviewTrial: () => void;
 }
 
 const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
@@ -27,6 +29,7 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
   const [currentOffering, setCurrentOffering] = useState<PurchasesPackage | null>(null);
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null);
   const [isConfigured, setIsConfigured] = useState(false);
+  const [isPreviewMode, setIsPreviewMode] = useState(false);
 
   useEffect(() => {
     initializePurchases();
@@ -38,20 +41,27 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
       
       if (!apiKey) {
         console.log("RevenueCat API key not configured - running in preview mode");
+        setIsPreviewMode(true);
         setIsLoading(false);
         return;
       }
 
       await Purchases.configure({ apiKey });
       setIsConfigured(true);
+      setIsPreviewMode(false);
       
       await checkSubscriptionStatus();
       await loadOfferings();
     } catch (error) {
       console.error("Error initializing RevenueCat:", error);
+      setIsPreviewMode(true);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const activatePreviewTrial = () => {
+    setIsPremium(true);
   };
 
   const checkSubscriptionStatus = async () => {
@@ -132,11 +142,13 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
       value={{
         isPremium,
         isLoading,
+        isPreviewMode,
         currentOffering,
         customerInfo,
         purchasePremium,
         restorePurchases,
         checkSubscriptionStatus,
+        activatePreviewTrial,
       }}
     >
       {children}
