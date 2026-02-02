@@ -1279,6 +1279,125 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
     }
   });
 
+  // AI-powered budget generation based on city and family composition
+  app.post("/api/budgets/:coupleId/generate", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const { city, numAdults = 2, numKidsUnder5 = 0, numKids5to12 = 0, numTeens = 0 } = req.body;
+      
+      const totalKids = numKidsUnder5 + numKids5to12 + numTeens;
+      const familySize = numAdults + totalKids;
+      const cityName = city?.trim() || "average US city";
+      
+      const prompt = `You are a financial planning expert. Generate realistic monthly budget recommendations for a family living in ${cityName}.
+
+Family composition:
+- ${numAdults} adults
+- ${numKidsUnder5} children under 5
+- ${numKids5to12} children aged 5-12  
+- ${numTeens} teenagers (13+)
+- Total family size: ${familySize}
+
+Based on current cost of living data for ${cityName}, provide monthly budget amounts in USD for these categories:
+1. groceries - food and household essentials
+2. restaurants - dining out and takeout
+3. utilities - electricity, gas, water
+4. internet - internet and phone plans
+5. transport - gas, transit, rideshare
+6. entertainment - streaming, activities, movies
+7. shopping - clothing, household items
+8. health - medical, pharmacy, wellness
+9. subscriptions - software, memberships
+
+Consider:
+- Local cost of living (${cityName} may be high/medium/low cost)
+- Family size impact on each category
+- Children's age-specific needs (childcare, activities, education costs)
+- Realistic but slightly conservative budgets
+
+Respond ONLY with valid JSON in this exact format:
+{
+  "groceries": 800,
+  "restaurants": 300,
+  "utilities": 200,
+  "internet": 100,
+  "transport": 250,
+  "entertainment": 150,
+  "shopping": 200,
+  "health": 150,
+  "subscriptions": 100,
+  "reasoning": "Brief explanation of adjustments made for location and family"
+}`;
+
+      let budgetRecommendations;
+      
+      try {
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: [{ role: "user", content: prompt }],
+          response_format: { type: "json_object" },
+          temperature: 0.3,
+        });
+        
+        const content = completion.choices[0]?.message?.content;
+        if (content) {
+          budgetRecommendations = JSON.parse(content);
+        }
+      } catch (aiError) {
+        console.error("AI budget generation error:", aiError);
+        // Fallback to default calculations with family adjustments
+        const baseMultiplier = familySize > 2 ? 1 + (familySize - 2) * 0.25 : 1;
+        budgetRecommendations = {
+          groceries: Math.round(600 * baseMultiplier),
+          restaurants: Math.round(300 * (1 + totalKids * 0.1)),
+          utilities: Math.round(200 * (1 + familySize * 0.1)),
+          internet: 100,
+          transport: Math.round(200 * (1 + totalKids * 0.15)),
+          entertainment: Math.round(150 * (1 + totalKids * 0.2)),
+          shopping: Math.round(200 * baseMultiplier),
+          health: Math.round(100 * (1 + totalKids * 0.3)),
+          subscriptions: 100,
+        };
+      }
+      
+      // Delete existing budgets for this couple
+      await db.delete(categoryBudgets).where(eq(categoryBudgets.coupleId, coupleId));
+      
+      // Create new budgets based on AI recommendations
+      const budgetCategories = ["groceries", "restaurants", "utilities", "internet", "transport", "entertainment", "shopping", "health", "subscriptions"];
+      const budgetTypes: Record<string, string> = {
+        groceries: "recurring",
+        restaurants: "recurring",
+        utilities: "recurring",
+        internet: "recurring",
+        transport: "rollover",
+        entertainment: "rollover",
+        shopping: "rollover",
+        health: "rollover",
+        subscriptions: "recurring",
+      };
+      
+      const budgetsToInsert = budgetCategories.map((category) => ({
+        coupleId,
+        category,
+        monthlyLimit: budgetRecommendations[category] || DEFAULT_CATEGORY_BUDGETS.find(b => b.category === category)?.monthlyLimit || 200,
+        budgetType: budgetTypes[category],
+        alertThreshold: 80,
+        rolloverBalance: 0,
+      }));
+      
+      const insertedBudgets = await db.insert(categoryBudgets).values(budgetsToInsert).returning();
+      
+      res.json({ 
+        budgets: insertedBudgets,
+        reasoning: budgetRecommendations.reasoning || `Budget personalized for ${cityName} with family of ${familySize}`,
+      });
+    } catch (error: any) {
+      console.error("Generate budget error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Get custom categories
   app.get("/api/categories/:coupleId", async (req, res) => {
     try {

@@ -1,45 +1,112 @@
 import React, { useState } from "react";
-import { View, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform } from "react-native";
+import { View, StyleSheet, TextInput, Pressable, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import Animated, { 
   FadeIn, 
-  FadeOut,
   SlideInRight,
   SlideOutLeft,
 } from "react-native-reanimated";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
+import { apiRequest } from "@/lib/query-client";
 import { Spacing, BorderRadius } from "@/constants/theme";
 
 interface OnboardingScreenProps {
   onComplete: () => void;
 }
 
-type Step = "names" | "first-goal" | "complete";
+type Step = "names" | "family" | "location" | "generating" | "first-goal" | "complete";
+
+const COUPLE_ID_KEY = "@couple_id";
 
 export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
   const insets = useSafeAreaInsets();
   const { theme } = useTheme();
-  const { updatePartnerName, addGoal } = useApp();
+  const { updatePartnerName, addGoal, refreshData } = useApp();
   
   const [step, setStep] = useState<Step>("names");
   const [partner1Name, setPartner1Name] = useState("");
   const [partner2Name, setPartner2Name] = useState("");
+  const [numKidsUnder5, setNumKidsUnder5] = useState(0);
+  const [numKids5to12, setNumKids5to12] = useState(0);
+  const [numTeens, setNumTeens] = useState(0);
+  const [city, setCity] = useState("");
   const [goalName, setGoalName] = useState("");
   const [goalAmount, setGoalAmount] = useState("");
+  const [generatingStatus, setGeneratingStatus] = useState("Analyzing cost of living...");
+
+  const totalKids = numKidsUnder5 + numKids5to12 + numTeens;
+  const totalSteps = 4;
+
+  const getCurrentStepNumber = () => {
+    switch (step) {
+      case "names": return 1;
+      case "family": return 2;
+      case "location": return 3;
+      case "generating": return 3;
+      case "first-goal": return 4;
+      default: return 4;
+    }
+  };
 
   const handleNamesNext = async () => {
     if (partner1Name.trim() && partner2Name.trim()) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       await updatePartnerName("partner1", partner1Name.trim());
       await updatePartnerName("partner2", partner2Name.trim());
-      setStep("first-goal");
+      setStep("family");
     }
+  };
+
+  const handleFamilyNext = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setStep("location");
+  };
+
+  const handleLocationNext = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setStep("generating");
+    
+    try {
+      const coupleId = await AsyncStorage.getItem(COUPLE_ID_KEY);
+      if (coupleId) {
+        setGeneratingStatus("Saving your family profile...");
+        await apiRequest("PUT", `/api/family/${coupleId}`, {
+          numAdults: 2,
+          numKidsUnder5,
+          numKids5to12,
+          numTeens,
+          city: city.trim() || "New York",
+          country: "US",
+        });
+        
+        setGeneratingStatus("Looking up cost of living data...");
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        setGeneratingStatus("Generating personalized budgets...");
+        await apiRequest("POST", `/api/budgets/${coupleId}/generate`, {
+          city: city.trim() || "New York",
+          numAdults: 2,
+          numKidsUnder5,
+          numKids5to12,
+          numTeens,
+        });
+        
+        setGeneratingStatus("Finalizing your budget...");
+        await refreshData();
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+    } catch (error) {
+      console.error("Error generating budgets:", error);
+    }
+    
+    setStep("first-goal");
   };
 
   const handleGoalNext = async () => {
@@ -67,39 +134,111 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
     setTimeout(onComplete, 1500);
   };
 
+  const NumberStepper = ({ 
+    value, 
+    onValueChange, 
+    min = 0, 
+    max = 10,
+    label,
+  }: { 
+    value: number; 
+    onValueChange: (v: number) => void;
+    min?: number;
+    max?: number;
+    label: string;
+  }) => (
+    <View style={styles.stepperRow}>
+      <ThemedText type="body" style={{ flex: 1 }}>{label}</ThemedText>
+      <View style={styles.stepperControls}>
+        <Pressable
+          style={[
+            styles.stepperButton,
+            { 
+              backgroundColor: value > min ? theme.primary + "20" : theme.backgroundDefault,
+              borderColor: theme.border,
+            },
+          ]}
+          onPress={() => {
+            if (value > min) {
+              onValueChange(value - 1);
+              Haptics.selectionAsync();
+            }
+          }}
+        >
+          <Feather name="minus" size={18} color={value > min ? theme.primary : theme.textSecondary} />
+        </Pressable>
+        <View style={[styles.stepperValue, { backgroundColor: theme.backgroundDefault }]}>
+          <ThemedText type="body" style={{ fontWeight: "600" }}>{value}</ThemedText>
+        </View>
+        <Pressable
+          style={[
+            styles.stepperButton,
+            { 
+              backgroundColor: value < max ? theme.primary + "20" : theme.backgroundDefault,
+              borderColor: theme.border,
+            },
+          ]}
+          onPress={() => {
+            if (value < max) {
+              onValueChange(value + 1);
+              Haptics.selectionAsync();
+            }
+          }}
+        >
+          <Feather name="plus" size={18} color={value < max ? theme.primary : theme.textSecondary} />
+        </Pressable>
+      </View>
+    </View>
+  );
+
+  const renderProgressBar = () => {
+    if (step === "complete" || step === "generating") return null;
+    
+    return (
+      <View style={styles.progressContainer}>
+        <View style={styles.progressBar}>
+          {[1, 2, 3, 4].map((num, index) => (
+            <React.Fragment key={num}>
+              <View style={[
+                styles.progressStep, 
+                { backgroundColor: num <= getCurrentStepNumber() ? theme.primary : theme.border }
+              ]}>
+                <ThemedText type="tiny" style={{ 
+                  color: num <= getCurrentStepNumber() ? "#FFFFFF" : theme.textSecondary, 
+                  fontWeight: "600" 
+                }}>
+                  {num}
+                </ThemedText>
+              </View>
+              {index < 3 ? (
+                <View style={[
+                  styles.progressLine, 
+                  { backgroundColor: num < getCurrentStepNumber() ? theme.primary : theme.border }
+                ]} />
+              ) : null}
+            </React.Fragment>
+          ))}
+        </View>
+        <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+          Step {getCurrentStepNumber()} of {totalSteps}
+        </ThemedText>
+      </View>
+    );
+  };
+
   return (
     <KeyboardAvoidingView 
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <View style={[styles.content, { paddingTop: insets.top + Spacing["2xl"], paddingBottom: insets.bottom + Spacing.lg }]}>
-        
-        {/* Progress indicator */}
-        {step !== "complete" ? (
-          <View style={styles.progressContainer}>
-            <View style={styles.progressBar}>
-              <View style={[
-                styles.progressStep, 
-                { backgroundColor: theme.primary }
-              ]}>
-                <ThemedText type="tiny" style={{ color: "#FFFFFF", fontWeight: "600" }}>1</ThemedText>
-              </View>
-              <View style={[
-                styles.progressLine, 
-                { backgroundColor: step === "first-goal" ? theme.primary : theme.border }
-              ]} />
-              <View style={[
-                styles.progressStep, 
-                { backgroundColor: step === "first-goal" ? theme.primary : theme.border }
-              ]}>
-                <ThemedText type="tiny" style={{ color: step === "first-goal" ? "#FFFFFF" : theme.textSecondary, fontWeight: "600" }}>2</ThemedText>
-              </View>
-            </View>
-            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
-              Step {step === "names" ? "1" : "2"} of 2
-            </ThemedText>
-          </View>
-        ) : null}
+      <ScrollView 
+        contentContainerStyle={[
+          styles.content, 
+          { paddingTop: insets.top + Spacing["2xl"], paddingBottom: insets.bottom + Spacing.lg }
+        ]}
+        keyboardShouldPersistTaps="handled"
+      >
+        {renderProgressBar()}
         
         {step === "names" ? (
           <Animated.View 
@@ -180,6 +319,130 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
           </Animated.View>
         ) : null}
 
+        {step === "family" ? (
+          <Animated.View 
+            key="family"
+            entering={SlideInRight}
+            exiting={SlideOutLeft}
+            style={styles.stepContainer}
+          >
+            <View style={styles.header}>
+              <ThemedText type="h2">Tell us about your family</ThemedText>
+              <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "center" }}>
+                This helps us suggest realistic budgets{"\n"}and benchmark your spending
+              </ThemedText>
+            </View>
+            
+            <Card style={styles.inputCard}>
+              <NumberStepper
+                label="Kids under 5"
+                value={numKidsUnder5}
+                onValueChange={setNumKidsUnder5}
+              />
+              <NumberStepper
+                label="Kids 5-12"
+                value={numKids5to12}
+                onValueChange={setNumKids5to12}
+              />
+              <NumberStepper
+                label="Teenagers (13+)"
+                value={numTeens}
+                onValueChange={setNumTeens}
+              />
+            </Card>
+            
+            {totalKids > 0 ? (
+              <View style={[styles.familyHint, { backgroundColor: theme.success + "15" }]}>
+                <Feather name="users" size={16} color={theme.success} />
+                <ThemedText type="small" style={{ color: theme.success, marginLeft: Spacing.sm }}>
+                  Family of {2 + totalKids} - we'll adjust budget recommendations accordingly
+                </ThemedText>
+              </View>
+            ) : null}
+            
+            <Pressable
+              style={[styles.nextButton, { backgroundColor: theme.primary }]}
+              onPress={handleFamilyNext}
+            >
+              <ThemedText type="body" style={{ color: "#FFFFFF", fontWeight: "600" }}>
+                {totalKids > 0 ? "Continue" : "No kids, continue"}
+              </ThemedText>
+              <Feather name="arrow-right" size={20} color="#FFFFFF" />
+            </Pressable>
+          </Animated.View>
+        ) : null}
+
+        {step === "location" ? (
+          <Animated.View 
+            key="location"
+            entering={SlideInRight}
+            exiting={SlideOutLeft}
+            style={styles.stepContainer}
+          >
+            <View style={styles.header}>
+              <ThemedText type="h2">Where do you live?</ThemedText>
+              <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "center" }}>
+                We'll use local cost of living data to{"\n"}create personalized budget recommendations
+              </ThemedText>
+            </View>
+            
+            <Card style={styles.inputCard}>
+              <View style={styles.inputGroup}>
+                <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                  City
+                </ThemedText>
+                <TextInput
+                  style={[styles.input, { 
+                    backgroundColor: theme.backgroundSecondary,
+                    color: theme.text,
+                  }]}
+                  placeholder='e.g., "San Francisco" or "Austin, TX"'
+                  placeholderTextColor={theme.textSecondary}
+                  value={city}
+                  onChangeText={setCity}
+                  autoCapitalize="words"
+                  returnKeyType="done"
+                />
+              </View>
+            </Card>
+            
+            <View style={[styles.benchmarkHint, { backgroundColor: theme.primary + "10" }]}>
+              <Feather name="bar-chart-2" size={16} color={theme.primary} />
+              <ThemedText type="small" style={{ color: theme.primary, marginLeft: Spacing.sm, flex: 1 }}>
+                We'll benchmark your spending against similar families in your area
+              </ThemedText>
+            </View>
+            
+            <Pressable
+              style={[styles.nextButton, { backgroundColor: theme.primary }]}
+              onPress={handleLocationNext}
+            >
+              <ThemedText type="body" style={{ color: "#FFFFFF", fontWeight: "600" }}>
+                Generate My Budget
+              </ThemedText>
+              <Feather name="zap" size={20} color="#FFFFFF" />
+            </Pressable>
+          </Animated.View>
+        ) : null}
+
+        {step === "generating" ? (
+          <Animated.View 
+            key="generating"
+            entering={FadeIn}
+            style={styles.completeContainer}
+          >
+            <View style={[styles.loadingCircle, { backgroundColor: theme.primary + "15" }]}>
+              <ActivityIndicator size="large" color={theme.primary} />
+            </View>
+            <ThemedText type="h2" style={{ textAlign: "center" }}>
+              Creating Your Budget
+            </ThemedText>
+            <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "center" }}>
+              {generatingStatus}
+            </ThemedText>
+          </Animated.View>
+        ) : null}
+
         {step === "first-goal" ? (
           <Animated.View 
             key="goal"
@@ -188,6 +451,12 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
             style={styles.stepContainer}
           >
             <View style={styles.header}>
+              <View style={[styles.successBadge, { backgroundColor: theme.success + "15" }]}>
+                <Feather name="check-circle" size={20} color={theme.success} />
+                <ThemedText type="small" style={{ color: theme.success, marginLeft: Spacing.xs }}>
+                  Budget created based on {city.trim() || "your location"}
+                </ThemedText>
+              </View>
               <ThemedText type="h2">What's your first dream?</ThemedText>
               <ThemedText type="body" style={{ color: theme.textSecondary, textAlign: "center" }}>
                 Dream Guardian will observe your habits{"\n"}and nudge you toward this goal
@@ -273,7 +542,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
           </Animated.View>
         ) : null}
         
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -283,7 +552,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    flex: 1,
+    flexGrow: 1,
     paddingHorizontal: Spacing.xl,
   },
   stepContainer: {
@@ -313,7 +582,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   progressLine: {
-    width: 60,
+    width: 40,
     height: 3,
     borderRadius: 2,
   },
@@ -365,6 +634,61 @@ const styles = StyleSheet.create({
     borderRadius: 48,
     justifyContent: "center",
     alignItems: "center",
+    marginBottom: Spacing.md,
+  },
+  loadingCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: Spacing.md,
+  },
+  stepperRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  stepperControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+  },
+  stepperButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+  },
+  stepperValue: {
+    width: 40,
+    height: 36,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: BorderRadius.sm,
+  },
+  familyHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.lg,
+  },
+  benchmarkHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.lg,
+  },
+  successBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
     marginBottom: Spacing.md,
   },
 });
