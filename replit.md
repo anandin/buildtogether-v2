@@ -99,3 +99,39 @@ Key backend components include:
 - `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY`: RevenueCat API key for Android
 
 Note: Without API keys, the app runs in "preview mode" where clicking "Start Free Trial" activates premium locally for testing.
+
+## Admin Dashboard
+
+### Overview
+The admin dashboard allows remote management of AI features without requiring App Store deployments. It's a standalone web interface served by the Express backend on port 5000.
+
+### Access
+- URL: `/admin` on port 5000 (Express backend)
+- Credentials: admin@buildtogether.app / admin123
+
+### Features
+1. **AI Prompts Editor**: View, edit, and manage all AI prompt templates used throughout the app
+   - Expense categorization
+   - Budget generation
+   - Guardian nudges
+   - Spending insights
+   - Receipt extraction
+   - Ego spend detection
+
+2. **AI Logs**: Monitor all AI API calls with inputs, outputs, errors, latency, and token usage
+
+3. **User Corrections**: Track when users override AI suggestions for model improvement
+
+4. **Benchmarks**: Configure city cost multipliers, family size factors, and default category budgets
+
+### Database Tables
+- `admin_users`: Admin user accounts with bcrypt password hashing
+- `ai_prompts`: Editable AI prompt templates with versioning
+- `ai_logs`: AI call logs with performance metrics
+- `ai_corrections`: User correction history for AI improvement
+- `benchmark_configs`: Configurable financial benchmarks
+
+### Authentication
+- JWT-based authentication with 7-day expiration
+- Tokens stored in sessionStorage (client-side)
+- First login with default credentials creates the admin account
