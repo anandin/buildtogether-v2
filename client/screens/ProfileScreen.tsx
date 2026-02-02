@@ -141,12 +141,16 @@ export default function ProfileScreen() {
     >
       {/* SUBSCRIPTION SECTION */}
       {isPremium ? (
-        <Card style={{ ...styles.sectionCard, marginBottom: Spacing.lg }}>
+        <Card 
+          style={{ ...styles.sectionCard, marginBottom: Spacing.lg }}
+          onPress={() => rootNav.navigate("SubscriptionManagement")}
+        >
           <View style={styles.premiumHeader}>
             <View style={[styles.premiumBadge, { backgroundColor: theme.primary }]}>
               <Feather name="star" size={14} color="#FFFFFF" />
               <ThemedText type="small" style={styles.premiumBadgeText}>PREMIUM</ThemedText>
             </View>
+            <Feather name="chevron-right" size={18} color={theme.textSecondary} />
           </View>
           <ThemedText type="heading" style={{ marginBottom: Spacing.xs }}>
             Dream Guardian Active

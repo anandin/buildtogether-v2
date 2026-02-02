@@ -15,6 +15,7 @@ import PrivacyPolicyScreen from "@/screens/PrivacyPolicyScreen";
 import TermsOfServiceScreen from "@/screens/TermsOfServiceScreen";
 import ConfirmSavingsScreen from "@/screens/ConfirmSavingsScreen";
 import PaywallScreen from "@/screens/PaywallScreen";
+import SubscriptionManagementScreen from "@/screens/SubscriptionManagementScreen";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 
 export type RootStackParamList = {
@@ -33,6 +34,7 @@ export type RootStackParamList = {
   TermsOfService: undefined;
   ConfirmSavings: { suggestedAmount?: number; goalId?: string; recommendationId?: string } | undefined;
   Paywall: undefined;
+  SubscriptionManagement: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -150,6 +152,13 @@ export default function RootStackNavigator() {
         options={{
           presentation: "modal",
           headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="SubscriptionManagement"
+        component={SubscriptionManagementScreen}
+        options={{
+          headerTitle: "Subscription",
         }}
       />
     </Stack.Navigator>
