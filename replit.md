@@ -76,12 +76,25 @@ Key backend components include:
 
 ### Implementation
 - **RevenueCat SDK**: `react-native-purchases` handles all subscription logic
-- **SubscriptionContext**: `client/context/SubscriptionContext.tsx` provides subscription state
-- **PaywallScreen**: `client/screens/PaywallScreen.tsx` shows upgrade options
+- **SubscriptionContext**: `client/context/SubscriptionContext.tsx` provides subscription state with:
+  - `isPremium`: boolean indicating active subscription
+  - `packages`: { monthly, annual } - available subscription packages from RevenueCat
+  - `purchasePackage(pkg)`: initiates purchase flow
+  - `restorePurchases()`: restores previous purchases
+  - `isPreviewMode`: true when API keys not configured (development/testing)
+- **PaywallScreen**: `client/screens/PaywallScreen.tsx` shows upgrade options with plan selector
+- **SubscriptionManagementScreen**: `client/screens/SubscriptionManagementScreen.tsx` - Customer center for managing subscriptions
 - **PremiumGate**: `client/components/PremiumGate.tsx` wraps premium features
 
+### RevenueCat Configuration
+- **Entitlement ID**: "Build Together Pro" (with fallbacks to "premium" and "pro")
+- **Products**: 
+  - Monthly: $7.99/month with product ID matching "MONTHLY" package type
+  - Annual: $59.99/year with product ID matching "ANNUAL" package type
+  - Both products include 14-day free trial
+
 ### Environment Variables Required
-- `EXPO_PUBLIC_REVENUECAT_IOS_KEY`: RevenueCat API key for iOS
+- `EXPO_PUBLIC_REVENUECAT_IOS_KEY`: RevenueCat API key for iOS (currently configured with test key)
 - `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY`: RevenueCat API key for Android
 
-Note: Without API keys, the app runs in "preview mode" where all premium features are accessible (for development/testing).
+Note: Without API keys, the app runs in "preview mode" where clicking "Start Free Trial" activates premium locally for testing.
