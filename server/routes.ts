@@ -26,6 +26,8 @@ import {
   partnerNudgePreferences,
   nudgeEscalation,
   behavioralLearningHistory,
+  aiPrompts,
+  aiLogs,
 } from "@shared/schema";
 import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt } from "./prompts";
 
@@ -59,6 +61,65 @@ const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
+
+async function getAIPrompt(promptName: string): Promise<{
+  promptTemplate: string;
+  modelId: string;
+  temperature: number;
+} | null> {
+  try {
+    const [prompt] = await db
+      .select()
+      .from(aiPrompts)
+      .where(and(eq(aiPrompts.name, promptName), eq(aiPrompts.isActive, true)))
+      .limit(1);
+    if (prompt) {
+      return {
+        promptTemplate: prompt.promptTemplate,
+        modelId: prompt.modelId,
+        temperature: prompt.temperature ?? 0.5,
+      };
+    }
+  } catch (error) {
+    console.error(`Error fetching prompt ${promptName}:`, error);
+  }
+  return null;
+}
+
+function fillPromptTemplate(template: string, variables: Record<string, string | number>): string {
+  let result = template;
+  for (const [key, value] of Object.entries(variables)) {
+    result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, "g"), String(value));
+  }
+  return result;
+}
+
+async function logAICall(data: {
+  promptName: string;
+  coupleId?: string;
+  input: Record<string, unknown>;
+  output?: Record<string, unknown>;
+  error?: string;
+  modelId?: string;
+  tokensUsed?: number;
+  latencyMs?: number;
+}): Promise<void> {
+  try {
+    await db.insert(aiLogs).values({
+      id: crypto.randomUUID(),
+      promptName: data.promptName,
+      coupleId: data.coupleId || null,
+      input: data.input,
+      output: data.output || null,
+      error: data.error || null,
+      modelId: data.modelId || "gpt-4o",
+      tokensUsed: data.tokensUsed || null,
+      latencyMs: data.latencyMs || null,
+    });
+  } catch (error) {
+    console.error("Error logging AI call:", error);
+  }
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // ==================== AUTHENTICATION ENDPOINTS ====================
@@ -1289,7 +1350,26 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
       const familySize = numAdults + totalKids;
       const cityName = city?.trim() || "average US city";
       
-      const prompt = `You are a financial planning expert. Generate realistic monthly budget recommendations for a family living in ${cityName}.
+      const startTime = Date.now();
+      let budgetRecommendations;
+      let usedModel = "gpt-4o";
+      
+      try {
+        const promptConfig = await getAIPrompt("budget_generation");
+        let promptContent: string;
+        
+        if (promptConfig) {
+          promptContent = fillPromptTemplate(promptConfig.promptTemplate, {
+            city: cityName,
+            numAdults,
+            numKidsUnder5,
+            numKids5to12,
+            numTeens,
+            familySize,
+          });
+          usedModel = promptConfig.modelId;
+        } else {
+          promptContent = `You are a financial planning expert. Generate realistic monthly budget recommendations for a family living in ${cityName}.
 
 Family composition:
 - ${numAdults} adults
@@ -1309,12 +1389,6 @@ Based on current cost of living data for ${cityName}, provide monthly budget amo
 8. health - medical, pharmacy, wellness
 9. subscriptions - software, memberships
 
-Consider:
-- Local cost of living (${cityName} may be high/medium/low cost)
-- Family size impact on each category
-- Children's age-specific needs (childcare, activities, education costs)
-- Realistic but slightly conservative budgets
-
 Respond ONLY with valid JSON in this exact format:
 {
   "groceries": 800,
@@ -1328,23 +1402,39 @@ Respond ONLY with valid JSON in this exact format:
   "subscriptions": 100,
   "reasoning": "Brief explanation of adjustments made for location and family"
 }`;
-
-      let budgetRecommendations;
-      
-      try {
+        }
+        
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o",
-          messages: [{ role: "user", content: prompt }],
+          model: usedModel,
+          messages: [{ role: "user", content: promptContent }],
           response_format: { type: "json_object" },
-          temperature: 0.3,
+          temperature: promptConfig?.temperature ?? 0.3,
         });
         
         const content = completion.choices[0]?.message?.content;
         if (content) {
           budgetRecommendations = JSON.parse(content);
         }
+        
+        await logAICall({
+          promptName: "budget_generation",
+          coupleId,
+          input: { city: cityName, numAdults, numKidsUnder5, numKids5to12, numTeens, familySize },
+          output: budgetRecommendations,
+          modelId: usedModel,
+          tokensUsed: completion.usage?.total_tokens,
+          latencyMs: Date.now() - startTime,
+        });
       } catch (aiError) {
         console.error("AI budget generation error:", aiError);
+        
+        await logAICall({
+          promptName: "budget_generation",
+          coupleId,
+          input: { city: cityName, numAdults, numKidsUnder5, numKids5to12, numTeens, familySize },
+          error: String(aiError),
+          latencyMs: Date.now() - startTime,
+        });
         // Fallback to default calculations with family adjustments
         const baseMultiplier = familySize > 2 ? 1 + (familySize - 2) * 0.25 : 1;
         budgetRecommendations = {
