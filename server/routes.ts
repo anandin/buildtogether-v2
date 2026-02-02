@@ -28,6 +28,18 @@ import {
   behavioralLearningHistory,
 } from "@shared/schema";
 import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt } from "./prompts";
+
+const DEFAULT_CATEGORY_BUDGETS = [
+  { category: "groceries", monthlyLimit: 600, budgetType: "recurring" },
+  { category: "restaurants", monthlyLimit: 300, budgetType: "recurring" },
+  { category: "utilities", monthlyLimit: 200, budgetType: "recurring" },
+  { category: "internet", monthlyLimit: 100, budgetType: "recurring" },
+  { category: "transport", monthlyLimit: 200, budgetType: "rollover" },
+  { category: "entertainment", monthlyLimit: 150, budgetType: "rollover" },
+  { category: "shopping", monthlyLimit: 200, budgetType: "rollover" },
+  { category: "health", monthlyLimit: 100, budgetType: "rollover" },
+  { category: "subscriptions", monthlyLimit: 100, budgetType: "recurring" },
+];
 import crypto from "crypto";
 
 function generateInviteCode(): string {
@@ -1361,12 +1373,14 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
       const { coupleId } = req.params;
       
       let [couple] = await db.select().from(couples).where(eq(couples.id, coupleId));
+      let isNewCouple = false;
       if (!couple) {
         [couple] = await db.insert(couples).values({
           id: coupleId,
           partner1Name: "You",
           partner2Name: "Partner",
         }).returning();
+        isNewCouple = true;
       }
       
       const expensesData = await db.select().from(expenses)
@@ -1384,8 +1398,20 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
         })
       );
       
-      const budgetsData = await db.select().from(categoryBudgets)
+      let budgetsData = await db.select().from(categoryBudgets)
         .where(eq(categoryBudgets.coupleId, coupleId));
+      
+      if (budgetsData.length === 0) {
+        const defaultBudgetsToInsert = DEFAULT_CATEGORY_BUDGETS.map((b) => ({
+          coupleId,
+          category: b.category,
+          monthlyLimit: b.monthlyLimit,
+          budgetType: b.budgetType,
+          alertThreshold: 80,
+          rolloverBalance: 0,
+        }));
+        budgetsData = await db.insert(categoryBudgets).values(defaultBudgetsToInsert).returning();
+      }
       
       const categoriesData = await db.select().from(customCategories)
         .where(eq(customCategories.coupleId, coupleId));
