@@ -46,14 +46,27 @@ export default function PaywallScreen() {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-  const { purchasePremium, restorePurchases, isLoading, isPreviewMode, activatePreviewTrial } = useSubscription();
+  const { 
+    purchasePackage, 
+    restorePurchases, 
+    isLoading, 
+    isPreviewMode, 
+    activatePreviewTrial,
+    packages,
+    getTrialInfo,
+  } = useSubscription();
   
   const [isPurchasing, setIsPurchasing] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<PlanType>("annual");
 
-  const monthlyPrice = "$7.99";
-  const annualPrice = "$59.99";
+  const { hasTrial, trialDays } = getTrialInfo();
+
+  const monthlyPkg = packages.monthly;
+  const annualPkg = packages.annual;
+  
+  const monthlyPrice = monthlyPkg?.product?.priceString || "$7.99";
+  const annualPrice = annualPkg?.product?.priceString || "$59.99";
   const annualMonthlyEquivalent = "$5.00";
   const savingsPercent = "37%";
 
@@ -72,9 +85,16 @@ export default function PaywallScreen() {
       return;
     }
     
+    const selectedPackage = selectedPlan === "annual" ? annualPkg : monthlyPkg;
+    
+    if (!selectedPackage) {
+      console.error("No package available for selected plan");
+      return;
+    }
+    
     setIsPurchasing(true);
     
-    const success = await purchasePremium();
+    const success = await purchasePackage(selectedPackage);
     
     setIsPurchasing(false);
     
@@ -243,12 +263,14 @@ export default function PaywallScreen() {
             </Pressable>
           </View>
 
-          <View style={[styles.trialBanner, { backgroundColor: theme.accent + "20" }]}>
-            <Feather name="gift" size={18} color={theme.accent} />
-            <ThemedText type="body" style={{ color: theme.text, flex: 1 }}>
-              Start with a <ThemedText type="body" style={{ fontWeight: "700" }}>14-day free trial</ThemedText>
-            </ThemedText>
-          </View>
+          {hasTrial ? (
+            <View style={[styles.trialBanner, { backgroundColor: theme.accent + "20" }]}>
+              <Feather name="gift" size={18} color={theme.accent} />
+              <ThemedText type="body" style={{ color: theme.text, flex: 1 }}>
+                Start with a <ThemedText type="body" style={{ fontWeight: "700" }}>{trialDays}-day free trial</ThemedText>
+              </ThemedText>
+            </View>
+          ) : null}
         </View>
 
         <View style={styles.actions}>
