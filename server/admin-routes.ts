@@ -2,34 +2,33 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { adminUsers, aiPrompts, aiLogs, aiCorrections, benchmarkConfigs, couples, expenses, goals } from "@shared/schema";
 import { eq, desc, count, sql, and, gte } from "drizzle-orm";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import path from "path";
 
+// Hardcoded admin credentials - password is "Intel_328"
+const ADMIN_EMAIL = "admin@buildtogether.app";
+const ADMIN_PASSWORD_HASH = "$2b$10$g/r0j03l7SYsfcGpZTmjc.YuB4RKJVTbUyUd5KjOgRotxk4jr2QEO";
+const JWT_SECRET = process.env.SESSION_SECRET || "build-together-admin-secret-2024";
+
 interface AdminRequest extends Request {
-  adminUser?: { id: string; username: string };
+  adminUser?: { id: string; email: string };
 }
 
 function authenticateAdmin(req: AdminRequest, res: Response, next: NextFunction) {
-  // Replit Auth: Check X-Replit-User-Id and X-Replit-User-Name headers
-  const userId = req.headers["x-replit-user-id"] as string;
-  const username = req.headers["x-replit-user-name"] as string;
-  
-  if (!userId || !username) {
-    return res.status(401).json({ error: "Please log in with Replit" });
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    return res.status(401).json({ error: "Unauthorized" });
   }
   
-  // Check if this user is an allowed admin
-  const allowedAdmin = process.env.ADMIN_USERNAME;
-  if (!allowedAdmin) {
-    return res.status(500).json({ error: "Admin not configured" });
+  const token = authHeader.substring(7);
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as { id: string; email: string };
+    req.adminUser = decoded;
+    next();
+  } catch {
+    return res.status(401).json({ error: "Invalid token" });
   }
-  
-  // Allow by username or email (ADMIN_USERNAME can be either)
-  if (username !== allowedAdmin && username !== allowedAdmin.split('@')[0]) {
-    return res.status(403).json({ error: "Access denied. You are not an admin." });
-  }
-  
-  req.adminUser = { id: userId, username };
-  next();
 }
 
 export function registerAdminRoutes(app: Express) {
@@ -37,23 +36,29 @@ export function registerAdminRoutes(app: Express) {
     res.sendFile(path.resolve(process.cwd(), "server", "templates", "admin-dashboard.html"));
   });
 
-  // Replit Auth: Check current user status
-  app.get("/api/admin/auth", (req, res) => {
-    const userId = req.headers["x-replit-user-id"] as string;
-    const username = req.headers["x-replit-user-name"] as string;
-    
-    if (!userId || !username) {
-      return res.json({ authenticated: false });
+  // Login with hardcoded credentials
+  app.post("/api/admin/login", async (req, res) => {
+    try {
+      const { email, password } = req.body;
+      
+      // Verify against hardcoded credentials
+      if (email !== ADMIN_EMAIL) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      
+      const validPassword = await bcrypt.compare(password, ADMIN_PASSWORD_HASH);
+      if (!validPassword) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      
+      // Generate JWT token
+      const token = jwt.sign({ id: "admin", email: ADMIN_EMAIL }, JWT_SECRET, { expiresIn: "7d" });
+      
+      res.json({ token, admin: { id: "admin", email: ADMIN_EMAIL, name: "Admin" } });
+    } catch (error: any) {
+      console.error("Admin login error:", error);
+      res.status(500).json({ error: error.message });
     }
-    
-    const allowedAdmin = process.env.ADMIN_USERNAME;
-    const isAdmin = allowedAdmin && (username === allowedAdmin || username === allowedAdmin.split('@')[0]);
-    
-    res.json({ 
-      authenticated: true, 
-      isAdmin: !!isAdmin,
-      username 
-    });
   });
 
   app.get("/api/admin/prompts", authenticateAdmin, async (req: AdminRequest, res) => {
