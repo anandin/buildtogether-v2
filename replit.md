@@ -106,8 +106,8 @@ Note: Without API keys, the app runs in "preview mode" where clicking "Start Fre
 The admin dashboard allows remote management of AI features without requiring App Store deployments. It's a standalone web interface served by the Express backend on port 5000.
 
 ### Access
-- URL: `/admin` on port 5000 (Express backend)
-- Credentials: admin@buildtogether.app / admin123
+- URL: `/admin` on port 5000 (Express backend), or `https://dream-finance.replit.app/admin` when published
+- Credentials: Stored securely in ADMIN_EMAIL and ADMIN_PASSWORD environment secrets
 
 ### Features
 1. **AI Prompts Editor**: View, edit, and manage all AI prompt templates used throughout the app
