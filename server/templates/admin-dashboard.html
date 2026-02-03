@@ -596,10 +596,9 @@
         <p style="text-align: center; color: var(--text-secondary); margin-bottom: 20px;">
           Sign in with your Replit account to access the admin dashboard.
         </p>
-        <script
-          authed="location.reload()"
-          src="https://auth.util.repl.co/script.js">
-        </script>
+        <button onclick="window.addEventListener('focus', () => location.reload()); window.open('/__replauthlogin', '_blank', 'width=400,height=600')" class="btn btn-primary" style="width: 100%; justify-content: center;">
+          Log in with Replit
+        </button>
       </div>
       <div id="access-denied" style="display: none; text-align: center;">
         <p style="color: var(--error); margin-bottom: 16px;">Access Denied</p>
