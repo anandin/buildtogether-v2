@@ -107,7 +107,8 @@ The admin dashboard allows remote management of AI features without requiring Ap
 
 ### Access
 - URL: `/admin` on port 5000 (Express backend), or `https://dream-finance.replit.app/admin` when published
-- Credentials: Stored securely in ADMIN_EMAIL and ADMIN_PASSWORD environment secrets
+- Authentication: Uses Replit Auth - simply log in with your Replit account
+- Admin access: Controlled by ADMIN_USERNAME environment variable (set to Replit username or email)
 
 ### Features
 1. **AI Prompts Editor**: View, edit, and manage all AI prompt templates used throughout the app
