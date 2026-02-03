@@ -7,8 +7,6 @@ import jwt from "jsonwebtoken";
 import path from "path";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "admin-secret-key-change-in-production";
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 interface AdminRequest extends Request {
   adminUser?: { id: string; email: string };
@@ -39,14 +37,26 @@ export function registerAdminRoutes(app: Express) {
     try {
       const { email, password } = req.body;
       
-      if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+      // Read env vars at request time, not module load time
+      const adminEmail = process.env.ADMIN_EMAIL;
+      const adminPassword = process.env.ADMIN_PASSWORD;
+      
+      console.log("Login attempt for:", email);
+      console.log("Env ADMIN_EMAIL configured:", !!adminEmail);
+      console.log("Env ADMIN_PASSWORD configured:", !!adminPassword);
+      
+      if (!adminEmail || !adminPassword) {
         return res.status(500).json({ error: "Admin credentials not configured" });
       }
       
       const [admin] = await db.select().from(adminUsers).where(eq(adminUsers.email, email));
       
       if (!admin) {
-        if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
+        console.log("No admin found, checking env credentials...");
+        console.log("Email match:", email === adminEmail);
+        console.log("Password match:", password === adminPassword);
+        
+        if (email === adminEmail && password === adminPassword) {
           const passwordHash = await bcrypt.hash(password, 10);
           const [newAdmin] = await db.insert(adminUsers).values({
             email,
