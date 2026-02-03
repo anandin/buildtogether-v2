@@ -2,30 +2,34 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { adminUsers, aiPrompts, aiLogs, aiCorrections, benchmarkConfigs, couples, expenses, goals } from "@shared/schema";
 import { eq, desc, count, sql, and, gte } from "drizzle-orm";
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
 import path from "path";
 
-const JWT_SECRET = process.env.SESSION_SECRET || "admin-secret-key-change-in-production";
-
 interface AdminRequest extends Request {
-  adminUser?: { id: string; email: string };
+  adminUser?: { id: string; username: string };
 }
 
 function authenticateAdmin(req: AdminRequest, res: Response, next: NextFunction) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Unauthorized" });
+  // Replit Auth: Check X-Replit-User-Id and X-Replit-User-Name headers
+  const userId = req.headers["x-replit-user-id"] as string;
+  const username = req.headers["x-replit-user-name"] as string;
+  
+  if (!userId || !username) {
+    return res.status(401).json({ error: "Please log in with Replit" });
   }
   
-  const token = authHeader.substring(7);
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: string; email: string };
-    req.adminUser = decoded;
-    next();
-  } catch {
-    return res.status(401).json({ error: "Invalid token" });
+  // Check if this user is an allowed admin
+  const allowedAdmin = process.env.ADMIN_USERNAME;
+  if (!allowedAdmin) {
+    return res.status(500).json({ error: "Admin not configured" });
   }
+  
+  // Allow by username or email (ADMIN_USERNAME can be either)
+  if (username !== allowedAdmin && username !== allowedAdmin.split('@')[0]) {
+    return res.status(403).json({ error: "Access denied. You are not an admin." });
+  }
+  
+  req.adminUser = { id: userId, username };
+  next();
 }
 
 export function registerAdminRoutes(app: Express) {
@@ -33,58 +37,23 @@ export function registerAdminRoutes(app: Express) {
     res.sendFile(path.resolve(process.cwd(), "server", "templates", "admin-dashboard.html"));
   });
 
-  app.post("/api/admin/login", async (req, res) => {
-    try {
-      const { email, password } = req.body;
-      
-      // Read env vars at request time, not module load time
-      const adminEmail = process.env.ADMIN_EMAIL;
-      const adminPassword = process.env.ADMIN_PASSWORD;
-      
-      console.log("Login attempt for:", email);
-      console.log("Env ADMIN_EMAIL configured:", !!adminEmail);
-      console.log("Env ADMIN_PASSWORD configured:", !!adminPassword);
-      
-      if (!adminEmail || !adminPassword) {
-        return res.status(500).json({ error: "Admin credentials not configured" });
-      }
-      
-      const [admin] = await db.select().from(adminUsers).where(eq(adminUsers.email, email));
-      
-      if (!admin) {
-        console.log("No admin found, checking env credentials...");
-        console.log("Email match:", email === adminEmail);
-        console.log("Password match:", password === adminPassword);
-        
-        if (email === adminEmail && password === adminPassword) {
-          const passwordHash = await bcrypt.hash(password, 10);
-          const [newAdmin] = await db.insert(adminUsers).values({
-            email,
-            passwordHash,
-            name: "Admin",
-            role: "admin",
-          }).returning();
-          
-          const token = jwt.sign({ id: newAdmin.id, email: newAdmin.email }, JWT_SECRET, { expiresIn: "7d" });
-          return res.json({ token, admin: { id: newAdmin.id, email: newAdmin.email, name: newAdmin.name } });
-        }
-        return res.status(401).json({ error: "Invalid credentials" });
-      }
-      
-      const validPassword = await bcrypt.compare(password, admin.passwordHash);
-      if (!validPassword) {
-        return res.status(401).json({ error: "Invalid credentials" });
-      }
-      
-      const token = jwt.sign({ id: admin.id, email: admin.email }, JWT_SECRET, { expiresIn: "7d" });
-      
-      await db.update(adminUsers).set({ lastLoginAt: new Date() }).where(eq(adminUsers.id, admin.id));
-      
-      res.json({ token, admin: { id: admin.id, email: admin.email, name: admin.name } });
-    } catch (error: any) {
-      console.error("Admin login error:", error);
-      res.status(500).json({ error: error.message });
+  // Replit Auth: Check current user status
+  app.get("/api/admin/auth", (req, res) => {
+    const userId = req.headers["x-replit-user-id"] as string;
+    const username = req.headers["x-replit-user-name"] as string;
+    
+    if (!userId || !username) {
+      return res.json({ authenticated: false });
     }
+    
+    const allowedAdmin = process.env.ADMIN_USERNAME;
+    const isAdmin = allowedAdmin && (username === allowedAdmin || username === allowedAdmin.split('@')[0]);
+    
+    res.json({ 
+      authenticated: true, 
+      isAdmin: !!isAdmin,
+      username 
+    });
   });
 
   app.get("/api/admin/prompts", authenticateAdmin, async (req: AdminRequest, res) => {

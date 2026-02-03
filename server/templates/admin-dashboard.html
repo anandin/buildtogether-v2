@@ -592,17 +592,22 @@
         <h2>Admin Dashboard</h2>
         <p>Build Together</p>
       </div>
-      <form id="login-form">
-        <div class="form-group">
-          <label class="form-label">Email</label>
-          <input type="email" id="login-email" class="form-input" placeholder="admin@example.com" required>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Password</label>
-          <input type="password" id="login-password" class="form-input" placeholder="Enter password" required>
-        </div>
-        <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">Sign In</button>
-      </form>
+      <div id="login-content">
+        <p style="text-align: center; color: var(--text-secondary); margin-bottom: 20px;">
+          Sign in with your Replit account to access the admin dashboard.
+        </p>
+        <script
+          authed="location.reload()"
+          src="https://auth.util.repl.co/script.js">
+        </script>
+      </div>
+      <div id="access-denied" style="display: none; text-align: center;">
+        <p style="color: var(--error); margin-bottom: 16px;">Access Denied</p>
+        <p style="color: var(--text-secondary); margin-bottom: 20px;">
+          You are logged in as <strong id="logged-in-user"></strong>, but you don't have admin access.
+        </p>
+        <button onclick="location.reload()" class="btn" style="width: 100%;">Try Again</button>
+      </div>
     </div>
   </div>
 
@@ -883,23 +888,21 @@
   </div>
 
   <script>
-    let adminToken = localStorage.getItem('adminToken');
+    // Replit Auth - no token needed, headers are set automatically by Replit proxy
     
     async function apiCall(endpoint, options = {}) {
       const headers = {
         'Content-Type': 'application/json',
         ...options.headers,
       };
-      if (adminToken) {
-        headers['Authorization'] = `Bearer ${adminToken}`;
-      }
       
       const response = await fetch(`/api/admin${endpoint}`, {
         ...options,
         headers,
+        credentials: 'include', // Important for Replit Auth cookies
       });
       
-      if (response.status === 401) {
+      if (response.status === 401 || response.status === 403) {
         logout();
         throw new Error('Unauthorized');
       }
@@ -916,38 +919,35 @@
     }
     
     function logout() {
-      localStorage.removeItem('adminToken');
-      adminToken = null;
-      document.getElementById('login-page').style.display = 'flex';
-      document.getElementById('app').style.display = 'none';
+      // Replit Auth logout - just reload, user can log out via Replit
+      window.location.reload();
     }
     
-    document.getElementById('login-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const email = document.getElementById('login-email').value;
-      const password = document.getElementById('login-password').value;
-      
+    // Check Replit Auth status on page load
+    async function checkAuth() {
       try {
-        const response = await fetch('/api/admin/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
-        });
-        
+        const response = await fetch('/api/admin/auth');
         const data = await response.json();
-        if (data.token) {
-          adminToken = data.token;
-          localStorage.setItem('adminToken', data.token);
+        
+        if (data.authenticated && data.isAdmin) {
+          // User is authenticated and is an admin
           document.getElementById('login-page').style.display = 'none';
           document.getElementById('app').style.display = 'block';
           loadPrompts();
-        } else {
-          showToast(data.error || 'Login failed', 'error');
+        } else if (data.authenticated && !data.isAdmin) {
+          // User is authenticated but not an admin
+          document.getElementById('login-content').style.display = 'none';
+          document.getElementById('access-denied').style.display = 'block';
+          document.getElementById('logged-in-user').textContent = data.username;
         }
+        // If not authenticated, the Replit login button is shown
       } catch (error) {
-        showToast('Login failed', 'error');
+        console.error('Auth check failed:', error);
       }
-    });
+    }
+    
+    // Check auth on page load
+    checkAuth();
     
     document.querySelectorAll('.nav-item').forEach(item => {
       item.addEventListener('click', (e) => {
