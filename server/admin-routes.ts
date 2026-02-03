@@ -2,11 +2,13 @@ import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { adminUsers, aiPrompts, aiLogs, aiCorrections, benchmarkConfigs, couples, expenses, goals } from "@shared/schema";
 import { eq, desc, count, sql, and, gte } from "drizzle-orm";
-import * as bcrypt from "bcryptjs";
-import * as jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 import path from "path";
 
 const JWT_SECRET = process.env.SESSION_SECRET || "admin-secret-key-change-in-production";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 interface AdminRequest extends Request {
   adminUser?: { id: string; email: string };
@@ -37,10 +39,14 @@ export function registerAdminRoutes(app: Express) {
     try {
       const { email, password } = req.body;
       
+      if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
+        return res.status(500).json({ error: "Admin credentials not configured" });
+      }
+      
       const [admin] = await db.select().from(adminUsers).where(eq(adminUsers.email, email));
       
       if (!admin) {
-        if (email === "admin@buildtogether.app" && password === "admin123") {
+        if (email === ADMIN_EMAIL && password === ADMIN_PASSWORD) {
           const passwordHash = await bcrypt.hash(password, 10);
           const [newAdmin] = await db.insert(adminUsers).values({
             email,
