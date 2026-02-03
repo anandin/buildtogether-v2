@@ -30,7 +30,7 @@ function authenticateAdmin(req: AdminRequest, res: Response, next: NextFunction)
 
 export function registerAdminRoutes(app: Express) {
   app.get("/admin", (req, res) => {
-    res.sendFile(path.join(__dirname, "templates", "admin-dashboard.html"));
+    res.sendFile(path.resolve(process.cwd(), "server", "templates", "admin-dashboard.html"));
   });
 
   app.post("/api/admin/login", async (req, res) => {
