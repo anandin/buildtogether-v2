@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.buildtogether.app",
+      "bundleIdentifier": "app.replit.buildtogether",
       "usesAppleSignIn": true
     },
     "android": {
@@ -20,7 +20,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.buildtogether.app"
+      "package": "app.replit.buildtogether"
     },
     "web": {
       "output": "single",
