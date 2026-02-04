@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, StyleSheet, TextInput, Pressable, ScrollView, Platform } from "react-native";
+import { View, StyleSheet, TextInput, Pressable, Platform, Keyboard } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation } from "@react-navigation/native";
@@ -7,6 +7,7 @@ import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { format, addMonths } from "date-fns";
+import { KeyboardAwareScrollViewCompat } from "@/components/KeyboardAwareScrollViewCompat";
 
 import { ThemedText } from "@/components/ThemedText";
 import { Button } from "@/components/Button";
@@ -71,11 +72,11 @@ export default function AddGoalScreen() {
   };
 
   return (
-    <ScrollView
+    <KeyboardAwareScrollViewCompat
       style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
       contentContainerStyle={{
         paddingTop: headerHeight + Spacing.xl,
-        paddingBottom: insets.bottom + Spacing.xl,
+        paddingBottom: insets.bottom + Spacing.xl + 100,
         paddingHorizontal: Spacing.lg,
       }}
       keyboardShouldPersistTaps="handled"
@@ -116,7 +117,10 @@ export default function AddGoalScreen() {
         <ThemedText type="small" style={[styles.label, { color: theme.textSecondary }]}>
           Target Amount
         </ThemedText>
-        <View style={[styles.amountInput, { backgroundColor: theme.backgroundDefault, borderColor: theme.border }]}>
+        <Pressable 
+          style={[styles.amountInput, { backgroundColor: theme.backgroundDefault, borderColor: theme.border }]}
+          onPress={() => Keyboard.dismiss()}
+        >
           <ThemedText type="h4" style={{ color: theme.textSecondary }}>$</ThemedText>
           <TextInput
             style={[styles.amountInputField, { color: theme.text }]}
@@ -125,8 +129,10 @@ export default function AddGoalScreen() {
             placeholder="0"
             placeholderTextColor={theme.textSecondary}
             keyboardType="numeric"
+            returnKeyType="done"
+            onSubmitEditing={() => Keyboard.dismiss()}
           />
-        </View>
+        </Pressable>
       </View>
 
       <View style={styles.section}>
@@ -263,7 +269,7 @@ export default function AddGoalScreen() {
       >
         {saving ? "Creating..." : "Create Dream"}
       </Button>
-    </ScrollView>
+    </KeyboardAwareScrollViewCompat>
   );
 }
 

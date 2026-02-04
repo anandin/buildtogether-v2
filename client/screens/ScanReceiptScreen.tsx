@@ -1,5 +1,5 @@
 import React, { useState, useRef } from "react";
-import { View, StyleSheet, Pressable, Image, ActivityIndicator, Platform } from "react-native";
+import { View, StyleSheet, Pressable, Image, ActivityIndicator, Platform, Alert } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -77,18 +77,41 @@ export default function ScanReceiptScreen() {
 
   const handlePickImage = async () => {
     try {
+      // Request media library permission first
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        if (Platform.OS !== 'web') {
+          Alert.alert(
+            "Permission Required",
+            "Please allow access to your photo library to select receipts.",
+            [
+              { text: "Cancel", style: "cancel" },
+              { text: "Settings", onPress: () => Linking.openSettings() }
+            ]
+          );
+        }
+        return;
+      }
+
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         quality: 0.7,
+        allowsEditing: false,
       });
 
-      if (!result.canceled && result.assets[0]) {
-        setCapturedImage(result.assets[0].uri);
-        const compressed = await compressImage(result.assets[0].uri);
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const imageUri = result.assets[0].uri;
+        if (!imageUri) {
+          setError("No image selected");
+          return;
+        }
+        setCapturedImage(imageUri);
+        const compressed = await compressImage(imageUri);
         await processReceipt(compressed);
       }
-    } catch (err) {
-      setError("Failed to pick image");
+    } catch (err: any) {
+      console.error("Pick image error:", err);
+      setError(err.message || "Failed to pick image");
     }
   };
 
