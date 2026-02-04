@@ -23,12 +23,13 @@ export default function BudgetSettingsScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const navigation = useNavigation();
   const { theme } = useTheme();
-  const { data, updateCategoryBudget, processMonthlyRollover } = useApp();
+  const { data, updateCategoryBudget, processMonthlyRollover, deleteCustomCategory } = useApp();
   
   const [editingBudget, setEditingBudget] = useState<CategoryBudget | null>(null);
   const [editAmount, setEditAmount] = useState("");
   const [editType, setEditType] = useState<BudgetType>("recurring");
   const [editThreshold, setEditThreshold] = useState("80");
+  const [deletingCategory, setDeletingCategory] = useState(false);
 
   const currentMonthExpenses = data ? getCurrentMonthExpenses(data.expenses) : [];
   const spendingByCategory = getSpendingByCategory(currentMonthExpenses);
@@ -74,6 +75,25 @@ export default function BudgetSettingsScreen() {
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setEditingBudget(null);
+    }
+  };
+
+  const isCustomCategory = (categoryId: string) => {
+    return data?.customCategories.some((c) => c.id === categoryId) ?? false;
+  };
+
+  const handleDeleteCategory = async () => {
+    if (!editingBudget || !isCustomCategory(editingBudget.category)) return;
+    
+    setDeletingCategory(true);
+    try {
+      await deleteCustomCategory(editingBudget.category);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setEditingBudget(null);
+    } catch (error) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setDeletingCategory(false);
     }
   };
 
@@ -401,6 +421,19 @@ export default function BudgetSettingsScreen() {
                 </ThemedText>
               </View>
             ) : null}
+
+            {editingBudget && isCustomCategory(editingBudget.category) ? (
+              <Pressable
+                onPress={handleDeleteCategory}
+                disabled={deletingCategory}
+                style={[styles.deleteCategoryButton, { backgroundColor: theme.error + "15" }]}
+              >
+                <Feather name="trash-2" size={18} color={theme.error} />
+                <ThemedText type="body" style={{ color: theme.error, marginLeft: Spacing.sm }}>
+                  {deletingCategory ? "Deleting..." : "Delete Category"}
+                </ThemedText>
+              </Pressable>
+            ) : null}
           </ScrollView>
         </View>
       </Modal>
@@ -554,6 +587,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    marginTop: Spacing.xl,
+  },
+  deleteCategoryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: Spacing.lg,
     borderRadius: BorderRadius.md,
     marginTop: Spacing.xl,
   },
