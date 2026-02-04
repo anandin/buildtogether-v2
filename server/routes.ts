@@ -76,7 +76,7 @@ async function getAIPrompt(promptName: string): Promise<{
     if (prompt) {
       return {
         promptTemplate: prompt.promptTemplate,
-        modelId: prompt.modelId,
+        modelId: prompt.modelId || "gpt-4o",
         temperature: prompt.temperature ?? 0.5,
       };
     }
@@ -100,19 +100,17 @@ async function logAICall(data: {
   input: Record<string, unknown>;
   output?: Record<string, unknown>;
   error?: string;
-  modelId?: string;
   tokensUsed?: number;
   latencyMs?: number;
 }): Promise<void> {
   try {
     await db.insert(aiLogs).values({
-      id: crypto.randomUUID(),
       promptName: data.promptName,
       coupleId: data.coupleId || null,
-      input: data.input,
-      output: data.output || null,
-      error: data.error || null,
-      modelId: data.modelId || "gpt-4o",
+      inputData: data.input,
+      outputData: data.output || null,
+      status: data.error ? "error" : "success",
+      errorMessage: data.error || null,
       tokensUsed: data.tokensUsed || null,
       latencyMs: data.latencyMs || null,
     });
@@ -1351,7 +1349,7 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
       const cityName = city?.trim() || "average US city";
       
       const startTime = Date.now();
-      let budgetRecommendations;
+      let budgetRecommendations: Record<string, number | string> = {};
       let usedModel = "gpt-4o";
       
       try {
@@ -1419,9 +1417,8 @@ Respond ONLY with valid JSON in this exact format:
         await logAICall({
           promptName: "budget_generation",
           coupleId,
-          input: { city: cityName, numAdults, numKidsUnder5, numKids5to12, numTeens, familySize },
-          output: budgetRecommendations,
-          modelId: usedModel,
+          input: { city: cityName, numAdults, numKidsUnder5, numKids5to12, numTeens, familySize, model: usedModel },
+          output: budgetRecommendations as Record<string, unknown>,
           tokensUsed: completion.usage?.total_tokens,
           latencyMs: Date.now() - startTime,
         });
@@ -1467,14 +1464,18 @@ Respond ONLY with valid JSON in this exact format:
         subscriptions: "recurring",
       };
       
-      const budgetsToInsert = budgetCategories.map((category) => ({
-        coupleId,
-        category,
-        monthlyLimit: budgetRecommendations[category] || DEFAULT_CATEGORY_BUDGETS.find(b => b.category === category)?.monthlyLimit || 200,
-        budgetType: budgetTypes[category],
-        alertThreshold: 80,
-        rolloverBalance: 0,
-      }));
+      const budgetsToInsert = budgetCategories.map((category) => {
+        const rec = budgetRecommendations[category];
+        const monthlyLimit = typeof rec === 'number' ? rec : (DEFAULT_CATEGORY_BUDGETS.find(b => b.category === category)?.monthlyLimit || 200);
+        return {
+          coupleId,
+          category,
+          monthlyLimit,
+          budgetType: budgetTypes[category],
+          alertThreshold: 80,
+          rolloverBalance: 0,
+        };
+      });
       
       const insertedBudgets = await db.insert(categoryBudgets).values(budgetsToInsert).returning();
       
@@ -2609,6 +2610,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
         } : "No preferences yet"
       }, null, 2));
       
+      const analysisStartTime = Date.now();
       const completion = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [
@@ -2626,6 +2628,16 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
       } catch {
         aiResponse = { shouldNudge: false, message: "Keep up the great work!" };
       }
+      
+      // Log AI call for admin dashboard visibility
+      await logAICall({
+        promptName: "daily_analysis",
+        coupleId,
+        input: { context, familyProfile, partnerPreferences },
+        output: aiResponse,
+        tokensUsed: completion.usage?.total_tokens,
+        latencyMs: Date.now() - analysisStartTime,
+      });
       
       console.log("\n🤖 AI Response:");
       console.log(JSON.stringify({
