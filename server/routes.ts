@@ -3573,7 +3573,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   app.patch("/api/commitments/:commitmentId", async (req, res) => {
     try {
       const { commitmentId } = req.params;
-      const { status, rationale, targetAmount, reductionPercent } = req.body;
+      const { status, rationale, targetAmount, reductionPercent, budgetLimit } = req.body;
 
       const [existing] = await db
         .select()
@@ -3595,7 +3595,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
           await db.insert(behavioralLearningHistory).values({
             coupleId: existing.coupleId,
             triggerEvent: "commitment_cancelled",
-            aiObservation: `User cancelled commitment: "${existing.title}". Rationale: ${rationale}`,
+            aiObservation: `User cancelled commitment. Rationale: ${rationale}`,
             recommendedApproach: "Consider this feedback for future nudges",
           });
         }
@@ -3610,6 +3610,29 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
         });
         updateData.targetAmount = targetAmount;
         updateData.modificationHistory = history;
+      }
+
+      if (budgetLimit !== undefined) {
+        const oldBudget = existing.budgetLimit;
+        const history = (existing.modificationHistory as any[]) || [];
+        history.push({
+          date: new Date().toISOString(),
+          change: `Budget limit changed from $${oldBudget} to $${budgetLimit}`,
+          rationale: rationale || "No reason provided",
+        });
+        updateData.budgetLimit = budgetLimit;
+        updateData.modificationHistory = history;
+
+        if (rationale) {
+          await db.insert(behavioralLearningHistory).values({
+            coupleId: existing.coupleId,
+            triggerEvent: "commitment_modified",
+            aiObservation: `User modified budget limit from $${oldBudget} to $${budgetLimit}. Rationale: ${rationale}`,
+            recommendedApproach: oldBudget > budgetLimit 
+              ? "User is tightening budget - they may be motivated to save more"
+              : "User needed more flexibility - consider suggesting more realistic targets",
+          });
+        }
       }
 
       if (reductionPercent !== undefined) {

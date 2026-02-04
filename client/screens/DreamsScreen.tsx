@@ -9,8 +9,11 @@ import { Feather } from "@expo/vector-icons";
 import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
+import { CommitmentsSection } from "@/components/CommitmentsSection";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
+import { useAuth } from "@/context/AuthContext";
+import { useSubscription } from "@/context/SubscriptionContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import type { Goal } from "@/types";
 import { GOAL_EMOJIS } from "@/types";
@@ -22,6 +25,8 @@ export default function DreamsScreen() {
   const navigation = useNavigation<any>();
   const { theme } = useTheme();
   const { data, loading, refreshData } = useApp();
+  const { user } = useAuth();
+  const { isPremium } = useSubscription();
 
   const handleAddDream = () => {
     navigation.navigate("AddDream");
@@ -100,27 +105,36 @@ export default function DreamsScreen() {
     if (dreamCount === 0) return null;
 
     return (
-      <Card style={styles.summaryCard}>
-        <View style={styles.summaryRow}>
-          <View style={styles.summaryItem}>
-            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
-              Total Saved
-            </ThemedText>
-            <ThemedText type="h2" style={{ color: theme.success }}>
-              ${totalSaved.toFixed(0)}
-            </ThemedText>
+      <View>
+        <Card style={styles.summaryCard}>
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryItem}>
+              <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+                Total Saved
+              </ThemedText>
+              <ThemedText type="h2" style={{ color: theme.success }}>
+                ${totalSaved.toFixed(0)}
+              </ThemedText>
+            </View>
+            <View style={[styles.summaryDivider, { backgroundColor: theme.border }]} />
+            <View style={styles.summaryItem}>
+              <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+                {dreamCount} Dream{dreamCount !== 1 ? "s" : ""}
+              </ThemedText>
+              <ThemedText type="h2">
+                ${totalTarget.toFixed(0)}
+              </ThemedText>
+            </View>
           </View>
-          <View style={[styles.summaryDivider, { backgroundColor: theme.border }]} />
-          <View style={styles.summaryItem}>
-            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
-              {dreamCount} Dream{dreamCount !== 1 ? "s" : ""}
-            </ThemedText>
-            <ThemedText type="h2">
-              ${totalTarget.toFixed(0)}
-            </ThemedText>
-          </View>
-        </View>
-      </Card>
+        </Card>
+
+        {isPremium && user?.coupleId ? (
+          <CommitmentsSection 
+            coupleId={user.coupleId} 
+            onRefresh={refreshData}
+          />
+        ) : null}
+      </View>
     );
   };
 
