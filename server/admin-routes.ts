@@ -1,7 +1,8 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { adminUsers, aiPrompts, aiLogs, aiCorrections, benchmarkConfigs, couples, expenses, goals, partnerNudgePreferences, behavioralLearningHistory } from "@shared/schema";
+import { adminUsers, aiPrompts, aiLogs, aiCorrections, benchmarkConfigs, couples, expenses, goals, partnerNudgePreferences, behavioralLearningHistory, spendingPatterns, guardianRecommendations, commitments } from "@shared/schema";
 import { eq, desc, count, sql, and, gte } from "drizzle-orm";
+import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import path from "path";
@@ -282,54 +283,32 @@ export function registerAdminRoutes(app: Express) {
   // Behavioral Economics Dashboard
   app.get("/api/admin/behavioral", authenticateAdmin, async (req: AdminRequest, res) => {
     try {
-      // Get all nudge preferences with couple info
       const nudgePrefs = await db
-        .select({
-          id: partnerNudgePreferences.id,
-          coupleId: partnerNudgePreferences.coupleId,
-          partnerRole: partnerNudgePreferences.partnerRole,
-          lossAversionScore: partnerNudgePreferences.lossAversionScore,
-          gainFramingScore: partnerNudgePreferences.gainFramingScore,
-          socialProofScore: partnerNudgePreferences.socialProofScore,
-          progressScore: partnerNudgePreferences.progressScore,
-          urgencyScore: partnerNudgePreferences.urgencyScore,
-          nudgesSent: partnerNudgePreferences.nudgesSent,
-          nudgesActedOn: partnerNudgePreferences.nudgesActedOn,
-          lastNudgeType: partnerNudgePreferences.lastNudgeType,
-          lastNudgeResponse: partnerNudgePreferences.lastNudgeResponse,
-          updatedAt: partnerNudgePreferences.updatedAt,
-        })
+        .select()
         .from(partnerNudgePreferences)
         .orderBy(desc(partnerNudgePreferences.updatedAt));
 
-      // Get learning history for trends
       const learningHistory = await db
         .select()
         .from(behavioralLearningHistory)
         .orderBy(desc(behavioralLearningHistory.createdAt))
         .limit(100);
 
-      // Calculate aggregate stats
-      const totalNudges = nudgePrefs.reduce((sum, p) => sum + (p.nudgesSent || 0), 0);
-      const totalActedOn = nudgePrefs.reduce((sum, p) => sum + (p.nudgesActedOn || 0), 0);
-      const avgResponseRate = totalNudges > 0 ? (totalActedOn / totalNudges * 100).toFixed(1) : 0;
-
-      // Calculate average scores across all users
       const avgScores = {
         lossAversion: nudgePrefs.length > 0 
-          ? (nudgePrefs.reduce((sum, p) => sum + (p.lossAversionScore || 0.5), 0) / nudgePrefs.length).toFixed(2) 
+          ? (nudgePrefs.reduce((sum, p) => sum + parseFloat(String(p.lossAversionScore || 0.5)), 0) / nudgePrefs.length).toFixed(2) 
           : 0.5,
         gainFraming: nudgePrefs.length > 0 
-          ? (nudgePrefs.reduce((sum, p) => sum + (p.gainFramingScore || 0.5), 0) / nudgePrefs.length).toFixed(2) 
+          ? (nudgePrefs.reduce((sum, p) => sum + parseFloat(String(p.gainFramingScore || 0.5)), 0) / nudgePrefs.length).toFixed(2) 
           : 0.5,
         socialProof: nudgePrefs.length > 0 
-          ? (nudgePrefs.reduce((sum, p) => sum + (p.socialProofScore || 0.5), 0) / nudgePrefs.length).toFixed(2) 
+          ? (nudgePrefs.reduce((sum, p) => sum + parseFloat(String(p.socialProofScore || 0.5)), 0) / nudgePrefs.length).toFixed(2) 
           : 0.5,
         progress: nudgePrefs.length > 0 
-          ? (nudgePrefs.reduce((sum, p) => sum + (p.progressScore || 0.5), 0) / nudgePrefs.length).toFixed(2) 
+          ? (nudgePrefs.reduce((sum, p) => sum + parseFloat(String(p.progressScore || 0.5)), 0) / nudgePrefs.length).toFixed(2) 
           : 0.5,
         urgency: nudgePrefs.length > 0 
-          ? (nudgePrefs.reduce((sum, p) => sum + (p.urgencyScore || 0.5), 0) / nudgePrefs.length).toFixed(2) 
+          ? (nudgePrefs.reduce((sum, p) => sum + parseFloat(String(p.urgencyScore || 0.5)), 0) / nudgePrefs.length).toFixed(2) 
           : 0.5,
       };
 
@@ -338,14 +317,123 @@ export function registerAdminRoutes(app: Express) {
         learningHistory,
         stats: {
           totalUsers: nudgePrefs.length,
-          totalNudges,
-          totalActedOn,
-          avgResponseRate,
           avgScores,
         },
       });
     } catch (error: any) {
       console.error("Get behavioral data error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/patterns", authenticateAdmin, async (req: AdminRequest, res) => {
+    try {
+      const patterns = await db
+        .select()
+        .from(spendingPatterns)
+        .orderBy(desc(spendingPatterns.createdAt))
+        .limit(100);
+
+      res.json(patterns);
+    } catch (error: any) {
+      console.error("Get patterns error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/nudges", authenticateAdmin, async (req: AdminRequest, res) => {
+    try {
+      const nudges = await db
+        .select()
+        .from(guardianRecommendations)
+        .orderBy(desc(guardianRecommendations.createdAt))
+        .limit(100);
+
+      res.json(nudges);
+    } catch (error: any) {
+      console.error("Get nudges error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/commitments", authenticateAdmin, async (req: AdminRequest, res) => {
+    try {
+      const allCommitments = await db
+        .select()
+        .from(commitments)
+        .orderBy(desc(commitments.createdAt))
+        .limit(100);
+
+      res.json(allCommitments);
+    } catch (error: any) {
+      console.error("Get commitments error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/simulate-pattern", authenticateAdmin, async (req: AdminRequest, res) => {
+    try {
+      const { coupleId, patternType, merchant, category, amount, occurrences } = req.body;
+
+      if (!coupleId) {
+        return res.status(400).json({ error: "coupleId is required" });
+      }
+
+      const [inserted] = await db.insert(spendingPatterns).values({
+        coupleId,
+        patternType: patternType || "habitual_merchant",
+        merchant: merchant || "Test Merchant",
+        category: category || "shopping",
+        frequency: "weekly",
+        averageAmount: amount || 25,
+        totalSpent: (amount || 25) * (occurrences || 5),
+        occurrenceCount: occurrences || 5,
+        isHabitual: true,
+        confidence: 0.85,
+        potentialMonthlySavings: (amount || 25) * 4 * 0.3,
+        aiSummary: `Test pattern for ${merchant || "merchant"} spending`,
+        suggestedAction: "Set a budget limit",
+      }).returning();
+
+      res.json({ 
+        success: true, 
+        patternId: inserted.id,
+        message: "Pattern created. Use /api/nudges/generate to create a nudge from this pattern."
+      });
+    } catch (error: any) {
+      console.error("Simulate pattern error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/simulate-nudge", authenticateAdmin, async (req: AdminRequest, res) => {
+    try {
+      const { coupleId, title, message, category, targetAmount, technique } = req.body;
+
+      if (!coupleId) {
+        return res.status(400).json({ error: "coupleId is required" });
+      }
+
+      const [inserted] = await db.insert(guardianRecommendations).values({
+        coupleId,
+        recommendationType: "nudge",
+        title: title || "Test Nudge",
+        message: message || "This is a test nudge from admin",
+        suggestedAction: "Set a budget limit",
+        targetAmount: targetAmount || 50,
+        status: "pending",
+        category: category || "shopping",
+        rationale: "Created by admin for testing",
+        behavioralTechnique: technique || "loss_aversion",
+      }).returning();
+
+      res.json({ 
+        success: true, 
+        nudgeId: inserted.id,
+        message: "Nudge created and will appear on user's home screen."
+      });
+    } catch (error: any) {
+      console.error("Simulate nudge error:", error);
       res.status(500).json({ error: error.message });
     }
   });

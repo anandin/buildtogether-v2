@@ -3359,6 +3359,19 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
         return res.status(404).json({ error: "Pattern not found" });
       }
 
+      const learningHistory = await db
+        .select()
+        .from(behavioralLearningHistory)
+        .where(eq(behavioralLearningHistory.coupleId, coupleId))
+        .orderBy(sql`${behavioralLearningHistory.createdAt} DESC`)
+        .limit(10);
+
+      const historyContext = learningHistory.length > 0
+        ? `\n\nGuardian Memory (past user feedback):\n${learningHistory.map(h => 
+            `- ${h.triggerEvent}: ${h.aiObservation}\n  Lesson learned: ${h.recommendedApproach}`
+          ).join('\n')}`
+        : "";
+
       const prompt = await getAIPrompt("nudge_generation");
       let nudgeTitle = `Save on ${pattern.category || pattern.merchant}`;
       let nudgeMessage = pattern.aiSummary || "We noticed a spending pattern you might want to address.";
@@ -3378,7 +3391,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
             occurrenceCount: pattern.occurrenceCount,
             potentialSavings: pattern.potentialMonthlySavings?.toFixed(2) || "0",
             alternativeSuggestion: pattern.alternativeSuggestion || "",
-          });
+          }) + historyContext;
 
           const response = await openai.chat.completions.create({
             model: prompt.modelId,
