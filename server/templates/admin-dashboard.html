@@ -653,6 +653,10 @@
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
               Statistics
             </a>
+            <a class="nav-item" data-page="behavioral">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/></svg>
+              Behavioral Economics
+            </a>
           </div>
         </nav>
       </aside>
@@ -825,6 +829,65 @@
             </div>
           </div>
         </div>
+        
+        <div id="page-behavioral" class="page" style="display: none;">
+          <div class="header">
+            <h1>Behavioral Economics</h1>
+          </div>
+          
+          <div class="stats-grid" id="behavioral-stats">
+            <div class="stat-card">
+              <div class="stat-label">Users Tracked</div>
+              <div class="stat-value" id="behavioral-users">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Total Nudges Sent</div>
+              <div class="stat-value" id="behavioral-nudges">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Nudges Acted On</div>
+              <div class="stat-value" id="behavioral-acted">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Response Rate</div>
+              <div class="stat-value" id="behavioral-rate">-</div>
+            </div>
+          </div>
+          
+          <div class="card" style="margin-top: 24px;">
+            <h3 style="margin-bottom: 16px; font-size: 16px; font-weight: 600;">Average Nudge Effectiveness Scores</h3>
+            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">Higher scores (closer to 1.0) indicate users respond better to this nudge type</p>
+            <div id="score-bars" style="display: grid; gap: 16px;">
+            </div>
+          </div>
+          
+          <div class="card" style="margin-top: 24px;">
+            <h3 style="margin-bottom: 16px; font-size: 16px; font-weight: 600;">User Behavioral Profiles</h3>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Couple ID</th>
+                  <th>Partner</th>
+                  <th>Loss Aversion</th>
+                  <th>Gain Framing</th>
+                  <th>Social Proof</th>
+                  <th>Progress</th>
+                  <th>Urgency</th>
+                  <th>Nudges</th>
+                  <th>Response Rate</th>
+                </tr>
+              </thead>
+              <tbody id="behavioral-list">
+              </tbody>
+            </table>
+          </div>
+          
+          <div class="card" style="margin-top: 24px;">
+            <h3 style="margin-bottom: 16px; font-size: 16px; font-weight: 600;">Learning History</h3>
+            <div id="learning-history" style="max-height: 400px; overflow-y: auto;">
+            </div>
+          </div>
+        </div>
       </main>
     </div>
   </div>
@@ -977,6 +1040,7 @@
         if (page === 'benchmarks') loadBenchmarks();
         if (page === 'categories') loadCategories();
         if (page === 'stats') loadStats();
+        if (page === 'behavioral') loadBehavioral();
       });
     });
     
@@ -1143,6 +1207,84 @@
         document.getElementById('stat-prompts').textContent = data.prompts || '0';
       } catch (error) {
         console.error(error);
+      }
+    }
+    
+    async function loadBehavioral() {
+      try {
+        const data = await apiCall('/behavioral');
+        
+        // Update stats
+        document.getElementById('behavioral-users').textContent = data.stats?.totalUsers || '0';
+        document.getElementById('behavioral-nudges').textContent = data.stats?.totalNudges || '0';
+        document.getElementById('behavioral-acted').textContent = data.stats?.totalActedOn || '0';
+        document.getElementById('behavioral-rate').textContent = (data.stats?.avgResponseRate || '0') + '%';
+        
+        // Render score bars
+        const scores = data.stats?.avgScores || {};
+        const scoreLabels = {
+          lossAversion: { name: 'Loss Aversion', desc: 'You\'ll lose X if...', color: '#EF4444' },
+          gainFraming: { name: 'Gain Framing', desc: 'You\'ll gain X if...', color: '#10B981' },
+          socialProof: { name: 'Social Proof', desc: 'Couples like you...', color: '#3B82F6' },
+          progress: { name: 'Progress', desc: 'You\'re X% there!', color: '#8B5CF6' },
+          urgency: { name: 'Urgency', desc: 'Act now before...', color: '#F59E0B' }
+        };
+        
+        document.getElementById('score-bars').innerHTML = Object.entries(scoreLabels).map(([key, info]) => {
+          const score = parseFloat(scores[key] || 0.5);
+          const pct = (score * 100).toFixed(0);
+          return `
+            <div style="display: flex; align-items: center; gap: 16px;">
+              <div style="width: 120px;">
+                <div style="font-weight: 500; font-size: 14px;">${info.name}</div>
+                <div style="font-size: 11px; color: var(--text-secondary);">${info.desc}</div>
+              </div>
+              <div style="flex: 1; background: #E5E7EB; border-radius: 4px; height: 24px; position: relative;">
+                <div style="width: ${pct}%; background: ${info.color}; height: 100%; border-radius: 4px; transition: width 0.3s;"></div>
+                <span style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 12px; font-weight: 600;">${score}</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+        
+        // Render user profiles table
+        const prefs = data.nudgePreferences || [];
+        document.getElementById('behavioral-list').innerHTML = prefs.length > 0 ? prefs.map(p => {
+          const responseRate = p.nudgesSent > 0 ? ((p.nudgesActedOn || 0) / p.nudgesSent * 100).toFixed(0) : 0;
+          return `
+            <tr>
+              <td style="font-family: monospace; font-size: 11px;">${p.coupleId?.slice(0, 8)}...</td>
+              <td><span class="badge badge-${p.partnerRole === 'partner1' ? 'info' : 'warning'}">${p.partnerRole}</span></td>
+              <td>${(p.lossAversionScore || 0.5).toFixed(2)}</td>
+              <td>${(p.gainFramingScore || 0.5).toFixed(2)}</td>
+              <td>${(p.socialProofScore || 0.5).toFixed(2)}</td>
+              <td>${(p.progressScore || 0.5).toFixed(2)}</td>
+              <td>${(p.urgencyScore || 0.5).toFixed(2)}</td>
+              <td>${p.nudgesSent || 0}</td>
+              <td>${responseRate}%</td>
+            </tr>
+          `;
+        }).join('') : '<tr><td colspan="9" style="text-align: center; color: var(--text-secondary);">No behavioral data yet. Data appears as users interact with nudges.</td></tr>';
+        
+        // Render learning history
+        const history = data.learningHistory || [];
+        document.getElementById('learning-history').innerHTML = history.length > 0 ? history.map(h => {
+          const date = new Date(h.createdAt).toLocaleString();
+          return `
+            <div style="padding: 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <div style="font-size: 13px; font-weight: 500;">${h.triggerEvent || 'Unknown event'}</div>
+                <div style="font-size: 11px; color: var(--text-secondary);">Couple ${h.coupleId?.slice(0, 8)}... - ${h.partnerRole || 'Both'}</div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-size: 12px; color: var(--text-secondary);">${date}</div>
+              </div>
+            </div>
+          `;
+        }).join('') : '<div style="text-align: center; padding: 24px; color: var(--text-secondary);">No learning history yet.</div>';
+        
+      } catch (error) {
+        console.error('Load behavioral error:', error);
       }
     }
     

@@ -1,6 +1,6 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { adminUsers, aiPrompts, aiLogs, aiCorrections, benchmarkConfigs, couples, expenses, goals } from "@shared/schema";
+import { adminUsers, aiPrompts, aiLogs, aiCorrections, benchmarkConfigs, couples, expenses, goals, partnerNudgePreferences, behavioralLearningHistory } from "@shared/schema";
 import { eq, desc, count, sql, and, gte } from "drizzle-orm";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -275,6 +275,77 @@ export function registerAdminRoutes(app: Express) {
       });
     } catch (error: any) {
       console.error("Get stats error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Behavioral Economics Dashboard
+  app.get("/api/admin/behavioral", authenticateAdmin, async (req: AdminRequest, res) => {
+    try {
+      // Get all nudge preferences with couple info
+      const nudgePrefs = await db
+        .select({
+          id: partnerNudgePreferences.id,
+          coupleId: partnerNudgePreferences.coupleId,
+          partnerRole: partnerNudgePreferences.partnerRole,
+          lossAversionScore: partnerNudgePreferences.lossAversionScore,
+          gainFramingScore: partnerNudgePreferences.gainFramingScore,
+          socialProofScore: partnerNudgePreferences.socialProofScore,
+          progressScore: partnerNudgePreferences.progressScore,
+          urgencyScore: partnerNudgePreferences.urgencyScore,
+          nudgesSent: partnerNudgePreferences.nudgesSent,
+          nudgesActedOn: partnerNudgePreferences.nudgesActedOn,
+          lastNudgeType: partnerNudgePreferences.lastNudgeType,
+          lastNudgeResponse: partnerNudgePreferences.lastNudgeResponse,
+          updatedAt: partnerNudgePreferences.updatedAt,
+        })
+        .from(partnerNudgePreferences)
+        .orderBy(desc(partnerNudgePreferences.updatedAt));
+
+      // Get learning history for trends
+      const learningHistory = await db
+        .select()
+        .from(behavioralLearningHistory)
+        .orderBy(desc(behavioralLearningHistory.createdAt))
+        .limit(100);
+
+      // Calculate aggregate stats
+      const totalNudges = nudgePrefs.reduce((sum, p) => sum + (p.nudgesSent || 0), 0);
+      const totalActedOn = nudgePrefs.reduce((sum, p) => sum + (p.nudgesActedOn || 0), 0);
+      const avgResponseRate = totalNudges > 0 ? (totalActedOn / totalNudges * 100).toFixed(1) : 0;
+
+      // Calculate average scores across all users
+      const avgScores = {
+        lossAversion: nudgePrefs.length > 0 
+          ? (nudgePrefs.reduce((sum, p) => sum + (p.lossAversionScore || 0.5), 0) / nudgePrefs.length).toFixed(2) 
+          : 0.5,
+        gainFraming: nudgePrefs.length > 0 
+          ? (nudgePrefs.reduce((sum, p) => sum + (p.gainFramingScore || 0.5), 0) / nudgePrefs.length).toFixed(2) 
+          : 0.5,
+        socialProof: nudgePrefs.length > 0 
+          ? (nudgePrefs.reduce((sum, p) => sum + (p.socialProofScore || 0.5), 0) / nudgePrefs.length).toFixed(2) 
+          : 0.5,
+        progress: nudgePrefs.length > 0 
+          ? (nudgePrefs.reduce((sum, p) => sum + (p.progressScore || 0.5), 0) / nudgePrefs.length).toFixed(2) 
+          : 0.5,
+        urgency: nudgePrefs.length > 0 
+          ? (nudgePrefs.reduce((sum, p) => sum + (p.urgencyScore || 0.5), 0) / nudgePrefs.length).toFixed(2) 
+          : 0.5,
+      };
+
+      res.json({
+        nudgePreferences: nudgePrefs,
+        learningHistory,
+        stats: {
+          totalUsers: nudgePrefs.length,
+          totalNudges,
+          totalActedOn,
+          avgResponseRate,
+          avgScores,
+        },
+      });
+    } catch (error: any) {
+      console.error("Get behavioral data error:", error);
       res.status(500).json({ error: error.message });
     }
   });

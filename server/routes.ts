@@ -1703,6 +1703,27 @@ Respond ONLY with valid JSON in this exact format:
     }
   });
 
+  // Update a line item (for reclassification)
+  app.put("/api/line-items/:itemId", async (req, res) => {
+    try {
+      const { itemId } = req.params;
+      const { classification, isEssential } = req.body;
+      
+      const [updated] = await db.update(lineItems)
+        .set({ 
+          classification,
+          isEssential,
+        })
+        .where(eq(lineItems.id, itemId))
+        .returning();
+      
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update line item error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Get spending benchmarks
   app.get("/api/benchmarks", async (req, res) => {
     try {

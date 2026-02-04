@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { View, StyleSheet, ScrollView, Pressable, Image, ActivityIndicator } from "react-native";
+import { View, StyleSheet, ScrollView, Pressable, Image, ActivityIndicator, Modal } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -12,7 +12,7 @@ import { ThemedText } from "@/components/ThemedText";
 import { Card } from "@/components/Card";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
-import { apiRequest } from "@/lib/query-client";
+import { apiRequest, getApiUrl } from "@/lib/query-client";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS } from "@/types";
 
@@ -49,6 +49,17 @@ const CLASSIFICATION_ICONS: Record<string, string> = {
   other: "circle",
 };
 
+const CLASSIFICATION_OPTIONS = [
+  { value: "staple", label: "Essential/Staple", isEssential: true },
+  { value: "household", label: "Household", isEssential: true },
+  { value: "beverage", label: "Beverage", isEssential: false },
+  { value: "treat", label: "Treat/Discretionary", isEssential: false },
+  { value: "prepared", label: "Prepared Food", isEssential: false },
+  { value: "luxury", label: "Luxury", isEssential: false },
+  { value: "kids", label: "Kids", isEssential: true },
+  { value: "other", label: "Other", isEssential: false },
+];
+
 export default function ExpenseDetailScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
@@ -59,9 +70,45 @@ export default function ExpenseDetailScreen() {
   
   const [lineItemsData, setLineItemsData] = useState<LineItem[]>([]);
   const [loadingItems, setLoadingItems] = useState(false);
+  const [classifyModalVisible, setClassifyModalVisible] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<LineItem | null>(null);
+  const [updatingItem, setUpdatingItem] = useState(false);
 
   const expenseId = route.params?.expenseId;
   const expense = data?.expenses.find((e) => e.id === expenseId);
+  
+  const handleItemPress = (item: LineItem) => {
+    setSelectedItem(item);
+    setClassifyModalVisible(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+  
+  const handleClassificationChange = async (classification: string, isEssential: boolean) => {
+    if (!selectedItem) return;
+    setUpdatingItem(true);
+    try {
+      const url = new URL(`/api/line-items/${selectedItem.id}`, getApiUrl());
+      await fetch(url.toString(), {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ classification, isEssential }),
+      });
+      
+      setLineItemsData(prev => 
+        prev.map(item => 
+          item.id === selectedItem.id 
+            ? { ...item, classification, isEssential } 
+            : item
+        )
+      );
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setClassifyModalVisible(false);
+    } catch (err) {
+      console.error("Failed to update classification:", err);
+    } finally {
+      setUpdatingItem(false);
+    }
+  };
 
   useEffect(() => {
     const fetchLineItems = async () => {
@@ -182,7 +229,11 @@ export default function ExpenseDetailScreen() {
                 const itemColor = CLASSIFICATION_COLORS[item.classification] || CLASSIFICATION_COLORS.other;
                 const itemIcon = CLASSIFICATION_ICONS[item.classification] || CLASSIFICATION_ICONS.other;
                 return (
-                  <View key={item.id || index} style={styles.lineItemRow}>
+                  <Pressable 
+                    key={item.id || index} 
+                    style={styles.lineItemRow}
+                    onPress={() => handleItemPress(item)}
+                  >
                     <View style={[styles.lineItemIcon, { backgroundColor: itemColor + "20" }]}>
                       <Feather name={itemIcon as any} size={14} color={itemColor} />
                     </View>
@@ -201,12 +252,13 @@ export default function ExpenseDetailScreen() {
                             x{item.quantity}
                           </ThemedText>
                         ) : null}
+                        <Feather name="edit-2" size={10} color={theme.textSecondary} style={{ marginLeft: 4 }} />
                       </View>
                     </View>
                     <ThemedText type="small" style={{ fontWeight: "600" }}>
                       ${item.totalPrice.toFixed(2)}
                     </ThemedText>
-                  </View>
+                  </Pressable>
                 );
               })}
               
@@ -351,6 +403,72 @@ export default function ExpenseDetailScreen() {
           Send
         </ThemedText>
       </View>
+      
+      <Modal
+        visible={classifyModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setClassifyModalVisible(false)}
+      >
+        <Pressable 
+          style={styles.modalOverlay} 
+          onPress={() => setClassifyModalVisible(false)}
+        >
+          <View style={[styles.modalContent, { backgroundColor: theme.backgroundDefault }]}>
+            <View style={styles.modalHandle} />
+            <ThemedText type="subtitle" style={{ marginBottom: Spacing.md, textAlign: "center" }}>
+              Reclassify Item
+            </ThemedText>
+            {selectedItem ? (
+              <ThemedText type="small" style={{ color: theme.textSecondary, marginBottom: Spacing.lg, textAlign: "center" }}>
+                {selectedItem.name}
+              </ThemedText>
+            ) : null}
+            
+            {updatingItem ? (
+              <ActivityIndicator size="large" color={theme.primary} style={{ padding: Spacing.xl }} />
+            ) : (
+              <View style={styles.classificationGrid}>
+                {CLASSIFICATION_OPTIONS.map((option) => {
+                  const isSelected = selectedItem?.classification === option.value;
+                  const optionColor = CLASSIFICATION_COLORS[option.value] || CLASSIFICATION_COLORS.other;
+                  const optionIcon = CLASSIFICATION_ICONS[option.value] || CLASSIFICATION_ICONS.other;
+                  return (
+                    <Pressable 
+                      key={option.value}
+                      style={[
+                        styles.classificationOption,
+                        { 
+                          backgroundColor: isSelected ? optionColor + "20" : theme.backgroundRoot,
+                          borderColor: isSelected ? optionColor : theme.border,
+                        },
+                      ]}
+                      onPress={() => handleClassificationChange(option.value, option.isEssential)}
+                    >
+                      <View style={[styles.classOptionIcon, { backgroundColor: optionColor + "20" }]}>
+                        <Feather name={optionIcon as any} size={16} color={optionColor} />
+                      </View>
+                      <ThemedText type="small" style={{ flex: 1 }}>
+                        {option.label}
+                      </ThemedText>
+                      <ThemedText type="tiny" style={{ color: option.isEssential ? "#10B981" : "#F59E0B" }}>
+                        {option.isEssential ? "Essential" : "Discretionary"}
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+            
+            <Pressable 
+              style={[styles.cancelButton, { borderColor: theme.border }]}
+              onPress={() => setClassifyModalVisible(false)}
+            >
+              <ThemedText type="body">Cancel</ThemedText>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Modal>
     </ScrollView>
   );
 }
@@ -549,5 +667,49 @@ const styles = StyleSheet.create({
   },
   messageInputField: {
     flex: 1,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    padding: Spacing.xl,
+    paddingBottom: 40,
+  },
+  modalHandle: {
+    width: 40,
+    height: 4,
+    backgroundColor: "#CCC",
+    borderRadius: 2,
+    alignSelf: "center",
+    marginBottom: Spacing.lg,
+  },
+  classificationGrid: {
+    gap: Spacing.sm,
+  },
+  classificationOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    gap: Spacing.sm,
+  },
+  classOptionIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cancelButton: {
+    alignItems: "center",
+    padding: Spacing.md,
+    marginTop: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
   },
 });
