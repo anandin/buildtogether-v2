@@ -1,12 +1,13 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import type { AppData, Expense, Goal, Budget, CategoryBudget, CustomCategory, AIInsight, BudgetType } from "@/types";
 import * as storage from "@/lib/cloudStorage";
+import type { GuardianNudge } from "@/lib/cloudStorage";
 
 interface AppContextType {
   data: AppData | null;
   loading: boolean;
   refreshData: () => Promise<void>;
-  addExpense: (expense: Omit<Expense, "id" | "createdAt">) => Promise<Expense>;
+  addExpense: (expense: Omit<Expense, "id" | "createdAt">) => Promise<Expense & { guardianNudge?: GuardianNudge }>;
   updateExpense: (expense: Expense) => Promise<void>;
   deleteExpense: (id: string) => Promise<void>;
   settleExpenses: (expenseIds: string[], from: "partner1" | "partner2", to: "partner1" | "partner2", amount: number) => Promise<void>;

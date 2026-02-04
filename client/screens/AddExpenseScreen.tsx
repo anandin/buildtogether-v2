@@ -207,8 +207,25 @@ export default function AddExpenseScreen() {
         lineItems: lineItems.length > 0 ? lineItems : undefined,
       };
       
-      await addExpense(expenseData);
+      const result = await addExpense(expenseData);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      
+      // Show Guardian nudge if available (from daily analysis)
+      if (result.guardianNudge?.dailyNudge) {
+        showFeedback({
+          type: "guardian",
+          title: "Dream Guardian",
+          message: result.guardianNudge.dailyNudge,
+          actionLabel: result.guardianNudge.suggestedAction || undefined,
+          onAction: () => navigation.navigate("Dreams"),
+        });
+        
+        if (result.guardianNudge.rationale) {
+          setTimeout(() => {
+            showLearning("Why this nudge?", result.guardianNudge.rationale || "");
+          }, 4000);
+        }
+      }
       
       // Get AI feedback for this expense
       try {

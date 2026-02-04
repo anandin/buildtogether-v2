@@ -128,7 +128,14 @@ export async function loadAppData(): Promise<AppData> {
   }
 }
 
-export async function addExpense(expense: Omit<Expense, "id" | "createdAt">): Promise<Expense> {
+export interface GuardianNudge {
+  dailyNudge: string | null;
+  nudgeType: string | null;
+  suggestedAction: string | null;
+  rationale: string | null;
+}
+
+export async function addExpense(expense: Omit<Expense, "id" | "createdAt">): Promise<Expense & { guardianNudge?: GuardianNudge }> {
   const coupleId = await getCoupleId();
   const { lineItems, ...expenseData } = expense;
   
@@ -148,11 +155,48 @@ export async function addExpense(expense: Omit<Expense, "id" | "createdAt">): Pr
     }
   }
   
+  let guardianNudge: GuardianNudge | undefined;
+  try {
+    const analysisResponse = await apiRequest("POST", `/api/guardian/daily-analysis/${coupleId}`);
+    const analysis = await analysisResponse.json();
+    if (analysis && analysis.dailyNudge) {
+      guardianNudge = {
+        dailyNudge: analysis.dailyNudge,
+        nudgeType: analysis.nudgeType,
+        suggestedAction: analysis.suggestedAction,
+        rationale: analysis.rationale,
+      };
+    }
+  } catch (err) {
+    console.error("Failed to trigger Guardian analysis:", err);
+  }
+  
   return {
     ...newExpense,
     lineItems,
     createdAt: newExpense.createdAt || new Date().toISOString(),
+    guardianNudge,
   };
+}
+
+export async function triggerGuardianAnalysis(): Promise<GuardianNudge | null> {
+  try {
+    const coupleId = await getCoupleId();
+    const response = await apiRequest("POST", `/api/guardian/daily-analysis/${coupleId}`);
+    const analysis = await response.json();
+    if (analysis && analysis.dailyNudge) {
+      return {
+        dailyNudge: analysis.dailyNudge,
+        nudgeType: analysis.nudgeType,
+        suggestedAction: analysis.suggestedAction,
+        rationale: analysis.rationale,
+      };
+    }
+    return null;
+  } catch (err) {
+    console.error("Failed to trigger Guardian analysis:", err);
+    return null;
+  }
 }
 
 export async function updateExpense(expense: Expense): Promise<void> {
