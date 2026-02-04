@@ -292,24 +292,45 @@ export default function ExpenseDetailScreen() {
         </View>
       </View>
 
-      <View style={styles.actionsRow}>
-        <Pressable onPress={handleDelete} style={styles.actionButton}>
-          <Feather name="trash-2" size={20} color={theme.textSecondary} />
-        </Pressable>
-        <Pressable style={styles.actionButton}>
-          <Feather name="refresh-cw" size={20} color={theme.textSecondary} />
-        </Pressable>
-        <Pressable style={[styles.viewReceiptButton, { borderColor: theme.primary }]}>
-          <ThemedText type="body" style={{ color: theme.primary }}>
-            View receipt
-          </ThemedText>
-        </Pressable>
-        <Pressable style={styles.actionButton}>
-          <Feather name="copy" size={20} color={theme.textSecondary} />
-        </Pressable>
-        <Pressable onPress={handleEdit} style={styles.actionButton}>
-          <Feather name="edit-2" size={20} color={theme.textSecondary} />
-        </Pressable>
+      <View style={styles.actionsSection}>
+        <ThemedText type="small" style={[styles.actionsTitle, { color: theme.textSecondary }]}>
+          Actions
+        </ThemedText>
+        <View style={styles.actionsGrid}>
+          <Pressable onPress={handleEdit} style={[styles.actionCard, { backgroundColor: theme.backgroundDefault }]}>
+            <View style={[styles.actionIconContainer, { backgroundColor: theme.primary + "20" }]}>
+              <Feather name="edit-2" size={20} color={theme.primary} />
+            </View>
+            <ThemedText type="small">Edit</ThemedText>
+          </Pressable>
+          
+          <Pressable 
+            onPress={() => navigation.navigate("ReclassifyExpense" as any, { expenseId: expense.id })} 
+            style={[styles.actionCard, { backgroundColor: theme.backgroundDefault }]}
+          >
+            <View style={[styles.actionIconContainer, { backgroundColor: theme.accent + "20" }]}>
+              <Feather name="tag" size={20} color={theme.accent} />
+            </View>
+            <ThemedText type="small">Reclassify</ThemedText>
+          </Pressable>
+          
+          <Pressable 
+            style={[styles.actionCard, { backgroundColor: theme.backgroundDefault }]}
+            onPress={() => {}}
+          >
+            <View style={[styles.actionIconContainer, { backgroundColor: theme.success + "20" }]}>
+              <Feather name="copy" size={20} color={theme.success} />
+            </View>
+            <ThemedText type="small">Duplicate</ThemedText>
+          </Pressable>
+          
+          <Pressable onPress={handleDelete} style={[styles.actionCard, { backgroundColor: theme.backgroundDefault }]}>
+            <View style={[styles.actionIconContainer, { backgroundColor: theme.error + "20" }]}>
+              <Feather name="trash-2" size={20} color={theme.error} />
+            </View>
+            <ThemedText type="small">Delete</ThemedText>
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.messageSection}>
@@ -459,6 +480,34 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  actionsSection: {
+    marginBottom: Spacing.xl,
+  },
+  actionsTitle: {
+    marginBottom: Spacing.sm,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  actionsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.md,
+  },
+  actionCard: {
+    width: "47%",
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    gap: Spacing.sm,
+  },
+  actionIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: "center",
     justifyContent: "center",
   },
