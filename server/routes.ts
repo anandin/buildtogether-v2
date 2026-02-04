@@ -28,7 +28,10 @@ import {
   behavioralLearningHistory,
   aiPrompts,
   aiLogs,
+  commitments,
+  spendingPatterns,
 } from "@shared/schema";
+import { detectPatterns, savePatterns, createNudgeFromPattern, getActivePatterns, getPendingNudges } from "./pattern-detection";
 import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt } from "./prompts";
 
 const DEFAULT_CATEGORY_BUDGETS = [
@@ -3290,6 +3293,378 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
       });
     } catch (error: any) {
       console.error("Greeting error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // === PATTERN DETECTION & NUDGES ===
+  
+  app.post("/api/patterns/detect", async (req, res) => {
+    try {
+      const { coupleId } = req.body;
+      if (!coupleId) {
+        return res.status(400).json({ error: "coupleId is required" });
+      }
+
+      const patterns = await detectPatterns(coupleId);
+      const savedIds = await savePatterns(coupleId, patterns);
+      
+      res.json({ 
+        patterns: patterns.map((p, i) => ({ ...p, id: savedIds[i] })),
+        count: patterns.length,
+        habitualCount: patterns.filter(p => p.isHabitual).length,
+      });
+    } catch (error: any) {
+      console.error("Pattern detection error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/patterns/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const patterns = await getActivePatterns(coupleId);
+      res.json(patterns);
+    } catch (error: any) {
+      console.error("Get patterns error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/nudges/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const nudges = await getPendingNudges(coupleId);
+      res.json(nudges);
+    } catch (error: any) {
+      console.error("Get nudges error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/nudges/generate", async (req, res) => {
+    try {
+      const { coupleId, patternId } = req.body;
+      if (!coupleId || !patternId) {
+        return res.status(400).json({ error: "coupleId and patternId are required" });
+      }
+
+      const [pattern] = await db
+        .select()
+        .from(spendingPatterns)
+        .where(eq(spendingPatterns.id, patternId))
+        .limit(1);
+
+      if (!pattern) {
+        return res.status(404).json({ error: "Pattern not found" });
+      }
+
+      const prompt = await getAIPrompt("nudge_generation");
+      let nudgeTitle = `Save on ${pattern.category || pattern.merchant}`;
+      let nudgeMessage = pattern.aiSummary || "We noticed a spending pattern you might want to address.";
+      let suggestedAction = pattern.suggestedAction || "Set a budget limit";
+      let rationale = `Based on ${pattern.occurrenceCount} transactions averaging $${pattern.averageAmount?.toFixed(2)}`;
+      let technique = "loss_aversion";
+
+      if (prompt) {
+        try {
+          const filledPrompt = fillPromptTemplate(prompt.promptTemplate, {
+            patternType: pattern.patternType,
+            merchant: pattern.merchant || "various merchants",
+            category: pattern.category || "spending",
+            frequency: pattern.frequency || "regularly",
+            averageAmount: pattern.averageAmount?.toFixed(2) || "0",
+            totalSpent: pattern.totalSpent?.toFixed(2) || "0",
+            occurrenceCount: pattern.occurrenceCount,
+            potentialSavings: pattern.potentialMonthlySavings?.toFixed(2) || "0",
+            alternativeSuggestion: pattern.alternativeSuggestion || "",
+          });
+
+          const response = await openai.chat.completions.create({
+            model: prompt.modelId,
+            temperature: prompt.temperature,
+            messages: [{ role: "user", content: filledPrompt }],
+            response_format: { type: "json_object" },
+          });
+
+          const result = JSON.parse(response.choices[0]?.message?.content || "{}");
+          nudgeTitle = result.title || nudgeTitle;
+          nudgeMessage = result.message || nudgeMessage;
+          suggestedAction = result.suggestedAction || suggestedAction;
+          rationale = result.rationale || rationale;
+          technique = result.behavioralTechnique || technique;
+
+          await logAICall({
+            promptName: "nudge_generation",
+            coupleId,
+            input: { pattern },
+            output: result,
+            tokensUsed: response.usage?.total_tokens,
+            latencyMs: 0,
+          });
+        } catch (aiError: any) {
+          console.error("AI nudge generation error:", aiError);
+          await logAICall({
+            promptName: "nudge_generation",
+            coupleId,
+            input: { pattern },
+            output: undefined,
+            error: aiError.message,
+            tokensUsed: 0,
+            latencyMs: 0,
+          });
+        }
+      }
+
+      const nudgeId = await createNudgeFromPattern(
+        coupleId,
+        patternId,
+        nudgeMessage,
+        nudgeTitle,
+        suggestedAction,
+        rationale,
+        technique
+      );
+
+      res.json({ 
+        nudgeId,
+        title: nudgeTitle,
+        message: nudgeMessage,
+        suggestedAction,
+        rationale,
+        behavioralTechnique: technique,
+      });
+    } catch (error: any) {
+      console.error("Generate nudge error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/nudges/:nudgeId/respond", async (req, res) => {
+    try {
+      const { nudgeId } = req.params;
+      const { response, feedback } = req.body;
+
+      const [nudge] = await db
+        .select()
+        .from(guardianRecommendations)
+        .where(eq(guardianRecommendations.id, nudgeId))
+        .limit(1);
+
+      if (!nudge) {
+        return res.status(404).json({ error: "Nudge not found" });
+      }
+
+      const updateData: any = {
+        status: response,
+        userFeedback: feedback,
+      };
+
+      if (response === "acted") {
+        updateData.actedAt = new Date();
+      } else if (response === "dismissed") {
+        updateData.dismissedAt = new Date();
+      }
+
+      await db
+        .update(guardianRecommendations)
+        .set(updateData)
+        .where(eq(guardianRecommendations.id, nudgeId));
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Nudge response error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // === COMMITMENTS ===
+  
+  app.get("/api/commitments/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const { status } = req.query;
+      
+      let query = db
+        .select()
+        .from(commitments)
+        .where(eq(commitments.coupleId, coupleId));
+      
+      if (status) {
+        query = db
+          .select()
+          .from(commitments)
+          .where(and(
+            eq(commitments.coupleId, coupleId),
+            eq(commitments.status, status as string)
+          ));
+      }
+      
+      const results = await query.orderBy(desc(commitments.createdAt));
+      res.json(results);
+    } catch (error: any) {
+      console.error("Get commitments error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/commitments", async (req, res) => {
+    try {
+      const {
+        coupleId,
+        title,
+        description,
+        commitmentType,
+        category,
+        merchant,
+        alternativeMerchant,
+        targetAmount,
+        currentAmount,
+        reductionPercent,
+        sourceNudgeId,
+        sourcePatternId,
+      } = req.body;
+
+      if (!coupleId || !title || !commitmentType) {
+        return res.status(400).json({ error: "coupleId, title, and commitmentType are required" });
+      }
+
+      const [commitment] = await db
+        .insert(commitments)
+        .values({
+          coupleId,
+          title,
+          description,
+          commitmentType,
+          category,
+          merchant,
+          alternativeMerchant,
+          targetAmount,
+          currentAmount,
+          reductionPercent,
+          sourceNudgeId,
+          sourcePatternId,
+          status: "active",
+          startDate: new Date().toISOString().split("T")[0],
+        })
+        .returning();
+
+      if (sourceNudgeId) {
+        await db
+          .update(guardianRecommendations)
+          .set({ status: "acted", actedAt: new Date() })
+          .where(eq(guardianRecommendations.id, sourceNudgeId));
+      }
+
+      if (sourcePatternId) {
+        await db
+          .update(spendingPatterns)
+          .set({ status: "commitment_made", updatedAt: new Date() })
+          .where(eq(spendingPatterns.id, sourcePatternId));
+      }
+
+      res.json(commitment);
+    } catch (error: any) {
+      console.error("Create commitment error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/commitments/:commitmentId", async (req, res) => {
+    try {
+      const { commitmentId } = req.params;
+      const { status, rationale, targetAmount, reductionPercent } = req.body;
+
+      const [existing] = await db
+        .select()
+        .from(commitments)
+        .where(eq(commitments.id, commitmentId))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ error: "Commitment not found" });
+      }
+
+      const updateData: any = { updatedAt: new Date() };
+
+      if (status) {
+        updateData.status = status;
+        if (status === "cancelled" && rationale) {
+          updateData.cancellationRationale = rationale;
+          
+          await db.insert(behavioralLearningHistory).values({
+            coupleId: existing.coupleId,
+            triggerEvent: "commitment_cancelled",
+            aiObservation: `User cancelled commitment: "${existing.title}". Rationale: ${rationale}`,
+            recommendedApproach: "Consider this feedback for future nudges",
+          });
+        }
+      }
+
+      if (targetAmount !== undefined) {
+        const history = (existing.modificationHistory as any[]) || [];
+        history.push({
+          date: new Date().toISOString(),
+          change: `Target amount changed from $${existing.targetAmount} to $${targetAmount}`,
+          rationale: rationale || "No reason provided",
+        });
+        updateData.targetAmount = targetAmount;
+        updateData.modificationHistory = history;
+      }
+
+      if (reductionPercent !== undefined) {
+        const history = (existing.modificationHistory as any[]) || [];
+        history.push({
+          date: new Date().toISOString(),
+          change: `Reduction percent changed from ${existing.reductionPercent}% to ${reductionPercent}%`,
+          rationale: rationale || "No reason provided",
+        });
+        updateData.reductionPercent = reductionPercent;
+        updateData.modificationHistory = history;
+      }
+
+      const [updated] = await db
+        .update(commitments)
+        .set(updateData)
+        .where(eq(commitments.id, commitmentId))
+        .returning();
+
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Update commitment error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.delete("/api/commitments/:commitmentId", async (req, res) => {
+    try {
+      const { commitmentId } = req.params;
+      const { rationale } = req.body;
+
+      const [existing] = await db
+        .select()
+        .from(commitments)
+        .where(eq(commitments.id, commitmentId))
+        .limit(1);
+
+      if (!existing) {
+        return res.status(404).json({ error: "Commitment not found" });
+      }
+
+      if (rationale) {
+        await db.insert(behavioralLearningHistory).values({
+          coupleId: existing.coupleId,
+          triggerEvent: "commitment_deleted",
+          aiObservation: `User deleted commitment: "${existing.title}". Rationale: ${rationale}`,
+          recommendedApproach: "Learn from this feedback for future recommendations",
+        });
+      }
+
+      await db.delete(commitments).where(eq(commitments.id, commitmentId));
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error("Delete commitment error:", error);
       res.status(500).json({ error: error.message });
     }
   });

@@ -398,6 +398,84 @@ export const partnerInvitesRelations = relations(partnerInvites, ({ one }) => ({
   }),
 }));
 
+// User Commitments - pre-commitments made from nudges
+export const commitments = pgTable("commitments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull(),
+  
+  // What they committed to
+  title: text("title").notNull(),
+  description: text("description"),
+  commitmentType: text("commitment_type").notNull(), // budget_limit, spending_reduction, alternative_switch, savings_target
+  
+  // The specific commitment details
+  category: text("category"), // if category-specific
+  merchant: text("merchant"), // if merchant-specific (e.g., "Starbucks")
+  alternativeMerchant: text("alternative_merchant"), // if switching (e.g., "Tim Hortons")
+  targetAmount: real("target_amount"), // budget limit or savings target
+  currentAmount: real("current_amount"), // baseline for comparison
+  reductionPercent: integer("reduction_percent"), // e.g., 50% reduction
+  
+  // Source: what triggered this commitment
+  sourceNudgeId: varchar("source_nudge_id"), // link to the recommendation that created this
+  sourcePatternId: varchar("source_pattern_id"), // link to detected pattern
+  
+  // Status tracking
+  status: text("status").notNull().default("active"), // active, paused, completed, broken, cancelled
+  startDate: text("start_date").notNull(),
+  endDate: text("end_date"), // null = ongoing
+  
+  // Progress tracking
+  timesChecked: integer("times_checked").default(0),
+  timesKept: integer("times_kept").default(0),
+  timesBroken: integer("times_broken").default(0),
+  totalSaved: real("total_saved").default(0),
+  
+  // If cancelled/modified, store user rationale for learning
+  cancellationRationale: text("cancellation_rationale"),
+  modificationHistory: jsonb("modification_history"), // [{date, change, rationale}]
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Detected spending patterns
+export const spendingPatterns = pgTable("spending_patterns", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull(),
+  
+  // Pattern identification
+  patternType: text("pattern_type").notNull(), // habitual_merchant, category_spike, time_based, escalating
+  category: text("category"),
+  merchant: text("merchant"),
+  
+  // Pattern details
+  frequency: text("frequency"), // daily, weekly, bi-weekly
+  averageAmount: real("average_amount"),
+  totalSpent: real("total_spent"),
+  occurrenceCount: integer("occurrence_count").notNull(),
+  firstOccurrence: text("first_occurrence"),
+  lastOccurrence: text("last_occurrence"),
+  
+  // Pattern strength
+  confidence: real("confidence").default(0.5), // 0-1
+  isHabitual: boolean("is_habitual").default(false), // true if established pattern (3+ occurrences)
+  
+  // AI analysis
+  aiSummary: text("ai_summary"), // "You visit Starbucks 3x/week, spending $27/week on coffee"
+  suggestedAction: text("suggested_action"), // "Set a $15/week coffee budget"
+  alternativeSuggestion: text("alternative_suggestion"), // "Try Tim Hortons - save $2/visit"
+  potentialMonthlySavings: real("potential_monthly_savings"),
+  
+  // Status
+  status: text("status").notNull().default("detected"), // detected, nudge_sent, commitment_made, resolved, ignored
+  nudgeSentAt: timestamp("nudge_sent_at"),
+  resolvedAt: timestamp("resolved_at"),
+  
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Admin tables for AI management
 export const adminUsers = pgTable("admin_users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -516,3 +594,5 @@ export type AiPrompt = typeof aiPrompts.$inferSelect;
 export type AiLog = typeof aiLogs.$inferSelect;
 export type AiCorrection = typeof aiCorrections.$inferSelect;
 export type BenchmarkConfig = typeof benchmarkConfigs.$inferSelect;
+export type Commitment = typeof commitments.$inferSelect;
+export type SpendingPattern = typeof spendingPatterns.$inferSelect;
