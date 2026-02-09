@@ -1,17 +1,23 @@
 import React, { useMemo, useState, useEffect, useCallback } from "react";
-import { View, FlatList, StyleSheet, RefreshControl, Pressable } from "react-native";
+import { View, ScrollView, StyleSheet, RefreshControl, Pressable, Image } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
-import { format } from "date-fns";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  withSequence,
+  withSpring,
+  Easing,
+} from "react-native-reanimated";
+import * as Haptics from "expo-haptics";
+import { useQuery } from "@tanstack/react-query";
 
-import { BudgetCard } from "@/components/BudgetCard";
-import { QuickActions } from "@/components/QuickActions";
-import { DreamGuardian } from "@/components/DreamGuardian";
 import { NudgeCard } from "@/components/NudgeCard";
-import { Card } from "@/components/Card";
 import { ThemedText } from "@/components/ThemedText";
 import { PremiumGate } from "@/components/PremiumGate";
 import { useTheme } from "@/hooks/useTheme";
@@ -20,8 +26,9 @@ import { useAuth } from "@/context/AuthContext";
 import { useSubscription } from "@/context/SubscriptionContext";
 import { getCurrentMonthExpenses, getTotalSpent } from "@/lib/cloudStorage";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import { CATEGORY_ICONS, CATEGORY_COLORS, CATEGORY_LABELS } from "@/types";
 import { getApiUrl } from "@/lib/query-client";
+
+import dreamGuardianIcon from "../../assets/images/dream-guardian-icon.png";
 
 interface Nudge {
   id: string;
@@ -39,6 +46,63 @@ interface Nudge {
   };
 }
 
+interface PersonalizedGreeting {
+  greeting: string;
+  message: string;
+  suggestion: string;
+  mood: "celebrate" | "encourage" | "gentle-nudge" | "welcome";
+  context: {
+    timeOfDay: string;
+    currentStreak: number;
+    totalSaved: number;
+    goalsCount: number;
+    closestGoalProgress: number | null;
+  };
+}
+
+interface SavingsStreak {
+  currentStreak: number;
+  longestStreak: number;
+  totalConfirmations: number;
+  totalAmountSaved: number;
+  lastConfirmationDate: string | null;
+}
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+function ActionButton({ icon, label, subtitle, color, onPress, testID }: { 
+  icon: string; label: string; subtitle: string; color: string; onPress: () => void; testID?: string 
+}) {
+  const { theme } = useTheme();
+  const scale = useSharedValue(1);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <AnimatedPressable
+      testID={testID}
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress();
+      }}
+      onPressIn={() => { scale.value = withSpring(0.96, { damping: 15 }); }}
+      onPressOut={() => { scale.value = withSpring(1, { damping: 15 }); }}
+      style={[styles.actionButton, { backgroundColor: theme.backgroundDefault }, animatedStyle]}
+    >
+      <View style={[styles.actionIcon, { backgroundColor: color + "12" }]}>
+        <Feather name={icon as any} size={24} color={color} />
+      </View>
+      <View style={styles.actionText}>
+        <ThemedText type="heading" style={{ fontSize: 16 }}>{label}</ThemedText>
+        <ThemedText type="tiny" style={{ color: theme.textSecondary }}>{subtitle}</ThemedText>
+      </View>
+      <Feather name="chevron-right" size={20} color={theme.textTertiary} />
+    </AnimatedPressable>
+  );
+}
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
@@ -48,9 +112,39 @@ export default function HomeScreen() {
   const { data, loading, refreshData } = useApp();
   const { user } = useAuth();
   const { isPremium } = useSubscription();
-  
+
   const [nudges, setNudges] = useState<Nudge[]>([]);
   const [loadingNudges, setLoadingNudges] = useState(false);
+
+  const breatheScale = useSharedValue(1);
+  const glowOpacity = useSharedValue(0.3);
+
+  React.useEffect(() => {
+    breatheScale.value = withRepeat(
+      withSequence(
+        withTiming(1.08, { duration: 3000, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: 3000, easing: Easing.inOut(Easing.ease) })
+      ),
+      -1,
+      true
+    );
+    glowOpacity.value = withRepeat(
+      withSequence(
+        withTiming(0.6, { duration: 3000, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0.2, { duration: 3000, easing: Easing.inOut(Easing.ease) })
+      ),
+      -1,
+      true
+    );
+  }, []);
+
+  const breatheStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: breatheScale.value }],
+  }));
+
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: glowOpacity.value,
+  }));
 
   const currentMonthExpenses = data ? getCurrentMonthExpenses(data.expenses) : [];
   const totalSpent = getTotalSpent(currentMonthExpenses);
@@ -60,9 +154,63 @@ export default function HomeScreen() {
     return data.categoryBudgets.reduce((sum, b) => sum + b.monthlyLimit, 0);
   }, [data?.categoryBudgets]);
 
+  const totalSaved = useMemo(() => {
+    if (!data?.goals) return 0;
+    return data.goals.reduce((sum, g) => sum + g.savedAmount, 0);
+  }, [data?.goals]);
+
+  const closestDream = useMemo(() => {
+    if (!data?.goals || data.goals.length === 0) return null;
+    return data.goals.reduce((prev, curr) => {
+      const prevPct = prev.savedAmount / prev.targetAmount;
+      const currPct = curr.savedAmount / curr.targetAmount;
+      return currPct > prevPct ? curr : prev;
+    });
+  }, [data?.goals]);
+
+  const closestDreamProgress = closestDream
+    ? Math.min(Math.round((closestDream.savedAmount / closestDream.targetAmount) * 100), 100)
+    : 0;
+
+  const { data: personalizedGreeting } = useQuery<PersonalizedGreeting>({
+    queryKey: ["/api/guardian/greeting", user?.coupleId],
+    enabled: !!user?.coupleId,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const { data: streakData } = useQuery<SavingsStreak>({
+    queryKey: ["/api/guardian/streak", user?.coupleId],
+    enabled: !!user?.coupleId,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const greetingMessage = useMemo(() => {
+    if (personalizedGreeting) {
+      return {
+        greeting: personalizedGreeting.greeting,
+        message: personalizedGreeting.message,
+        suggestion: personalizedGreeting.suggestion,
+      };
+    }
+    const hour = new Date().getHours();
+    const timeGreeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+    const partner1 = data?.partners?.partner1?.name || "there";
+    if (!data?.goals || data.goals.length === 0) {
+      return {
+        greeting: `${timeGreeting}, ${partner1}`,
+        message: "Your dreams are waiting to be set.",
+        suggestion: "Start by adding your first dream together.",
+      };
+    }
+    return {
+      greeting: `${timeGreeting}, ${partner1}`,
+      message: "Your dreams are being guarded.",
+      suggestion: "Just log your expenses and I'll handle the rest.",
+    };
+  }, [personalizedGreeting, data]);
+
   const fetchNudges = useCallback(async () => {
     if (!user?.coupleId || !isPremium) return;
-    
     setLoadingNudges(true);
     try {
       const response = await fetch(
@@ -81,7 +229,6 @@ export default function HomeScreen() {
 
   const detectPatterns = useCallback(async () => {
     if (!user?.coupleId || !isPremium) return;
-    
     try {
       const response = await fetch(
         new URL("/api/patterns/detect", getApiUrl()).toString(),
@@ -91,7 +238,6 @@ export default function HomeScreen() {
           body: JSON.stringify({ coupleId: user.coupleId }),
         }
       );
-      
       if (response.ok) {
         const { patterns } = await response.json();
         if (patterns.length > 0 && patterns[0].isHabitual) {
@@ -100,9 +246,9 @@ export default function HomeScreen() {
             {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ 
-                coupleId: user.coupleId, 
-                patternId: patterns[0].id 
+              body: JSON.stringify({
+                coupleId: user.coupleId,
+                patternId: patterns[0].id,
               }),
             }
           );
@@ -132,36 +278,109 @@ export default function HomeScreen() {
     setNudges(prev => prev.filter(n => n.id !== nudge.id));
   };
 
-  const handleAddExpense = () => {
-    navigation.navigate("AddExpense");
-  };
+  const remaining = Math.max(totalBudget - totalSpent, 0);
+  const budgetPercentage = totalBudget > 0 ? Math.min(totalSpent / totalBudget, 1) : 0;
+  const currentStreak = streakData?.currentStreak || 0;
 
-  const handleScanReceipt = () => {
-    navigation.navigate("ScanReceipt");
-  };
-
-  const handleAddDream = () => {
-    navigation.navigate("AddDream");
-  };
-
-  const handleAddToDream = () => {
-    if (data?.goals && data.goals.length > 0) {
-      navigation.navigate("DreamDetail", { dreamId: data.goals[0].id });
-    } else {
-      navigation.navigate("AddDream");
-    }
-  };
-
-  const recentExpenses = useMemo(() => {
-    return currentMonthExpenses
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, 3);
+  const weekExpenses = useMemo(() => {
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    return currentMonthExpenses.filter(e => new Date(e.date) >= weekAgo);
   }, [currentMonthExpenses]);
 
-  const renderContent = () => (
-    <View style={styles.content}>
+  const weekTotal = weekExpenses.reduce((sum, e) => sum + e.amount, 0);
+
+  return (
+    <ScrollView
+      style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
+      contentContainerStyle={{
+        paddingTop: headerHeight + Spacing.lg,
+        paddingBottom: tabBarHeight + Spacing["3xl"],
+        paddingHorizontal: Spacing.lg,
+      }}
+      scrollIndicatorInsets={{ bottom: insets.bottom }}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl refreshing={loading} onRefresh={refreshData} />
+      }
+    >
+      <View style={styles.greetingSection}>
+        <Animated.View style={[styles.guardianAvatar, breatheStyle]}>
+          <Image
+            source={dreamGuardianIcon}
+            style={styles.guardianImage}
+            resizeMode="cover"
+          />
+        </Animated.View>
+        <ThemedText type="h3" style={styles.greetingText}>
+          {greetingMessage.greeting}
+        </ThemedText>
+        <ThemedText type="body" style={[styles.guardianMessage, { color: theme.textSecondary }]}>
+          {greetingMessage.message}
+        </ThemedText>
+      </View>
+
+      <View style={styles.dreamGlow}>
+        <Animated.View style={[styles.glowRing, { borderColor: theme.primary + "30" }, glowStyle]} />
+        <View style={[styles.dreamCircle, { backgroundColor: theme.backgroundDefault }]}>
+          {totalSaved > 0 ? (
+            <>
+              <ThemedText type="tiny" style={{ color: theme.textSecondary, marginBottom: 2 }}>
+                Dreams Protected
+              </ThemedText>
+              <ThemedText type="h2" style={{ color: theme.primary }}>
+                ${totalSaved.toLocaleString()}
+              </ThemedText>
+              {closestDream ? (
+                <ThemedText type="tiny" style={{ color: theme.success, marginTop: 4, fontWeight: "600" }}>
+                  {closestDreamProgress}% to "{closestDream.name}"
+                </ThemedText>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <Feather name="shield" size={28} color={theme.primary} />
+              <ThemedText type="small" style={{ color: theme.textSecondary, marginTop: Spacing.sm, textAlign: "center" }}>
+                Your dreams are{"\n"}waiting to grow
+              </ThemedText>
+            </>
+          )}
+        </View>
+      </View>
+
+      {currentStreak > 0 ? (
+        <View style={styles.streakRow}>
+          <Feather name="zap" size={14} color="#F59E0B" />
+          <ThemedText type="small" style={{ color: theme.textSecondary }}>
+            {currentStreak} week savings streak
+          </ThemedText>
+        </View>
+      ) : null}
+
+      <View style={styles.actionsSection}>
+        <ActionButton
+          icon="edit-3"
+          label="Add Expense"
+          subtitle="Quick entry or describe it naturally"
+          color={theme.primary}
+          onPress={() => navigation.navigate("AddExpense")}
+          testID="button-add-expense"
+        />
+        <ActionButton
+          icon="camera"
+          label="Scan Receipt"
+          subtitle="Snap a photo and we'll do the rest"
+          color={theme.accent}
+          onPress={() => navigation.navigate("ScanReceipt")}
+          testID="button-scan-receipt"
+        />
+      </View>
+
       {isPremium && nudges.length > 0 ? (
-        <View style={styles.nudgesSection}>
+        <View style={styles.nudgeSection}>
+          <ThemedText type="tiny" style={{ color: theme.textSecondary, marginBottom: Spacing.sm, letterSpacing: 1 }}>
+            GUARDIAN NOTICED SOMETHING
+          </ThemedText>
           {nudges.slice(0, 1).map((nudge) => (
             <NudgeCard
               key={nudge.id}
@@ -175,103 +394,49 @@ export default function HomeScreen() {
         </View>
       ) : null}
 
-      {isPremium ? (
-        <DreamGuardian 
-          onAddToGoal={handleAddToDream} 
-          coupleId={user?.coupleId ?? undefined}
-        />
-      ) : (
-        <PremiumGate 
-          feature="Dream Guardian AI"
-          description="Your self-learning AI companion that observes your habits and delivers hyper-personalized nudges to help you save"
-        >
-          <DreamGuardian 
-            onAddToGoal={handleAddToDream} 
-            coupleId={user?.coupleId ?? undefined}
-          />
-        </PremiumGate>
-      )}
-
-      <QuickActions
-        onAddExpense={handleAddExpense}
-        onScanReceipt={handleScanReceipt}
-        onAddGoal={handleAddDream}
-      />
-
-      <BudgetCard
-        spent={totalSpent}
-        limit={totalBudget}
-        month={new Date().toLocaleString("default", { month: "long" })}
-        compact
-      />
-
-      <Card style={styles.recentCard}>
-        <View style={styles.recentHeader}>
-          <ThemedText type="heading">Recent Activity</ThemedText>
-          <Pressable onPress={() => navigation.navigate("ExpensesTab")}>
-            <ThemedText type="small" style={{ color: theme.primary }}>
-              See all
+      <View style={[styles.snapshot, { backgroundColor: theme.backgroundDefault }]}>
+        <ThemedText type="tiny" style={{ color: theme.textSecondary, letterSpacing: 1, marginBottom: Spacing.md }}>
+          THIS WEEK AT A GLANCE
+        </ThemedText>
+        <View style={styles.snapshotRow}>
+          <View style={styles.snapshotItem}>
+            <ThemedText type="h4" style={{ color: theme.text }}>
+              ${weekTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
             </ThemedText>
-          </Pressable>
-        </View>
-        
-        {recentExpenses.length > 0 ? (
-          recentExpenses.map((expense) => (
-            <Pressable
-              key={expense.id}
-              style={styles.recentItem}
-              onPress={() => navigation.navigate("ExpenseDetail", { expenseId: expense.id })}
-            >
-              <View style={[
-                styles.categoryIcon,
-                { backgroundColor: (CATEGORY_COLORS[expense.category] || theme.primary) + "15" }
-              ]}>
-                <Feather
-                  name={(CATEGORY_ICONS[expense.category] || "circle") as any}
-                  size={16}
-                  color={CATEGORY_COLORS[expense.category] || theme.primary}
-                />
-              </View>
-              <View style={styles.recentInfo}>
-                <ThemedText type="body" numberOfLines={1}>
-                  {expense.description}
-                </ThemedText>
-                <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
-                  {CATEGORY_LABELS[expense.category] || expense.category} · {format(new Date(expense.date), "MMM d")}
-                </ThemedText>
-              </View>
-              <ThemedText type="body" style={{ fontWeight: "600" }}>
-                ${expense.amount.toFixed(2)}
-              </ThemedText>
-            </Pressable>
-          ))
-        ) : (
-          <View style={styles.emptyRecent}>
-            <Feather name="inbox" size={32} color={theme.textSecondary} />
-            <ThemedText type="small" style={{ color: theme.textSecondary, marginTop: Spacing.sm }}>
-              No expenses yet this month
+            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+              spent this week
             </ThemedText>
           </View>
-        )}
-      </Card>
-    </View>
-  );
+          <View style={[styles.snapshotDivider, { backgroundColor: theme.border }]} />
+          <View style={styles.snapshotItem}>
+            <ThemedText type="h4" style={{ color: budgetPercentage > 0.9 ? theme.error : budgetPercentage > 0.75 ? theme.warning : theme.success }}>
+              ${remaining.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+            </ThemedText>
+            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+              left this month
+            </ThemedText>
+          </View>
+          <View style={[styles.snapshotDivider, { backgroundColor: theme.border }]} />
+          <View style={styles.snapshotItem}>
+            <ThemedText type="h4" style={{ color: theme.primary }}>
+              {data?.goals?.length || 0}
+            </ThemedText>
+            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+              {(data?.goals?.length || 0) === 1 ? "dream" : "dreams"}
+            </ThemedText>
+          </View>
+        </View>
+      </View>
 
-  return (
-    <FlatList
-      style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
-      contentContainerStyle={{
-        paddingTop: headerHeight + Spacing.xl,
-        paddingBottom: tabBarHeight + Spacing.xl,
-        paddingHorizontal: Spacing.lg,
-      }}
-      scrollIndicatorInsets={{ bottom: insets.bottom }}
-      data={[{ key: "content" }]}
-      renderItem={renderContent}
-      refreshControl={
-        <RefreshControl refreshing={loading} onRefresh={refreshData} />
-      }
-    />
+      {greetingMessage.suggestion ? (
+        <View style={styles.suggestionRow}>
+          <Feather name="message-circle" size={14} color={theme.textTertiary} />
+          <ThemedText type="small" style={{ color: theme.textTertiary, fontStyle: "italic", flex: 1 }}>
+            {greetingMessage.suggestion}
+          </ThemedText>
+        </View>
+      ) : null}
+    </ScrollView>
   );
 }
 
@@ -279,40 +444,114 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  content: {
-    flex: 1,
-  },
-  recentCard: {
-    marginTop: Spacing.lg,
-  },
-  recentHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  greetingSection: {
     alignItems: "center",
+    marginBottom: Spacing.xl,
+  },
+  guardianAvatar: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    overflow: "hidden",
     marginBottom: Spacing.md,
   },
-  recentItem: {
+  guardianImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+  },
+  greetingText: {
+    textAlign: "center",
+    marginBottom: Spacing.xs,
+  },
+  guardianMessage: {
+    textAlign: "center",
+    lineHeight: 22,
+  },
+  dreamGlow: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: Spacing.lg,
+    height: 180,
+  },
+  glowRing: {
+    position: "absolute",
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    borderWidth: 2,
+  },
+  dreamCircle: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#7C3AED",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 3,
+  },
+  streakRow: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: Spacing.sm,
+    justifyContent: "center",
+    gap: Spacing.xs,
+    marginBottom: Spacing.xl,
   },
-  categoryIcon: {
-    width: 36,
-    height: 36,
+  actionsSection: {
+    gap: Spacing.md,
+    marginBottom: Spacing["2xl"],
+  },
+  actionButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  actionIcon: {
+    width: 48,
+    height: 48,
     borderRadius: BorderRadius.md,
     alignItems: "center",
     justifyContent: "center",
   },
-  recentInfo: {
+  actionText: {
     flex: 1,
     marginLeft: Spacing.md,
     gap: 2,
   },
-  emptyRecent: {
-    alignItems: "center",
-    padding: Spacing.xl,
+  nudgeSection: {
+    marginBottom: Spacing["2xl"],
   },
-  nudgesSection: {
-    marginBottom: Spacing.md,
+  snapshot: {
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    marginBottom: Spacing.lg,
+  },
+  snapshotRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  snapshotItem: {
+    flex: 1,
+    alignItems: "center",
+    gap: 4,
+  },
+  snapshotDivider: {
+    width: 1,
+    height: 36,
+  },
+  suggestionRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
   },
 });
