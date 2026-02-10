@@ -648,6 +648,22 @@
           </div>
           
           <div class="nav-section">
+            <div class="nav-section-title">Guardian AI</div>
+            <a class="nav-item" data-page="patterns">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+              Spending Patterns
+            </a>
+            <a class="nav-item" data-page="nudges">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+              Nudges
+            </a>
+            <a class="nav-item" data-page="commitments">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+              Commitments
+            </a>
+          </div>
+
+          <div class="nav-section">
             <div class="nav-section-title">Analytics</div>
             <a class="nav-item" data-page="stats">
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
@@ -830,6 +846,89 @@
           </div>
         </div>
         
+        <div id="page-patterns" class="page" style="display: none;">
+          <div class="header">
+            <h1>Spending Patterns</h1>
+            <div class="header-actions">
+              <button class="btn btn-primary" onclick="simulatePattern()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                Simulate Pattern
+              </button>
+            </div>
+          </div>
+          <div class="card" style="margin-top: 24px;">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Couple</th>
+                  <th>Type</th>
+                  <th>Merchant</th>
+                  <th>Category</th>
+                  <th>Avg Amount</th>
+                  <th>Occurrences</th>
+                  <th>Habitual</th>
+                  <th>Savings Potential</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody id="patterns-list"></tbody>
+            </table>
+            <div id="patterns-empty" class="empty-state" style="display:none;">No spending patterns detected yet.</div>
+          </div>
+        </div>
+
+        <div id="page-nudges" class="page" style="display: none;">
+          <div class="header">
+            <h1>Guardian Nudges</h1>
+            <div class="header-actions">
+              <button class="btn btn-primary" onclick="simulateNudge()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                Simulate Nudge
+              </button>
+            </div>
+          </div>
+          <div class="card" style="margin-top: 24px;">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Couple</th>
+                  <th>Type</th>
+                  <th>Title</th>
+                  <th>Message</th>
+                  <th>Status</th>
+                  <th>Technique</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody id="nudges-list"></tbody>
+            </table>
+            <div id="nudges-empty" class="empty-state" style="display:none;">No nudges generated yet.</div>
+          </div>
+        </div>
+
+        <div id="page-commitments" class="page" style="display: none;">
+          <div class="header">
+            <h1>User Commitments</h1>
+          </div>
+          <div class="card" style="margin-top: 24px;">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Couple</th>
+                  <th>Type</th>
+                  <th>Description</th>
+                  <th>Target</th>
+                  <th>Status</th>
+                  <th>Start</th>
+                  <th>End</th>
+                </tr>
+              </thead>
+              <tbody id="commitments-list"></tbody>
+            </table>
+            <div id="commitments-empty" class="empty-state" style="display:none;">No commitments created yet.</div>
+          </div>
+        </div>
+
         <div id="page-behavioral" class="page" style="display: none;">
           <div class="header">
             <h1>Behavioral Economics</h1>
@@ -1041,6 +1140,9 @@
         if (page === 'categories') loadCategories();
         if (page === 'stats') loadStats();
         if (page === 'behavioral') loadBehavioral();
+        if (page === 'patterns') loadPatterns();
+        if (page === 'nudges') loadNudges();
+        if (page === 'commitments') loadCommitments();
       });
     });
     
@@ -1288,6 +1390,134 @@
       }
     }
     
+    async function loadPatterns() {
+      try {
+        const data = await apiCall('/patterns');
+        const list = document.getElementById('patterns-list');
+        const empty = document.getElementById('patterns-empty');
+        
+        if (!data || data.length === 0) {
+          list.innerHTML = '';
+          empty.style.display = 'block';
+          return;
+        }
+        empty.style.display = 'none';
+        list.innerHTML = data.map(p => `
+          <tr>
+            <td style="font-family: monospace; font-size: 11px;">${(p.coupleId || '').slice(0, 12)}...</td>
+            <td><span class="badge badge-info">${p.patternType || '-'}</span></td>
+            <td>${p.merchant || '-'}</td>
+            <td>${p.category || '-'}</td>
+            <td>$${(p.averageAmount || 0).toFixed(2)}</td>
+            <td>${p.occurrenceCount || 0}</td>
+            <td><span class="badge ${p.isHabitual ? 'badge-success' : 'badge-warning'}">${p.isHabitual ? 'Yes' : 'No'}</span></td>
+            <td>$${(p.potentialMonthlySavings || 0).toFixed(2)}/mo</td>
+            <td>${p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '-'}</td>
+          </tr>
+        `).join('');
+      } catch (error) {
+        console.error('Load patterns error:', error);
+      }
+    }
+
+    async function loadNudges() {
+      try {
+        const data = await apiCall('/nudges');
+        const list = document.getElementById('nudges-list');
+        const empty = document.getElementById('nudges-empty');
+        
+        if (!data || data.length === 0) {
+          list.innerHTML = '';
+          empty.style.display = 'block';
+          return;
+        }
+        empty.style.display = 'none';
+        list.innerHTML = data.map(n => `
+          <tr>
+            <td style="font-family: monospace; font-size: 11px;">${(n.coupleId || '').slice(0, 12)}...</td>
+            <td><span class="badge badge-info">${n.type || '-'}</span></td>
+            <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${n.title || '-'}</td>
+            <td style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${n.message || '-'}</td>
+            <td><span class="badge badge-${n.status === 'accepted' ? 'success' : n.status === 'dismissed' ? 'warning' : 'info'}">${n.status || 'pending'}</span></td>
+            <td>${n.behavioralTechnique || '-'}</td>
+            <td>${n.createdAt ? new Date(n.createdAt).toLocaleDateString() : '-'}</td>
+          </tr>
+        `).join('');
+      } catch (error) {
+        console.error('Load nudges error:', error);
+      }
+    }
+
+    async function loadCommitments() {
+      try {
+        const data = await apiCall('/commitments');
+        const list = document.getElementById('commitments-list');
+        const empty = document.getElementById('commitments-empty');
+        const items = Array.isArray(data) ? data : (data.commitments || []);
+        
+        if (items.length === 0) {
+          list.innerHTML = '';
+          empty.style.display = 'block';
+          return;
+        }
+        empty.style.display = 'none';
+        list.innerHTML = items.map(c => `
+          <tr>
+            <td style="font-family: monospace; font-size: 11px;">${(c.coupleId || '').slice(0, 12)}...</td>
+            <td><span class="badge badge-info">${c.commitmentType || '-'}</span></td>
+            <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${c.description || '-'}</td>
+            <td>$${(c.targetAmount || 0).toFixed(2)}</td>
+            <td><span class="badge badge-${c.status === 'completed' ? 'success' : c.status === 'broken' ? 'error' : 'info'}">${c.status || 'active'}</span></td>
+            <td>${c.startDate ? new Date(c.startDate).toLocaleDateString() : '-'}</td>
+            <td>${c.endDate ? new Date(c.endDate).toLocaleDateString() : '-'}</td>
+          </tr>
+        `).join('');
+      } catch (error) {
+        console.error('Load commitments error:', error);
+      }
+    }
+
+    async function simulatePattern() {
+      const coupleId = prompt('Enter couple ID (or leave empty for test-couple-001):') || 'test-couple-001';
+      const merchant = prompt('Enter merchant name:') || 'Test Coffee Shop';
+      const category = prompt('Enter category:') || 'restaurants';
+      const amount = parseFloat(prompt('Enter average amount:') || '5.50');
+      
+      try {
+        await apiCall('/simulate-pattern', {
+          method: 'POST',
+          body: JSON.stringify({ coupleId, merchant, category, amount, occurrences: 8 })
+        });
+        showToast('Pattern simulated successfully');
+        loadPatterns();
+      } catch (error) {
+        showToast('Failed to simulate pattern', 'error');
+      }
+    }
+
+    async function simulateNudge() {
+      const coupleId = prompt('Enter couple ID (or leave empty for test-couple-001):') || 'test-couple-001';
+      
+      try {
+        const patterns = await apiCall('/patterns');
+        const couplePatterns = (patterns || []).filter(p => p.coupleId === coupleId && p.isHabitual);
+        
+        if (couplePatterns.length === 0) {
+          showToast('No habitual patterns found for this couple. Simulate a pattern first.', 'error');
+          return;
+        }
+        
+        await apiCall('/simulate-nudge', {
+          method: 'POST',
+          body: JSON.stringify({ coupleId, patternId: couplePatterns[0].id })
+        });
+        showToast('Nudge simulated successfully');
+        loadNudges();
+      } catch (error) {
+        showToast('Failed to simulate nudge', 'error');
+      }
+    }
+
     function openPromptModal(id = null) {
       document.getElementById('modal-title').textContent = id ? 'Edit Prompt' : 'Add Prompt';
       document.getElementById('prompt-id').value = id || '';
