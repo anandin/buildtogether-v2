@@ -18,6 +18,7 @@ import * as Haptics from "expo-haptics";
 import { useQuery } from "@tanstack/react-query";
 
 import { NudgeCard } from "@/components/NudgeCard";
+import { SpendingInsights } from "@/components/SpendingInsights";
 import { ThemedText } from "@/components/ThemedText";
 import { PremiumGate } from "@/components/PremiumGate";
 import { useTheme } from "@/hooks/useTheme";
@@ -375,6 +376,10 @@ export default function HomeScreen() {
           testID="button-scan-receipt"
         />
       </View>
+
+      <PremiumGate feature="Smart Insights">
+        <SpendingInsights />
+      </PremiumGate>
 
       {isPremium && nudges.length > 0 ? (
         <View style={styles.nudgeSection}>
