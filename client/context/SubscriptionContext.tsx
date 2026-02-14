@@ -1,11 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import Purchases, { CustomerInfo, PurchasesPackage, PurchasesOffering } from "react-native-purchases";
 import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const REVENUECAT_API_KEY_IOS = process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY || "";
 const REVENUECAT_API_KEY_ANDROID = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY || "";
 
 const ENTITLEMENT_ID = "Build Together Pro";
+const PREVIEW_TRIAL_KEY = "@preview_trial_active";
+const PREVIEW_TRIAL_START_KEY = "@preview_trial_start";
 
 interface SubscriptionContextType {
   isPremium: boolean;
@@ -46,6 +49,30 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
     initializePurchases();
   }, []);
 
+  const checkPreviewTrial = async () => {
+    try {
+      const trialActive = await AsyncStorage.getItem(PREVIEW_TRIAL_KEY);
+      const trialStart = await AsyncStorage.getItem(PREVIEW_TRIAL_START_KEY);
+      
+      if (trialActive === "true" && trialStart) {
+        const startDate = new Date(trialStart);
+        const now = new Date();
+        const daysSinceStart = (now.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24);
+        
+        if (daysSinceStart <= 14) {
+          setIsPremium(true);
+          return true;
+        } else {
+          await AsyncStorage.removeItem(PREVIEW_TRIAL_KEY);
+          await AsyncStorage.removeItem(PREVIEW_TRIAL_START_KEY);
+        }
+      }
+    } catch (err) {
+      console.error("Error checking preview trial:", err);
+    }
+    return false;
+  };
+
   const initializePurchases = async () => {
     try {
       const apiKey = Platform.OS === "ios" 
@@ -54,9 +81,10 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
           ? REVENUECAT_API_KEY_ANDROID 
           : REVENUECAT_API_KEY_IOS;
       
-      if (!apiKey) {
-        console.log("RevenueCat API key not configured - running in preview mode");
+      if (!apiKey || apiKey.startsWith("test_")) {
+        console.log("RevenueCat running in preview mode");
         setIsPreviewMode(true);
+        await checkPreviewTrial();
         setIsLoading(false);
         return;
       }
@@ -72,13 +100,23 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
     } catch (error) {
       console.error("Error initializing RevenueCat:", error);
       setIsPreviewMode(true);
+      await checkPreviewTrial();
     } finally {
       setIsLoading(false);
     }
   };
 
-  const activatePreviewTrial = () => {
+  const activatePreviewTrial = async () => {
     setIsPremium(true);
+    try {
+      await AsyncStorage.setItem(PREVIEW_TRIAL_KEY, "true");
+      const existing = await AsyncStorage.getItem(PREVIEW_TRIAL_START_KEY);
+      if (!existing) {
+        await AsyncStorage.setItem(PREVIEW_TRIAL_START_KEY, new Date().toISOString());
+      }
+    } catch (err) {
+      console.error("Error persisting preview trial:", err);
+    }
   };
 
   const checkSubscriptionStatusInternal = async () => {
@@ -156,7 +194,7 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
 
   const restorePurchases = async (): Promise<boolean> => {
     if (isPreviewMode) {
-      activatePreviewTrial();
+      await activatePreviewTrial();
       return true;
     }
     

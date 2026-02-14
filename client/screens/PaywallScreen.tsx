@@ -79,7 +79,7 @@ export default function PaywallScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     
     if (isPreviewMode) {
-      activatePreviewTrial();
+      await activatePreviewTrial();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       navigation.goBack();
       return;
@@ -108,7 +108,7 @@ export default function PaywallScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     
     if (isPreviewMode) {
-      activatePreviewTrial();
+      await activatePreviewTrial();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       navigation.goBack();
       return;
