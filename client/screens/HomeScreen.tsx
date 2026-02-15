@@ -18,9 +18,7 @@ import * as Haptics from "expo-haptics";
 import { useQuery } from "@tanstack/react-query";
 
 import { NudgeCard } from "@/components/NudgeCard";
-import { SpendingInsights } from "@/components/SpendingInsights";
 import { ThemedText } from "@/components/ThemedText";
-import { PremiumGate } from "@/components/PremiumGate";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
@@ -358,6 +356,24 @@ export default function HomeScreen() {
         </View>
       ) : null}
 
+      {isPremium && nudges.length > 0 ? (
+        <View style={styles.nudgeSection}>
+          <ThemedText type="tiny" style={{ color: theme.textSecondary, marginBottom: Spacing.sm, letterSpacing: 1 }}>
+            GUARDIAN NOTICED SOMETHING
+          </ThemedText>
+          {nudges.slice(0, 1).map((nudge) => (
+            <NudgeCard
+              key={nudge.id}
+              nudge={nudge}
+              coupleId={user?.coupleId || ""}
+              onAccept={handleNudgeAccept}
+              onDismiss={handleNudgeDismiss}
+              onCommitmentCreated={refreshData}
+            />
+          ))}
+        </View>
+      ) : null}
+
       <View style={styles.actionsSection}>
         <ActionButton
           icon="edit-3"
@@ -376,28 +392,6 @@ export default function HomeScreen() {
           testID="button-scan-receipt"
         />
       </View>
-
-      <PremiumGate feature="Smart Insights">
-        <SpendingInsights />
-      </PremiumGate>
-
-      {isPremium && nudges.length > 0 ? (
-        <View style={styles.nudgeSection}>
-          <ThemedText type="tiny" style={{ color: theme.textSecondary, marginBottom: Spacing.sm, letterSpacing: 1 }}>
-            GUARDIAN NOTICED SOMETHING
-          </ThemedText>
-          {nudges.slice(0, 1).map((nudge) => (
-            <NudgeCard
-              key={nudge.id}
-              nudge={nudge}
-              coupleId={user?.coupleId || ""}
-              onAccept={handleNudgeAccept}
-              onDismiss={handleNudgeDismiss}
-              onCommitmentCreated={refreshData}
-            />
-          ))}
-        </View>
-      ) : null}
 
       <View style={[styles.snapshot, { backgroundColor: theme.backgroundDefault }]}>
         <ThemedText type="tiny" style={{ color: theme.textSecondary, letterSpacing: 1, marginBottom: Spacing.md }}>
