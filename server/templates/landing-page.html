@@ -593,54 +593,69 @@
         letter-spacing: 0.5px;
       }
 
-      /* Social Proof */
-      .social-proof {
+      /* Why We Built This */
+      .why-section {
         padding: 80px 24px;
         background: var(--bg-alt);
         text-align: center;
       }
 
-      .testimonials-grid {
-        display: grid;
-        grid-template-columns: 1fr;
-        gap: 24px;
-        max-width: 900px;
+      .why-content {
+        max-width: 640px;
         margin: 0 auto;
       }
 
-      .testimonial-card {
-        background: var(--bg-white);
-        border-radius: 16px;
-        padding: 28px;
-        text-align: left;
-        box-shadow: var(--shadow-card);
-      }
-
-      .testimonial-stars {
-        color: var(--warning);
+      .why-story {
         font-size: 1.1rem;
-        margin-bottom: 12px;
-        letter-spacing: 2px;
-      }
-
-      .testimonial-quote {
-        font-size: 1rem;
         color: var(--text-body);
-        line-height: 1.7;
-        font-style: italic;
-        margin-bottom: 16px;
+        line-height: 1.8;
+        text-align: left;
+        margin-bottom: 24px;
       }
 
-      .testimonial-author {
-        font-size: 0.9rem;
-        font-weight: 700;
+      .why-story strong {
         color: var(--text-heading);
       }
 
-      .testimonial-detail {
-        font-size: 0.8rem;
+      .why-principles {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+        margin-top: 36px;
+      }
+
+      .why-principle {
+        background: var(--bg-white);
+        border-radius: 14px;
+        padding: 24px;
+        text-align: left;
+        box-shadow: var(--shadow-soft);
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+      }
+
+      .why-principle-icon {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .why-principle h4 {
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--text-heading);
+        margin-bottom: 4px;
+      }
+
+      .why-principle p {
+        font-size: 0.9rem;
         color: var(--text-light);
-        margin-top: 2px;
+        line-height: 1.5;
       }
 
       /* Pricing Section */
@@ -962,7 +977,7 @@
         }
         .screenshot-card { flex: 0 0 280px; }
 
-        .testimonials-grid { grid-template-columns: repeat(3, 1fr); }
+        .why-principles { grid-template-columns: repeat(3, 1fr); }
 
         .pricing-grid { grid-template-columns: repeat(2, 1fr); }
 
@@ -1004,7 +1019,7 @@
         .transparency-card { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.08); }
         .step { background: rgba(255,255,255,0.05); }
         .screenshot-card { background: rgba(255,255,255,0.05); }
-        .testimonial-card { background: rgba(255,255,255,0.05); }
+        .why-principle { background: rgba(255,255,255,0.05); }
         .pricing-card { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); }
         .pricing-card.featured { border-color: var(--primary); }
         .coming-soon-box { background: rgba(255,255,255,0.05); }
@@ -1223,31 +1238,52 @@
       </div>
     </section>
 
-    <!-- Social Proof Section -->
-    <section class="social-proof">
-      <h2 class="section-title">Couples Love It</h2>
-      <p class="section-subtitle">Real feedback from couples managing money together.</p>
+    <!-- Why We Built This Section -->
+    <section class="why-section">
+      <div class="why-content">
+        <h2 class="section-title">Why We Built This</h2>
+        <p class="section-subtitle">A personal problem that needed a better solution.</p>
 
-      <div class="testimonials-grid">
-        <div class="testimonial-card">
-          <div class="testimonial-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
-          <p class="testimonial-quote">"We used to argue about who paid for what. Now we just scan receipts and Build Together handles the math. The nudges actually helped us save for our trip to Bali."</p>
-          <p class="testimonial-author">Sarah & Mike</p>
-          <p class="testimonial-detail">Together 3 years, saved $4,200</p>
-        </div>
-        
-        <div class="testimonial-card">
-          <div class="testimonial-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
-          <p class="testimonial-quote">"The Guardian Memory feature is genius. I can actually see why it suggested I cut back on takeout — and it was right. We saved $180 last month without even trying hard."</p>
-          <p class="testimonial-author">Priya & James</p>
-          <p class="testimonial-detail">Married 2 years, dream fund growing</p>
-        </div>
-        
-        <div class="testimonial-card">
-          <div class="testimonial-stars">&#9733;&#9733;&#9733;&#9733;&#9733;</div>
-          <p class="testimonial-quote">"No bank linking was the dealbreaker for us. We wanted to track expenses together without giving access to our accounts. This is exactly what we needed."</p>
-          <p class="testimonial-author">Alex & Jordan</p>
-          <p class="testimonial-detail">Together 5 years, emergency fund built</p>
+        <p class="why-story">
+          <strong>Money is the #1 source of stress in relationships.</strong> 
+          Studies show 35% of couples say finances cause the most friction in their partnership. 
+          Yet most finance apps are built for individuals — they ignore the reality that 
+          couples share expenses, save together, and make financial decisions as a team.
+        </p>
+        <p class="why-story">
+          We built Build Together because we couldn't find an app that treated shared finances 
+          as a collaboration instead of a chore. One that didn't require handing over bank credentials. 
+          One that gently helped instead of shamed.
+        </p>
+
+        <div class="why-principles">
+          <div class="why-principle">
+            <div class="why-principle-icon" style="background: #EDE9FE;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+            </div>
+            <div>
+              <h4>Built for Two</h4>
+              <p>Every feature is designed for partners managing money together, not retrofitted from a single-user app.</p>
+            </div>
+          </div>
+          <div class="why-principle">
+            <div class="why-principle-icon" style="background: #D1FAE5;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <div>
+              <h4>Privacy by Design</h4>
+              <p>We chose no bank linking on purpose. You control what goes in. Your data is never sold or shared.</p>
+            </div>
+          </div>
+          <div class="why-principle">
+            <div class="why-principle-icon" style="background: #FEF3C7;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+            </div>
+            <div>
+              <h4>Encouragement, Not Guilt</h4>
+              <p>Behavioral science says shame doesn't work. Our AI adapts to what actually motivates you.</p>
+            </div>
+          </div>
         </div>
       </div>
     </section>
