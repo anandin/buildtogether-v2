@@ -823,109 +823,43 @@
         margin-bottom: 32px;
       }
 
-      .coming-soon-box {
-        background: var(--bg-white);
-        border-radius: 20px;
-        padding: 36px;
-        box-shadow: var(--shadow-float);
-        max-width: 440px;
-        margin: 0 auto;
-      }
-
-      .coming-soon-label {
-        display: inline-block;
-        background: var(--warning-light);
-        color: #92400E;
-        font-size: 0.8rem;
-        font-weight: 700;
-        padding: 6px 16px;
-        border-radius: 50px;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        margin-bottom: 20px;
-      }
-
-      .coming-soon-box h3 {
-        font-size: 1.3rem;
-        font-weight: 700;
-        color: var(--text-heading);
-        margin-bottom: 8px;
-      }
-
-      .coming-soon-box p {
-        font-size: 0.95rem;
-        color: var(--text-light);
-        margin-bottom: 24px;
-      }
-
-      .waitlist-form {
+      .download-box {
         display: flex;
-        gap: 10px;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
       }
 
-      .waitlist-form input {
-        flex: 1;
-        padding: 14px 18px;
-        border: 2px solid rgba(0, 0, 0, 0.1);
-        border-radius: 12px;
-        font-family: inherit;
-        font-size: 0.95rem;
-        outline: none;
-        transition: border-color 0.2s;
-      }
-
-      .waitlist-form input:focus {
-        border-color: var(--primary);
-      }
-
-      .waitlist-form button {
-        padding: 14px 24px;
-        background: var(--primary);
+      .store-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 36px;
+        background: var(--text-heading);
         color: #FFFFFF;
-        border: none;
-        border-radius: 12px;
-        font-family: inherit;
-        font-size: 0.95rem;
+        font-size: 1.1rem;
         font-weight: 700;
-        cursor: pointer;
-        transition: background 0.2s;
-        white-space: nowrap;
+        border-radius: 14px;
+        text-decoration: none;
+        transition: all 0.2s ease;
+        box-shadow: var(--shadow-medium);
       }
 
-      .waitlist-form button:hover {
-        background: var(--primary-dark);
+      .store-button:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-float);
+        background: #000;
       }
 
-      .waitlist-success {
-        display: none;
-        color: var(--success);
-        font-weight: 700;
-        font-size: 1rem;
-        padding: 14px;
+      .store-button svg {
+        width: 28px;
+        height: 28px;
       }
 
-      .qr-hint {
-        margin-top: 24px;
-        padding-top: 20px;
-        border-top: 1px solid rgba(0, 0, 0, 0.06);
-      }
-
-      .qr-hint p {
-        font-size: 0.85rem;
+      .cta-note {
+        font-size: 0.9rem;
         color: var(--text-light);
-        margin-bottom: 12px;
-      }
-
-      .qr-code-small {
-        width: 120px;
-        height: 120px;
-        margin: 0 auto;
-      }
-
-      .qr-code-small canvas,
-      .qr-code-small svg {
-        width: 100% !important;
-        height: 100% !important;
+        margin-top: 8px;
       }
       
       /* Footer */
@@ -1022,8 +956,7 @@
         .why-principle { background: rgba(255,255,255,0.05); }
         .pricing-card { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); }
         .pricing-card.featured { border-color: var(--primary); }
-        .coming-soon-box { background: rgba(255,255,255,0.05); }
-        .waitlist-form input { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.15); color: #e8e8e8; }
+        .store-button { background: #e8e8e8; color: #1a1a2e; }
       }
     </style>
   </head>
@@ -1040,7 +973,7 @@
           <li><a href="#features">Features</a></li>
           <li><a href="#pricing">Pricing</a></li>
           <li><a href="/privacy">Privacy</a></li>
-          <li><a href="#download" class="nav-cta">Get Early Access</a></li>
+          <li><a href="#download" class="nav-cta">Download Free</a></li>
         </ul>
       </div>
     </nav>
@@ -1073,10 +1006,10 @@
         </div>
         <div class="cta-buttons">
           <a href="#download" class="btn-primary">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
             </svg>
-            Get Early Access
+            Download on App Store
           </a>
           <a href="#how-it-works" class="btn-secondary">
             See how it works
@@ -1332,25 +1265,16 @@
     <section class="cta-section" id="download">
       <div class="cta-content">
         <h2>Stop worrying about shared money.<br/>Start building together.</h2>
-        <p>Be the first to know when Build Together launches on the App Store.</p>
+        <p>14-day free trial. No bank linking required. Cancel anytime.</p>
         
-        <div class="coming-soon-box">
-          <span class="coming-soon-label">Coming Soon</span>
-          <h3>Join the Waitlist</h3>
-          <p>Get notified when we launch and lock in early-bird pricing.</p>
-
-          <div class="waitlist-form" id="waitlist-form">
-            <input type="email" placeholder="your@email.com" id="waitlist-email" required />
-            <button type="button" onclick="submitWaitlist()">Notify Me</button>
-          </div>
-          <div class="waitlist-success" id="waitlist-success">
-            You're on the list! We'll be in touch soon.
-          </div>
-
-          <div class="qr-hint">
-            <p>Already have Expo Go? Scan to preview the app now:</p>
-            <div class="qr-code-small" id="qr-code"></div>
-          </div>
+        <div class="download-box">
+          <a href="https://apps.apple.com/app/build-together/id6742961498" class="store-button" target="_blank">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+            </svg>
+            Download on App Store
+          </a>
+          <p class="cta-note">Free to download. Start your 14-day trial inside the app.</p>
         </div>
       </div>
     </section>
@@ -1365,47 +1289,15 @@
       </div>
     </footer>
 
-    <script src="https://unpkg.com/qr-code-styling@1.6.0/lib/qr-code-styling.js"></script>
     <script>
-      (function() {
-        const deepLink = "exps://EXPS_URL_PLACEHOLDER";
-        
-        const qrCode = new QRCodeStyling({
-          width: 120,
-          height: 120,
-          data: deepLink,
-          image: "assets/images/icon.png",
-          dotsOptions: { color: "#1E1B4B", type: "rounded" },
-          backgroundOptions: { color: "#ffffff" },
-          imageOptions: { crossOrigin: "anonymous", margin: 3, imageSize: 0.3 },
-          cornersSquareOptions: { type: "extra-rounded", color: "#7C3AED" },
-          cornersDotOptions: { type: "dot", color: "#7C3AED" },
-          qrOptions: { errorCorrectionLevel: "M" }
+      document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function(e) {
+          e.preventDefault();
+          const target = document.querySelector(this.getAttribute('href'));
+          if (target) {
+            target.scrollIntoView({ behavior: 'smooth' });
+          }
         });
-        
-        qrCode.append(document.getElementById("qr-code"));
-        
-        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-          anchor.addEventListener('click', function(e) {
-            e.preventDefault();
-            const target = document.querySelector(this.getAttribute('href'));
-            if (target) {
-              target.scrollIntoView({ behavior: 'smooth' });
-            }
-          });
-        });
-      })();
-
-      function submitWaitlist() {
-        const email = document.getElementById('waitlist-email').value;
-        if (email && email.includes('@')) {
-          document.getElementById('waitlist-form').style.display = 'none';
-          document.getElementById('waitlist-success').style.display = 'block';
-        }
-      }
-
-      document.getElementById('waitlist-email').addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') submitWaitlist();
       });
     </script>
   </body>

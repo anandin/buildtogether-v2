@@ -78,5 +78,5 @@ ensurePreviewReachable = "/status"
 
 [userenv.shared]
 EXPO_PUBLIC_GOOGLE_CLIENT_ID = "116174542008-j5lu8to3opnb8z8ajfh1ih5sj0334915.apps.googleusercontent.com"
-EXPO_PUBLIC_REVENUECAT_IOS_KEY = "test_EtzsDVNOjJiRagMBxjgAWmwcCsI"
 ADMIN_USERNAME = "anand.inbasekaran@gmail.com"
+EXPO_PUBLIC_REVENUECAT_IOS_KEY = "app742e5f8458"
