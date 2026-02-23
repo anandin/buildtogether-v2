@@ -532,6 +532,27 @@ export const benchmarkConfigs = pgTable("benchmark_configs", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+export const feedback = pgTable("feedback", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id"),
+  userId: varchar("user_id"),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  platform: text("platform"),
+  appVersion: text("app_version"),
+  status: text("status").default("new").notNull(),
+  adminNotes: text("admin_notes"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertFeedbackSchema = createInsertSchema(feedback).omit({
+  id: true,
+  createdAt: true,
+  status: true,
+  adminNotes: true,
+});
+
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
   createdAt: true,
@@ -596,3 +617,5 @@ export type AiCorrection = typeof aiCorrections.$inferSelect;
 export type BenchmarkConfig = typeof benchmarkConfigs.$inferSelect;
 export type Commitment = typeof commitments.$inferSelect;
 export type SpendingPattern = typeof spendingPatterns.$inferSelect;
+export type Feedback = typeof feedback.$inferSelect;
+export type InsertFeedback = z.infer<typeof insertFeedbackSchema>;

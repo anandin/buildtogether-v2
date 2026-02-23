@@ -1,6 +1,6 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { adminUsers, aiPrompts, aiLogs, aiCorrections, benchmarkConfigs, couples, expenses, goals, partnerNudgePreferences, behavioralLearningHistory, spendingPatterns, guardianRecommendations, commitments } from "@shared/schema";
+import { adminUsers, aiPrompts, aiLogs, aiCorrections, benchmarkConfigs, couples, expenses, goals, partnerNudgePreferences, behavioralLearningHistory, spendingPatterns, guardianRecommendations, commitments, feedback } from "@shared/schema";
 import { eq, desc, count, sql, and, gte } from "drizzle-orm";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
@@ -434,6 +434,61 @@ export function registerAdminRoutes(app: Express) {
       });
     } catch (error: any) {
       console.error("Simulate nudge error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.get("/api/admin/feedback", authenticateAdmin, async (req: AdminRequest, res) => {
+    try {
+      const { type, status } = req.query;
+      const conditions = [];
+
+      if (type && type !== "all") {
+        conditions.push(eq(feedback.type, type as string));
+      }
+      if (status && status !== "all") {
+        conditions.push(eq(feedback.status, status as string));
+      }
+
+      let results;
+      if (conditions.length > 0) {
+        results = await db.select().from(feedback)
+          .where(conditions.length === 1 ? conditions[0] : and(...conditions))
+          .orderBy(desc(feedback.createdAt));
+      } else {
+        results = await db.select().from(feedback)
+          .orderBy(desc(feedback.createdAt));
+      }
+
+      res.json({ feedback: results });
+    } catch (error: any) {
+      console.error("Get feedback error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.patch("/api/admin/feedback/:id", authenticateAdmin, async (req: AdminRequest, res) => {
+    try {
+      const { status, adminNotes } = req.body;
+      const feedbackId = req.params.id;
+
+      const [existing] = await db.select().from(feedback).where(eq(feedback.id, feedbackId));
+      if (!existing) {
+        return res.status(404).json({ error: "Feedback not found" });
+      }
+
+      const updateData: Record<string, any> = {};
+      if (status) updateData.status = status;
+      if (adminNotes !== undefined) updateData.adminNotes = adminNotes;
+
+      const [updated] = await db.update(feedback)
+        .set(updateData)
+        .where(eq(feedback.id, feedbackId))
+        .returning();
+
+      res.json({ feedback: updated });
+    } catch (error: any) {
+      console.error("Update feedback error:", error);
       res.status(500).json({ error: error.message });
     }
   });

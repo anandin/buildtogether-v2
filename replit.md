@@ -125,12 +125,15 @@ The admin dashboard allows remote management of AI features without requiring Ap
 
 4. **Benchmarks**: Configure city cost multipliers, family size factors, and default category budgets
 
+5. **Feedback**: View and manage user-submitted feedback, issues, and ideas with status tracking (new/reviewed/resolved)
+
 ### Database Tables
 - `admin_users`: Admin user accounts with bcrypt password hashing
 - `ai_prompts`: Editable AI prompt templates with versioning
 - `ai_logs`: AI call logs with performance metrics
 - `ai_corrections`: User correction history for AI improvement
 - `benchmark_configs`: Configurable financial benchmarks
+- `feedback`: User feedback, issue reports, and ideas with status tracking
 
 ### Authentication
 - JWT-based authentication with 7-day expiration

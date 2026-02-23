@@ -30,6 +30,7 @@ import {
   aiLogs,
   commitments,
   spendingPatterns,
+  feedback,
 } from "@shared/schema";
 import { detectPatterns, savePatterns, createNudgeFromPattern, getActivePatterns, getPendingNudges } from "./pattern-detection";
 import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt } from "./prompts";
@@ -3702,6 +3703,55 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
     } catch (error: any) {
       console.error("Delete commitment error:", error);
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== FEEDBACK ENDPOINTS ====================
+
+  app.post("/api/feedback", async (req, res) => {
+    try {
+      const { coupleId, userId, type, title, description, platform, appVersion } = req.body;
+
+      if (!type || !title || !description) {
+        return res.status(400).json({ error: "Type, title, and description are required" });
+      }
+
+      const validTypes = ["feedback", "issue", "idea"];
+      if (!validTypes.includes(type)) {
+        return res.status(400).json({ error: "Type must be one of: feedback, issue, idea" });
+      }
+
+      const [newFeedback] = await db.insert(feedback).values({
+        coupleId: coupleId || null,
+        userId: userId || null,
+        type,
+        title,
+        description,
+        platform: platform || null,
+        appVersion: appVersion || null,
+      }).returning();
+
+      res.json(newFeedback);
+    } catch (error: any) {
+      console.error("Submit feedback error:", error);
+      res.status(500).json({ error: error.message || "Failed to submit feedback" });
+    }
+  });
+
+  app.get("/api/feedback/:coupleId", async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+
+      const submissions = await db
+        .select()
+        .from(feedback)
+        .where(eq(feedback.coupleId, coupleId))
+        .orderBy(desc(feedback.createdAt));
+
+      res.json(submissions);
+    } catch (error: any) {
+      console.error("Get feedback error:", error);
+      res.status(500).json({ error: error.message || "Failed to get feedback" });
     }
   });
 

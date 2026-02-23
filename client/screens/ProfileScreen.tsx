@@ -494,6 +494,23 @@ export default function ProfileScreen() {
           </View>
           <Feather name="chevron-right" size={20} color={theme.textSecondary} />
         </Pressable>
+
+        <Pressable
+          style={styles.settingRow}
+          onPress={() => navigation.navigate("Feedback")}
+          testID="button-send-feedback"
+        >
+          <View style={[styles.settingIcon, { backgroundColor: "#10B981" + "20" }]}>
+            <Feather name="message-circle" size={18} color="#10B981" />
+          </View>
+          <View style={styles.settingContent}>
+            <ThemedText type="body">Send Feedback</ThemedText>
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              Report issues, share ideas, or give feedback
+            </ThemedText>
+          </View>
+          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
+        </Pressable>
       </Card>
 
       <ThemedText

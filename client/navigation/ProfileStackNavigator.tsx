@@ -8,6 +8,7 @@ import NotificationSettingsScreen from "@/screens/NotificationSettingsScreen";
 import AddCategoryScreen from "@/screens/AddCategoryScreen";
 import FamilyProfileScreen from "@/screens/FamilyProfileScreen";
 import GuardianMemoryScreen from "@/screens/GuardianMemoryScreen";
+import FeedbackScreen from "@/screens/FeedbackScreen";
 import { useScreenOptions } from "@/hooks/useScreenOptions";
 
 export type ProfileStackParamList = {
@@ -18,6 +19,7 @@ export type ProfileStackParamList = {
   AddCategory: undefined;
   FamilyProfile: undefined;
   GuardianMemory: undefined;
+  Feedback: undefined;
 };
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
@@ -74,6 +76,13 @@ export default function ProfileStackNavigator() {
         component={GuardianMemoryScreen}
         options={{
           title: "AI Memory",
+        }}
+      />
+      <Stack.Screen
+        name="Feedback"
+        component={FeedbackScreen}
+        options={{
+          title: "Send Feedback",
         }}
       />
     </Stack.Navigator>
