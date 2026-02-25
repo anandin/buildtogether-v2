@@ -8,6 +8,9 @@ export function getApiUrl(): string {
   let host = process.env.EXPO_PUBLIC_DOMAIN;
 
   if (!host) {
+    if (typeof window !== "undefined" && window.location?.origin) {
+      return window.location.origin + "/";
+    }
     throw new Error("EXPO_PUBLIC_DOMAIN is not set");
   }
 

@@ -204,6 +204,22 @@ function configureExpoAndLanding(app: express.Application) {
   app.use("/assets", express.static(path.resolve(process.cwd(), "server", "templates", "assets")));
   app.use(express.static(path.resolve(process.cwd(), "static-build")));
 
+  const webDistPath = path.resolve(process.cwd(), "dist");
+  if (fs.existsSync(webDistPath)) {
+    app.use("/_expo", express.static(path.join(webDistPath, "_expo")));
+    const favicoPath = path.join(webDistPath, "favicon.ico");
+    if (fs.existsSync(favicoPath)) {
+      app.get("/favicon.ico", (_req: Request, res: Response) => {
+        res.sendFile(favicoPath);
+      });
+    }
+    app.use("/app", express.static(webDistPath));
+    app.use("/app", (_req: Request, res: Response) => {
+      res.sendFile(path.join(webDistPath, "index.html"));
+    });
+    log("Serving Expo web app at /app");
+  }
+
   log("Expo routing: Checking expo-platform header on / and /manifest");
 }
 

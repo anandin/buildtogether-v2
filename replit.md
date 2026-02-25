@@ -148,3 +148,9 @@ The admin dashboard allows remote management of AI features without requiring Ap
 - **N+1 query fix**: Goal contributions are fetched in a single query using `inArray` subquery instead of one query per goal.
 - **Greeting endpoint**: All 4 DB queries (expenses, deposits, goals, streak) run in parallel.
 - **Non-blocking cache write**: AsyncStorage cache updates are fire-and-forget (not awaited) during sync.
+
+### Web App
+- The full Expo web app is exported as static files (`dist/`) and served at `/app` on the production server.
+- The `getApiUrl()` function falls back to `window.location.origin` when `EXPO_PUBLIC_DOMAIN` is not set, so the web bundle works on any domain.
+- Build command includes `npx expo export --platform web` before the server build.
+- Landing page at `/` links to the web app via "Try on Web" buttons.
