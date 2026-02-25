@@ -139,3 +139,12 @@ The admin dashboard allows remote management of AI features without requiring Ap
 - JWT-based authentication with 7-day expiration
 - Tokens stored in sessionStorage (client-side)
 - First login with default credentials creates the admin account
+
+## Performance Optimizations
+
+### Startup Speed
+- **Cache-first loading**: AppContext loads cached data from AsyncStorage immediately, then refreshes from server in background. Users see their data instantly on repeat launches.
+- **Parallel DB queries**: The `/api/sync` endpoint runs all 6 DB queries (expenses, goals, contributions, budgets, categories, settlements) in parallel via `Promise.all` instead of sequentially.
+- **N+1 query fix**: Goal contributions are fetched in a single query using `inArray` subquery instead of one query per goal.
+- **Greeting endpoint**: All 4 DB queries (expenses, deposits, goals, streak) run in parallel.
+- **Non-blocking cache write**: AsyncStorage cache updates are fire-and-forget (not awaited) during sync.

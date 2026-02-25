@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import type { AppData, Expense, Goal, Budget, CategoryBudget, CustomCategory, AIInsight, BudgetType } from "@/types";
 import * as storage from "@/lib/cloudStorage";
 import type { GuardianNudge } from "@/lib/cloudStorage";
@@ -32,6 +32,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<AppData | null>(null);
   const [loading, setLoading] = useState(true);
+  const initialLoadDone = useRef(false);
 
   const refreshData = useCallback(async () => {
     const loadedData = await storage.loadAppData();
@@ -40,8 +41,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refreshData();
-  }, [refreshData]);
+    const init = async () => {
+      const cached = await storage.loadCachedAppData();
+      if (cached) {
+        setData(cached);
+        setLoading(false);
+        initialLoadDone.current = true;
+      }
+      const fresh = await storage.loadAppData();
+      setData(fresh);
+      setLoading(false);
+      initialLoadDone.current = true;
+    };
+    init();
+  }, []);
 
   const addExpense = useCallback(async (expense: Omit<Expense, "id" | "createdAt">) => {
     const newExpense = await storage.addExpense(expense);

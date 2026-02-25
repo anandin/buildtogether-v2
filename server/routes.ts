@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import OpenAI from "openai";
 import bcrypt from "bcryptjs";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { db } from "./db";
 import {
   couples,
@@ -1597,24 +1597,37 @@ Respond ONLY with valid JSON in this exact format:
         isNewCouple = true;
       }
       
-      const expensesData = await db.select().from(expenses)
-        .where(eq(expenses.coupleId, coupleId))
-        .orderBy(desc(expenses.createdAt));
+      const [expensesData, goalsData, allContributions, budgetsData, categoriesData, settlementsData] = await Promise.all([
+        db.select().from(expenses)
+          .where(eq(expenses.coupleId, coupleId))
+          .orderBy(desc(expenses.createdAt)),
+        db.select().from(goals)
+          .where(eq(goals.coupleId, coupleId)),
+        db.select().from(goalContributions)
+          .where(inArray(
+            goalContributions.goalId,
+            db.select({ id: goals.id }).from(goals).where(eq(goals.coupleId, coupleId))
+          )),
+        db.select().from(categoryBudgets)
+          .where(eq(categoryBudgets.coupleId, coupleId)),
+        db.select().from(customCategories)
+          .where(eq(customCategories.coupleId, coupleId)),
+        db.select().from(settlements)
+          .where(eq(settlements.coupleId, coupleId)),
+      ]);
       
-      const goalsData = await db.select().from(goals)
-        .where(eq(goals.coupleId, coupleId));
+      const contributionsByGoal = new Map<string, typeof allContributions>();
+      for (const c of allContributions) {
+        const list = contributionsByGoal.get(c.goalId) || [];
+        list.push(c);
+        contributionsByGoal.set(c.goalId, list);
+      }
+      const goalsWithContributions = goalsData.map(goal => ({
+        ...goal,
+        contributions: contributionsByGoal.get(goal.id) || [],
+      }));
       
-      const goalsWithContributions = await Promise.all(
-        goalsData.map(async (goal) => {
-          const contributions = await db.select().from(goalContributions)
-            .where(eq(goalContributions.goalId, goal.id));
-          return { ...goal, contributions };
-        })
-      );
-      
-      let budgetsData = await db.select().from(categoryBudgets)
-        .where(eq(categoryBudgets.coupleId, coupleId));
-      
+      let finalBudgets = budgetsData;
       if (budgetsData.length === 0) {
         const defaultBudgetsToInsert = DEFAULT_CATEGORY_BUDGETS.map((b) => ({
           coupleId,
@@ -1624,20 +1637,14 @@ Respond ONLY with valid JSON in this exact format:
           alertThreshold: 80,
           rolloverBalance: 0,
         }));
-        budgetsData = await db.insert(categoryBudgets).values(defaultBudgetsToInsert).returning();
+        finalBudgets = await db.insert(categoryBudgets).values(defaultBudgetsToInsert).returning();
       }
-      
-      const categoriesData = await db.select().from(customCategories)
-        .where(eq(customCategories.coupleId, coupleId));
-      
-      const settlementsData = await db.select().from(settlements)
-        .where(eq(settlements.coupleId, coupleId));
       
       res.json({
         couple,
         expenses: expensesData,
         goals: goalsWithContributions,
-        categoryBudgets: budgetsData,
+        categoryBudgets: finalBudgets,
         customCategories: categoriesData,
         settlements: settlementsData,
       });
@@ -3166,7 +3173,6 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
       
       const partnerName = couple.partner1Name || "friend";
       
-      // Get current time context
       const hour = new Date().getHours();
       let timeGreeting = "Hey";
       if (hour >= 5 && hour < 12) {
@@ -3179,27 +3185,24 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
         timeGreeting = "Late night dreams";
       }
       
-      // Get recent activity context
-      const recentExpenses = await db.query.expenses.findMany({
-        where: eq(expenses.coupleId, coupleId),
-        orderBy: desc(expenses.date),
-        limit: 5,
-      });
-      
-      const recentDeposits = await db.query.savingsConfirmations.findMany({
-        where: eq(savingsConfirmations.coupleId, coupleId),
-        orderBy: desc(savingsConfirmations.confirmationDate),
-        limit: 3,
-      });
-      
-      const userGoals = await db.query.goals.findMany({
-        where: eq(goals.coupleId, coupleId),
-      });
-      
-      // Get streak data
-      const streak = await db.query.savingsStreaks.findFirst({
-        where: eq(savingsStreaks.coupleId, coupleId),
-      });
+      const [recentExpenses, recentDeposits, userGoals, streak] = await Promise.all([
+        db.query.expenses.findMany({
+          where: eq(expenses.coupleId, coupleId),
+          orderBy: desc(expenses.date),
+          limit: 5,
+        }),
+        db.query.savingsConfirmations.findMany({
+          where: eq(savingsConfirmations.coupleId, coupleId),
+          orderBy: desc(savingsConfirmations.confirmationDate),
+          limit: 3,
+        }),
+        db.query.goals.findMany({
+          where: eq(goals.coupleId, coupleId),
+        }),
+        db.query.savingsStreaks.findFirst({
+          where: eq(savingsStreaks.coupleId, coupleId),
+        }),
+      ]);
       
       // Calculate context metrics
       const hasRecentExpenses = recentExpenses.length > 0;

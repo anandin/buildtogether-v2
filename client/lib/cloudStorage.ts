@@ -33,66 +33,107 @@ async function getCoupleId(): Promise<string> {
   return coupleId;
 }
 
+function buildAppData(syncData: any): AppData {
+  return {
+    expenses: syncData.expenses.map((e: any) => ({
+      ...e,
+      createdAt: e.createdAt || new Date().toISOString(),
+    })),
+    goals: syncData.goals.map((g: any) => ({
+      ...g,
+      createdAt: g.createdAt || new Date().toISOString(),
+      contributions: g.contributions || [],
+    })),
+    budget: null,
+    categoryBudgets: syncData.categoryBudgets.length > 0 
+      ? syncData.categoryBudgets.map((b: any) => ({
+          id: b.id,
+          category: b.category,
+          monthlyLimit: b.monthlyLimit,
+          budgetType: b.budgetType || "recurring",
+          alertThreshold: b.alertThreshold || 80,
+          rolloverBalance: b.rolloverBalance || 0,
+          endDate: b.endDate,
+          lastResetDate: b.lastResetDate,
+        }))
+      : DEFAULT_CATEGORY_BUDGETS.map((b) => ({
+          id: uuidv4(),
+          category: b.category,
+          monthlyLimit: b.limit,
+          budgetType: b.budgetType,
+          alertThreshold: 80,
+          rolloverBalance: 0,
+          lastResetDate: new Date().toISOString(),
+        })),
+    customCategories: syncData.customCategories || [],
+    aiInsights: [],
+    partners: {
+      partner1: {
+        id: "partner1",
+        name: syncData.couple?.partner1Name || "You",
+        avatar: "avatar-preset-1",
+        color: syncData.couple?.partner1Color || "#7C3AED",
+      },
+      partner2: {
+        id: "partner2",
+        name: syncData.couple?.partner2Name || "Partner",
+        avatar: "avatar-preset-2",
+        color: syncData.couple?.partner2Color || "#F97316",
+      },
+    },
+    settlements: syncData.settlements || [],
+    connectedSince: syncData.couple?.connectedSince || null,
+    lastInsightCheck: undefined,
+    hasCompletedOnboarding: syncData.couple?.hasCompletedOnboarding || false,
+  };
+}
+
+const emptyAppData: AppData = {
+  expenses: [],
+  goals: [],
+  budget: null,
+  categoryBudgets: DEFAULT_CATEGORY_BUDGETS.map((b) => ({
+    id: uuidv4(),
+    category: b.category,
+    monthlyLimit: b.limit,
+    budgetType: b.budgetType,
+    alertThreshold: 80,
+    rolloverBalance: 0,
+    lastResetDate: new Date().toISOString(),
+  })),
+  customCategories: [],
+  aiInsights: [],
+  partners: {
+    partner1: { id: "partner1", name: "You", avatar: "avatar-preset-1", color: "#7C3AED" },
+    partner2: { id: "partner2", name: "Partner", avatar: "avatar-preset-2", color: "#F97316" },
+  },
+  settlements: [],
+  connectedSince: null,
+  lastInsightCheck: undefined,
+  hasCompletedOnboarding: false,
+};
+
+export async function loadCachedAppData(): Promise<AppData | null> {
+  try {
+    const cached = await AsyncStorage.getItem(LOCAL_CACHE_KEY);
+    if (cached) {
+      return JSON.parse(cached);
+    }
+  } catch (error) {
+    console.error("Error loading cache:", error);
+  }
+  return null;
+}
+
 export async function loadAppData(): Promise<AppData> {
   try {
     const coupleId = await getCoupleId();
     const response = await apiRequest("GET", `/api/sync/${coupleId}`);
     const syncData = await response.json();
     
-    const appData: AppData = {
-      expenses: syncData.expenses.map((e: any) => ({
-        ...e,
-        createdAt: e.createdAt || new Date().toISOString(),
-      })),
-      goals: syncData.goals.map((g: any) => ({
-        ...g,
-        createdAt: g.createdAt || new Date().toISOString(),
-        contributions: g.contributions || [],
-      })),
-      budget: null,
-      categoryBudgets: syncData.categoryBudgets.length > 0 
-        ? syncData.categoryBudgets.map((b: any) => ({
-            id: b.id,
-            category: b.category,
-            monthlyLimit: b.monthlyLimit,
-            budgetType: b.budgetType || "recurring",
-            alertThreshold: b.alertThreshold || 80,
-            rolloverBalance: b.rolloverBalance || 0,
-            endDate: b.endDate,
-            lastResetDate: b.lastResetDate,
-          }))
-        : DEFAULT_CATEGORY_BUDGETS.map((b) => ({
-            id: uuidv4(),
-            category: b.category,
-            monthlyLimit: b.limit,
-            budgetType: b.budgetType,
-            alertThreshold: 80,
-            rolloverBalance: 0,
-            lastResetDate: new Date().toISOString(),
-          })),
-      customCategories: syncData.customCategories || [],
-      aiInsights: [],
-      partners: {
-        partner1: {
-          id: "partner1",
-          name: syncData.couple?.partner1Name || "You",
-          avatar: "avatar-preset-1",
-          color: syncData.couple?.partner1Color || "#7C3AED",
-        },
-        partner2: {
-          id: "partner2",
-          name: syncData.couple?.partner2Name || "Partner",
-          avatar: "avatar-preset-2",
-          color: syncData.couple?.partner2Color || "#F97316",
-        },
-      },
-      settlements: syncData.settlements || [],
-      connectedSince: syncData.couple?.connectedSince || null,
-      lastInsightCheck: undefined,
-      hasCompletedOnboarding: syncData.couple?.hasCompletedOnboarding || false,
-    };
+    const appData = buildAppData(syncData);
     
-    await AsyncStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(appData));
+    AsyncStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(appData));
     return appData;
   } catch (error) {
     console.error("Error loading from cloud, falling back to cache:", error);
@@ -102,27 +143,7 @@ export async function loadAppData(): Promise<AppData> {
     }
     
     return {
-      expenses: [],
-      goals: [],
-      budget: null,
-      categoryBudgets: DEFAULT_CATEGORY_BUDGETS.map((b) => ({
-        id: uuidv4(),
-        category: b.category,
-        monthlyLimit: b.limit,
-        budgetType: b.budgetType,
-        alertThreshold: 80,
-        rolloverBalance: 0,
-        lastResetDate: new Date().toISOString(),
-      })),
-      customCategories: [],
-      aiInsights: [],
-      partners: {
-        partner1: { id: "partner1", name: "You", avatar: "avatar-preset-1", color: "#7C3AED" },
-        partner2: { id: "partner2", name: "Partner", avatar: "avatar-preset-2", color: "#F97316" },
-      },
-      settlements: [],
-      connectedSince: null,
-      lastInsightCheck: undefined,
+      ...emptyAppData,
       hasCompletedOnboarding: false,
     };
   }
