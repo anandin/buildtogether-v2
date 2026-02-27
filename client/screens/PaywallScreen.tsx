@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, StyleSheet, Pressable, ActivityIndicator, ScrollView } from "react-native";
+import { View, StyleSheet, Pressable, ActivityIndicator, ScrollView, Platform, Linking } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { Feather } from "@expo/vector-icons";
@@ -11,6 +11,9 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { useSubscription } from "@/context/SubscriptionContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
+
+const IS_WEB = Platform.OS === "web";
+const APP_STORE_URL = "https://apps.apple.com/app/build-together/id6742961498";
 
 type PlanType = "monthly" | "annual";
 
@@ -78,6 +81,11 @@ export default function PaywallScreen() {
   const handlePurchase = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     
+    if (IS_WEB) {
+      Linking.openURL(APP_STORE_URL);
+      return;
+    }
+
     if (isPreviewMode) {
       await activatePreviewTrial();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -107,6 +115,11 @@ export default function PaywallScreen() {
   const handleRestore = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     
+    if (IS_WEB) {
+      Linking.openURL(APP_STORE_URL);
+      return;
+    }
+
     if (isPreviewMode) {
       await activatePreviewTrial();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -283,7 +296,7 @@ export default function PaywallScreen() {
               <ActivityIndicator color="#FFFFFF" />
             ) : (
               <ThemedText type="body" style={styles.primaryButtonText}>
-                Start Free Trial
+                {IS_WEB ? "Get it on the App Store" : "Start Free Trial"}
               </ThemedText>
             )}
           </Pressable>

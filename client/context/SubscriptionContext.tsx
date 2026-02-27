@@ -9,6 +9,7 @@ const REVENUECAT_API_KEY_ANDROID = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KE
 const ENTITLEMENT_ID = "Build Together Pro";
 const PREVIEW_TRIAL_KEY = "@preview_trial_active";
 const PREVIEW_TRIAL_START_KEY = "@preview_trial_start";
+const IS_WEB = Platform.OS === "web";
 
 interface SubscriptionContextType {
   isPremium: boolean;
@@ -50,6 +51,7 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
   }, []);
 
   const checkPreviewTrial = async () => {
+    if (IS_WEB) return false;
     try {
       const trialActive = await AsyncStorage.getItem(PREVIEW_TRIAL_KEY);
       const trialStart = await AsyncStorage.getItem(PREVIEW_TRIAL_START_KEY);
@@ -107,6 +109,9 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
   };
 
   const activatePreviewTrial = async () => {
+    if (IS_WEB) {
+      return;
+    }
     setIsPremium(true);
     try {
       await AsyncStorage.setItem(PREVIEW_TRIAL_KEY, "true");
