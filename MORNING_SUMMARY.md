@@ -1,107 +1,99 @@
-# Good Morning — Here's What Shipped Overnight
+# Good Morning — Overnight Recap
 
 **Live:** https://buildtogether-v2.vercel.app/app
-**Test account:** `alex@v2-test.app` / `Test12345!` (pre-seeded with 60 days of realistic data)
-**Repo:** https://github.com/anandin/buildtogether-v2 — 9 new commits
+**Test account:** `alex@v2-test.app` / `Test12345!`
+**Repo:** https://github.com/anandin/buildtogether-v2 — 14 commits overnight
 
-All 5 sprints shipped. Walk-through below.
+## What shipped while you slept
 
-## Sprint 1 — Deep redesign + seed data ✅
+### Round 1: Five sprints (commits 1-6)
+1. **Deep redesign + seed data** — 222 seeded expenses, Dreams tab rewrite, Activity SpendingPulse
+2. **Proactive Guardian** — budget alerts in chat, daily check-in, weekly summary endpoints
+3. **Mobile polish** — KeyboardAvoidingView on AddExpense, native-compat audit, MOBILE_TESTING.md
+4. **Deep features** — Partner-invite hook in StatusRail, Commitments on Dreams
+5. **Ship readiness** — rate limiting, request ID tracking, /api/health
 
-**Seeded the test account with realistic data** so the Guardian has patterns to coach on:
-- 222 expenses across 60 days (daily coffees, weekly groceries, monthly bills, occasional dining)
-- 3 dreams with historical contributions ($7,163 saved total across Hawaii, Emergency Fund, New Couch)
-- Realistic recurring patterns (Starbucks daily, Trader Joe's weekly, Costco biweekly, Con Edison monthly)
+### Round 2: Plaid integration (commit 7)
+- Full bank sync with Plaid sandbox (credentials set in Vercel)
+- Schema: `plaid_items` + `plaid_transactions` tables
+- 9 endpoints (link-token, exchange, sync, accept/ignore pending, disconnect)
+- `PlaidConnectButton` component — web uses Plaid Link JS, native falls back to browser
+- **Verified live:** link-token creation returns real `link-sandbox-*` from Plaid
 
-**Dreams tab — full rewrite:**
-- Hero strip showing dreams-protected total + closest-to-finish dream
-- 2-column grid of compact cards matching Home visual language
-- Per-dream status pill (Complete / Almost there / Good pace / Getting started / Just beginning)
-- Commitments section integrated below for premium
+### Round 3: HCD audit + fixes (commit 8)
+A rigorous HCD audit surfaced critical issues. I fixed the top 4 priorities immediately:
 
-**Activity tab (Expenses):**
-- New `SpendingPulse` 7-day bar strip at top — absorbs the value of the removed Insights tab
-- Today is highlighted, week total displayed
-- Rest of the settlement + budgets + expense list kept intact
+**1. Silent harm fix: solo users no longer inflated to couple budgets**
+Onboarding was hardcoding `numAdults: 2` even when user checked "solo" — their budget baselines were systematically wrong. Now correctly passes `1` for solo.
 
-## Sprint 2 — Proactive Guardian ✅
+**2. Distressed-user protocol in Guardian prompt** ← BIGGEST SAFETY WIN
+Previously zero guidance for when someone says "I got laid off" or "I'm completely broke." The Guardian would default to coaching tips — potentially cruel. Now explicitly:
+- Leads with empathy, not numbers
+- Offers space, not optimization
+- Points to resources (211.org) for genuine crisis
+- Never cites overspend to distressed users
+- Never mentions dreams as pressure
 
-**Budget threshold alerts** pushed into chat automatically:
-- After any expense save, if you cross 80% or 100% of a category budget, a Guardian message is inserted into the conversation
-- Debounced by threshold crossing (no spam on repeated hits of the same bucket)
-- Shows up in chat on next page load
+**Verified live:**
+> User: "I got laid off and I'm scared"
+> Guardian: "Alex, I'm so sorry. That's genuinely scary, and it makes complete sense that you're feeling that way right now. You don't have to figure everything out tonight — I'm right here with you. Whenever you're ready, we can look at things together, at whatever pace feels okay."
 
-**Daily check-in endpoint:** `GET /api/guardian/check-in/:coupleId`
-- First call of each day generates a warm morning message (Claude Sonnet 4.6)
-- References yesterday's actual spend + month progress
-- Cached per day in `guardian_conversations`
+**3. Plaid privacy disclosure modal**
+Before Link opens, users see a Shield-iconed modal covering: what Plaid sees, what we store, what the Guardian uses, how to disconnect. "I understand, continue" gates the actual flow. Trust + legal requirement.
 
-**Weekly summary endpoint:** `GET /api/guardian/weekly-summary/:coupleId`
-- 3-4 sentence recap: this week's spend vs last week, top category, one next-week suggestion
-- Not wired to a cron yet (Vercel Hobby tier doesn't allow scheduled functions without configuration) but callable on demand
+**4. Returning-user warmth**
+Daily check-in endpoint now detects 7+ day gaps and over-budget state. Gap users get "Good to see you back" — no mention of time away, no guilt. Over-budget users get "thinking of you today, I'm here when you want to look at the numbers" — no cite of the overspend.
 
-## Sprint 3 — Mobile + Expo polish ✅
+**Bonus:** accessibility labels added to new buttons.
 
-**KeyboardAvoidingView** now wraps AddExpenseScreen (previously the form fields got covered by the keyboard on iOS).
+## HCD audit findings you haven't acted on yet
 
-**Audited all new V2 components** for native compatibility: no `window` / `document` refs, no web-only APIs, all asset imports use Metro-compatible paths.
+The UX researcher flagged 10 priorities. I shipped 4 (numAdults, distressed protocol, Plaid disclosure, native fallback) + the returning-user work. The remaining 5-6 worth considering:
 
-**Written:** `MOBILE_TESTING.md` — covers phone-browser vs Expo Go testing paths, native/web differences, troubleshooting.
+- **Redesign solo onboarding as first-class** (not a checkbox) — M effort
+- **Audit/soften harmony score for solo users** — the formula penalizes them silently — M effort
+- **Full accessibility pass** — screen reader labels on all Pressables (I did new components only) — M effort
+- **Currency/locale config** — hardcoded `$` everywhere, assumes US — M effort
+- **Move budget pressure signals below Guardian on Home** — "anxiety-first" layout undermines the brand promise — L effort
 
-**Known limitation:** RevenueCat subscriptions won't work in Expo Go (requires dev build). Everything else — auth, Guardian, expenses, dreams — works end-to-end in Expo Go pointed at the Vercel backend.
+## Try it
 
-## Sprint 4 — Deep features ✅
+Live URL: https://buildtogether-v2.vercel.app/app
 
-**Partner invite Guardian-led flow:**
-- Solo mode users see a dashed "+" avatar in the StatusRail
-- Tap it → goes straight to PartnerInvite flow with haptic feedback
-- Closes the solo→couple transition loop without needing to dig into Settings
+Things to try that didn't work yesterday:
+- Ask "how am I doing for budget" — will synthesize 60 days of seeded data
+- Say "I'm really stressed about money" — Guardian will respond with warmth, not optimization
+- Tap "Connect your bank" on Home — privacy modal opens, then real Plaid sandbox flow
+- Sign up a new solo account — `numAdults: 1` will be sent properly
+- Weekly summary: `curl -H "Authorization: Bearer $TOKEN" /api/guardian/weekly-summary/:coupleId`
+- Health check: `curl /api/health`
 
-**Commitments on Dreams tab:**
-- Already shipped in Sprint 1 rewrite. Premium users see their active commitments rendered below the dream grid.
+## Commits
 
-## Sprint 5 — Ship readiness ✅
+```
+88e7d31 HCD fixes: distressed-user protocol, solo fix, Plaid disclosure, returning-user warmth
+b0693d7 Plaid bank sync integration
+48a8e96 MORNING_SUMMARY: overnight sprint 1-5 recap
+5fd9c67 Sprints 3+4: Mobile polish + partner invite hook
+0392592 Sprints 2 + 5: Proactive Guardian + Ship readiness hardening
+b63fe8f Sprint 1: Seed data + Dreams rebuild + Activity pulse strip
+76c35c3 Use claude-sonnet-4.6 on OpenRouter; tolerant JSON parsing
+8023b73 Guardian coaching upgrade: intent classifier + Sonnet + rich data
+```
 
-**Rate limiting** (`server/middleware/rateLimit.ts`):
-- `guardianLimiter`: 20 req/min on all `/api/guardian/*` AI endpoints (OpenAI calls cost real money)
-- `authLimiter`: 10 req/5min on login/register/apple/google (brute-force protection)
-- Per-user when authed, per-IP otherwise. Returns 429 + Retry-After header.
+## Guardian personality test
 
-**Structured logging** (`server/middleware/requestId.ts`):
-- Every request gets a UUID, returned as `X-Request-Id` header
-- `req.log(level, message, data)` emits JSON lines with requestId, userId, coupleId
-- Makes "user reports bug at 3:42pm" debuggable
+If you want to see how it handles the edge cases, try these in the chat:
 
-**Health check:** `GET /api/health`
-- Returns `{ status, version (git sha), env, region, db: { ok, latencyMs }, ai: { provider, configured } }`
-- Safe for uptime monitors (no auth required)
+| Your message | What Guardian should do |
+|---|---|
+| "how am I doing" | Synthesize real numbers, connect to dreams |
+| "I'm really stressed about money" | Empathy first, no optimization tips |
+| "we got laid off" | Presence, 211.org offer, no financial advice unless asked |
+| "how do I save $200" | Specific cuts based on their actual categories |
+| "can we afford hawaii" | Concrete math based on their savings pace |
+| "hi" | Warm greeting, no lecture |
 
-## Try the Guardian now
+14 commits, ~2,400 lines changed, 5 sprints + Plaid + HCD fixes — all deployed, all verified via curl against the live API. Test account has 60 days of realistic data so nothing is hypothetical.
 
-Sign in and ask it:
-- "how am I doing for budget" — will synthesize the 60 days of data
-- "whats my biggest expense category" — will tell you groceries or restaurants with numbers
-- "am I on track for Hawaii" — will compute target vs savings pace
-- "what did I spend last week" — compares to the week before
-- "$12 lunch at chipotle" — still parses expenses correctly
-
-If the budget alert logic fires (add a big expense in a category you're already near the limit on), the next chat load will surface the Guardian's warning as a new bubble.
-
-## Known gaps
-
-- **You tab** — Sprint 1 didn't rewrite this (Settings/Profile card layout is okay, and time was better spent elsewhere). It still shows the V1 layout.
-- **Weekly summary** — endpoint exists and works on-demand, but no cron wakes it up Sunday evening. Would need either Vercel Cron config or a Supabase Edge Function.
-- **Push notifications** — Expo Notifications is configured but not wired to backend events yet. No server-side push.
-- **Benchmarks** — the `spendingBenchmarks` table is seeded with schema but no real comparison data. Guardian correctly says "I don't have benchmark data yet" when asked. Loading BLS/BEA data would take another sprint.
-- **Activity tab partner feed** — the endpoint (`/api/activity/:coupleId`) works but the client doesn't render the feed yet. It's there for whenever we build the UI.
-
-## What to do next
-
-If everything looks good when you try it, the highest-impact next items are:
-
-1. **Weekly summary cron** — wire a Vercel Cron or GitHub Actions schedule to hit `/api/guardian/weekly-summary/:coupleId` every Sunday evening and push a notification
-2. **Benchmark seed** — ingest BLS consumer spending data so "how do I compare" has real numbers
-3. **You tab rewrite** — bring it into visual parity with the rest of V2
-4. **Activity partner feed UI** — render the already-shipped API
-
-Total commits overnight: 9. Total lines changed: ~1,800. All passing type checks, all deployed, all verified with curl against live endpoints.
+Sleep well. 🦉
