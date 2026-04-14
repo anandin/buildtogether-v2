@@ -2,6 +2,8 @@ import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { registerAdminRoutes } from "./admin-routes";
+import { requestId } from "./middleware/requestId";
+import { pool } from "./db";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -96,6 +98,37 @@ function setupRequestLogging(app: express.Application) {
     });
 
     next();
+  });
+}
+
+function setupHealthCheck(app: express.Application) {
+  app.get("/api/health", async (_req, res) => {
+    const started = Date.now();
+    let dbOk = false;
+    let dbLatency = -1;
+    try {
+      const t0 = Date.now();
+      if (pool) {
+        await pool.query("SELECT 1");
+      }
+      dbLatency = Date.now() - t0;
+      dbOk = true;
+    } catch (err: any) {
+      // DB check failed; still return 200 so the function itself looks alive
+    }
+    res.json({
+      status: dbOk ? "ok" : "degraded",
+      version: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || "dev",
+      env: process.env.VERCEL_ENV || "local",
+      region: process.env.VERCEL_REGION || "local",
+      db: { ok: dbOk, latencyMs: dbLatency },
+      ai: {
+        provider: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL?.includes("openrouter") ? "openrouter" : "openai",
+        configured: !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+      },
+      uptimeMs: Math.round((Date.now() - (process as any)._startTime || 0)),
+      durationMs: Date.now() - started,
+    });
   });
 }
 
@@ -256,7 +289,9 @@ export async function getApp(): Promise<express.Application> {
   appReady = (async () => {
     setupCors(app);
     setupBodyParsing(app);
+    app.use(requestId); // attach request id + structured logger early
     setupRequestLogging(app);
+    setupHealthCheck(app);
     configureExpoAndLanding(app);
     registerAdminRoutes(app);
     await registerRoutes(app);

@@ -4,6 +4,7 @@ import OpenAI from "openai";
 import bcrypt from "bcryptjs";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { requireAuth, requireCoupleAccess } from "./middleware/auth";
+import { guardianLimiter, authLimiter } from "./middleware/rateLimit";
 import { db } from "./db";
 import {
   couples,
@@ -153,7 +154,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==================== AUTHENTICATION ENDPOINTS ====================
 
   // Apple Sign-In - verify identity token and create/update user
-  app.post("/api/auth/apple", async (req, res) => {
+  app.post("/api/auth/apple", authLimiter, async (req, res) => {
     try {
       const { appleId, email, fullName, identityToken } = req.body;
 
@@ -218,7 +219,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Email/Password Registration
-  app.post("/api/auth/register", async (req, res) => {
+  app.post("/api/auth/register", authLimiter, async (req, res) => {
     try {
       const { email, password, name } = req.body;
 
@@ -285,7 +286,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Email/Password Login
-  app.post("/api/auth/login", async (req, res) => {
+  app.post("/api/auth/login", authLimiter, async (req, res) => {
     try {
       const { email, password } = req.body;
 
@@ -339,7 +340,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Google Sign-In
-  app.post("/api/auth/google", async (req, res) => {
+  app.post("/api/auth/google", authLimiter, async (req, res) => {
     try {
       const { googleId, email, name, idToken } = req.body;
 
@@ -939,7 +940,7 @@ Please analyze our budgets and spending to provide personalized insights. Focus 
   });
 
   // ==================== GUARDIAN QUICK-ADD (Agent-First Expense Entry) ====================
-  app.post("/api/guardian/quick-add", requireAuth, async (req, res) => {
+  app.post("/api/guardian/quick-add", requireAuth, guardianLimiter, async (req, res) => {
     try {
       const { text, coupleId } = req.body;
 
@@ -1550,12 +1551,73 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
         metadata: { amount: expense.amount, category: expense.category, merchant: expense.merchant },
       }).catch((err: any) => console.error("Activity feed insert failed:", err));
 
+      // Proactive Guardian: surface a chat message when a budget threshold crosses
+      // 75% or 100%. Non-blocking — attach as a guardianConversations entry so
+      // the next chat fetch picks it up.
+      (async () => {
+        try {
+          const now = new Date();
+          const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+          const [budget] = await db.select().from(categoryBudgets)
+            .where(and(
+              eq(categoryBudgets.coupleId, coupleId),
+              eq(categoryBudgets.category, expense.category),
+            ))
+            .limit(1);
+          if (!budget) return;
+          const monthExpenses = await db.select().from(expenses)
+            .where(and(
+              eq(expenses.coupleId, coupleId),
+              eq(expenses.category, expense.category),
+            ));
+          const spent = monthExpenses
+            .filter((e: any) => new Date(e.date) >= monthStart)
+            .reduce((s: number, e: any) => s + e.amount, 0);
+          const pct = (spent / budget.monthlyLimit) * 100;
+          // Only alert on threshold crossings — avoid spamming
+          const prevSpent = spent - expense.amount;
+          const prevPct = (prevSpent / budget.monthlyLimit) * 100;
+          let alertMsg: string | null = null;
+          if (pct >= 100 && prevPct < 100) {
+            alertMsg = `Heads up — you just crossed your ${expense.category} budget. $${spent.toFixed(0)} of $${budget.monthlyLimit.toFixed(0)} used (${Math.round(pct)}%). Want me to help re-plan, or is this a known one-off?`;
+          } else if (pct >= 80 && prevPct < 80) {
+            alertMsg = `Quick check-in: you're at ${Math.round(pct)}% of your ${expense.category} budget for the month with ${daysLeftInMonth()} days to go. Pace-wise, ${pct > (daysOfMonthElapsed() / daysInThisMonth()) * 100 + 10 ? "you're running a bit hot" : "you're still on track"} — no action needed unless you want to adjust.`;
+          }
+          if (alertMsg) {
+            await db.insert(guardianConversations).values({
+              coupleId,
+              userId: null, // Guardian-initiated, not a user turn
+              role: "guardian",
+              content: alertMsg,
+              intent: "proactive-alert",
+              metadata: { trigger: "budget_threshold", category: expense.category, pct, expenseId: expense.id },
+            });
+          }
+        } catch (err) {
+          console.error("Proactive budget alert failed:", err);
+        }
+      })();
+
       res.json(expense);
     } catch (error: any) {
       console.error("Add expense error:", error);
       res.status(500).json({ error: error.message });
     }
   });
+
+  // Helpers for proactive alerts
+  function daysLeftInMonth(): number {
+    const now = new Date();
+    const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return Math.max(last.getDate() - now.getDate(), 0);
+  }
+  function daysInThisMonth(): number {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  }
+  function daysOfMonthElapsed(): number {
+    return new Date().getDate();
+  }
 
   // Update expense
   app.put("/api/expenses/:coupleId/:expenseId", requireAuth, requireCoupleAccess, async (req, res) => {
@@ -4146,6 +4208,166 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
       res.json(messages.reverse());
     } catch (error: any) {
       console.error("Get conversation history error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== PROACTIVE GUARDIAN: daily check-in ====================
+  // Generates a morning greeting on first call of the day (cached per day)
+  app.get("/api/guardian/check-in/:coupleId", requireAuth, requireCoupleAccess, guardianLimiter, async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const todayKey = new Date().toISOString().split("T")[0];
+
+      // Return cached if we already made one today
+      const existing = await db.select().from(guardianConversations)
+        .where(and(
+          eq(guardianConversations.coupleId, coupleId),
+          eq(guardianConversations.intent, "check-in"),
+        ))
+        .orderBy(desc(guardianConversations.createdAt))
+        .limit(1);
+      if (existing[0] && (existing[0].metadata as any)?.day === todayKey) {
+        return res.json({ message: existing[0].content, cached: true });
+      }
+
+      // Build context snapshot
+      const [couple, recentExpenses, budgets, goalsRows] = await Promise.all([
+        db.query.couples.findFirst({ where: eq(couples.id, coupleId) }),
+        db.select().from(expenses).where(eq(expenses.coupleId, coupleId)).orderBy(desc(expenses.createdAt)).limit(30),
+        db.select().from(categoryBudgets).where(eq(categoryBudgets.coupleId, coupleId)),
+        db.select().from(goals).where(eq(goals.coupleId, coupleId)).limit(10),
+      ]);
+      if (!couple) return res.status(404).json({ error: "Couple not found" });
+
+      const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+      const yKey = yesterday.toISOString().split("T")[0];
+      const yesterdaySpend = recentExpenses.filter((e: any) => e.date === yKey).reduce((s: number, e: any) => s + e.amount, 0);
+      const yesterdayCount = recentExpenses.filter((e: any) => e.date === yKey).length;
+
+      const monthStart = new Date(); monthStart.setDate(1);
+      const monthSpend = recentExpenses
+        .filter((e: any) => new Date(e.date) >= monthStart)
+        .reduce((s: number, e: any) => s + e.amount, 0);
+      const monthBudget = budgets.reduce((s: number, b: any) => s + b.monthlyLimit, 0);
+
+      const name = req.user?.name || couple.partner1Name || "friend";
+      const hour = new Date().getHours();
+      const timeGreeting = hour < 12 ? "Morning" : hour < 17 ? "Afternoon" : "Evening";
+
+      const prompt = `You are the Dream Guardian — warm, wise, specific. Generate a 1-2 sentence morning check-in for ${name}.
+
+CONTEXT:
+- Time of day greeting: "${timeGreeting}"
+- Household: ${couple.partner1Name}${couple.partner2Name && couple.partner2Name !== "Partner" ? ` & ${couple.partner2Name}` : " (solo)"}
+- Yesterday's spend: $${yesterdaySpend.toFixed(0)} across ${yesterdayCount} transactions
+- This month so far: $${monthSpend.toFixed(0)} of $${monthBudget.toFixed(0)} budget (${Math.round((monthSpend / (monthBudget || 1)) * 100)}%)
+- Active dreams: ${goalsRows.length}
+
+Write a warm, specific check-in that:
+1. Greets them by name with the right time-of-day
+2. References one concrete number (yesterday's spend OR month progress)
+3. Ends with a light, inviting touch (NOT a question — just a warm sign-off)
+
+Max 2 sentences. No emojis. Tone: wise friend, not a bank.
+
+Examples:
+- "Morning, ${name}. Yesterday was a quiet one — just $23 across 2 transactions. The week's off to a good start."
+- "Afternoon, ${name}! You're sitting at 42% of budget with 18 days left, which is basically right on pace."
+
+Return just the message text, no JSON, no quotes.`;
+
+      const resp = await openai.chat.completions.create({
+        model: AI_COACH_MODEL,
+        messages: [{ role: "system", content: prompt }],
+        max_completion_tokens: 150,
+        temperature: 0.7,
+      });
+
+      const message = (resp.choices[0]?.message?.content || `${timeGreeting}, ${name}!`).trim().replace(/^["']|["']$/g, "");
+
+      await db.insert(guardianConversations).values({
+        coupleId,
+        userId: null,
+        role: "guardian",
+        content: message,
+        intent: "check-in",
+        metadata: { day: todayKey, yesterdaySpend, monthSpend, monthBudget },
+      });
+
+      res.json({ message, cached: false });
+    } catch (error: any) {
+      console.error("Check-in error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== PROACTIVE GUARDIAN: weekly summary ====================
+  app.get("/api/guardian/weekly-summary/:coupleId", requireAuth, requireCoupleAccess, guardianLimiter, async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const [couple, recentExpenses, goalsRows] = await Promise.all([
+        db.query.couples.findFirst({ where: eq(couples.id, coupleId) }),
+        db.select().from(expenses).where(eq(expenses.coupleId, coupleId)).orderBy(desc(expenses.createdAt)).limit(200),
+        db.select().from(goals).where(eq(goals.coupleId, coupleId)).limit(10),
+      ]);
+      if (!couple) return res.status(404).json({ error: "Couple not found" });
+
+      const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+      const twoWeeksAgo = new Date(); twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+
+      const thisWeek = recentExpenses.filter((e: any) => new Date(e.date) >= weekAgo);
+      const lastWeek = recentExpenses.filter((e: any) => new Date(e.date) >= twoWeeksAgo && new Date(e.date) < weekAgo);
+      const thisSum = thisWeek.reduce((s: number, e: any) => s + e.amount, 0);
+      const lastSum = lastWeek.reduce((s: number, e: any) => s + e.amount, 0);
+
+      // Top category this week
+      const byCat: Record<string, number> = {};
+      thisWeek.forEach((e: any) => { byCat[e.category] = (byCat[e.category] || 0) + e.amount; });
+      const topCat = Object.entries(byCat).sort((a, b) => b[1] - a[1])[0];
+
+      const dreamsSaved = goalsRows.reduce((s: number, g: any) => s + g.savedAmount, 0);
+      const name = req.user?.name || couple.partner1Name || "friend";
+
+      const prompt = `You are the Dream Guardian. Generate a warm weekly summary for ${name}.
+
+THIS WEEK (last 7 days):
+- Total spent: $${thisSum.toFixed(0)} across ${thisWeek.length} transactions
+- Last week: $${lastSum.toFixed(0)}
+- Top category: ${topCat ? `${topCat[0]} at $${topCat[1].toFixed(0)}` : "(none)"}
+- Dreams protected overall: $${dreamsSaved.toFixed(0)}
+
+Write a 3-4 sentence summary that:
+1. Opens with a warm greeting
+2. States the week's spend and how it compares to last week (in natural English, not percentages)
+3. Highlights one pattern worth noticing (top category, a win, or a gentle flag)
+4. Closes with one suggestion for next week
+
+Tone: wise friend, never preachy. Specific numbers. Max 1 emoji.
+
+Return just the message text.`;
+
+      const resp = await openai.chat.completions.create({
+        model: AI_COACH_MODEL,
+        messages: [{ role: "system", content: prompt }],
+        max_completion_tokens: 300,
+        temperature: 0.7,
+      });
+
+      const message = (resp.choices[0]?.message?.content || "").trim().replace(/^["']|["']$/g, "");
+
+      res.json({
+        message,
+        stats: {
+          thisWeekSpend: thisSum,
+          lastWeekSpend: lastSum,
+          transactions: thisWeek.length,
+          topCategory: topCat ? { category: topCat[0], amount: topCat[1] } : null,
+          dreamsSaved,
+        },
+      });
+    } catch (error: any) {
+      console.error("Weekly summary error:", error);
       res.status(500).json({ error: error.message });
     }
   });
