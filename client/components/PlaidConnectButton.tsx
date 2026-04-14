@@ -9,7 +9,7 @@
  * the deployment doesn't have Plaid configured.
  */
 import React, { useEffect, useState, useCallback } from "react";
-import { View, StyleSheet, Pressable, ActivityIndicator, Platform } from "react-native";
+import { View, StyleSheet, Pressable, ActivityIndicator, Platform, Modal, ScrollView, Linking } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
@@ -54,6 +54,7 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
   const [status, setStatus] = useState<"checking" | "available" | "unavailable">("checking");
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showDisclosure, setShowDisclosure] = useState(false);
 
   // Check if Plaid is configured on this deployment
   useEffect(() => {
@@ -71,8 +72,17 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
     return () => { cancelled = true; };
   }, []);
 
+  // First tap shows the disclosure; accepting it launches the actual Link flow.
+  const requestLaunch = useCallback(() => {
+    if (launching || status !== "available") return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setError(null);
+    setShowDisclosure(true);
+  }, [launching, status]);
+
   const launch = useCallback(async () => {
     if (launching || status !== "available") return;
+    setShowDisclosure(false);
     setLaunching(true);
     setError(null);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -115,11 +125,17 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
         });
         handler.open();
       } else {
-        // 2b. Native: requires react-native-plaid-link-sdk, which isn't
-        // installed in this build. Fall back to opening web Link in a browser.
-        // TODO: install the SDK once we're ready for native-only features.
-        setError("Native Plaid not yet available in this build — use the web app at buildtogether-v2.vercel.app/app to connect a bank");
+        // 2b. Native: the Plaid Link native SDK isn't bundled in this build yet.
+        // Offer to open the web app in the phone's browser so the connection
+        // still works. User-friendly, no dev jargon.
+        setError(null);
         setLaunching(false);
+        const webUrl = "https://buildtogether-v2.vercel.app/app";
+        try {
+          await Linking.openURL(webUrl);
+        } catch {
+          setError("Please open buildtogether-v2.vercel.app in your browser to connect a bank. Native support is coming soon.");
+        }
       }
     } catch (err: any) {
       setError(err.message || "Couldn't start bank connection");
@@ -156,11 +172,90 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
     return null;
   }
 
+  // Privacy disclosure modal, shown once on first tap before launching Plaid
+  const disclosureModal = (
+    <Modal
+      visible={showDisclosure}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowDisclosure(false)}
+    >
+      <View style={[styles.modalOverlay, { backgroundColor: "rgba(0,0,0,0.5)" }]}>
+        <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
+          <View style={[styles.modalIconWrap, { backgroundColor: theme.aiLight }]}>
+            <Feather name="shield" size={24} color={theme.aiPrimary} />
+          </View>
+          <ThemedText type="h4" style={{ color: theme.text, textAlign: "center" }}>
+            Before you connect
+          </ThemedText>
+          <ScrollView style={styles.modalScroll}>
+            <View style={styles.modalRow}>
+              <Feather name="eye" size={14} color={theme.textSecondary} style={styles.modalIcon} />
+              <View style={{ flex: 1 }}>
+                <ThemedText type="small" style={{ color: theme.text, fontWeight: "600" }}>What Plaid sees</ThemedText>
+                <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+                  Your transactions from the account you connect. Plaid never sees your bank password — you enter it directly with your bank.
+                </ThemedText>
+              </View>
+            </View>
+            <View style={styles.modalRow}>
+              <Feather name="lock" size={14} color={theme.textSecondary} style={styles.modalIcon} />
+              <View style={{ flex: 1 }}>
+                <ThemedText type="small" style={{ color: theme.text, fontWeight: "600" }}>What we store</ThemedText>
+                <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+                  An encrypted access token. Your transactions get mirrored into this app so you can review them. Nothing is shared with third parties.
+                </ThemedText>
+              </View>
+            </View>
+            <View style={styles.modalRow}>
+              <Feather name="message-circle" size={14} color={theme.textSecondary} style={styles.modalIcon} />
+              <View style={{ flex: 1 }}>
+                <ThemedText type="small" style={{ color: theme.text, fontWeight: "600" }}>What the Guardian uses</ThemedText>
+                <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+                  Only the spending data you've accepted — to answer your questions and coach you. Never shared with Plaid or any other party.
+                </ThemedText>
+              </View>
+            </View>
+            <View style={styles.modalRow}>
+              <Feather name="x-circle" size={14} color={theme.textSecondary} style={styles.modalIcon} />
+              <View style={{ flex: 1 }}>
+                <ThemedText type="small" style={{ color: theme.text, fontWeight: "600" }}>How to disconnect</ThemedText>
+                <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+                  Anytime from Settings → Bank connections. Access is revoked with Plaid immediately.
+                </ThemedText>
+              </View>
+            </View>
+          </ScrollView>
+          <View style={styles.modalButtons}>
+            <Pressable
+              onPress={() => setShowDisclosure(false)}
+              style={[styles.modalButton, { backgroundColor: theme.backgroundSecondary }]}
+            >
+              <ThemedText type="small" style={{ color: theme.text }}>Not now</ThemedText>
+            </Pressable>
+            <Pressable
+              onPress={launch}
+              style={[styles.modalButton, { backgroundColor: theme.primary }]}
+              accessibilityLabel="Continue to bank connection"
+            >
+              <ThemedText type="small" style={{ color: "#FFFFFF", fontWeight: "600" }}>
+                I understand, continue
+              </ThemedText>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
   if (variant === "hero") {
     return (
+      <>
       <Pressable
-        onPress={launch}
+        onPress={requestLaunch}
         disabled={launching}
+        accessibilityLabel="Connect your bank account"
+        accessibilityRole="button"
         style={({ pressed }) => [
           styles.hero,
           {
@@ -192,13 +287,18 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
           <Feather name="chevron-right" size={18} color={theme.aiPrimary} />
         )}
       </Pressable>
+      {disclosureModal}
+      </>
     );
   }
 
   return (
+    <>
     <Pressable
-      onPress={launch}
+      onPress={requestLaunch}
       disabled={launching}
+      accessibilityLabel="Connect your bank account"
+      accessibilityRole="button"
       style={({ pressed }) => [
         styles.inline,
         {
@@ -218,6 +318,8 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
         </>
       )}
     </Pressable>
+    {disclosureModal}
+    </>
   );
 }
 
@@ -244,6 +346,54 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalOverlay: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: Spacing.lg,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 420,
+    maxHeight: "90%",
+    padding: Spacing.xl,
+    borderRadius: BorderRadius.lg,
+    gap: Spacing.md,
+    alignItems: "center",
+  },
+  modalIconWrap: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalScroll: {
+    width: "100%",
+    maxHeight: 320,
+  },
+  modalRow: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+  },
+  modalIcon: {
+    marginTop: 3,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+    width: "100%",
+    marginTop: Spacing.sm,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.md,
     alignItems: "center",
     justifyContent: "center",
   },

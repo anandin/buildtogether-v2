@@ -78,32 +78,37 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
   const handleLocationNext = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setStep("generating");
-    
+
+    // Match the actual household. Solo users get 1 adult so their budget
+    // benchmarks aren't silently inflated to a 2-income baseline.
+    const numAdults = isSolo ? 1 : 2;
+
     try {
       const coupleId = await AsyncStorage.getItem(COUPLE_ID_KEY);
       if (coupleId) {
         setGeneratingStatus("Saving your family profile...");
         await apiRequest("PUT", `/api/family/${coupleId}`, {
-          numAdults: 2,
+          numAdults,
           numKidsUnder5,
           numKids5to12,
           numTeens,
           city: city.trim() || "New York",
           country: "US",
         });
-        
+
         setGeneratingStatus("Looking up cost of living data...");
         await new Promise(resolve => setTimeout(resolve, 500));
-        
+
         setGeneratingStatus("Generating personalized budgets...");
         await apiRequest("POST", `/api/budgets/${coupleId}/generate`, {
           city: city.trim() || "New York",
-          numAdults: 2,
+          numAdults,
           numKidsUnder5,
           numKids5to12,
           numTeens,
         });
-        
+
+
         setGeneratingStatus("Finalizing your budget...");
         await refreshData();
         await new Promise(resolve => setTimeout(resolve, 500));

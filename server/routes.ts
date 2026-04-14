@@ -4336,25 +4336,48 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
       const hour = new Date().getHours();
       const timeGreeting = hour < 12 ? "Morning" : hour < 17 ? "Afternoon" : "Evening";
 
-      const prompt = `You are the Dream Guardian — warm, wise, specific. Generate a 1-2 sentence morning check-in for ${name}.
+      // Detect returning users so we can soften the greeting
+      const lastGuardianMsg = await db.select().from(guardianConversations)
+        .where(eq(guardianConversations.coupleId, coupleId))
+        .orderBy(desc(guardianConversations.createdAt))
+        .limit(1);
+      const daysSinceLast = lastGuardianMsg[0]
+        ? Math.floor((Date.now() - new Date(lastGuardianMsg[0].createdAt).getTime()) / (1000 * 60 * 60 * 24))
+        : 0;
+      const isReturningUser = daysSinceLast >= 7;
+
+      // Detect over-budget distress
+      const budgetPct = monthBudget > 0 ? (monthSpend / monthBudget) * 100 : 0;
+      const isOverBudget = budgetPct > 100;
+
+      const prompt = `You are the Dream Guardian — warm, wise, specific. Generate a 1-2 sentence ${timeGreeting.toLowerCase()} check-in for ${name}.
 
 CONTEXT:
-- Time of day greeting: "${timeGreeting}"
 - Household: ${couple.partner1Name}${couple.partner2Name && couple.partner2Name !== "Partner" ? ` & ${couple.partner2Name}` : " (solo)"}
 - Yesterday's spend: $${yesterdaySpend.toFixed(0)} across ${yesterdayCount} transactions
-- This month so far: $${monthSpend.toFixed(0)} of $${monthBudget.toFixed(0)} budget (${Math.round((monthSpend / (monthBudget || 1)) * 100)}%)
+- This month so far: $${monthSpend.toFixed(0)} of $${monthBudget.toFixed(0)} budget (${Math.round(budgetPct)}%)
 - Active dreams: ${goalsRows.length}
+- Days since last interaction: ${daysSinceLast}${isReturningUser ? " (RETURNING USER — gap of 7+ days)" : ""}${isOverBudget ? "\n- STATUS: Over monthly budget — handle with care" : ""}
 
-Write a warm, specific check-in that:
-1. Greets them by name with the right time-of-day
-2. References one concrete number (yesterday's spend OR month progress)
-3. Ends with a light, inviting touch (NOT a question — just a warm sign-off)
+TONE RULES:
+${isReturningUser
+  ? `- RETURNING USER: "Good to see you back, ${name}." Do NOT mention how long they've been gone. No guilt, no catch-up pressure. Just a warm welcome that anchors to today.`
+  : `- Greet by name with the right time-of-day`}
+${isOverBudget
+  ? `- OVER BUDGET: Lead with presence, not numbers. "Thinking of you today, ${name}." or "Here whenever you want to look things over." Do NOT cite the overspend or suggest fixes. They know. Offer space, not solutions.`
+  : `- Reference one concrete, uplifting number if possible (yesterday's spend OR month progress IF positive)`}
+- End with a light, inviting touch — NOT a question, just warmth.
+- Max 2 sentences. No emojis. Wise friend, not a bank.
 
-Max 2 sentences. No emojis. Tone: wise friend, not a bank.
-
-Examples:
-- "Morning, ${name}. Yesterday was a quiet one — just $23 across 2 transactions. The week's off to a good start."
-- "Afternoon, ${name}! You're sitting at 42% of budget with 18 days left, which is basically right on pace."
+Examples of what to do:
+${isReturningUser
+  ? `- "Good to see you back, ${name}. Today's a fresh page — let's just pick up from here."
+- "Welcome back, ${name}. I'm glad you're here."`
+  : isOverBudget
+    ? `- "Thinking of you today, ${name}. Whenever you want to look at the numbers together, I'm here."
+- "Just want to say hi, ${name}. No pressure about the month — I'm here when you need me."`
+    : `- "Morning, ${name}. Yesterday was a quiet one — just $23 across 2 transactions. The week's off to a good start."
+- "Afternoon, ${name}! You're sitting at 42% of budget with 18 days left, which is basically right on pace."`}
 
 Return just the message text, no JSON, no quotes.`;
 
