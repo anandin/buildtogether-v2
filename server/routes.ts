@@ -36,7 +36,7 @@ import {
   guardianConversations,
 } from "../shared/schema";
 import { detectPatterns, savePatterns, createNudgeFromPattern, getActivePatterns, getPendingNudges } from "./pattern-detection";
-import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt } from "./prompts";
+import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt, buildQuickAddPrompt } from "./prompts";
 
 const DEFAULT_CATEGORY_BUDGETS = [
   { category: "groceries", monthlyLimit: 600, budgetType: "recurring" },
@@ -1002,8 +1002,6 @@ Please analyze our budgets and spending to provide personalized insights. Focus 
         "entertainment", "shopping", "health", "subscriptions", "personal",
         "education", "gifts", "other",
       ];
-
-      const { buildQuickAddPrompt } = await import("./prompts");
 
       // Pass most recent 6 conversation messages in chronological order for multi-turn context
       const conversationTurns = recentConversation
