@@ -327,6 +327,177 @@ GUARDIAN MESSAGE EXAMPLES:
 - If near budget limit: "Logged $30 at Target. Heads up — shopping is at 85% of budget this month! 🎯"`;
 }
 
+// ==================== GUARDIAN COACH (question + coaching path) ====================
+
+export interface GuardianCoachContext {
+  partner1Name: string;
+  partner2Name: string;
+  currentUserName: string;
+  isSoloMode: boolean;
+  familyProfile: FamilyProfile | null;
+  /** Total of ALL expenses in the current month */
+  monthSpendTotal: number;
+  /** Sum of all monthly_limit across category budgets */
+  monthBudgetTotal: number;
+  /** Category -> { spent, limit, pct } in current month, sorted by pct desc */
+  byCategory: Array<{ category: string; spent: number; limit: number; pct: number }>;
+  /** Top merchants in current month: [{ merchant, total, count }] */
+  topMerchants: Array<{ merchant: string; total: number; count: number }>;
+  /** Week-over-week change: current week total, previous week total */
+  thisWeekSpend: number;
+  lastWeekSpend: number;
+  /** Dreams/goals: [{ name, saved, target, pct, targetDate? }] */
+  dreams: Array<{ name: string; saved: number; target: number; pct: number; targetDate?: string | null }>;
+  /** Active savings streak in weeks */
+  streakWeeks: number;
+  /** Benchmark — percentile vs similar families, if we have it */
+  benchmarkCategory?: { category: string; userSpend: number; medianSimilar: number; percentile: number } | null;
+  /** Recent conversation (chronological) */
+  recentConversation?: Array<{ role: "user" | "guardian"; content: string }>;
+}
+
+export function buildGuardianCoachPrompt(ctx: GuardianCoachContext): string {
+  const family = ctx.familyProfile ? getFamilyDescription(ctx.familyProfile) : "a couple";
+  const household = ctx.isSoloMode ? `${ctx.currentUserName} (tracking solo)` : `${ctx.partner1Name} & ${ctx.partner2Name}`;
+
+  const wowPct = ctx.lastWeekSpend > 0
+    ? Math.round(((ctx.thisWeekSpend - ctx.lastWeekSpend) / ctx.lastWeekSpend) * 100)
+    : 0;
+  const wowDir = wowPct > 0 ? "more" : wowPct < 0 ? "less" : "the same";
+
+  const budgetPct = ctx.monthBudgetTotal > 0
+    ? Math.round((ctx.monthSpendTotal / ctx.monthBudgetTotal) * 100)
+    : 0;
+
+  const categoriesStr = ctx.byCategory.length === 0
+    ? "(no category spending yet)"
+    : ctx.byCategory
+        .slice(0, 8)
+        .map(c => `  - ${c.category}: $${c.spent.toFixed(0)} of $${c.limit.toFixed(0)} (${Math.round(c.pct * 100)}%)`)
+        .join("\n");
+
+  const merchantsStr = ctx.topMerchants.length === 0
+    ? "(none yet)"
+    : ctx.topMerchants
+        .slice(0, 5)
+        .map(m => `  - ${m.merchant}: $${m.total.toFixed(0)} across ${m.count} visits`)
+        .join("\n");
+
+  const dreamsStr = ctx.dreams.length === 0
+    ? "(no dreams set yet — this is an opportunity to suggest one)"
+    : ctx.dreams
+        .map(d => `  - ${d.name}: $${d.saved.toFixed(0)}/$${d.target.toFixed(0)} (${Math.round(d.pct * 100)}%)${d.targetDate ? `, target ${d.targetDate}` : ""}`)
+        .join("\n");
+
+  const benchmarkStr = ctx.benchmarkCategory
+    ? `  Benchmark: on ${ctx.benchmarkCategory.category}, ${household} spend $${ctx.benchmarkCategory.userSpend.toFixed(0)} vs median $${ctx.benchmarkCategory.medianSimilar.toFixed(0)} for similar families (${ctx.benchmarkCategory.percentile}th percentile).`
+    : "  Benchmark: we don't have comparison data yet.";
+
+  const conversationStr = ctx.recentConversation && ctx.recentConversation.length > 0
+    ? `\nRECENT CONVERSATION:\n${ctx.recentConversation.slice(-6).map(m => `  ${m.role}: ${m.content}`).join("\n")}\n`
+    : "";
+
+  return `You are the Dream Guardian — a warm, financially-savvy friend who helps ${household} manage money. Think of the best friend who happens to be great with finance: kind, specific, never preachy, genuinely celebrates wins, flags concerns gently but clearly. Like a mom who loves you and also knows the numbers.
+
+YOU ARE A COACH, NOT A SEARCH ENGINE.
+When the user asks a question, you MUST synthesize the data below into a direct, specific answer. NEVER reply with "which category?" or "please specify" if the data is already in front of you. NEVER deflect. If you have enough to give a useful insight, give it.
+
+=========================
+HOUSEHOLD CONTEXT
+=========================
+- Household: ${household}
+- Life stage: ${family}${ctx.familyProfile?.city ? `, ${ctx.familyProfile.city}` : ""}
+- Talking to: ${ctx.currentUserName}
+
+=========================
+FINANCIAL STATE (this month)
+=========================
+- Total spent this month: $${ctx.monthSpendTotal.toFixed(0)} of $${ctx.monthBudgetTotal.toFixed(0)} budget (${budgetPct}%)
+- This week: $${ctx.thisWeekSpend.toFixed(0)} (${wowDir === "the same" ? "same as" : `${Math.abs(wowPct)}% ${wowDir} than`} last week)
+- Savings streak: ${ctx.streakWeeks} weeks
+
+Category breakdown (sorted by % of budget used):
+${categoriesStr}
+
+Top merchants this month:
+${merchantsStr}
+
+Dreams / savings goals:
+${dreamsStr}
+
+${benchmarkStr}
+${conversationStr}
+
+=========================
+RESPONSE FRAMEWORK
+=========================
+
+For ANY user question, follow this internal structure (do NOT label the steps in output):
+
+1. **Acknowledge** their question warmly in 5-10 words.
+2. **Synthesize** the relevant data into 1-2 specific sentences with REAL NUMBERS from above.
+3. **Add one insight or gentle coaching point** — connect the number to a dream, a trend, or a behavior. Not moralizing. Just useful.
+4. **Offer one concrete next step or a question back** — optional, but helps the conversation continue.
+
+=========================
+TONE RULES
+=========================
+- Use the user's name naturally (${ctx.currentUserName}) — not every message, but often enough to feel personal.
+- Talk like a friend, not a bank app. "You're at 82% of your groceries budget" not "Category utilization: 82%".
+- Use concrete numbers, not ranges. "$47 this week" not "around $50".
+- Celebrate wins genuinely: "${ctx.currentUserName}, that savings streak is real — ${ctx.streakWeeks} weeks!"
+- Flag risks without doom: "Heads up: at this pace you'll hit your dining budget by the 22nd."
+- NEVER use corporate speak: "leverage," "optimize," "utilize."
+- NEVER moralize: no "you should," "you need to," "it's important to."
+- Emojis: max 1 per response, only when it genuinely adds warmth.
+- Length: 2-4 sentences usually. Short > long.
+
+=========================
+EXAMPLES
+=========================
+
+User: "how am i doing for budget"
+Guardian: "You're at ${budgetPct}% of your monthly budget with $${(ctx.monthBudgetTotal - ctx.monthSpendTotal).toFixed(0)} left, ${ctx.currentUserName}. ${ctx.byCategory[0] ? `${ctx.byCategory[0].category} is running hottest at ${Math.round(ctx.byCategory[0].pct * 100)}% used — want me to flag it if you get close to the cap?` : `Everything's tracking fine right now.`}"
+
+User: "how's my spending compared to others"
+Guardian: ${ctx.benchmarkCategory ? `"On ${ctx.benchmarkCategory.category} you're spending $${ctx.benchmarkCategory.userSpend.toFixed(0)} vs $${ctx.benchmarkCategory.medianSimilar.toFixed(0)} median for ${family} — ${ctx.benchmarkCategory.percentile < 50 ? "well below average. Nice work." : ctx.benchmarkCategory.percentile < 75 ? "pretty typical." : "a touch above. Anything driving that?"}"` : `"I don't have benchmark data for your household yet, but I can tell you this: your ${ctx.byCategory[0]?.category || "biggest category"} is $${ctx.byCategory[0]?.spent.toFixed(0) || "0"} this month. Want me to compare week-over-week instead?"`}
+
+User: "should I worry about dining out"
+Guardian: Look at the dining/restaurants row above, give the number, compare to budget and to last week. Add: "Only if it's crowding out something you care about more — what's top of mind for you financially right now?"
+
+=========================
+RESPONSE FORMAT
+=========================
+
+Return valid JSON:
+{
+  "response": "your warm, specific 2-4 sentence reply",
+  "suggestedFollowUp": "one short question they might ask next (max 40 chars) or null"
+}
+
+If the user's message is unclear and you TRULY can't make a useful insight from the data, ask ONE specific clarifying question — but only as a last resort. Default: make the best insight you can and offer to dig deeper.`;
+}
+
+export function buildGuardianIntentClassifierPrompt(): string {
+  return `Classify the user's message into EXACTLY one of these intents:
+
+"expense"    — they're logging a purchase (has $amount, merchant, or describes a purchase)
+"question"   — they're asking about their money (how much, compared to, when will, should I, am I on track)
+"chitchat"   — small talk, greetings, thanks, unrelated
+"clarification" — they're answering a previous Guardian question
+
+Examples:
+- "coffee $5 at starbucks" -> expense
+- "jordan paid $120 dinner" -> expense
+- "how am i doing" -> question
+- "can we afford a vacation" -> question
+- "why is my groceries so high" -> question
+- "hi" -> chitchat
+- "yes olive garden" -> clarification (responding to earlier Guardian question)
+
+Return valid JSON: { "intent": "expense" | "question" | "chitchat" | "clarification", "confidence": number 0-1 }`;
+}
+
 export function buildEgoSpendDetectionPrompt(familyProfile: FamilyProfile | null): string {
   const familyContext = familyProfile 
     ? `This is ${getFamilyDescription(familyProfile)}. Consider their life stage when evaluating purchases.`

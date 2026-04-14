@@ -36,7 +36,7 @@ import {
   guardianConversations,
 } from "../shared/schema";
 import { detectPatterns, savePatterns, createNudgeFromPattern, getActivePatterns, getPendingNudges } from "./pattern-detection";
-import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt, buildQuickAddPrompt } from "./prompts";
+import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt, buildQuickAddPrompt, buildGuardianCoachPrompt, buildGuardianIntentClassifierPrompt, type GuardianCoachContext } from "./prompts";
 
 const DEFAULT_CATEGORY_BUDGETS = [
   { category: "groceries", monthlyLimit: 600, budgetType: "recurring" },
@@ -76,11 +76,20 @@ const openai = new OpenAI({
     : undefined,
 });
 
-// Model name helper — prefixes with "openai/" when using OpenRouter
+// Model selection — OpenRouter gives us access to multiple families via the
+// OpenAI SDK. Use cheap/fast for parsing and classification, upgrade to a
+// reasoning-grade model for coaching.
 const AI_MODEL = (() => {
   const baseUrl = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || "";
   const isOpenRouter = baseUrl.includes("openrouter.ai");
   return isOpenRouter ? "openai/gpt-4o-mini" : "gpt-4o-mini";
+})();
+
+const AI_COACH_MODEL = (() => {
+  const baseUrl = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || "";
+  const isOpenRouter = baseUrl.includes("openrouter.ai");
+  // Sonnet is better at warm, specific coaching; falls back to gpt-4o locally.
+  return isOpenRouter ? "anthropic/claude-3.5-sonnet" : "gpt-4o";
 })();
 
 async function getAIPrompt(promptName: string): Promise<{
@@ -1021,6 +1030,159 @@ Please analyze our budgets and spending to provide personalized insights. Focus 
         recentConversation: conversationTurns,
       });
 
+      // ===== Intent classification (decides: parse expense vs coach answer) =====
+      // Short, cheap call to pick the right path. Doing this explicitly is more
+      // reliable than asking one prompt to do both jobs.
+      let intent: "expense" | "question" | "chitchat" | "clarification" = "expense";
+      try {
+        const intentResp = await openai.chat.completions.create({
+          model: AI_MODEL,
+          messages: [
+            { role: "system", content: buildGuardianIntentClassifierPrompt() },
+            { role: "user", content: text },
+          ],
+          max_completion_tokens: 60,
+          response_format: { type: "json_object" },
+        });
+        const intentJson = JSON.parse(intentResp.choices[0]?.message?.content || "{}");
+        if (intentJson.intent && (intentJson.confidence || 0) >= 0.6) {
+          intent = intentJson.intent;
+        }
+      } catch (err) {
+        console.error("Intent classifier failed, defaulting to expense:", err);
+      }
+
+      // ===== Question / coaching path — synthesize data with Claude Sonnet =====
+      if (intent === "question" || intent === "chitchat") {
+        // Build rich financial context from the data we already loaded
+        const monthSpendTotal = currentMonthExpenses.reduce((s, e) => s + e.amount, 0);
+        const monthBudgetTotal = budgets.reduce((s, b) => s + b.monthlyLimit, 0);
+
+        const byCategory = budgets.map(b => {
+          const spent = spentByCategory[b.category] || 0;
+          return {
+            category: b.category,
+            spent,
+            limit: b.monthlyLimit,
+            pct: b.monthlyLimit > 0 ? spent / b.monthlyLimit : 0,
+          };
+        }).sort((a, b) => b.pct - a.pct);
+
+        // Top merchants in current month
+        const merchantTotals: Record<string, { total: number; count: number }> = {};
+        currentMonthExpenses.forEach(e => {
+          if (!e.merchant) return;
+          if (!merchantTotals[e.merchant]) merchantTotals[e.merchant] = { total: 0, count: 0 };
+          merchantTotals[e.merchant].total += e.amount;
+          merchantTotals[e.merchant].count += 1;
+        });
+        const topMerchants = Object.entries(merchantTotals)
+          .map(([merchant, v]) => ({ merchant, total: v.total, count: v.count }))
+          .sort((a, b) => b.total - a.total)
+          .slice(0, 5);
+
+        // Week-over-week
+        const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
+        const twoWeeksAgo = new Date(); twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+        const thisWeekSpend = recentExpenses
+          .filter(e => new Date(e.date) >= weekAgo)
+          .reduce((s, e) => s + e.amount, 0);
+        const lastWeekSpend = recentExpenses
+          .filter(e => new Date(e.date) >= twoWeeksAgo && new Date(e.date) < weekAgo)
+          .reduce((s, e) => s + e.amount, 0);
+
+        // Dreams
+        const goalsRows = await db.select().from(goals)
+          .where(eq(goals.coupleId, coupleId))
+          .limit(10);
+        const dreams = goalsRows.map(g => ({
+          name: g.name,
+          saved: g.savedAmount,
+          target: g.targetAmount,
+          pct: g.targetAmount > 0 ? g.savedAmount / g.targetAmount : 0,
+          targetDate: g.targetDate,
+        }));
+
+        // Savings streak
+        const streakRow = await db.select().from(savingsStreaks)
+          .where(eq(savingsStreaks.coupleId, coupleId))
+          .limit(1);
+        const streakWeeks = streakRow[0]?.currentStreak || 0;
+
+        const familyProfile = couple ? {
+          numAdults: couple.numAdults ?? 2,
+          numKidsUnder5: couple.numKidsUnder5 ?? 0,
+          numKids5to12: couple.numKids5to12 ?? 0,
+          numTeens: couple.numTeens ?? 0,
+          city: couple.city,
+          country: couple.country || "US",
+          partner1Name: couple.partner1Name,
+          partner2Name: couple.partner2Name,
+        } : null;
+
+        const coachCtx: GuardianCoachContext = {
+          partner1Name: couple?.partner1Name || "You",
+          partner2Name: couple?.partner2Name || "Partner",
+          currentUserName: req.user?.name || couple?.partner1Name || "friend",
+          isSoloMode,
+          familyProfile,
+          monthSpendTotal,
+          monthBudgetTotal,
+          byCategory,
+          topMerchants,
+          thisWeekSpend,
+          lastWeekSpend,
+          dreams,
+          streakWeeks,
+          benchmarkCategory: null, // wire in later from spendingBenchmarks
+          recentConversation: conversationTurns,
+        };
+
+        const coachPrompt = buildGuardianCoachPrompt(coachCtx);
+
+        const coachResp = await openai.chat.completions.create({
+          model: AI_COACH_MODEL,
+          messages: [
+            { role: "system", content: coachPrompt },
+            { role: "user", content: text },
+          ],
+          max_completion_tokens: 500,
+          response_format: { type: "json_object" },
+          temperature: 0.7,
+        });
+
+        const coachContent = coachResp.choices[0]?.message?.content;
+        if (!coachContent) {
+          return res.status(500).json({ error: "Guardian couldn't respond" });
+        }
+
+        const coachJson = JSON.parse(coachContent);
+
+        // Persist conversation turn
+        db.insert(guardianConversations).values([
+          { coupleId, userId: req.user?.id, role: "user", content: text, intent },
+          {
+            coupleId, userId: req.user?.id, role: "guardian",
+            content: coachJson.response || "",
+            intent,
+            metadata: { suggestedFollowUp: coachJson.suggestedFollowUp, model: AI_COACH_MODEL },
+          },
+        ]).catch((err: any) => console.error("Conversation save failed:", err));
+
+        return res.json({
+          parsed: null,
+          confidence: 1.0,
+          guardianMessage: coachJson.response || "",
+          clarificationQuestion: null,
+          budgetAlert: null,
+          autoSaved: false,
+          savedExpense: null,
+          intent,
+          suggestedFollowUp: coachJson.suggestedFollowUp || null,
+        });
+      }
+
+      // ===== Expense parsing path (intent === "expense" or "clarification") =====
       const response = await openai.chat.completions.create({
         model: AI_MODEL,
         messages: [
