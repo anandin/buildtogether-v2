@@ -1,13 +1,28 @@
-import React from "react";
-import { View, FlatList, StyleSheet, RefreshControl, Pressable } from "react-native";
+/**
+ * Dreams — rebuilt for V2.
+ *
+ * Replaces V1's monolithic list of giant cards with a 2-column grid of
+ * compact cards matching the visual language of Home. Adds per-dream
+ * Guardian suggestion row ("You're on track — keep it up!"), total-saved
+ * hero strip, and a FAB to add more dreams. Premium users also see their
+ * active commitments section below the grid.
+ */
+import React, { useMemo } from "react";
+import {
+  View,
+  ScrollView,
+  StyleSheet,
+  RefreshControl,
+  Pressable,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useNavigation } from "@react-navigation/native";
 import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
-import { Card } from "@/components/Card";
 import { EmptyState } from "@/components/EmptyState";
 import { CommitmentsSection } from "@/components/CommitmentsSection";
 import { useTheme } from "@/hooks/useTheme";
@@ -16,7 +31,79 @@ import { useAuth } from "@/context/AuthContext";
 import { useSubscription } from "@/context/SubscriptionContext";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import type { Goal } from "@/types";
-import { GOAL_EMOJIS } from "@/types";
+
+function dreamStatus(pct: number): { label: string; color: string } {
+  if (pct >= 100) return { label: "Complete!", color: "#10B981" };
+  if (pct >= 75) return { label: "Almost there", color: "#10B981" };
+  if (pct >= 40) return { label: "Good pace", color: "#6366F1" };
+  if (pct >= 10) return { label: "Getting started", color: "#F59E0B" };
+  return { label: "Just beginning", color: "#F59E0B" };
+}
+
+function DreamGridCard({
+  goal,
+  onPress,
+}: {
+  goal: Goal;
+  onPress: () => void;
+}) {
+  const { theme } = useTheme();
+  const pct = goal.targetAmount > 0 ? (goal.savedAmount / goal.targetAmount) * 100 : 0;
+  const capPct = Math.min(pct, 100);
+  const remaining = Math.max(goal.targetAmount - goal.savedAmount, 0);
+  const { label, color: statusColor } = dreamStatus(pct);
+  const accent = goal.color || theme.primary;
+
+  return (
+    <Pressable
+      onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress();
+      }}
+      style={({ pressed }) => [
+        styles.gridCard,
+        {
+          backgroundColor: theme.backgroundDefault,
+          borderColor: accent + "30",
+          opacity: pressed ? 0.9 : 1,
+        },
+      ]}
+    >
+      <View style={styles.gridCardHeader}>
+        <ThemedText style={styles.gridEmoji}>{goal.emoji || "⭐"}</ThemedText>
+        <View style={[styles.statusPill, { backgroundColor: statusColor + "15" }]}>
+          <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+          <ThemedText type="tiny" style={{ color: statusColor, fontWeight: "600", fontSize: 10 }}>
+            {Math.round(pct)}%
+          </ThemedText>
+        </View>
+      </View>
+
+      <ThemedText
+        type="small"
+        numberOfLines={1}
+        style={{ color: theme.text, fontWeight: "600", marginTop: Spacing.xs }}
+      >
+        {goal.name}
+      </ThemedText>
+
+      <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+        ${goal.savedAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+        <ThemedText type="tiny" style={{ color: theme.textTertiary }}>
+          {" "}of ${goal.targetAmount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+        </ThemedText>
+      </ThemedText>
+
+      <View style={[styles.track, { backgroundColor: theme.backgroundSecondary }]}>
+        <View style={[styles.fill, { backgroundColor: accent, width: `${capPct}%` }]} />
+      </View>
+
+      <ThemedText type="tiny" style={{ color: theme.textTertiary, fontSize: 11 }}>
+        {label} · ${remaining.toLocaleString(undefined, { maximumFractionDigits: 0 })} to go
+      </ThemedText>
+    </Pressable>
+  );
+}
 
 export default function DreamsScreen() {
   const insets = useSafeAreaInsets();
@@ -28,217 +115,203 @@ export default function DreamsScreen() {
   const { user } = useAuth();
   const { isPremium } = useSubscription();
 
+  const dreams = data?.goals || [];
+
+  const totalSaved = useMemo(
+    () => dreams.reduce((s, g) => s + g.savedAmount, 0),
+    [dreams],
+  );
+  const totalTarget = useMemo(
+    () => dreams.reduce((s, g) => s + g.targetAmount, 0),
+    [dreams],
+  );
+  const overallPct = totalTarget > 0 ? Math.round((totalSaved / totalTarget) * 100) : 0;
+  const closest = useMemo(
+    () =>
+      [...dreams]
+        .map(d => ({ d, pct: d.targetAmount > 0 ? d.savedAmount / d.targetAmount : 0 }))
+        .filter(x => x.pct < 1)
+        .sort((a, b) => b.pct - a.pct)[0],
+    [dreams],
+  );
+
   const handleAddDream = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     navigation.navigate("AddDream");
   };
 
-  const getEmojiIcon = (emoji: string) => {
-    if (GOAL_EMOJIS.includes(emoji as any)) {
-      return emoji as any;
-    }
-    return "star";
-  };
-
-  const renderDreamCard = ({ item }: { item: Goal }) => {
-    const progress = item.targetAmount > 0 
-      ? (item.savedAmount / item.targetAmount) * 100 
-      : 0;
-    const remaining = item.targetAmount - item.savedAmount;
-
+  if (dreams.length === 0) {
     return (
-      <Card 
-        style={styles.dreamCard}
-        onPress={() => navigation.navigate("DreamDetail", { dreamId: item.id })}
+      <View
+        style={[
+          styles.container,
+          {
+            backgroundColor: theme.backgroundRoot,
+            paddingTop: headerHeight + Spacing.xl,
+            paddingBottom: tabBarHeight,
+          },
+        ]}
       >
-        <View style={styles.dreamHeader}>
-          <View style={[styles.dreamIcon, { backgroundColor: item.color + "20" }]}>
-            <Feather name={getEmojiIcon(item.emoji)} size={24} color={item.color} />
-          </View>
-          <View style={styles.dreamInfo}>
-            <ThemedText type="heading" numberOfLines={1}>{item.name}</ThemedText>
-            <ThemedText type="small" style={{ color: theme.textSecondary }}>
-              ${item.savedAmount.toFixed(0)} of ${item.targetAmount.toFixed(0)}
-            </ThemedText>
-          </View>
-          <Feather name="chevron-right" size={20} color={theme.textSecondary} />
-        </View>
-
-        <View style={[styles.progressBar, { backgroundColor: theme.border }]}>
-          <View 
-            style={[
-              styles.progressFill, 
-              { 
-                backgroundColor: item.color,
-                width: `${Math.min(progress, 100)}%` 
-              }
-            ]} 
-          />
-        </View>
-
-        <View style={styles.dreamFooter}>
-          <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
-            {progress.toFixed(0)}% complete
-          </ThemedText>
-          <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
-            ${remaining.toFixed(0)} to go
-          </ThemedText>
-        </View>
-      </Card>
-    );
-  };
-
-  const renderEmpty = () => (
-    <EmptyState
-      icon="star"
-      title="Dream together"
-      description="Create shared dreams and save for your future as a team"
-      actionLabel="Create First Dream"
-      onAction={handleAddDream}
-    />
-  );
-
-  const renderHeader = () => {
-    const totalSaved = data?.goals.reduce((sum, g) => sum + g.savedAmount, 0) || 0;
-    const totalTarget = data?.goals.reduce((sum, g) => sum + g.targetAmount, 0) || 0;
-    const dreamCount = data?.goals.length || 0;
-
-    if (dreamCount === 0) return null;
-
-    return (
-      <View>
-        <Card style={styles.summaryCard}>
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryItem}>
-              <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
-                Total Saved
-              </ThemedText>
-              <ThemedText type="h2" style={{ color: theme.success }}>
-                ${totalSaved.toFixed(0)}
-              </ThemedText>
-            </View>
-            <View style={[styles.summaryDivider, { backgroundColor: theme.border }]} />
-            <View style={styles.summaryItem}>
-              <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
-                {dreamCount} Dream{dreamCount !== 1 ? "s" : ""}
-              </ThemedText>
-              <ThemedText type="h2">
-                ${totalTarget.toFixed(0)}
-              </ThemedText>
-            </View>
-          </View>
-        </Card>
-
-        {isPremium && user?.coupleId ? (
-          <CommitmentsSection 
-            coupleId={user.coupleId} 
-            onRefresh={refreshData}
-          />
-        ) : null}
+        <EmptyState
+          icon="star"
+          title="No dreams yet"
+          description="Set a savings goal and I'll help you get there."
+          actionLabel="Add your first dream"
+          onAction={handleAddDream}
+        />
       </View>
     );
-  };
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
-      <FlatList
-        style={styles.list}
+      <ScrollView
         contentContainerStyle={{
-          paddingTop: headerHeight + Spacing.xl,
-          paddingBottom: tabBarHeight + Spacing.xl + 80,
+          paddingTop: headerHeight + Spacing.md,
+          paddingBottom: tabBarHeight + Spacing["3xl"],
           paddingHorizontal: Spacing.lg,
-          flexGrow: 1,
+          gap: Spacing.lg,
         }}
-        scrollIndicatorInsets={{ bottom: insets.bottom }}
-        data={data?.goals || []}
-        keyExtractor={(item) => item.id}
-        renderItem={renderDreamCard}
-        ListHeaderComponent={renderHeader}
-        ListEmptyComponent={renderEmpty}
-        refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={refreshData} />
-        }
-      />
-      
-      {(data?.goals?.length || 0) > 0 ? (
-        <Pressable 
-          style={[styles.fab, { backgroundColor: theme.primary }]}
-          onPress={handleAddDream}
-        >
-          <Feather name="plus" size={24} color="#FFFFFF" />
-        </Pressable>
-      ) : null}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={refreshData} />}
+      >
+        {/* Hero strip — total saved across all dreams */}
+        <View style={[styles.hero, { backgroundColor: theme.aiLight, borderColor: theme.aiPrimary + "30" }]}>
+          <View style={{ flex: 1 }}>
+            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+              Dreams protected
+            </ThemedText>
+            <ThemedText type="h2" style={{ color: theme.aiDark }}>
+              ${totalSaved.toLocaleString()}
+            </ThemedText>
+            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+              {overallPct}% of ${totalTarget.toLocaleString()} total
+            </ThemedText>
+          </View>
+          {closest ? (
+            <View style={styles.heroClosest}>
+              <ThemedText type="tiny" style={{ color: theme.textSecondary, textAlign: "right" }}>
+                Closest finish
+              </ThemedText>
+              <ThemedText
+                type="small"
+                numberOfLines={1}
+                style={{ color: theme.text, fontWeight: "600", textAlign: "right" }}
+              >
+                {closest.d.emoji} {closest.d.name}
+              </ThemedText>
+              <ThemedText type="tiny" style={{ color: theme.aiPrimary, textAlign: "right" }}>
+                {Math.round(closest.pct * 100)}% done
+              </ThemedText>
+            </View>
+          ) : null}
+        </View>
+
+        {/* Grid of compact dream cards */}
+        <View style={styles.sectionHeader}>
+          <ThemedText type="small" style={{ color: theme.text, fontWeight: "600" }}>
+            Your dreams
+          </ThemedText>
+          <Pressable
+            onPress={handleAddDream}
+            style={[styles.addButton, { backgroundColor: theme.primary + "15" }]}
+          >
+            <Feather name="plus" size={14} color={theme.primary} />
+            <ThemedText type="tiny" style={{ color: theme.primary, fontWeight: "600" }}>
+              Add
+            </ThemedText>
+          </Pressable>
+        </View>
+
+        <View style={styles.grid}>
+          {dreams.map(goal => (
+            <DreamGridCard
+              key={goal.id}
+              goal={goal}
+              onPress={() => navigation.navigate("DreamDetail", { dreamId: goal.id })}
+            />
+          ))}
+        </View>
+
+        {/* Commitments — premium users only, but visually integrated */}
+        {isPremium && user?.coupleId ? (
+          <CommitmentsSection coupleId={user.coupleId} />
+        ) : null}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  list: {
-    flex: 1,
-  },
-  summaryCard: {
-    marginBottom: Spacing.lg,
-  },
-  summaryRow: {
+  container: { flex: 1 },
+  hero: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    gap: Spacing.md,
   },
-  summaryItem: {
-    flex: 1,
-    alignItems: "center",
+  heroClosest: {
+    maxWidth: 140,
+    gap: 2,
   },
-  summaryDivider: {
-    width: 1,
-    height: 40,
-  },
-  dreamCard: {
-    marginBottom: Spacing.md,
-  },
-  dreamHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: Spacing.md,
-  },
-  dreamIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: BorderRadius.md,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  dreamInfo: {
-    flex: 1,
-    marginLeft: Spacing.md,
-  },
-  progressBar: {
-    height: 8,
-    borderRadius: 4,
-    overflow: "hidden",
-    marginBottom: Spacing.sm,
-  },
-  progressFill: {
-    height: "100%",
-    borderRadius: 4,
-  },
-  dreamFooter: {
+  sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-  },
-  fab: {
-    position: "absolute",
-    right: Spacing.lg,
-    bottom: 100,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
     alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    paddingHorizontal: Spacing.xs,
+  },
+  addButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+  },
+  grid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: Spacing.sm,
+    justifyContent: "space-between",
+  },
+  gridCard: {
+    width: "48.5%",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    gap: 4,
+  },
+  gridCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  gridEmoji: {
+    fontSize: 26,
+  },
+  statusPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.full,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  track: {
+    height: 4,
+    borderRadius: 2,
+    overflow: "hidden",
+    marginTop: 4,
+  },
+  fill: {
+    height: "100%",
+    borderRadius: 2,
   },
 });

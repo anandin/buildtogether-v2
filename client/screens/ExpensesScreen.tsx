@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { FloatingActionButton } from "@/components/FloatingActionButton";
 import { CategoryBudgetCard } from "@/components/CategoryBudgetCard";
 import { MonthlySettlementSummary } from "@/components/MonthlySettlementSummary";
+import { SpendingPulse } from "@/components/SpendingPulse";
 import { useTheme } from "@/hooks/useTheme";
 import { useApp } from "@/context/AppContext";
 import { getCurrentMonthExpenses, getTotalSpent, calculateOwedAmounts } from "@/lib/cloudStorage";
@@ -196,6 +197,13 @@ export default function ExpensesScreen() {
 
   const renderHeader = () => (
     <>
+      {/* New: 7-day spending pulse (absorbs Insights into Activity) */}
+      {currentMonthExpenses.length > 0 ? (
+        <View style={{ marginBottom: Spacing.md }}>
+          <SpendingPulse expenses={currentMonthExpenses} />
+        </View>
+      ) : null}
+
       <Card style={styles.summaryCard}>
         <View style={styles.summaryRow}>
           <View style={styles.summaryItem}>
