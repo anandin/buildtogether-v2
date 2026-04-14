@@ -259,6 +259,7 @@ export interface QuickAddContext {
   categories: string[];
   budgetStatus: Array<{ category: string; spent: number; limit: number }>;
   isSoloMode: boolean;
+  recentConversation?: Array<{ role: "user" | "guardian"; content: string }>;
 }
 
 export function buildQuickAddPrompt(context: QuickAddContext): string {
@@ -275,18 +276,29 @@ export function buildQuickAddPrompt(context: QuickAddContext): string {
     .map(b => `${b.category}: $${b.spent.toFixed(0)}/$${b.limit.toFixed(0)} (${Math.round(b.spent / b.limit * 100)}%)`)
     .join(", ");
 
-  return `You are the Dream Guardian, a friendly AI owl that helps couples track expenses via natural language. Parse the user's message into a structured expense.
+  const conversationContext = context.recentConversation && context.recentConversation.length > 0
+    ? `\nRECENT CONVERSATION (use to resolve ambiguity like "and that one cost $30"):\n${context.recentConversation.map(m => `${m.role}: ${m.content}`).join("\n")}\n`
+    : "";
+
+  return `You are the Dream Guardian, a friendly AI owl that helps couples track expenses via natural language. You can both (a) parse expenses AND (b) answer questions about their spending.
 
 ${partnerContext}
 ${merchantHints}
+${conversationContext}
 
-PARSING RULES:
+INTENT DETECTION:
+- If the user message is an expense statement (has money amount or describes a purchase) → parse it
+- If it's a question ("how much did we spend?", "what's my biggest category?", "are we on track?") → answer it
+- If it's a continuation of previous Guardian question (e.g. responding to a clarification), use conversation context to fill in missing fields
+
+PARSING RULES (for expenses):
 - Extract amount, merchant, category, description, who paid, and split method
 - If they say "${context.partner2Name} paid" or "my partner paid", set paidBy to "partner2"
 - If they say "I paid" or just state the expense, set paidBy to "${context.currentUserRole}"
 - Default split method: "${context.isSoloMode ? "joint" : context.defaultSplitMethod}"
 - Match merchants to these known ones when close: ${context.recentMerchants.slice(0, 10).join(", ")}
 - Categories: ${context.categories.join(", ")}
+- CRITICAL: If the user's message refers back to an earlier message in the conversation (e.g. "that cost $30" after you asked "how much?"), pull the missing details from the prior Guardian or user messages and return them in the JSON.
 
 RESPONSE FORMAT - Return valid JSON:
 {

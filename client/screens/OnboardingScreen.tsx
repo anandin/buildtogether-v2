@@ -33,6 +33,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
   const [step, setStep] = useState<Step>("names");
   const [partner1Name, setPartner1Name] = useState("");
   const [partner2Name, setPartner2Name] = useState("");
+  const [isSolo, setIsSolo] = useState(false);
   const [numKidsUnder5, setNumKidsUnder5] = useState(0);
   const [numKids5to12, setNumKids5to12] = useState(0);
   const [numTeens, setNumTeens] = useState(0);
@@ -56,10 +57,15 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
   };
 
   const handleNamesNext = async () => {
-    if (partner1Name.trim() && partner2Name.trim()) {
+    // Solo mode: only partner1 required. Couple mode: both required.
+    const valid = partner1Name.trim() && (isSolo || partner2Name.trim());
+    if (valid) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       await updatePartnerName("partner1", partner1Name.trim());
-      await updatePartnerName("partner2", partner2Name.trim());
+      // In solo mode, partner2 stays as default placeholder until invite
+      if (!isSolo) {
+        await updatePartnerName("partner2", partner2Name.trim());
+      }
       setStep("family");
     }
   };
@@ -257,10 +263,10 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
             <Card style={styles.inputCard}>
               <View style={styles.inputGroup}>
                 <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                  Partner 1
+                  {isSolo ? "Your name" : "Partner 1"}
                 </ThemedText>
                 <TextInput
-                  style={[styles.input, { 
+                  style={[styles.input, {
                     backgroundColor: theme.backgroundSecondary,
                     color: theme.text,
                   }]}
@@ -269,51 +275,80 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
                   value={partner1Name}
                   onChangeText={setPartner1Name}
                   autoCapitalize="words"
-                  returnKeyType="next"
+                  returnKeyType={isSolo ? "done" : "next"}
                 />
               </View>
-              
-              <View style={styles.inputGroup}>
-                <ThemedText type="small" style={{ color: theme.textSecondary }}>
-                  Partner 2
+
+              {!isSolo ? (
+                <View style={styles.inputGroup}>
+                  <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                    Partner 2
+                  </ThemedText>
+                  <TextInput
+                    style={[styles.input, {
+                      backgroundColor: theme.backgroundSecondary,
+                      color: theme.text,
+                    }]}
+                    placeholder="Partner's name"
+                    placeholderTextColor={theme.textSecondary}
+                    value={partner2Name}
+                    onChangeText={setPartner2Name}
+                    autoCapitalize="words"
+                    returnKeyType="done"
+                  />
+                </View>
+              ) : null}
+
+              {/* Solo mode toggle */}
+              <Pressable
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setIsSolo(!isSolo);
+                  if (!isSolo) setPartner2Name("");
+                }}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 8,
+                  paddingVertical: 8,
+                  marginTop: 4,
+                }}
+              >
+                <Feather
+                  name={isSolo ? "check-square" : "square"}
+                  size={18}
+                  color={isSolo ? theme.primary : theme.textSecondary}
+                />
+                <ThemedText type="small" style={{ color: theme.textSecondary, flex: 1 }}>
+                  {isSolo
+                    ? "Building solo — I'll invite my partner later"
+                    : "Building solo for now? (invite partner anytime)"}
                 </ThemedText>
-                <TextInput
-                  style={[styles.input, { 
-                    backgroundColor: theme.backgroundSecondary,
-                    color: theme.text,
-                  }]}
-                  placeholder="Partner's name"
-                  placeholderTextColor={theme.textSecondary}
-                  value={partner2Name}
-                  onChangeText={setPartner2Name}
-                  autoCapitalize="words"
-                  returnKeyType="done"
-                />
-              </View>
+              </Pressable>
             </Card>
-            
+
             <Pressable
               style={[
-                styles.nextButton, 
-                { 
-                  backgroundColor: partner1Name.trim() && partner2Name.trim() 
-                    ? theme.primary 
-                    : theme.backgroundSecondary 
+                styles.nextButton,
+                {
+                  backgroundColor: partner1Name.trim() && (isSolo || partner2Name.trim())
+                    ? theme.primary
+                    : theme.backgroundSecondary
                 }
               ]}
               onPress={handleNamesNext}
-              disabled={!partner1Name.trim() || !partner2Name.trim()}
+              disabled={!partner1Name.trim() || (!isSolo && !partner2Name.trim())}
             >
-              <ThemedText type="body" style={{ 
-                color: partner1Name.trim() && partner2Name.trim() ? "#FFFFFF" : theme.textSecondary,
-                fontWeight: "600" 
+              <ThemedText type="body" style={{
+                color: partner1Name.trim() && (isSolo || partner2Name.trim()) ? "#FFFFFF" : theme.textSecondary,
+                fontWeight: "600"
               }}>
                 Continue
               </ThemedText>
-              <Feather 
-                name="arrow-right" 
-                size={20} 
-                color={partner1Name.trim() && partner2Name.trim() ? "#FFFFFF" : theme.textSecondary} 
+              <Feather
+                name="arrow-right"
+                size={20}
+                color={partner1Name.trim() && (isSolo || partner2Name.trim()) ? "#FFFFFF" : theme.textSecondary}
               />
             </Pressable>
           </Animated.View>

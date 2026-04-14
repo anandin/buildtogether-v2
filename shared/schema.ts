@@ -619,3 +619,33 @@ export type Commitment = typeof commitments.$inferSelect;
 export type SpendingPattern = typeof spendingPatterns.$inferSelect;
 export type Feedback = typeof feedback.$inferSelect;
 export type InsertFeedback = z.infer<typeof insertFeedbackSchema>;
+
+// ==================== Phase 3: Activity Feed ====================
+
+export const activityFeed = pgTable("activity_feed", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull(),
+  userId: varchar("user_id"),
+  activityType: text("activity_type").notNull(), // expense_added, expense_updated, goal_contributed, etc
+  entityId: varchar("entity_id"),
+  summary: text("summary").notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type ActivityFeedItem = typeof activityFeed.$inferSelect;
+
+// ==================== Phase 4: Guardian Conversation Memory ====================
+
+export const guardianConversations = pgTable("guardian_conversations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull(),
+  userId: varchar("user_id"),
+  role: text("role").notNull(), // "user" or "guardian"
+  content: text("content").notNull(),
+  intent: text("intent"), // "expense" | "question" | "clarification" | null
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type GuardianConversation = typeof guardianConversations.$inferSelect;

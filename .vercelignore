@@ -1,0 +1,11 @@
+node_modules
+.expo
+.metro-cache
+static-build
+server_dist
+android
+ios
+*.log
+e2e-screenshots
+scripts/build.js
+scripts/seed-production.ts

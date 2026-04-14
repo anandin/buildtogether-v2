@@ -32,6 +32,8 @@ import {
   commitments,
   spendingPatterns,
   feedback,
+  activityFeed,
+  guardianConversations,
 } from "@shared/schema";
 import { detectPatterns, savePatterns, createNudgeFromPattern, getActivePatterns, getPendingNudges } from "./pattern-detection";
 import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt } from "./prompts";
@@ -927,8 +929,8 @@ Please analyze our budgets and spending to provide personalized insights. Focus 
         return res.status(403).json({ error: "Access denied" });
       }
 
-      // Gather context for smart parsing
-      const [couple, recentExpenses, budgets] = await Promise.all([
+      // Gather context for smart parsing — now includes recent conversation (Phase 4)
+      const [couple, recentExpenses, budgets, recentConversation] = await Promise.all([
         db.query.couples.findFirst({ where: eq(couples.id, coupleId) }),
         db.select().from(expenses)
           .where(eq(expenses.coupleId, coupleId))
@@ -936,6 +938,10 @@ Please analyze our budgets and spending to provide personalized insights. Focus 
           .limit(30),
         db.select().from(categoryBudgets)
           .where(eq(categoryBudgets.coupleId, coupleId)),
+        db.select().from(guardianConversations)
+          .where(eq(guardianConversations.coupleId, coupleId))
+          .orderBy(desc(guardianConversations.createdAt))
+          .limit(6),
       ]);
 
       if (!couple) {
@@ -985,6 +991,12 @@ Please analyze our budgets and spending to provide personalized insights. Focus 
 
       const { buildQuickAddPrompt } = await import("./prompts");
 
+      // Pass most recent 6 conversation messages in chronological order for multi-turn context
+      const conversationTurns = recentConversation
+        .slice()
+        .reverse()
+        .map((m: any) => ({ role: m.role as "user" | "guardian", content: m.content }));
+
       const prompt = buildQuickAddPrompt({
         partner1Name: couple.partner1Name,
         partner2Name: couple.partner2Name,
@@ -994,6 +1006,7 @@ Please analyze our budgets and spending to provide personalized insights. Focus 
         categories,
         budgetStatus,
         isSoloMode,
+        recentConversation: conversationTurns,
       });
 
       const response = await openai.chat.completions.create({
@@ -1045,7 +1058,36 @@ Please analyze our budgets and spending to provide personalized insights. Focus 
           splitMethod: parsed.splitMethod || (isSoloMode ? "joint" : defaultSplitMethod),
         }).returning();
         savedExpense = expense;
+
+        // Phase 3: record activity for auto-saved expenses
+        db.insert(activityFeed).values({
+          coupleId,
+          userId: req.user?.id,
+          activityType: "expense_added",
+          entityId: expense.id,
+          summary: `${req.user?.name || "Someone"} auto-logged $${expense.amount} at ${expense.merchant || expense.category} via Guardian`,
+          metadata: { amount: expense.amount, category: expense.category, merchant: expense.merchant, source: "guardian_auto" },
+        }).catch((err: any) => console.error("Activity feed insert failed:", err));
       }
+
+      // Phase 4: save conversation turn (user message + guardian response)
+      db.insert(guardianConversations).values([
+        {
+          coupleId,
+          userId: req.user?.id,
+          role: "user",
+          content: text,
+          intent: "expense",
+        },
+        {
+          coupleId,
+          userId: req.user?.id,
+          role: "guardian",
+          content: parsed.guardianMessage || (parsed.clarificationQuestion || ""),
+          intent: parsed.clarificationQuestion ? "clarification" : "expense",
+          metadata: { parsed, autoSaved: !!savedExpense, budgetAlert },
+        },
+      ]).catch((err: any) => console.error("Conversation save failed:", err));
 
       res.json({
         parsed: {
@@ -1305,12 +1347,22 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
     try {
       const { coupleId } = req.params;
       const expenseData = req.body;
-      
+
       const [expense] = await db.insert(expenses).values({
         ...expenseData,
         coupleId,
       }).returning();
-      
+
+      // Phase 3: record activity (non-blocking)
+      db.insert(activityFeed).values({
+        coupleId,
+        userId: req.user?.id,
+        activityType: "expense_added",
+        entityId: expense.id,
+        summary: `${req.user?.name || "Someone"} logged $${expense.amount} at ${expense.merchant || expense.category}`,
+        metadata: { amount: expense.amount, category: expense.category, merchant: expense.merchant },
+      }).catch((err: any) => console.error("Activity feed insert failed:", err));
+
       res.json(expense);
     } catch (error: any) {
       console.error("Add expense error:", error);
@@ -3862,6 +3914,51 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
       res.json({ success: true });
     } catch (error: any) {
       console.error("Delete commitment error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== PHASE 3: ACTIVITY FEED ====================
+
+  app.get("/api/activity/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const since = req.query.since as string | undefined;
+      const limit = Math.min(parseInt((req.query.limit as string) || "50"), 100);
+
+      let query = db.select().from(activityFeed)
+        .where(eq(activityFeed.coupleId, coupleId))
+        .orderBy(desc(activityFeed.createdAt))
+        .limit(limit);
+
+      const items = await query;
+      const filtered = since
+        ? items.filter((i: any) => new Date(i.createdAt) > new Date(since))
+        : items;
+
+      res.json(filtered);
+    } catch (error: any) {
+      console.error("Get activity error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== PHASE 4: GUARDIAN CONVERSATION HISTORY ====================
+
+  app.get("/api/guardian/conversation-history/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
+    try {
+      const { coupleId } = req.params;
+      const limit = Math.min(parseInt((req.query.limit as string) || "20"), 50);
+
+      const messages = await db.select().from(guardianConversations)
+        .where(eq(guardianConversations.coupleId, coupleId))
+        .orderBy(desc(guardianConversations.createdAt))
+        .limit(limit);
+
+      // Return in chronological order (oldest first)
+      res.json(messages.reverse());
+    } catch (error: any) {
+      console.error("Get conversation history error:", error);
       res.status(500).json({ error: error.message });
     }
   });

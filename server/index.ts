@@ -244,27 +244,41 @@ function setupErrorHandler(app: express.Application) {
   });
 }
 
-(async () => {
-  setupCors(app);
-  setupBodyParsing(app);
-  setupRequestLogging(app);
+// Configure app synchronously so it can be imported by serverless handlers
+// without calling .listen() at module load time.
+let appConfigured = false;
+let appReady: Promise<express.Application> | null = null;
 
-  configureExpoAndLanding(app);
+export async function getApp(): Promise<express.Application> {
+  if (appConfigured) return app;
+  if (appReady) return appReady;
 
-  registerAdminRoutes(app);
-  const server = await registerRoutes(app);
+  appReady = (async () => {
+    setupCors(app);
+    setupBodyParsing(app);
+    setupRequestLogging(app);
+    configureExpoAndLanding(app);
+    registerAdminRoutes(app);
+    await registerRoutes(app);
+    setupErrorHandler(app);
+    appConfigured = true;
+    return app;
+  })();
 
-  setupErrorHandler(app);
+  return appReady;
+}
 
-  const port = parseInt(process.env.PORT || "5000", 10);
-  server.listen(
-    {
-      port,
-      host: "0.0.0.0",
-      reusePort: true,
-    },
-    () => {
-      log(`express server serving on port ${port}`);
-    },
-  );
-})();
+// Standalone server entry (used by `npm run server:dev` / `server:prod`)
+// On Vercel, api/index.ts imports getApp() instead.
+if (process.env.VERCEL !== "1" && !process.env.VERCEL_ENV) {
+  (async () => {
+    await getApp();
+    const { createServer } = await import("node:http");
+    const server = createServer(app);
+    const port = parseInt(process.env.PORT || "5000", 10);
+    server.listen(
+      { port, host: "0.0.0.0", reusePort: true },
+      () => log(`express server serving on port ${port}`),
+    );
+  })();
+}

@@ -74,7 +74,11 @@ export default function AddExpenseScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [note, setNote] = useState("");
   const [paidBy, setPaidBy] = useState<"partner1" | "partner2" | "joint">("partner1");
-  const [splitMethod, setSplitMethod] = useState<SplitMethod>(prefilled?.suggestedSplit || "even");
+  // Default to "joint" in solo mode so no split happens
+  const isSoloMode = !data?.partners?.partner2?.name || data.partners.partner2.name === "Partner";
+  const [splitMethod, setSplitMethod] = useState<SplitMethod>(
+    prefilled?.suggestedSplit || (isSoloMode ? "joint" : "even")
+  );
   const [customRatio, setCustomRatio] = useState(50);
   const [saving, setSaving] = useState(false);
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
@@ -679,11 +683,13 @@ export default function AddExpenseScreen() {
             ) : null}
           </View>
 
+          {/* Solo mode: skip split UI, default everything to joint */}
+          {(data?.partners?.partner2?.name && data.partners.partner2.name !== "Partner") ? (
           <View style={styles.section}>
             <ThemedText type="h4" style={styles.sectionTitle}>
               How should we split this?
             </ThemedText>
-            
+
             <View style={styles.splitOptions}>
               {SPLIT_METHODS.map((method) => {
                 const isSelected = splitMethod === method.key;
@@ -834,6 +840,14 @@ export default function AddExpenseScreen() {
               </View>
             ) : null}
           </View>
+          ) : (
+            /* Solo mode: subtle note that partner can be invited later */
+            <View style={[styles.section, { paddingVertical: Spacing.md }]}>
+              <ThemedText type="tiny" style={{ color: theme.textSecondary, textAlign: "center" }}>
+                Tracking solo — invite your partner anytime from Settings
+              </ThemedText>
+            </View>
+          )}
 
           <View style={styles.buttonRow}>
             <Pressable
