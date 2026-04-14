@@ -88,8 +88,8 @@ const AI_MODEL = (() => {
 const AI_COACH_MODEL = (() => {
   const baseUrl = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || "";
   const isOpenRouter = baseUrl.includes("openrouter.ai");
-  // Sonnet is better at warm, specific coaching; falls back to gpt-4o locally.
-  return isOpenRouter ? "anthropic/claude-3.5-sonnet" : "gpt-4o";
+  // Sonnet 4.6 — warm, specific coaching voice. Falls back to gpt-4o locally.
+  return isOpenRouter ? "anthropic/claude-sonnet-4.6" : "gpt-4o";
 })();
 
 async function getAIPrompt(promptName: string): Promise<{
@@ -1147,7 +1147,6 @@ Please analyze our budgets and spending to provide personalized insights. Focus 
             { role: "user", content: text },
           ],
           max_completion_tokens: 500,
-          response_format: { type: "json_object" },
           temperature: 0.7,
         });
 
@@ -1156,7 +1155,21 @@ Please analyze our budgets and spending to provide personalized insights. Focus 
           return res.status(500).json({ error: "Guardian couldn't respond" });
         }
 
-        const coachJson = JSON.parse(coachContent);
+        // Be tolerant: Claude usually returns clean JSON but can wrap it in
+        // markdown fences. Extract the first JSON object we can find.
+        let coachJson: any;
+        try {
+          coachJson = JSON.parse(coachContent);
+        } catch {
+          const match = coachContent.match(/\{[\s\S]*\}/);
+          if (match) {
+            try { coachJson = JSON.parse(match[0]); } catch {}
+          }
+          if (!coachJson) {
+            // Fallback: treat the raw text as the response
+            coachJson = { response: coachContent.trim(), suggestedFollowUp: null };
+          }
+        }
 
         // Persist conversation turn
         db.insert(guardianConversations).values([
