@@ -366,6 +366,41 @@ CREATE TABLE "partners" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TABLE "plaid_items" (
+	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"couple_id" varchar NOT NULL,
+	"user_id" varchar NOT NULL,
+	"plaid_item_id" text NOT NULL,
+	"access_token" text NOT NULL,
+	"institution_id" text,
+	"institution_name" text,
+	"cursor" text,
+	"status" text DEFAULT 'active' NOT NULL,
+	"last_sync_at" timestamp,
+	"last_error" text,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "plaid_items_plaid_item_id_unique" UNIQUE("plaid_item_id")
+);
+--> statement-breakpoint
+CREATE TABLE "plaid_transactions" (
+	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"couple_id" varchar NOT NULL,
+	"plaid_item_id" varchar NOT NULL,
+	"plaid_transaction_id" text NOT NULL,
+	"account_id" text,
+	"amount" real NOT NULL,
+	"date" text NOT NULL,
+	"merchant_name" text,
+	"name" text NOT NULL,
+	"plaid_category" jsonb,
+	"our_category" text,
+	"pending" boolean DEFAULT false,
+	"status" text DEFAULT 'pending_review' NOT NULL,
+	"expense_id" varchar,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "plaid_transactions_plaid_transaction_id_unique" UNIQUE("plaid_transaction_id")
+);
+--> statement-breakpoint
 CREATE TABLE "savings_confirmations" (
 	"id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"couple_id" varchar NOT NULL,

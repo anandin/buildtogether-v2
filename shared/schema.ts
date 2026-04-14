@@ -649,3 +649,53 @@ export const guardianConversations = pgTable("guardian_conversations", {
 });
 
 export type GuardianConversation = typeof guardianConversations.$inferSelect;
+
+// ==================== Plaid bank sync ====================
+
+/**
+ * Each connected bank Item from Plaid. One row per bank connection per
+ * couple. Stores the long-lived access_token that lets us fetch
+ * transactions on that bank.
+ */
+export const plaidItems = pgTable("plaid_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull(),
+  userId: varchar("user_id").notNull(), // the partner who connected it
+  plaidItemId: text("plaid_item_id").notNull().unique(),
+  accessToken: text("access_token").notNull(), // encrypted at rest via DB; never exposed to client
+  institutionId: text("institution_id"),
+  institutionName: text("institution_name"),
+  cursor: text("cursor"), // incremental sync cursor from /transactions/sync
+  status: text("status").notNull().default("active"), // active | error | disconnected
+  lastSyncAt: timestamp("last_sync_at"),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type PlaidItem = typeof plaidItems.$inferSelect;
+
+/**
+ * Mirror of Plaid transactions we've imported. Keeps plaid_transaction_id so
+ * we can dedupe when Plaid sends updates. When user accepts, we copy into
+ * the main `expenses` table. Keeping them separate lets us show "pending
+ * review" UX and handle edits/removals cleanly.
+ */
+export const plaidTransactions = pgTable("plaid_transactions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull(),
+  plaidItemId: varchar("plaid_item_id").notNull(),
+  plaidTransactionId: text("plaid_transaction_id").notNull().unique(),
+  accountId: text("account_id"),
+  amount: real("amount").notNull(),
+  date: text("date").notNull(),
+  merchantName: text("merchant_name"),
+  name: text("name").notNull(),
+  plaidCategory: jsonb("plaid_category"), // hierarchy array from Plaid
+  ourCategory: text("our_category"), // mapped to our ExpenseCategory
+  pending: boolean("pending").default(false),
+  status: text("status").notNull().default("pending_review"), // pending_review | accepted | ignored
+  expenseId: varchar("expense_id"), // set once accepted → links to expenses.id
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type PlaidTransaction = typeof plaidTransactions.$inferSelect;

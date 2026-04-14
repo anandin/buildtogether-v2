@@ -38,6 +38,7 @@ import { GuardianGreetingSkeleton } from "@/components/GuardianGreetingSkeleton"
 import { StatusRail } from "@/components/StatusRail";
 import { CompactDreamCard } from "@/components/CompactDreamCard";
 import { CompactBudgetCard } from "@/components/CompactBudgetCard";
+import { PlaidConnectButton } from "@/components/PlaidConnectButton";
 import { useTheme } from "@/hooks/useTheme";
 import { useGuardianChat } from "@/hooks/useGuardianChat";
 import { useApp } from "@/context/AppContext";
@@ -267,6 +268,9 @@ export default function GuardianHomeScreen() {
             </ScrollView>
           </View>
         ) : null}
+
+        {/* Bank connect CTA — shows when user hasn't connected yet */}
+        <PlaidConnectButton variant="hero" onConnected={refreshData} />
 
         {/* 4. Top nudge — if Guardian spotted something */}
         {nudges.length > 0 ? (

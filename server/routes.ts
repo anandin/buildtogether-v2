@@ -35,9 +35,12 @@ import {
   feedback,
   activityFeed,
   guardianConversations,
+  plaidItems,
+  plaidTransactions,
 } from "../shared/schema";
 import { detectPatterns, savePatterns, createNudgeFromPattern, getActivePatterns, getPendingNudges } from "./pattern-detection";
 import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt, buildQuickAddPrompt, buildGuardianCoachPrompt, buildGuardianIntentClassifierPrompt, type GuardianCoachContext } from "./prompts";
+import { getPlaidClient, isPlaidConfigured, mapPlaidCategory, shouldImportPlaidTransaction } from "./plaid";
 
 const DEFAULT_CATEGORY_BUDGETS = [
   { category: "groceries", monthlyLimit: 600, budgetType: "recurring" },
@@ -151,6 +154,84 @@ async function logAICall(data: {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // ==================== PLAID sync helper (shared by exchange + sync endpoints) ====================
+  /**
+   * Pull new/modified transactions from Plaid for a given plaid_item_id (our
+   * DB id), import them into plaid_transactions, and map categories. Uses
+   * incremental sync via the stored cursor so we don't re-fetch history.
+   */
+  async function syncPlaidItem(itemId: string): Promise<{ added: number; modified: number }> {
+    const [item] = await db.select().from(plaidItems).where(eq(plaidItems.id, itemId)).limit(1);
+    if (!item) throw new Error("Plaid item not found");
+    if (item.status !== "active") return { added: 0, modified: 0 };
+
+    const plaid = getPlaidClient();
+    if (!plaid) throw new Error("Plaid not configured");
+
+    let added = 0;
+    let modified = 0;
+    let cursor = item.cursor || undefined;
+    let hasMore = true;
+
+    while (hasMore) {
+      const resp: any = await plaid.transactionsSync({
+        access_token: item.accessToken,
+        cursor,
+      });
+      const data = resp.data;
+
+      for (const tx of data.added || []) {
+        if (!shouldImportPlaidTransaction(tx)) continue;
+
+        const ourCat = mapPlaidCategory(tx.category, tx.personal_finance_category);
+        try {
+          await db.insert(plaidTransactions).values({
+            coupleId: item.coupleId,
+            plaidItemId: item.id,
+            plaidTransactionId: tx.transaction_id,
+            accountId: tx.account_id,
+            amount: tx.amount,
+            date: tx.date,
+            merchantName: tx.merchant_name || null,
+            name: tx.name || "Unknown",
+            plaidCategory: tx.category || null,
+            ourCategory: ourCat,
+            pending: tx.pending || false,
+            status: "pending_review",
+          });
+          added++;
+        } catch (err: any) {
+          // Unique violation = already imported, ignore
+          if (!String(err.message || "").includes("duplicate")) {
+            console.error("Plaid txn insert failed:", err.message);
+          }
+        }
+      }
+
+      for (const tx of data.modified || []) {
+        modified++;
+        // For now we just log — could update mutable fields if needed
+      }
+
+      for (const txId of data.removed || []) {
+        // Mark as ignored since Plaid removed it from its records
+        await db.update(plaidTransactions)
+          .set({ status: "ignored" })
+          .where(eq(plaidTransactions.plaidTransactionId, txId.transaction_id))
+          .catch(() => {});
+      }
+
+      cursor = data.next_cursor;
+      hasMore = data.has_more;
+    }
+
+    await db.update(plaidItems)
+      .set({ cursor, lastSyncAt: new Date(), lastError: null })
+      .where(eq(plaidItems.id, itemId));
+
+    return { added, modified };
+  }
+
   // ==================== AUTHENTICATION ENDPOINTS ====================
 
   // Apple Sign-In - verify identity token and create/update user
@@ -4368,6 +4449,222 @@ Return just the message text.`;
       });
     } catch (error: any) {
       console.error("Weekly summary error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // ==================== PLAID BANK SYNC ====================
+
+  // Small helper: short-circuit with 503 if Plaid creds aren't configured.
+  function guardPlaidConfigured(_req: any, res: any, next: any) {
+    if (!isPlaidConfigured()) {
+      return res.status(503).json({
+        error: "Plaid is not configured on this deployment",
+        code: "PLAID_NOT_CONFIGURED",
+      });
+    }
+    next();
+  }
+
+  // Returns current config status — client reads this to decide whether to
+  // show the "Connect bank" CTA or a "Coming soon" state.
+  app.get("/api/plaid/status", requireAuth, (_req, res) => {
+    res.json({
+      configured: isPlaidConfigured(),
+      environment: process.env.PLAID_ENV || "sandbox",
+    });
+  });
+
+  // Step 1 of the Link flow: backend creates a link_token scoped to this user
+  // and returns it. Client hands it to Plaid Link SDK.
+  app.post("/api/plaid/link-token", requireAuth, guardPlaidConfigured, async (req, res) => {
+    try {
+      const plaid = getPlaidClient();
+      if (!plaid) return res.status(503).json({ error: "Plaid unavailable" });
+
+      const response = await plaid.linkTokenCreate({
+        user: { client_user_id: req.user!.id },
+        client_name: "BuildTogether",
+        products: ["transactions"] as any,
+        country_codes: ["US"] as any,
+        language: "en",
+        // Webhook wiring is optional; for now we poll on demand via /sync.
+        webhook: process.env.PLAID_WEBHOOK_URL || undefined,
+      });
+
+      res.json({ linkToken: response.data.link_token, expiration: response.data.expiration });
+    } catch (error: any) {
+      console.error("Plaid link-token error:", error?.response?.data || error);
+      res.status(500).json({ error: error.message || "Failed to create link token" });
+    }
+  });
+
+  // Step 2 of the Link flow: client gets a public_token from Plaid Link on
+  // success, sends it here. We exchange for a long-lived access_token and
+  // store the Item row. Then we kick off an initial sync.
+  app.post("/api/plaid/exchange", requireAuth, guardPlaidConfigured, async (req, res) => {
+    try {
+      const { publicToken, institution } = req.body;
+      if (!publicToken) return res.status(400).json({ error: "publicToken required" });
+      if (!req.user?.coupleId) return res.status(400).json({ error: "User has no couple" });
+
+      const plaid = getPlaidClient();
+      if (!plaid) return res.status(503).json({ error: "Plaid unavailable" });
+
+      const exchange = await plaid.itemPublicTokenExchange({ public_token: publicToken });
+
+      const [item] = await db.insert(plaidItems).values({
+        coupleId: req.user.coupleId,
+        userId: req.user.id,
+        plaidItemId: exchange.data.item_id,
+        accessToken: exchange.data.access_token,
+        institutionId: institution?.institution_id || null,
+        institutionName: institution?.name || null,
+        status: "active",
+      }).returning();
+
+      // Kick off initial sync (non-blocking so we can respond fast)
+      syncPlaidItem(item.id).catch(err => console.error("Initial Plaid sync failed:", err));
+
+      res.json({ item: { id: item.id, institutionName: item.institutionName } });
+    } catch (error: any) {
+      console.error("Plaid exchange error:", error?.response?.data || error);
+      res.status(500).json({ error: error.message || "Failed to exchange token" });
+    }
+  });
+
+  // List connected banks for the couple
+  app.get("/api/plaid/items/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
+    try {
+      const rows = await db.select().from(plaidItems)
+        .where(eq(plaidItems.coupleId, req.params.coupleId))
+        .orderBy(desc(plaidItems.createdAt));
+      // Never expose access tokens to client
+      res.json(rows.map((r: any) => ({
+        id: r.id,
+        institutionName: r.institutionName,
+        status: r.status,
+        lastSyncAt: r.lastSyncAt,
+        lastError: r.lastError,
+        createdAt: r.createdAt,
+      })));
+    } catch (error: any) {
+      console.error("Plaid items list error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Disconnect a bank — revoke the access token with Plaid, soft-delete our row
+  app.delete("/api/plaid/items/:itemId", requireAuth, async (req, res) => {
+    try {
+      const [item] = await db.select().from(plaidItems).where(eq(plaidItems.id, req.params.itemId)).limit(1);
+      if (!item) return res.status(404).json({ error: "Item not found" });
+      if (item.coupleId !== req.user?.coupleId) return res.status(403).json({ error: "Access denied" });
+
+      const plaid = getPlaidClient();
+      if (plaid) {
+        await plaid.itemRemove({ access_token: item.accessToken }).catch((err: any) => {
+          console.error("Plaid itemRemove failed (continuing):", err?.response?.data || err);
+        });
+      }
+      await db.update(plaidItems).set({ status: "disconnected" }).where(eq(plaidItems.id, item.id));
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("Plaid disconnect error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Pull fresh transactions for all the couple's connected banks
+  app.post("/api/plaid/sync/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
+    try {
+      const items = await db.select().from(plaidItems)
+        .where(and(
+          eq(plaidItems.coupleId, req.params.coupleId),
+          eq(plaidItems.status, "active"),
+        ));
+      const results: Array<{ itemId: string; added: number; modified: number; error?: string }> = [];
+      for (const item of items) {
+        try {
+          const { added, modified } = await syncPlaidItem(item.id);
+          results.push({ itemId: item.id, added, modified });
+        } catch (err: any) {
+          results.push({ itemId: item.id, added: 0, modified: 0, error: err.message });
+        }
+      }
+      res.json({ synced: results });
+    } catch (error: any) {
+      console.error("Plaid sync error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // List transactions pending the user's review (imported from Plaid, not yet
+  // accepted as expenses)
+  app.get("/api/plaid/pending/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
+    try {
+      const rows = await db.select().from(plaidTransactions)
+        .where(and(
+          eq(plaidTransactions.coupleId, req.params.coupleId),
+          eq(plaidTransactions.status, "pending_review"),
+        ))
+        .orderBy(desc(plaidTransactions.date))
+        .limit(100);
+      res.json(rows);
+    } catch (error: any) {
+      console.error("Plaid pending list error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Accept one pending transaction → creates an expense row and marks it accepted
+  app.post("/api/plaid/pending/:plaidTxnId/accept", requireAuth, async (req, res) => {
+    try {
+      const { overrides } = req.body || {};
+      const [ptx] = await db.select().from(plaidTransactions)
+        .where(eq(plaidTransactions.id, req.params.plaidTxnId))
+        .limit(1);
+      if (!ptx) return res.status(404).json({ error: "Pending transaction not found" });
+      if (ptx.coupleId !== req.user?.coupleId) return res.status(403).json({ error: "Access denied" });
+      if (ptx.status !== "pending_review") return res.status(400).json({ error: "Already processed" });
+
+      const [expense] = await db.insert(expenses).values({
+        coupleId: ptx.coupleId,
+        amount: overrides?.amount ?? ptx.amount,
+        description: overrides?.description ?? (ptx.merchantName || ptx.name),
+        merchant: overrides?.merchant ?? (ptx.merchantName || ptx.name),
+        category: overrides?.category ?? (ptx.ourCategory || "other"),
+        date: ptx.date,
+        paidBy: overrides?.paidBy ?? (req.user.partnerRole || "partner1"),
+        splitMethod: overrides?.splitMethod ?? "joint",
+      }).returning();
+
+      await db.update(plaidTransactions)
+        .set({ status: "accepted", expenseId: expense.id })
+        .where(eq(plaidTransactions.id, ptx.id));
+
+      res.json({ expense });
+    } catch (error: any) {
+      console.error("Plaid accept error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
+  // Ignore a pending transaction (user doesn't want to track it)
+  app.post("/api/plaid/pending/:plaidTxnId/ignore", requireAuth, async (req, res) => {
+    try {
+      const [ptx] = await db.select().from(plaidTransactions)
+        .where(eq(plaidTransactions.id, req.params.plaidTxnId))
+        .limit(1);
+      if (!ptx) return res.status(404).json({ error: "Pending transaction not found" });
+      if (ptx.coupleId !== req.user?.coupleId) return res.status(403).json({ error: "Access denied" });
+
+      await db.update(plaidTransactions)
+        .set({ status: "ignored" })
+        .where(eq(plaidTransactions.id, ptx.id));
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("Plaid ignore error:", error);
       res.status(500).json({ error: error.message });
     }
   });
