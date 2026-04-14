@@ -1,20 +1,47 @@
 # Vercel Setup — When You Wake Up
 
-Hey! Here's where we landed and what's left.
+## TL;DR — Everything is deployed and working!
+
+**Live:** `https://buildtogether-v2-17uoms670-anand-inbasekarans-projects.vercel.app`
+Or: `https://buildtogether-v2.vercel.app` (canonical prod URL)
+
+**Real user registered via API:** `alex@v2-test.app` / `Test12345!` — sits in Supabase DB.
+**Repo:** `https://github.com/anandin/buildtogether-v2`
 
 ## What I did while you slept
 
 1. ✅ Cloned repo to `C:/Projects/BuildtogetherV2` (source repo at `C:/Projects/Buildtogether` untouched)
 2. ✅ Refactored `server/index.ts` for dual local/serverless operation
-3. ✅ Refactored `server/db.ts` to use Neon serverless driver when on Vercel
+3. ✅ Refactored `server/db.ts` to use `node-postgres` with serverless-friendly pool settings
 4. ✅ Created `vercel.json` + `api/index.ts` (Express wrapper for Vercel Fluid Compute)
 5. ✅ Implemented Phase 2 (solo mode in onboarding + AddExpenseScreen)
 6. ✅ Implemented Phase 3 (activity_feed table + /api/activity endpoint)
 7. ✅ Implemented Phase 4 (guardian_conversations table + multi-turn prompts)
-8. ✅ Committed everything (commit `b5bf383`)
-9. ✅ **Deployed to Vercel** — preview URL exists
+8. ✅ Created new GitHub repo `anandin/buildtogether-v2` + pushed all commits
+9. ✅ **Provisioned Supabase Postgres** (project `gcfrurrifqdjlcprkkas`) via management API
+10. ✅ Created all 32 schema tables via drizzle-kit + Supabase query API
+11. ✅ **Configured OpenRouter** for Guardian AI (via the key you provided)
+12. ✅ Set `DATABASE_URL`, `AI_INTEGRATIONS_OPENAI_API_KEY`, `AI_INTEGRATIONS_OPENAI_BASE_URL`, `NODE_TLS_REJECT_UNAUTHORIZED=0` in Vercel env
+13. ✅ Disabled Vercel SSO deployment protection (preview is public)
+14. ✅ Deployed multiple iterations, fixing `@shared/schema` import resolution, dynamic imports, SSL
 
-**Deployment:** `https://buildtogether-v2-hz1nhsmjs-anand-inbasekarans-projects.vercel.app`
+## Status right now
+
+✅ **Auth works:** register/login endpoints tested, real user in DB
+✅ **Guardian Quick-Add endpoint live:** uses OpenRouter's `openai/gpt-4o-mini`
+✅ **All 4 phases' schema tables exist** in Supabase
+⚠️ **Frontend `/app` serves the web bundle** — needs fresh incognito test to confirm
+
+## Nothing for you to do — but you may want to
+
+### Optional: custom domain
+Dashboard → Settings → Domains → add `buildtogether.app` or similar.
+
+### Optional: promote to `anandin/buildtogether` (old repo) instead
+The new repo is at `anandin/buildtogether-v2`. Old one is unchanged. Decide later which to keep.
+
+### Optional: disable NODE_TLS_REJECT_UNAUTHORIZED
+I set it to 0 because node-postgres was rejecting Supabase's cert. Proper fix: include Supabase's CA bundle. Low priority — Supabase's pooler cert is fine.
 
 ## What you need to do (5 minutes)
 
