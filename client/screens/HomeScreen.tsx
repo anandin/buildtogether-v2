@@ -19,7 +19,10 @@ import { useQuery } from "@tanstack/react-query";
 
 import { NudgeCard } from "@/components/NudgeCard";
 import { ThemedText } from "@/components/ThemedText";
+import { GuardianInput } from "@/components/GuardianInput";
+import { GuardianMessageBubble } from "@/components/GuardianMessageBubble";
 import { useTheme } from "@/hooks/useTheme";
+import { useGuardianChat } from "@/hooks/useGuardianChat";
 import { useApp } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
 import { useSubscription } from "@/context/SubscriptionContext";
@@ -111,6 +114,7 @@ export default function HomeScreen() {
   const { data, loading, refreshData } = useApp();
   const { user } = useAuth();
   const { isPremium } = useSubscription();
+  const guardianChat = useGuardianChat();
 
   const [nudges, setNudges] = useState<Nudge[]>([]);
   const [loadingNudges, setLoadingNudges] = useState(false);
@@ -209,7 +213,7 @@ export default function HomeScreen() {
   }, [personalizedGreeting, data]);
 
   const fetchNudges = useCallback(async () => {
-    if (!user?.coupleId || !isPremium) return;
+    if (!user?.coupleId) return;
     setLoadingNudges(true);
     try {
       const response = await fetch(
@@ -227,7 +231,7 @@ export default function HomeScreen() {
   }, [user?.coupleId, isPremium]);
 
   const detectPatterns = useCallback(async () => {
-    if (!user?.coupleId || !isPremium) return;
+    if (!user?.coupleId) return;
     try {
       const response = await fetch(
         new URL("/api/patterns/detect", getApiUrl()).toString(),
@@ -263,6 +267,16 @@ export default function HomeScreen() {
     fetchNudges();
   }, [fetchNudges]);
 
+  // Set Guardian greeting from personalized greeting
+  useEffect(() => {
+    if (greetingMessage.greeting) {
+      const fullGreeting = greetingMessage.message
+        ? `${greetingMessage.greeting}! ${greetingMessage.message}`
+        : greetingMessage.greeting;
+      guardianChat.setGreeting(fullGreeting);
+    }
+  }, [greetingMessage.greeting, greetingMessage.message]);
+
   useEffect(() => {
     if (currentMonthExpenses.length >= 5 && nudges.length === 0 && !loadingNudges) {
       detectPatterns();
@@ -290,158 +304,190 @@ export default function HomeScreen() {
   const weekTotal = weekExpenses.reduce((sum, e) => sum + e.amount, 0);
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
-      contentContainerStyle={{
-        paddingTop: headerHeight + Spacing.lg,
-        paddingBottom: tabBarHeight + Spacing["3xl"],
-        paddingHorizontal: Spacing.lg,
-      }}
-      scrollIndicatorInsets={{ bottom: insets.bottom }}
-      showsVerticalScrollIndicator={false}
-      refreshControl={
-        <RefreshControl refreshing={loading} onRefresh={refreshData} />
-      }
-    >
-      <View style={styles.greetingSection}>
-        <Animated.View style={[styles.guardianAvatar, breatheStyle]}>
-          <Image
-            source={dreamGuardianIcon}
-            style={styles.guardianImage}
-            resizeMode="cover"
-          />
-        </Animated.View>
-        <ThemedText type="h3" style={styles.greetingText}>
-          {greetingMessage.greeting}
-        </ThemedText>
-        <ThemedText type="body" style={[styles.guardianMessage, { color: theme.textSecondary }]}>
-          {greetingMessage.message}
-        </ThemedText>
-      </View>
-
-      <View style={styles.dreamGlow}>
-        <Animated.View style={[styles.glowRing, { borderColor: theme.primary + "30" }, glowStyle]} />
-        <View style={[styles.dreamCircle, { backgroundColor: theme.backgroundDefault }]}>
-          {totalSaved > 0 ? (
-            <>
-              <ThemedText type="tiny" style={{ color: theme.textSecondary, marginBottom: 2 }}>
-                Dreams Protected
-              </ThemedText>
-              <ThemedText type="h2" style={{ color: theme.primary }}>
-                ${totalSaved.toLocaleString()}
-              </ThemedText>
-              {closestDream ? (
-                <ThemedText type="tiny" style={{ color: theme.success, marginTop: 4, fontWeight: "600" }}>
-                  {closestDreamProgress}% to "{closestDream.name}"
-                </ThemedText>
-              ) : null}
-            </>
-          ) : (
-            <>
-              <Feather name="shield" size={28} color={theme.primary} />
-              <ThemedText type="small" style={{ color: theme.textSecondary, marginTop: Spacing.sm, textAlign: "center" }}>
-                Your dreams are{"\n"}waiting to grow
-              </ThemedText>
-            </>
-          )}
-        </View>
-      </View>
-
-      {currentStreak > 0 ? (
-        <View style={styles.streakRow}>
-          <Feather name="zap" size={14} color="#F59E0B" />
-          <ThemedText type="small" style={{ color: theme.textSecondary }}>
-            {currentStreak} week savings streak
-          </ThemedText>
-        </View>
-      ) : null}
-
-      {isPremium && nudges.length > 0 ? (
-        <View style={styles.nudgeSection}>
-          <ThemedText type="tiny" style={{ color: theme.textSecondary, marginBottom: Spacing.sm, letterSpacing: 1 }}>
-            GUARDIAN NOTICED SOMETHING
-          </ThemedText>
-          {nudges.slice(0, 1).map((nudge) => (
-            <NudgeCard
-              key={nudge.id}
-              nudge={nudge}
-              coupleId={user?.coupleId || ""}
-              onAccept={handleNudgeAccept}
-              onDismiss={handleNudgeDismiss}
-              onCommitmentCreated={refreshData}
+    <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={{
+          paddingTop: headerHeight + Spacing.lg,
+          paddingBottom: Spacing["3xl"],
+          paddingHorizontal: Spacing.lg,
+        }}
+        scrollIndicatorInsets={{ bottom: insets.bottom }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={loading} onRefresh={refreshData} />
+        }
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* Guardian Conversation Area */}
+        <View style={styles.chatSection}>
+          {guardianChat.messages.map((msg) => (
+            <GuardianMessageBubble
+              key={msg.id}
+              message={msg}
+              onConfirm={guardianChat.confirmExpense}
+              onDismiss={guardianChat.dismissExpense}
+              onEdit={() => {
+                if (msg.parsedExpense) {
+                  guardianChat.dismissExpense();
+                  navigation.navigate("AddExpense", {
+                    prefilled: {
+                      amount: msg.parsedExpense.amount,
+                      merchant: msg.parsedExpense.merchant,
+                      category: msg.parsedExpense.category,
+                      description: msg.parsedExpense.description,
+                      paidBy: msg.parsedExpense.paidBy,
+                      splitMethod: msg.parsedExpense.splitMethod,
+                    },
+                  });
+                }
+              }}
+              onUndo={guardianChat.undoAutoSave}
             />
           ))}
         </View>
-      ) : null}
 
-      <View style={styles.actionsSection}>
-        <ActionButton
-          icon="edit-3"
-          label="Add Expense"
-          subtitle="Quick entry or describe it naturally"
-          color={theme.primary}
-          onPress={() => navigation.navigate("AddExpense")}
-          testID="button-add-expense"
-        />
-        <ActionButton
-          icon="camera"
-          label="Scan Receipt"
-          subtitle="Snap a photo and we'll do the rest"
-          color={theme.accent}
-          onPress={() => navigation.navigate("ScanReceipt")}
-          testID="button-scan-receipt"
-        />
-      </View>
-
-      <View style={[styles.snapshot, { backgroundColor: theme.backgroundDefault }]}>
-        <ThemedText type="tiny" style={{ color: theme.textSecondary, letterSpacing: 1, marginBottom: Spacing.md }}>
-          THIS WEEK AT A GLANCE
-        </ThemedText>
-        <View style={styles.snapshotRow}>
-          <View style={styles.snapshotItem}>
-            <ThemedText type="h4" style={{ color: theme.text }}>
-              ${weekTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-            </ThemedText>
-            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
-              spent this week
-            </ThemedText>
-          </View>
-          <View style={[styles.snapshotDivider, { backgroundColor: theme.border }]} />
-          <View style={styles.snapshotItem}>
-            <ThemedText type="h4" style={{ color: budgetPercentage > 0.9 ? theme.error : budgetPercentage > 0.75 ? theme.warning : theme.success }}>
-              ${remaining.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-            </ThemedText>
-            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
-              left this month
-            </ThemedText>
-          </View>
-          <View style={[styles.snapshotDivider, { backgroundColor: theme.border }]} />
-          <View style={styles.snapshotItem}>
-            <ThemedText type="h4" style={{ color: theme.primary }}>
-              {data?.goals?.length || 0}
-            </ThemedText>
-            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
-              {(data?.goals?.length || 0) === 1 ? "dream" : "dreams"}
-            </ThemedText>
+        {/* Compact Dream Status */}
+        <View style={styles.dreamGlow}>
+          <Animated.View style={[styles.glowRing, { borderColor: theme.primary + "30" }, glowStyle]} />
+          <View style={[styles.dreamCircle, { backgroundColor: theme.backgroundDefault }]}>
+            {totalSaved > 0 ? (
+              <>
+                <ThemedText type="tiny" style={{ color: theme.textSecondary, marginBottom: 2 }}>
+                  Dreams Protected
+                </ThemedText>
+                <ThemedText type="h2" style={{ color: theme.primary }}>
+                  ${totalSaved.toLocaleString()}
+                </ThemedText>
+                {closestDream ? (
+                  <ThemedText type="tiny" style={{ color: theme.success, marginTop: 4, fontWeight: "600" }}>
+                    {closestDreamProgress}% to "{closestDream.name}"
+                  </ThemedText>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <Feather name="shield" size={28} color={theme.primary} />
+                <ThemedText type="small" style={{ color: theme.textSecondary, marginTop: Spacing.sm, textAlign: "center" }}>
+                  Your dreams are{"\n"}waiting to grow
+                </ThemedText>
+              </>
+            )}
           </View>
         </View>
-      </View>
 
-      {greetingMessage.suggestion ? (
-        <View style={styles.suggestionRow}>
-          <Feather name="message-circle" size={14} color={theme.textTertiary} />
-          <ThemedText type="small" style={{ color: theme.textTertiary, fontStyle: "italic", flex: 1 }}>
-            {greetingMessage.suggestion}
+        {currentStreak > 0 ? (
+          <View style={styles.streakRow}>
+            <Feather name="zap" size={14} color="#F59E0B" />
+            <ThemedText type="small" style={{ color: theme.textSecondary }}>
+              {currentStreak} week savings streak
+            </ThemedText>
+          </View>
+        ) : null}
+
+        {nudges.length > 0 ? (
+          <View style={styles.nudgeSection}>
+            <ThemedText type="tiny" style={{ color: theme.textSecondary, marginBottom: Spacing.sm, letterSpacing: 1 }}>
+              GUARDIAN NOTICED SOMETHING
+            </ThemedText>
+            {nudges.slice(0, 1).map((nudge) => (
+              <NudgeCard
+                key={nudge.id}
+                nudge={nudge}
+                coupleId={user?.coupleId || ""}
+                onAccept={handleNudgeAccept}
+                onDismiss={handleNudgeDismiss}
+                onCommitmentCreated={refreshData}
+              />
+            ))}
+          </View>
+        ) : null}
+
+        {/* Quick Actions — Scan + Full Form fallback */}
+        <View style={styles.actionsSection}>
+          <ActionButton
+            icon="camera"
+            label="Scan Receipt"
+            subtitle="Snap a photo and we'll do the rest"
+            color={theme.accent}
+            onPress={() => navigation.navigate("ScanReceipt")}
+            testID="button-scan-receipt"
+          />
+          <ActionButton
+            icon="sliders"
+            label="Detailed Entry"
+            subtitle="Full form with all options"
+            color={theme.textTertiary}
+            onPress={() => navigation.navigate("AddExpense")}
+            testID="button-add-expense"
+          />
+        </View>
+
+        <View style={[styles.snapshot, { backgroundColor: theme.backgroundDefault }]}>
+          <ThemedText type="tiny" style={{ color: theme.textSecondary, letterSpacing: 1, marginBottom: Spacing.md }}>
+            THIS WEEK AT A GLANCE
           </ThemedText>
+          <View style={styles.snapshotRow}>
+            <View style={styles.snapshotItem}>
+              <ThemedText type="h4" style={{ color: theme.text }}>
+                ${weekTotal.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </ThemedText>
+              <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+                spent this week
+              </ThemedText>
+            </View>
+            <View style={[styles.snapshotDivider, { backgroundColor: theme.border }]} />
+            <View style={styles.snapshotItem}>
+              <ThemedText type="h4" style={{ color: budgetPercentage > 0.9 ? theme.error : budgetPercentage > 0.75 ? theme.warning : theme.success }}>
+                ${remaining.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+              </ThemedText>
+              <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+                left this month
+              </ThemedText>
+            </View>
+            <View style={[styles.snapshotDivider, { backgroundColor: theme.border }]} />
+            <View style={styles.snapshotItem}>
+              <ThemedText type="h4" style={{ color: theme.primary }}>
+                {data?.goals?.length || 0}
+              </ThemedText>
+              <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+                {(data?.goals?.length || 0) === 1 ? "dream" : "dreams"}
+              </ThemedText>
+            </View>
+          </View>
         </View>
-      ) : null}
-    </ScrollView>
+
+        {greetingMessage.suggestion ? (
+          <View style={styles.suggestionRow}>
+            <Feather name="message-circle" size={14} color={theme.textTertiary} />
+            <ThemedText type="small" style={{ color: theme.textTertiary, fontStyle: "italic", flex: 1 }}>
+              {greetingMessage.suggestion}
+            </ThemedText>
+          </View>
+        ) : null}
+      </ScrollView>
+
+      {/* Guardian Input Bar — always visible at bottom */}
+      <GuardianInput
+        onSubmit={guardianChat.sendMessage}
+        onCameraPress={() => navigation.navigate("ScanReceipt")}
+        isProcessing={guardianChat.isProcessing}
+        placeholder="Tell me about a purchase..."
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  chatSection: {
+    marginBottom: Spacing.lg,
+    minHeight: 60,
   },
   greetingSection: {
     alignItems: "center",

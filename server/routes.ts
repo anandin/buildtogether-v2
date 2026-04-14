@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import OpenAI from "openai";
 import bcrypt from "bcryptjs";
 import { eq, and, desc, inArray } from "drizzle-orm";
+import { requireAuth, requireCoupleAccess } from "./middleware/auth";
 import { db } from "./db";
 import {
   couples,
@@ -514,7 +515,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Create partner invite
-  app.post("/api/invite/create", async (req, res) => {
+  app.post("/api/invite/create", requireAuth, async (req, res) => {
     try {
       const { coupleId, userId, email } = req.body;
 
@@ -555,7 +556,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Accept partner invite
-  app.post("/api/invite/accept", async (req, res) => {
+  app.post("/api/invite/accept", requireAuth, async (req, res) => {
     try {
       const { inviteCode, userId } = req.body;
 
@@ -612,7 +613,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get current invite for a couple
-  app.get("/api/invite/:coupleId", async (req, res) => {
+  app.get("/api/invite/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
 
@@ -641,7 +642,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // ==================== EXISTING ENDPOINTS ====================
 
   // Receipt scanning endpoint - enhanced with line item extraction
-  app.post("/api/scan-receipt", async (req, res) => {
+  app.post("/api/scan-receipt", requireAuth, async (req, res) => {
     try {
       const { image } = req.body;
 
@@ -744,7 +745,7 @@ If you cannot read the receipt clearly, still try to provide your best guess. If
   });
 
   // AI Insights endpoint - analyzes spending patterns and generates savings tips
-  app.post("/api/ai-insights", async (req, res) => {
+  app.post("/api/ai-insights", requireAuth, async (req, res) => {
     try {
       const { expenses, goals, categoryBudgets, partners } = req.body;
 
@@ -912,8 +913,164 @@ Please analyze our budgets and spending to provide personalized insights. Focus 
     }
   });
 
+  // ==================== GUARDIAN QUICK-ADD (Agent-First Expense Entry) ====================
+  app.post("/api/guardian/quick-add", requireAuth, async (req, res) => {
+    try {
+      const { text, coupleId } = req.body;
+
+      if (!text || !coupleId) {
+        return res.status(400).json({ error: "Text and coupleId are required" });
+      }
+
+      // Verify couple access
+      if (req.user?.coupleId !== coupleId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Gather context for smart parsing
+      const [couple, recentExpenses, budgets] = await Promise.all([
+        db.query.couples.findFirst({ where: eq(couples.id, coupleId) }),
+        db.select().from(expenses)
+          .where(eq(expenses.coupleId, coupleId))
+          .orderBy(desc(expenses.createdAt))
+          .limit(30),
+        db.select().from(categoryBudgets)
+          .where(eq(categoryBudgets.coupleId, coupleId)),
+      ]);
+
+      if (!couple) {
+        return res.status(404).json({ error: "Couple not found" });
+      }
+
+      const isSoloMode = !couple.partner2Name || couple.partner2Name === "Partner" || couple.partner2Name === "";
+
+      // Extract recent merchants (deduplicated)
+      const recentMerchants = [...new Set(
+        recentExpenses
+          .map(e => e.merchant)
+          .filter((m): m is string => !!m)
+      )].slice(0, 15);
+
+      // Determine default split from recent behavior
+      const splitCounts: Record<string, number> = {};
+      recentExpenses.slice(0, 10).forEach(e => {
+        splitCounts[e.splitMethod] = (splitCounts[e.splitMethod] || 0) + 1;
+      });
+      const defaultSplitMethod = Object.entries(splitCounts)
+        .sort((a, b) => b[1] - a[1])[0]?.[0] || "even";
+
+      // Calculate current month budget status
+      const now = new Date();
+      const currentMonthExpenses = recentExpenses.filter(e => {
+        const d = new Date(e.date);
+        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      });
+
+      const spentByCategory: Record<string, number> = {};
+      currentMonthExpenses.forEach(e => {
+        spentByCategory[e.category] = (spentByCategory[e.category] || 0) + e.amount;
+      });
+
+      const budgetStatus = budgets.map(b => ({
+        category: b.category,
+        spent: spentByCategory[b.category] || 0,
+        limit: b.monthlyLimit,
+      }));
+
+      const categories = [
+        "groceries", "restaurants", "transport", "utilities", "internet",
+        "entertainment", "shopping", "health", "subscriptions", "personal",
+        "education", "gifts", "other",
+      ];
+
+      const { buildQuickAddPrompt } = await import("./prompts");
+
+      const prompt = buildQuickAddPrompt({
+        partner1Name: couple.partner1Name,
+        partner2Name: couple.partner2Name,
+        currentUserRole: req.user?.partnerRole || "partner1",
+        recentMerchants,
+        defaultSplitMethod: isSoloMode ? "joint" : defaultSplitMethod,
+        categories,
+        budgetStatus,
+        isSoloMode,
+      });
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: prompt },
+          { role: "user", content: text },
+        ],
+        max_completion_tokens: 400,
+        response_format: { type: "json_object" },
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        return res.status(500).json({ error: "Failed to parse expense" });
+      }
+
+      const parsed = JSON.parse(content);
+
+      // Add budget alert if approaching limit
+      let budgetAlert: string | undefined;
+      if (parsed.amount && parsed.category) {
+        const budget = budgetStatus.find(b => b.category === parsed.category);
+        if (budget) {
+          const projectedSpent = budget.spent + parsed.amount;
+          const pct = Math.round((projectedSpent / budget.limit) * 100);
+          if (pct >= 100) {
+            budgetAlert = `This puts you over your ${parsed.category} budget ($${budget.limit}/mo). You'd be at ${pct}%.`;
+          } else if (pct >= 80) {
+            budgetAlert = `You're at ${pct}% of your ${parsed.category} budget ($${budget.limit}/mo) after this.`;
+          }
+        }
+      }
+
+      // Determine if we should auto-save (small, high-confidence expenses)
+      const autoSave = parsed.amount && parsed.amount < 15 && parsed.confidence >= 0.9 && !parsed.clarificationQuestion;
+
+      let savedExpense = null;
+      if (autoSave) {
+        const today = new Date().toISOString().split("T")[0];
+        const [expense] = await db.insert(expenses).values({
+          coupleId,
+          amount: parsed.amount,
+          description: parsed.description || "",
+          merchant: parsed.merchant || null,
+          category: parsed.category,
+          date: today,
+          paidBy: parsed.paidBy || req.user?.partnerRole || "partner1",
+          splitMethod: parsed.splitMethod || (isSoloMode ? "joint" : defaultSplitMethod),
+        }).returning();
+        savedExpense = expense;
+      }
+
+      res.json({
+        parsed: {
+          amount: parsed.amount,
+          merchant: parsed.merchant,
+          category: parsed.category,
+          description: parsed.description,
+          paidBy: parsed.paidBy,
+          splitMethod: parsed.splitMethod,
+        },
+        confidence: parsed.confidence || 0.5,
+        guardianMessage: parsed.guardianMessage || "Got it!",
+        clarificationQuestion: parsed.clarificationQuestion || null,
+        budgetAlert: budgetAlert || null,
+        autoSaved: !!savedExpense,
+        savedExpense,
+      });
+    } catch (error: any) {
+      console.error("Guardian quick-add error:", error);
+      res.status(500).json({ error: error.message || "Failed to process expense" });
+    }
+  });
+
   // Quick expense parsing - parse natural language expense input
-  app.post("/api/parse-expense", async (req, res) => {
+  app.post("/api/parse-expense", requireAuth, async (req, res) => {
     try {
       const { text } = req.body;
 
@@ -979,7 +1136,7 @@ Respond in JSON format:
   });
 
   // Ego Spend Detection - identifies luxury/status purchases for "Vanish" nudges
-  app.post("/api/detect-ego-spends", async (req, res) => {
+  app.post("/api/detect-ego-spends", requireAuth, async (req, res) => {
     try {
       const { expenses } = req.body;
 
@@ -1077,7 +1234,7 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
   // ===== DATA SYNC API ENDPOINTS =====
 
   // Get or create couple
-  app.get("/api/couple/:coupleId", async (req, res) => {
+  app.get("/api/couple/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       let [couple] = await db.select().from(couples).where(eq(couples.id, coupleId));
@@ -1098,7 +1255,7 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
   });
 
   // Update couple
-  app.put("/api/couple/:coupleId", async (req, res) => {
+  app.put("/api/couple/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const updates = req.body;
@@ -1116,7 +1273,7 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
   });
 
   // Get all expenses for a couple
-  app.get("/api/expenses/:coupleId", async (req, res) => {
+  app.get("/api/expenses/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const result = await db.select().from(expenses)
@@ -1130,7 +1287,7 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
   });
 
   // Get line items for an expense
-  app.get("/api/expenses/:coupleId/:expenseId/line-items", async (req, res) => {
+  app.get("/api/expenses/:coupleId/:expenseId/line-items", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { expenseId } = req.params;
       const result = await db.select().from(lineItems)
@@ -1144,7 +1301,7 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
   });
 
   // Add expense
-  app.post("/api/expenses/:coupleId", async (req, res) => {
+  app.post("/api/expenses/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const expenseData = req.body;
@@ -1162,7 +1319,7 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
   });
 
   // Update expense
-  app.put("/api/expenses/:coupleId/:expenseId", async (req, res) => {
+  app.put("/api/expenses/:coupleId/:expenseId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId, expenseId } = req.params;
       const updates = req.body;
@@ -1180,7 +1337,7 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
   });
 
   // Delete expense
-  app.delete("/api/expenses/:coupleId/:expenseId", async (req, res) => {
+  app.delete("/api/expenses/:coupleId/:expenseId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId, expenseId } = req.params;
       
@@ -1195,7 +1352,7 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
   });
 
   // Get all goals for a couple
-  app.get("/api/goals/:coupleId", async (req, res) => {
+  app.get("/api/goals/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const goalsResult = await db.select().from(goals)
@@ -1219,7 +1376,7 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
   });
 
   // Add goal
-  app.post("/api/goals/:coupleId", async (req, res) => {
+  app.post("/api/goals/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const goalData = req.body;
@@ -1238,7 +1395,7 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
   });
 
   // Update goal
-  app.put("/api/goals/:coupleId/:goalId", async (req, res) => {
+  app.put("/api/goals/:coupleId/:goalId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId, goalId } = req.params;
       const updates = req.body;
@@ -1256,7 +1413,7 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
   });
 
   // Delete goal
-  app.delete("/api/goals/:coupleId/:goalId", async (req, res) => {
+  app.delete("/api/goals/:coupleId/:goalId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId, goalId } = req.params;
       
@@ -1271,7 +1428,7 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
   });
 
   // Add goal contribution
-  app.post("/api/goals/:coupleId/:goalId/contribute", async (req, res) => {
+  app.post("/api/goals/:coupleId/:goalId/contribute", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId, goalId } = req.params;
       const { amount, contributor, date } = req.body;
@@ -1298,7 +1455,7 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
   });
 
   // Get category budgets
-  app.get("/api/budgets/:coupleId", async (req, res) => {
+  app.get("/api/budgets/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const result = await db.select().from(categoryBudgets)
@@ -1311,7 +1468,7 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
   });
 
   // Add or update category budget
-  app.post("/api/budgets/:coupleId", async (req, res) => {
+  app.post("/api/budgets/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const budgetData = req.body;
@@ -1343,7 +1500,7 @@ Identify the expenses that represent "Ego Spending" (status/luxury/impulse) that
   });
 
   // AI-powered budget generation based on city and family composition
-  app.post("/api/budgets/:coupleId/generate", async (req, res) => {
+  app.post("/api/budgets/:coupleId/generate", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const { city, numAdults = 2, numKidsUnder5 = 0, numKids5to12 = 0, numTeens = 0 } = req.body;
@@ -1494,7 +1651,7 @@ Respond ONLY with valid JSON in this exact format:
   });
 
   // Get custom categories
-  app.get("/api/categories/:coupleId", async (req, res) => {
+  app.get("/api/categories/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const result = await db.select().from(customCategories)
@@ -1507,7 +1664,7 @@ Respond ONLY with valid JSON in this exact format:
   });
 
   // Add custom category
-  app.post("/api/categories/:coupleId", async (req, res) => {
+  app.post("/api/categories/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const { name, icon, color } = req.body;
@@ -1527,7 +1684,7 @@ Respond ONLY with valid JSON in this exact format:
   });
 
   // Delete custom category
-  app.delete("/api/categories/:coupleId/:categoryId", async (req, res) => {
+  app.delete("/api/categories/:coupleId/:categoryId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId, categoryId } = req.params;
       
@@ -1542,7 +1699,7 @@ Respond ONLY with valid JSON in this exact format:
   });
 
   // Add settlement
-  app.post("/api/settlements/:coupleId", async (req, res) => {
+  app.post("/api/settlements/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const settlementData = req.body;
@@ -1568,7 +1725,7 @@ Respond ONLY with valid JSON in this exact format:
   });
 
   // Get settlements
-  app.get("/api/settlements/:coupleId", async (req, res) => {
+  app.get("/api/settlements/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const result = await db.select().from(settlements)
@@ -1582,7 +1739,7 @@ Respond ONLY with valid JSON in this exact format:
   });
 
   // Sync all data for a couple (for initial load)
-  app.get("/api/sync/:coupleId", async (req, res) => {
+  app.get("/api/sync/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       
@@ -1655,7 +1812,7 @@ Respond ONLY with valid JSON in this exact format:
   });
 
   // Update family profile
-  app.put("/api/family/:coupleId", async (req, res) => {
+  app.put("/api/family/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const { numAdults, numKidsUnder5, numKids5to12, numTeens, city, country } = req.body;
@@ -1673,7 +1830,7 @@ Respond ONLY with valid JSON in this exact format:
   });
 
   // Save line items for an expense
-  app.post("/api/expenses/:coupleId/:expenseId/line-items", async (req, res) => {
+  app.post("/api/expenses/:coupleId/:expenseId/line-items", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { expenseId } = req.params;
       const { items } = req.body;
@@ -1701,8 +1858,8 @@ Respond ONLY with valid JSON in this exact format:
     }
   });
 
-  // Get line items for an expense
-  app.get("/api/expenses/:coupleId/:expenseId/line-items", async (req, res) => {
+  // Get line items for an expense (alternate)
+  app.get("/api/expenses/:coupleId/:expenseId/line-items", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { expenseId } = req.params;
       const items = await db.select().from(lineItems)
@@ -1715,7 +1872,7 @@ Respond ONLY with valid JSON in this exact format:
   });
 
   // Update a line item (for reclassification)
-  app.put("/api/line-items/:itemId", async (req, res) => {
+  app.put("/api/line-items/:itemId", requireAuth, async (req, res) => {
     try {
       const { itemId } = req.params;
       const { classification, isEssential } = req.body;
@@ -1755,7 +1912,7 @@ Respond ONLY with valid JSON in this exact format:
   });
 
   // AI-powered spending insights with benchmarks and caching
-  app.post("/api/spending-insights/:coupleId", async (req, res) => {
+  app.post("/api/spending-insights/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const forceRefresh = req.body?.forceRefresh === true;
@@ -1951,7 +2108,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   });
 
   // Seed default spending benchmarks (run once)
-  app.post("/api/benchmarks/seed", async (req, res) => {
+  app.post("/api/benchmarks/seed", requireAuth, async (req, res) => {
     try {
       const defaultBenchmarks = [
         { category: "groceries", familySize: 2, hasKids: false, country: "US", monthlyAverage: 550, lowRange: 400, highRange: 750, source: "BLS 2024" },
@@ -1989,7 +2146,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   // ==================== GUARDIAN MEMORY SYSTEM ====================
 
   // Get all Guardian insights for a couple
-  app.get("/api/guardian/insights/:coupleId", async (req, res) => {
+  app.get("/api/guardian/insights/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const insights = await db
@@ -2005,7 +2162,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   });
 
   // Store a new Guardian insight
-  app.post("/api/guardian/insights/:coupleId", async (req, res) => {
+  app.post("/api/guardian/insights/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const { insightType, category, title, description, confidence, metadata } = req.body;
@@ -2031,7 +2188,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   });
 
   // Get recommendations for a couple (with optional status filter)
-  app.get("/api/guardian/recommendations/:coupleId", async (req, res) => {
+  app.get("/api/guardian/recommendations/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const { status } = req.query;
@@ -2057,7 +2214,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   });
 
   // Create a new recommendation
-  app.post("/api/guardian/recommendations/:coupleId", async (req, res) => {
+  app.post("/api/guardian/recommendations/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const { insightId, recommendationType, title, message, suggestedAction, targetAmount, category } = req.body;
@@ -2085,7 +2242,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   });
 
   // Update recommendation status (shown, acted, dismissed)
-  app.put("/api/guardian/recommendations/:coupleId/:recommendationId", async (req, res) => {
+  app.put("/api/guardian/recommendations/:coupleId/:recommendationId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId, recommendationId } = req.params;
       const { status, userFeedback } = req.body;
@@ -2123,7 +2280,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   });
 
   // Get savings confirmations for a couple
-  app.get("/api/guardian/savings/:coupleId", async (req, res) => {
+  app.get("/api/guardian/savings/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const confirmations = await db
@@ -2139,7 +2296,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   });
 
   // Confirm a savings deposit
-  app.post("/api/guardian/savings/:coupleId", async (req, res) => {
+  app.post("/api/guardian/savings/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const { goalId, amount, confirmationType, note, triggeredBy, recommendationId, confirmationDate } = req.body;
@@ -2236,7 +2393,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   });
 
   // Get savings streak for a couple
-  app.get("/api/guardian/streak/:coupleId", async (req, res) => {
+  app.get("/api/guardian/streak/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const [streak] = await db
@@ -2265,7 +2422,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   });
 
   // Get Guardian memory context (combined insights, recommendations, streak for AI prompts)
-  app.get("/api/guardian/memory/:coupleId", async (req, res) => {
+  app.get("/api/guardian/memory/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       
@@ -2378,7 +2535,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   });
 
   // Get AI learning history with full transparency
-  app.get("/api/guardian/learning-history/:coupleId", async (req, res) => {
+  app.get("/api/guardian/learning-history/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       
@@ -2478,7 +2635,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   // ==================== DAILY AI ANALYSIS ENDPOINT ====================
   // This is the proactive AI that analyzes spending and generates nudges
   
-  app.post("/api/guardian/daily-analysis/:coupleId", async (req, res) => {
+  app.post("/api/guardian/daily-analysis/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const today = new Date().toISOString().split('T')[0];
@@ -2740,7 +2897,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   });
   
   // Get latest daily nudge for a couple
-  app.get("/api/guardian/daily-nudge/:coupleId", async (req, res) => {
+  app.get("/api/guardian/daily-nudge/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const today = new Date().toISOString().split('T')[0];
@@ -2782,7 +2939,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   });
   
   // Record user response to a nudge
-  app.post("/api/guardian/nudge-response/:coupleId/:analysisId", async (req, res) => {
+  app.post("/api/guardian/nudge-response/:coupleId/:analysisId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId, analysisId } = req.params;
       const { response, savedAmount, nudgeType } = req.body; // response: 'acted' | 'dismissed' | 'ignored'
@@ -2953,7 +3110,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   });
   
   // Trigger daily analysis after expense is added (called by frontend after expense creation)
-  app.post("/api/guardian/trigger-analysis/:coupleId", async (req, res) => {
+  app.post("/api/guardian/trigger-analysis/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       
@@ -2972,7 +3129,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   });
   
   // Get historical analysis for insights screen
-  app.get("/api/guardian/history/:coupleId", async (req, res) => {
+  app.get("/api/guardian/history/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const { months = 6 } = req.query;
@@ -3024,7 +3181,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   });
 
   // AI feedback for expense entry - immediate reaction
-  app.post("/api/guardian/expense-feedback", async (req, res) => {
+  app.post("/api/guardian/expense-feedback", requireAuth, async (req, res) => {
     try {
       const { coupleId, expense, budgetStatus, monthlyTotal, partnerName } = req.body;
       
@@ -3099,7 +3256,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   });
   
   // AI feedback for dream deposit - celebration
-  app.post("/api/guardian/deposit-feedback", async (req, res) => {
+  app.post("/api/guardian/deposit-feedback", requireAuth, async (req, res) => {
     try {
       const { coupleId, amount, goalName, goalProgress, streakDays, previousDeposit } = req.body;
       
@@ -3158,7 +3315,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
   });
 
   // Personalized app-open greeting based on time, context, and history
-  app.get("/api/guardian/greeting/:coupleId", async (req, res) => {
+  app.get("/api/guardian/greeting/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       
@@ -3303,7 +3460,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
 
   // === PATTERN DETECTION & NUDGES ===
   
-  app.post("/api/patterns/detect", async (req, res) => {
+  app.post("/api/patterns/detect", requireAuth, async (req, res) => {
     try {
       const { coupleId } = req.body;
       if (!coupleId) {
@@ -3324,7 +3481,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
     }
   });
 
-  app.get("/api/patterns/:coupleId", async (req, res) => {
+  app.get("/api/patterns/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const patterns = await getActivePatterns(coupleId);
@@ -3335,7 +3492,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
     }
   });
 
-  app.get("/api/nudges/:coupleId", async (req, res) => {
+  app.get("/api/nudges/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const nudges = await getPendingNudges(coupleId);
@@ -3346,7 +3503,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
     }
   });
 
-  app.post("/api/nudges/generate", async (req, res) => {
+  app.post("/api/nudges/generate", requireAuth, async (req, res) => {
     try {
       const { coupleId, patternId } = req.body;
       if (!coupleId || !patternId) {
@@ -3457,7 +3614,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
     }
   });
 
-  app.post("/api/nudges/:nudgeId/respond", async (req, res) => {
+  app.post("/api/nudges/:nudgeId/respond", requireAuth, async (req, res) => {
     try {
       const { nudgeId } = req.params;
       const { response, feedback } = req.body;
@@ -3497,7 +3654,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
 
   // === COMMITMENTS ===
   
-  app.get("/api/commitments/:coupleId", async (req, res) => {
+  app.get("/api/commitments/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
       const { status } = req.query;
@@ -3525,7 +3682,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
     }
   });
 
-  app.post("/api/commitments", async (req, res) => {
+  app.post("/api/commitments", requireAuth, async (req, res) => {
     try {
       const {
         coupleId,
@@ -3587,7 +3744,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
     }
   });
 
-  app.patch("/api/commitments/:commitmentId", async (req, res) => {
+  app.patch("/api/commitments/:commitmentId", requireAuth, async (req, res) => {
     try {
       const { commitmentId } = req.params;
       const { status, rationale, targetAmount, reductionPercent, budgetLimit } = req.body;
@@ -3676,7 +3833,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
     }
   });
 
-  app.delete("/api/commitments/:commitmentId", async (req, res) => {
+  app.delete("/api/commitments/:commitmentId", requireAuth, async (req, res) => {
     try {
       const { commitmentId } = req.params;
       const { rationale } = req.body;
@@ -3711,7 +3868,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
 
   // ==================== FEEDBACK ENDPOINTS ====================
 
-  app.post("/api/feedback", async (req, res) => {
+  app.post("/api/feedback", requireAuth, async (req, res) => {
     try {
       const { coupleId, userId, type, title, description, platform, appVersion } = req.body;
 
@@ -3741,7 +3898,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
     }
   });
 
-  app.get("/api/feedback/:coupleId", async (req, res) => {
+  app.get("/api/feedback/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const { coupleId } = req.params;
 

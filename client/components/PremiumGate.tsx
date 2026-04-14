@@ -15,9 +15,11 @@ interface PremiumGateProps {
   feature: string;
   description?: string;
   compact?: boolean;
+  /** "hard" = full lock (default). "soft" = blurred preview with upgrade overlay */
+  variant?: "hard" | "soft";
 }
 
-export function PremiumGate({ children, feature, description, compact = false }: PremiumGateProps) {
+export function PremiumGate({ children, feature, description, compact = false, variant = "hard" }: PremiumGateProps) {
   const { isPremium, isLoading } = useSubscription();
   const { theme } = useTheme();
   const navigation = useNavigation<any>();
@@ -34,6 +36,27 @@ export function PremiumGate({ children, feature, description, compact = false }:
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     navigation.navigate("Paywall");
   };
+
+  if (variant === "soft") {
+    return (
+      <Pressable onPress={handleUpgrade} style={styles.softGateContainer}>
+        <View style={styles.softGateContent} pointerEvents="none">
+          {children}
+        </View>
+        <View style={[styles.softGateOverlay, { backgroundColor: theme.background + "E0" }]}>
+          <View style={[styles.softGateBadge, { backgroundColor: theme.primary + "15" }]}>
+            <Feather name="star" size={20} color={theme.primary} />
+            <ThemedText type="small" style={{ fontWeight: "600", color: theme.primary }}>
+              {feature}
+            </ThemedText>
+            <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+              Tap to unlock with Premium
+            </ThemedText>
+          </View>
+        </View>
+      </Pressable>
+    );
+  }
 
   if (compact) {
     return (
@@ -120,6 +143,26 @@ export function PremiumBadge({ onPress }: PremiumBadgeProps) {
 }
 
 const styles = StyleSheet.create({
+  softGateContainer: {
+    position: "relative",
+    overflow: "hidden",
+    borderRadius: BorderRadius.lg,
+  },
+  softGateContent: {
+    opacity: 0.3,
+  },
+  softGateOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  softGateBadge: {
+    alignItems: "center",
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    gap: Spacing.xs,
+  },
   gateCard: {
     padding: Spacing.xl,
     alignItems: "center",

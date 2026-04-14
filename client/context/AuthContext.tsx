@@ -31,7 +31,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const TOKEN_KEY = "build_together_auth_token";
 
-async function getToken(): Promise<string | null> {
+export async function getToken(): Promise<string | null> {
   if (Platform.OS === "web") {
     return AsyncStorage.getItem(TOKEN_KEY);
   }

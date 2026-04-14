@@ -9,6 +9,10 @@ const REVENUECAT_API_KEY_ANDROID = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KE
 const ENTITLEMENT_ID = "Build Together Pro";
 const PREVIEW_TRIAL_KEY = "@preview_trial_active";
 const PREVIEW_TRIAL_START_KEY = "@preview_trial_start";
+const FREE_AI_CALLS_KEY = "@free_ai_calls";
+const FREE_AI_CALLS_MONTH_KEY = "@free_ai_calls_month";
+const FREE_AI_CALLS_LIMIT = 15;
+const FREE_NUDGES_LIMIT = 3;
 const IS_WEB = Platform.OS === "web";
 
 interface SubscriptionContextType {
@@ -26,6 +30,9 @@ interface SubscriptionContextType {
   checkSubscriptionStatus: () => Promise<void>;
   activatePreviewTrial: () => void;
   getTrialInfo: () => { hasTrial: boolean; trialDays: number };
+  freeAiCallsRemaining: number;
+  canUseAi: boolean;
+  trackAiCall: () => Promise<boolean>;
 }
 
 const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
@@ -45,10 +52,46 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
   const [customerInfo, setCustomerInfo] = useState<CustomerInfo | null>(null);
   const [isConfigured, setIsConfigured] = useState(false);
   const [isPreviewMode, setIsPreviewMode] = useState(false);
+  const [freeAiCallsUsed, setFreeAiCallsUsed] = useState(0);
 
   useEffect(() => {
     initializePurchases();
+    loadFreeAiCalls();
   }, []);
+
+  const loadFreeAiCalls = async () => {
+    try {
+      const currentMonth = new Date().toISOString().slice(0, 7); // "2026-04"
+      const storedMonth = await AsyncStorage.getItem(FREE_AI_CALLS_MONTH_KEY);
+      if (storedMonth !== currentMonth) {
+        // New month — reset counter
+        await AsyncStorage.setItem(FREE_AI_CALLS_MONTH_KEY, currentMonth);
+        await AsyncStorage.setItem(FREE_AI_CALLS_KEY, "0");
+        setFreeAiCallsUsed(0);
+      } else {
+        const used = await AsyncStorage.getItem(FREE_AI_CALLS_KEY);
+        setFreeAiCallsUsed(parseInt(used || "0", 10));
+      }
+    } catch (err) {
+      console.error("Error loading free AI calls:", err);
+    }
+  };
+
+  const trackAiCall = async (): Promise<boolean> => {
+    if (isPremium) return true;
+    const newCount = freeAiCallsUsed + 1;
+    if (newCount > FREE_AI_CALLS_LIMIT) return false;
+    setFreeAiCallsUsed(newCount);
+    try {
+      await AsyncStorage.setItem(FREE_AI_CALLS_KEY, String(newCount));
+    } catch (err) {
+      console.error("Error tracking AI call:", err);
+    }
+    return true;
+  };
+
+  const freeAiCallsRemaining = Math.max(FREE_AI_CALLS_LIMIT - freeAiCallsUsed, 0);
+  const canUseAi = isPremium || freeAiCallsRemaining > 0;
 
   const checkPreviewTrial = async () => {
     if (IS_WEB) return false;
@@ -249,6 +292,9 @@ export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
         checkSubscriptionStatus,
         activatePreviewTrial,
         getTrialInfo,
+        freeAiCallsRemaining,
+        canUseAi,
+        trackAiCall,
       }}
     >
       {children}

@@ -250,6 +250,71 @@ Return JSON with:
 Categories: groceries, restaurants, transport, utilities, entertainment, shopping, health, personal, education, gifts, other`;
 }
 
+export interface QuickAddContext {
+  partner1Name: string;
+  partner2Name: string;
+  currentUserRole: string;
+  recentMerchants: string[];
+  defaultSplitMethod: string;
+  categories: string[];
+  budgetStatus: Array<{ category: string; spent: number; limit: number }>;
+  isSoloMode: boolean;
+}
+
+export function buildQuickAddPrompt(context: QuickAddContext): string {
+  const partnerContext = context.isSoloMode
+    ? `This user is tracking solo (no partner connected yet). All expenses are single-payer.`
+    : `The couple is ${context.partner1Name} and ${context.partner2Name}. The person typing is ${context.currentUserRole === "partner1" ? context.partner1Name : context.partner2Name}.`;
+
+  const merchantHints = context.recentMerchants.length > 0
+    ? `Recent merchants they use: ${context.recentMerchants.join(", ")}.`
+    : "";
+
+  const budgetHints = context.budgetStatus
+    .filter(b => b.spent / b.limit > 0.7)
+    .map(b => `${b.category}: $${b.spent.toFixed(0)}/$${b.limit.toFixed(0)} (${Math.round(b.spent / b.limit * 100)}%)`)
+    .join(", ");
+
+  return `You are the Dream Guardian, a friendly AI owl that helps couples track expenses via natural language. Parse the user's message into a structured expense.
+
+${partnerContext}
+${merchantHints}
+
+PARSING RULES:
+- Extract amount, merchant, category, description, who paid, and split method
+- If they say "${context.partner2Name} paid" or "my partner paid", set paidBy to "partner2"
+- If they say "I paid" or just state the expense, set paidBy to "${context.currentUserRole}"
+- Default split method: "${context.isSoloMode ? "joint" : context.defaultSplitMethod}"
+- Match merchants to these known ones when close: ${context.recentMerchants.slice(0, 10).join(", ")}
+- Categories: ${context.categories.join(", ")}
+
+RESPONSE FORMAT - Return valid JSON:
+{
+  "amount": number or null,
+  "merchant": "string or null",
+  "category": "string",
+  "description": "string - clean, short description",
+  "paidBy": "partner1" or "partner2",
+  "splitMethod": "even" or "joint" or "single",
+  "confidence": number between 0 and 1,
+  "clarificationQuestion": "string or null - ask ONLY if amount is missing or category is truly ambiguous",
+  "guardianMessage": "string - short, warm confirmation message as the Dream Guardian owl. Use the partner names. Max 2 sentences."
+}
+
+${budgetHints ? `BUDGET CONTEXT (mention if relevant):\n${budgetHints}` : ""}
+
+CONFIDENCE SCORING:
+- 0.9+: Amount clear, category obvious, merchant identified
+- 0.7-0.9: Amount clear but category could be one of two options
+- Below 0.7: Amount missing or genuinely ambiguous - include clarificationQuestion
+
+GUARDIAN MESSAGE EXAMPLES:
+- "Got it! $5.50 coffee at Starbucks, split evenly. ☕"
+- "${context.partner1Name}'s $45 groceries at Trader Joe's logged! 🛒"
+- "Noted! $120 dinner at Olive Garden — ${context.partner2Name} paid. 🍝"
+- If near budget limit: "Logged $30 at Target. Heads up — shopping is at 85% of budget this month! 🎯"`;
+}
+
 export function buildEgoSpendDetectionPrompt(familyProfile: FamilyProfile | null): string {
   const familyContext = familyProfile 
     ? `This is ${getFamilyDescription(familyProfile)}. Consider their life stage when evaluating purchases.`
