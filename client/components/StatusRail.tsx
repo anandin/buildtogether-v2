@@ -1,6 +1,7 @@
 import React from "react";
-import { View, StyleSheet } from "react-native";
+import { View, StyleSheet, Pressable } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
@@ -14,6 +15,7 @@ interface Props {
   partner2Name?: string | null;
   partner2Color?: string | null;
   isSolo: boolean;
+  onInvitePartner?: () => void; // fired when the "+" avatar is tapped in solo mode
 }
 
 /**
@@ -29,6 +31,7 @@ export function StatusRail({
   partner2Name,
   partner2Color,
   isSolo,
+  onInvitePartner,
 }: Props) {
   const { theme } = useTheme();
 
@@ -89,9 +92,17 @@ export function StatusRail({
             </ThemedText>
           </View>
         ) : (
-          <View style={[styles.avatar, styles.avatarStacked, styles.invitePlus, { borderColor: theme.border }]}>
+          <Pressable
+            onPress={() => {
+              if (!onInvitePartner) return;
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onInvitePartner();
+            }}
+            style={[styles.avatar, styles.avatarStacked, styles.invitePlus, { borderColor: theme.border }]}
+            accessibilityLabel="Invite partner"
+          >
             <Feather name="plus" size={10} color={theme.textTertiary} />
-          </View>
+          </Pressable>
         )}
       </View>
     </View>

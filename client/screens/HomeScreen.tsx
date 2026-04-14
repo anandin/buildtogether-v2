@@ -198,6 +198,7 @@ export default function GuardianHomeScreen() {
           partner2Name={data?.partners?.partner2?.name}
           partner2Color={data?.partners?.partner2?.color}
           isSolo={isSolo}
+          onInvitePartner={() => navigation.navigate("PartnerInvite")}
         />
 
         {/* 2. Guardian conversation area */}
