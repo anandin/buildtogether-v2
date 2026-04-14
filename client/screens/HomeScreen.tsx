@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useCallback } from "react";
-import { View, ScrollView, StyleSheet, RefreshControl, Pressable, Image } from "react-native";
+import { View, ScrollView, StyleSheet, RefreshControl, Pressable, Image, KeyboardAvoidingView, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
@@ -28,7 +28,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useSubscription } from "@/context/SubscriptionContext";
 import { getCurrentMonthExpenses, getTotalSpent } from "@/lib/cloudStorage";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import { getApiUrl } from "@/lib/query-client";
+import { apiRequest } from "@/lib/query-client";
 
 import dreamGuardianIcon from "../../assets/images/dream-guardian-icon.png";
 
@@ -216,9 +216,7 @@ export default function HomeScreen() {
     if (!user?.coupleId) return;
     setLoadingNudges(true);
     try {
-      const response = await fetch(
-        new URL(`/api/nudges/${user.coupleId}`, getApiUrl()).toString()
-      );
+      const response = await apiRequest("GET", `/api/nudges/${user.coupleId}`);
       if (response.ok) {
         const data = await response.json();
         setNudges(data);
@@ -228,40 +226,28 @@ export default function HomeScreen() {
     } finally {
       setLoadingNudges(false);
     }
-  }, [user?.coupleId, isPremium]);
+  }, [user?.coupleId]);
 
   const detectPatterns = useCallback(async () => {
     if (!user?.coupleId) return;
     try {
-      const response = await fetch(
-        new URL("/api/patterns/detect", getApiUrl()).toString(),
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ coupleId: user.coupleId }),
-        }
-      );
+      const response = await apiRequest("POST", "/api/patterns/detect", {
+        coupleId: user.coupleId,
+      });
       if (response.ok) {
         const { patterns } = await response.json();
         if (patterns.length > 0 && patterns[0].isHabitual) {
-          await fetch(
-            new URL("/api/nudges/generate", getApiUrl()).toString(),
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                coupleId: user.coupleId,
-                patternId: patterns[0].id,
-              }),
-            }
-          );
+          await apiRequest("POST", "/api/nudges/generate", {
+            coupleId: user.coupleId,
+            patternId: patterns[0].id,
+          });
           await fetchNudges();
         }
       }
     } catch (error) {
       console.error("Error detecting patterns:", error);
     }
-  }, [user?.coupleId, isPremium, fetchNudges]);
+  }, [user?.coupleId, fetchNudges]);
 
   useEffect(() => {
     fetchNudges();
@@ -304,12 +290,16 @@ export default function HomeScreen() {
   const weekTotal = weekExpenses.reduce((sum, e) => sum + e.amount, 0);
 
   return (
-    <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+    <KeyboardAvoidingView
+      style={[styles.container, { backgroundColor: theme.backgroundRoot }]}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? headerHeight : 0}
+    >
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={{
           paddingTop: headerHeight + Spacing.lg,
-          paddingBottom: Spacing["3xl"],
+          paddingBottom: Spacing.lg,
           paddingHorizontal: Spacing.lg,
         }}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
@@ -467,14 +457,16 @@ export default function HomeScreen() {
         ) : null}
       </ScrollView>
 
-      {/* Guardian Input Bar — always visible at bottom */}
-      <GuardianInput
-        onSubmit={guardianChat.sendMessage}
-        onCameraPress={() => navigation.navigate("ScanReceipt")}
-        isProcessing={guardianChat.isProcessing}
-        placeholder="Tell me about a purchase..."
-      />
-    </View>
+      {/* Guardian Input Bar — always visible at bottom, above tab bar */}
+      <View style={{ marginBottom: tabBarHeight }}>
+        <GuardianInput
+          onSubmit={guardianChat.sendMessage}
+          onCameraPress={() => navigation.navigate("ScanReceipt")}
+          isProcessing={guardianChat.isProcessing}
+          placeholder="Tell me about a purchase..."
+        />
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 

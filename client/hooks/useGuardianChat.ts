@@ -132,14 +132,15 @@ export function useGuardianChat() {
 
     try {
       const today = new Date().toISOString().split("T")[0];
-      await cloudAddExpense(user.coupleId, {
+      await cloudAddExpense({
         amount: pendingExpense.amount || 0,
         description: pendingExpense.description,
         merchant: pendingExpense.merchant || undefined,
-        category: pendingExpense.category,
+        category: pendingExpense.category as any,
         date: today,
-        paidBy: pendingExpense.paidBy,
-        splitMethod: pendingExpense.splitMethod,
+        paidBy: pendingExpense.paidBy as any,
+        splitMethod: pendingExpense.splitMethod as any,
+        isSettled: false,
       });
 
       // Update the last guardian message to celebration
