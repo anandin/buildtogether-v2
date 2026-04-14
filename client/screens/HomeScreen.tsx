@@ -299,7 +299,7 @@ export default function HomeScreen() {
         style={styles.scrollView}
         contentContainerStyle={{
           paddingTop: headerHeight + Spacing.lg,
-          paddingBottom: Spacing.lg,
+          paddingBottom: tabBarHeight + 80, // Input height + extra breathing room
           paddingHorizontal: Spacing.lg,
         }}
         scrollIndicatorInsets={{ bottom: insets.bottom }}
@@ -457,8 +457,16 @@ export default function HomeScreen() {
         ) : null}
       </ScrollView>
 
-      {/* Guardian Input Bar — always visible at bottom, above tab bar */}
-      <View style={{ marginBottom: tabBarHeight }}>
+      {/* Guardian Input Bar — floats above the tab bar */}
+      <View
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: tabBarHeight,
+          backgroundColor: theme.surface,
+        }}
+      >
         <GuardianInput
           onSubmit={guardianChat.sendMessage}
           onCameraPress={() => navigation.navigate("ScanReceipt")}
