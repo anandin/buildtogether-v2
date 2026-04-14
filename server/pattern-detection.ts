@@ -1,5 +1,5 @@
 import { db } from "./db";
-import { expenses, spendingPatterns, guardianRecommendations } from "@shared/schema";
+import { expenses, spendingPatterns, guardianRecommendations } from "../shared/schema";
 import { eq, and, desc, gte, sql } from "drizzle-orm";
 import { format, subDays, differenceInDays, parseISO } from "date-fns";
 

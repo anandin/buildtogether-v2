@@ -34,7 +34,7 @@ import {
   feedback,
   activityFeed,
   guardianConversations,
-} from "@shared/schema";
+} from "../shared/schema";
 import { detectPatterns, savePatterns, createNudgeFromPattern, getActivePatterns, getPendingNudges } from "./pattern-detection";
 import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt } from "./prompts";
 

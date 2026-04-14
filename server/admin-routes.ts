@@ -1,6 +1,6 @@
 import { Express, Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { adminUsers, aiPrompts, aiLogs, aiCorrections, benchmarkConfigs, couples, expenses, goals, partnerNudgePreferences, behavioralLearningHistory, spendingPatterns, guardianRecommendations, commitments, feedback } from "@shared/schema";
+import { adminUsers, aiPrompts, aiLogs, aiCorrections, benchmarkConfigs, couples, expenses, goals, partnerNudgePreferences, behavioralLearningHistory, spendingPatterns, guardianRecommendations, commitments, feedback } from "../shared/schema";
 import { eq, desc, count, sql, and, gte } from "drizzle-orm";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";

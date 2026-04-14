@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { sessions, users } from "@shared/schema";
+import { sessions, users } from "../../shared/schema";
 
 export interface AuthUser {
   id: string;
