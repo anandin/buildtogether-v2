@@ -1,11 +1,13 @@
 /**
- * Database connection with dual-mode support:
- * - On Vercel (serverless): uses @neondatabase/serverless driver via HTTP
- * - Locally: uses node-postgres with connection pooling
- *
- * Both modes expose the same `db` (Drizzle) interface.
+ * Database connection — dual-mode for Vercel serverless + local dev.
+ * Uses node-postgres with pool size 1 on serverless (Supabase/Neon pooler handles
+ * the real pooling) and larger pool locally.
  */
+import pg from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
 import * as schema from "@shared/schema";
+
+const { Pool } = pg;
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -15,22 +17,16 @@ if (!process.env.DATABASE_URL) {
 
 const isServerless = !!process.env.VERCEL || !!process.env.VERCEL_ENV;
 
-let db: any;
-let pool: any;
+export const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  // Serverless: small pool per instance, let the DB-side pooler do the work
+  max: isServerless ? 1 : 10,
+  // Close idle connections quickly in serverless to avoid exhausting the pooler
+  idleTimeoutMillis: isServerless ? 5000 : 30000,
+  // Force SSL for hosted Postgres (Supabase/Neon require TLS)
+  ssl: process.env.DATABASE_URL?.includes("localhost")
+    ? false
+    : { rejectUnauthorized: false },
+});
 
-if (isServerless) {
-  const { neon, neonConfig } = require("@neondatabase/serverless");
-  const { drizzle } = require("drizzle-orm/neon-http");
-  neonConfig.fetchConnectionCache = true;
-  const sql = neon(process.env.DATABASE_URL);
-  db = drizzle(sql, { schema });
-  pool = null;
-} else {
-  const pg = require("pg");
-  const { drizzle } = require("drizzle-orm/node-postgres");
-  const { Pool } = pg;
-  pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  db = drizzle(pool, { schema });
-}
-
-export { db, pool };
+export const db = drizzle(pool, { schema });
