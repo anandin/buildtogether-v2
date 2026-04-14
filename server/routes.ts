@@ -67,7 +67,21 @@ function generateSessionToken(): string {
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  // If using OpenRouter, these headers improve rankings (optional)
+  defaultHeaders: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL?.includes("openrouter.ai")
+    ? {
+        "HTTP-Referer": "https://buildtogether-v2.vercel.app",
+        "X-Title": "BuildTogether V2",
+      }
+    : undefined,
 });
+
+// Model name helper — prefixes with "openai/" when using OpenRouter
+const AI_MODEL = (() => {
+  const baseUrl = process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || "";
+  const isOpenRouter = baseUrl.includes("openrouter.ai");
+  return isOpenRouter ? "openai/gpt-4o-mini" : "gpt-4o-mini";
+})();
 
 async function getAIPrompt(promptName: string): Promise<{
   promptTemplate: string;
@@ -653,7 +667,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: AI_MODEL,
         messages: [
           {
             role: "system",
@@ -818,7 +832,7 @@ If you cannot read the receipt clearly, still try to provide your best guess. If
       const goalsProgress = totalGoalTarget > 0 ? (totalGoalSaved / totalGoalTarget) * 100 : 0;
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: AI_MODEL,
         messages: [
           {
             role: "system",
@@ -1010,7 +1024,7 @@ Please analyze our budgets and spending to provide personalized insights. Focus 
       });
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: AI_MODEL,
         messages: [
           { role: "system", content: prompt },
           { role: "user", content: text },
@@ -1121,7 +1135,7 @@ Please analyze our budgets and spending to provide personalized insights. Focus 
       }
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: AI_MODEL,
         messages: [
           {
             role: "system",
@@ -1200,7 +1214,7 @@ Respond in JSON format:
       }
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: AI_MODEL,
         messages: [
           {
             role: "system",
@@ -2045,7 +2059,7 @@ Respond ONLY with valid JSON in this exact format:
         .where(eq(spendingBenchmarks.familySize, familySize));
       
       const response = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: AI_MODEL,
         messages: [
           {
             role: "system",
@@ -2853,7 +2867,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
       
       const analysisStartTime = Date.now();
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: AI_MODEL,
         messages: [
           { role: "system", content: prompt },
           { role: "user", content: `Today is ${today}. Generate a daily insight for this couple.` }
@@ -3088,7 +3102,7 @@ Recent line items from receipts: ${JSON.stringify(allLineItems.slice(0, 15).map(
             );
             
             const learningCompletion = await openai.chat.completions.create({
-              model: "gpt-4o",
+              model: AI_MODEL,
               messages: [
                 { role: "system", content: learningPrompt },
                 { role: "user", content: `Analyze these ${recentNudges.length} nudge responses and update the behavioral preference scores.` }
