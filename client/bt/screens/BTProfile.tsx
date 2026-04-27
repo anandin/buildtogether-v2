@@ -1,34 +1,72 @@
 /**
- * BTProfile — Tilly's relationship surface. Spec §4.6 + §5.4.
+ * BTProfile — Tilly's relationship surface. Translated 1:1 from `screens.jsx::BTProfile`.
  *
- * The most differentiated screen. The tone tuner has live preview; the notes
- * timeline is Tilly's commitment to remember. Memory · forever — your choice
- * is the row that matters.
+ * Critical features:
+ *   - **Hero pair** — centered, with a 240×240 radial accent halo behind:
+ *     User initial avatar (64×64 accentSoft circle, 32px serif) `+` (26px
+ *     serif inkMute) `+` Tilly 56 with breathing animation. Then 24px serif
+ *     "Maya & Tilly" + caption "247 days · NYU Junior".
+ *   - **Tone tuner card** — surface bg, 3-column grid of tone buttons (active
+ *     = ink fill, inactive = transparent + ink22 border). Below: a live
+ *     preview card with Tilly 22 + italic-serif sample for the *previewed*
+ *     tone (independent from global tone, source matches).
+ *   - **Tilly's notes timeline** — vertical 2px rail at left=32px, dots at
+ *     14×14, recent (i=0) gets accent fill + 5px ring shadow. Each entry:
+ *     mono caps date (10px, 0.08em) + italic-serif quote (13px sans).
+ *   - **Trusted people** — 3 rows with 38×38 gradient circle avatar (color
+ *     → color88), name (14px 600) + role (11px), `›` chevron. Then dashed
+ *     "+ Invite someone you trust" tile.
+ *   - **Quiet settings** — 5-row simple list with thin dividers, last row
+ *     "Memory · forever — your choice" — the trust contract.
  */
-import React, { useEffect, useRef } from "react";
-import { Animated, Easing, Pressable, ScrollView, Text, View } from "react-native";
+import React, { useState } from "react";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
-import { BT_DATA } from "../data";
+import {
+  BT_DATA,
+  BT_MEMORIES,
+  BT_QUIET_SETTINGS,
+  BT_TRUSTED,
+} from "../data";
 import { useBT } from "../BTContext";
 import { Tilly } from "../Tilly";
-import { BTLabel, BTRule, BTSerif } from "../atoms";
-import { BT_PULSE_DURATION_MS, BTFonts, type BTTheme } from "../theme";
 import { BT_TONES, type BTToneKey } from "../tones";
+import { BTFonts, type BTTheme } from "../theme";
+import { BTLabel, BTSerif } from "../atoms";
 
 export function BTProfile() {
-  const { t, tone, setTone } = useBT();
+  const { t, toneKey, setTone } = useBT();
+  const [previewTone, setPreviewTone] = useState<BTToneKey>(toneKey);
 
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: t.bg }}
-      contentContainerStyle={{ padding: 22, paddingTop: 36, paddingBottom: 120, gap: 26 }}
+      contentContainerStyle={{ paddingBottom: 32 }}
       showsVerticalScrollIndicator={false}
     >
-      {/* Hero "You + Tilly" */}
-      <View style={{ alignItems: "center", gap: 14, paddingVertical: 12 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 18 }}>
-          {/* User initial avatar */}
+      {/* Hero pair */}
+      <View style={{ paddingHorizontal: 22, paddingTop: 32, paddingBottom: 24, alignItems: "center" }}>
+        {/* radial halo */}
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            top: 10,
+            width: 240,
+            height: 240,
+            borderRadius: 120,
+            backgroundColor: t.accent,
+            opacity: 0.2,
+          }}
+        />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 }}>
           <View
             style={{
               width: 64,
@@ -39,325 +77,320 @@ export function BTProfile() {
               justifyContent: "center",
             }}
           >
-            <Text
-              style={{
-                color: t.accent,
-                fontFamily: BTFonts.serif,
-                fontSize: 28,
-                fontWeight: "500",
-              }}
-            >
-              {BT_DATA.user.name[0]}
+            <Text style={{ fontFamily: BTFonts.serif, fontSize: 32, color: t.ink }}>
+              {BT_DATA.user.name.charAt(0)}
             </Text>
           </View>
-          <Text style={{ color: t.inkMute, fontSize: 18 }}>+</Text>
-          <Tilly t={t} size={64} halo />
+          <Text
+            style={{
+              fontFamily: BTFonts.serif,
+              fontSize: 26,
+              color: t.inkMute,
+              lineHeight: 26,
+            }}
+          >
+            +
+          </Text>
+          <Tilly t={t} size={56} state="idle" breathing />
         </View>
-        <BTSerif size={26} color={t.ink} weight="500">
+        <BTSerif size={24} color={t.ink} style={{ marginBottom: 4 }}>
           {BT_DATA.user.name} & Tilly
         </BTSerif>
-        <Text
-          style={{
-            color: t.inkMute,
-            fontFamily: BTFonts.mono,
-            fontSize: 10,
-            letterSpacing: 1.3,
-            textTransform: "uppercase",
-          }}
-        >
-          {BT_DATA.daysWithTilly} days · {BT_DATA.studentRole}
+        <Text style={{ fontFamily: BTFonts.sans, fontSize: 12, color: t.inkSoft }}>
+          247 days · NYU Junior
         </Text>
       </View>
 
       {/* Tone tuner */}
-      <View style={{ gap: 12 }}>
-        <BTLabel color={t.inkMute}>How Tilly talks to you</BTLabel>
-        <View
-          style={{
-            flexDirection: "row",
-            backgroundColor: t.surface,
-            borderRadius: 999,
-            padding: 4,
-            borderWidth: 1,
-            borderColor: t.rule,
-          }}
-        >
-          {(["sibling", "coach", "quiet"] as BTToneKey[]).map((k) => {
-            const active = tone.key === k;
+      <View
+        style={{
+          marginHorizontal: 22,
+          marginBottom: 22,
+          padding: 18,
+          paddingBottom: 16,
+          borderRadius: 18,
+          backgroundColor: t.surface,
+          borderWidth: 1,
+          borderColor: t.ink + "10",
+        }}
+      >
+        <BTLabel color={t.inkMute} style={{ marginBottom: 12 }}>
+          How Tilly talks to you
+        </BTLabel>
+        <View style={{ flexDirection: "row", gap: 6, marginBottom: 14 }}>
+          {(Object.keys(BT_TONES) as BTToneKey[]).map((k) => {
+            const isActive = previewTone === k;
             return (
               <Pressable
                 key={k}
-                onPress={() => setTone(k)}
+                onPress={() => {
+                  setPreviewTone(k);
+                  setTone(k);
+                }}
                 style={{
                   flex: 1,
-                  paddingVertical: 10,
-                  borderRadius: 999,
-                  backgroundColor: active ? t.ink : "transparent",
+                  paddingVertical: 8,
+                  paddingHorizontal: 6,
+                  borderRadius: 10,
+                  backgroundColor: isActive ? t.ink : "transparent",
+                  borderWidth: 1,
+                  borderColor: isActive ? t.ink : t.ink + "22",
                   alignItems: "center",
                 }}
               >
                 <Text
                   style={{
-                    color: active ? t.surface : t.inkSoft,
+                    color: isActive ? t.bg : t.ink,
                     fontFamily: BTFonts.sans,
-                    fontWeight: "700",
-                    fontSize: 13,
+                    fontSize: 11,
+                    fontWeight: "600",
                   }}
                 >
-                  {BT_TONES[k].label}
+                  {BT_TONES[k].name}
                 </Text>
               </Pressable>
             );
           })}
         </View>
-        {/* Live preview card */}
         <View
           style={{
+            paddingHorizontal: 14,
+            paddingVertical: 12,
+            borderRadius: 12,
+            backgroundColor: t.bg,
+            borderWidth: 1,
+            borderColor: t.ink + "14",
             flexDirection: "row",
             gap: 10,
-            padding: 14,
-            backgroundColor: t.surfaceAlt,
-            borderRadius: 16,
+            alignItems: "flex-start",
           }}
         >
-          <Tilly t={t} size={32} breathing={false} />
+          <View style={{ marginTop: 2 }}>
+            <Tilly t={t} size={22} state="idle" />
+          </View>
           <Text
             style={{
               flex: 1,
+              fontFamily: BTFonts.sans,
+              fontSize: 12,
               color: t.ink,
-              fontFamily: BTFonts.serif,
-              fontSize: 15,
-              lineHeight: 22,
+              lineHeight: 18,
               fontStyle: "italic",
             }}
           >
-            {tone.sample}
+            "{BT_TONES[previewTone].sample}"
           </Text>
         </View>
       </View>
 
       {/* What I've learned about you */}
-      <View style={{ gap: 14 }}>
-        <BTLabel color={t.inkMute}>What I've learned</BTLabel>
-        <BTSerif size={24} color={t.ink} weight="500">
-          <Text style={{ fontStyle: "italic", fontFamily: BTFonts.serif, color: t.accent }}>
+      <View style={{ paddingHorizontal: 22, paddingBottom: 8 }}>
+        <BTLabel color={t.inkMute} style={{ marginBottom: 4 }}>
+          What I've learned about you
+        </BTLabel>
+        <BTSerif size={22} color={t.ink} style={{ marginBottom: 14, lineHeight: 28 }}>
+          <Text style={{ color: t.accent, fontStyle: "italic", fontFamily: BTFonts.serif }}>
             Tilly's notes
-          </Text>
-          , in her own words
+          </Text>{" "}
+          — a quiet timeline.
         </BTSerif>
-        <Timeline t={t} />
       </View>
+      <Timeline t={t} />
 
       {/* Trusted people */}
-      <View style={{ gap: 10 }}>
-        <BTLabel color={t.inkMute}>Trusted people</BTLabel>
-        {BT_DATA.trusted.map((p) => {
-          const c1 =
-            p.hue === "accent" ? t.accent : p.hue === "accent2" ? t.accent2 : t.warn;
-          const c2 = t.surface;
-          return (
-            <View
-              key={p.id}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 12,
-                padding: 14,
-                borderRadius: 16,
-                backgroundColor: t.surface,
-                borderWidth: 1,
-                borderColor: t.rule,
-              }}
-            >
-              <LinearGradient
-                colors={[c1, c2]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
+      <View style={{ paddingHorizontal: 22, paddingBottom: 22 }}>
+        <BTLabel color={t.inkMute} style={{ marginBottom: 12 }}>
+          Trusted people
+        </BTLabel>
+        <View style={{ gap: 8 }}>
+          {BT_TRUSTED.map((p) => {
+            const c1 =
+              p.hue === "accent" ? t.accent : p.hue === "accent2" ? t.accent2 : t.warn;
+            return (
+              <View
+                key={p.name}
                 style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
+                  paddingHorizontal: 14,
+                  paddingVertical: 12,
+                  borderRadius: 14,
+                  backgroundColor: t.surface,
+                  borderWidth: 1,
+                  borderColor: t.ink + "10",
+                  flexDirection: "row",
                   alignItems: "center",
-                  justifyContent: "center",
+                  gap: 12,
                 }}
               >
-                <Text style={{ color: t.ink, fontFamily: BTFonts.serif, fontWeight: "600" }}>
-                  {p.name[0]}
-                </Text>
-              </LinearGradient>
-              <View style={{ flex: 1 }}>
-                <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontWeight: "700", fontSize: 14 }}>
-                  {p.name}
-                </Text>
-                <Text style={{ color: t.inkSoft, fontFamily: BTFonts.sans, fontSize: 12, marginTop: 2 }}>
-                  {p.scope}
-                </Text>
-              </View>
-            </View>
-          );
-        })}
-        <Pressable
-          style={{
-            padding: 14,
-            borderRadius: 16,
-            borderWidth: 1.5,
-            borderStyle: "dashed",
-            borderColor: t.rule,
-            alignItems: "center",
-          }}
-        >
-          <Text style={{ color: t.inkSoft, fontFamily: BTFonts.serif, fontSize: 14, fontStyle: "italic" }}>
-            + Invite someone you trust
-          </Text>
-        </Pressable>
-      </View>
-
-      {/* Quiet settings */}
-      <View style={{ gap: 8 }}>
-        <BTLabel color={t.inkMute}>Quiet settings</BTLabel>
-        <View
-          style={{
-            backgroundColor: t.surface,
-            borderRadius: 16,
-            borderWidth: 1,
-            borderColor: t.rule,
-            overflow: "hidden",
-          }}
-        >
-          {BT_DATA.quietSettings.map((s, i) => {
-            const emphasize = "emphasize" in s && s.emphasize;
-            return (
-              <View key={s.id}>
-                <View
+                <LinearGradient
+                  colors={[c1, c1 + "88"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
                   style={{
-                    flexDirection: "row",
-                    justifyContent: "space-between",
+                    width: 38,
+                    height: 38,
+                    borderRadius: 19,
                     alignItems: "center",
-                    padding: 14,
+                    justifyContent: "center",
                   }}
                 >
                   <Text
                     style={{
-                      color: t.ink,
-                      fontFamily: BTFonts.sans,
-                      fontWeight: emphasize ? "700" : "500",
-                      fontSize: 13,
+                      fontFamily: BTFonts.serif,
+                      fontSize: 18,
+                      color: "#fff",
                     }}
                   >
-                    {s.label}
+                    {p.name.charAt(0)}
+                  </Text>
+                </LinearGradient>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={{
+                      fontFamily: BTFonts.sans,
+                      fontSize: 14,
+                      fontWeight: "600",
+                      color: t.ink,
+                    }}
+                  >
+                    {p.name}
                   </Text>
                   <Text
                     style={{
-                      color: emphasize ? t.accent : t.inkSoft,
-                      fontFamily: emphasize ? BTFonts.serif : BTFonts.mono,
-                      fontSize: emphasize ? 14 : 11,
-                      fontStyle: emphasize ? "italic" : "normal",
-                      letterSpacing: emphasize ? 0 : 0.8,
-                      textTransform: emphasize ? "none" : "uppercase",
+                      fontFamily: BTFonts.sans,
+                      fontSize: 11,
+                      color: t.inkSoft,
+                      marginTop: 2,
                     }}
                   >
-                    {s.value}
+                    {p.role}
                   </Text>
                 </View>
-                {i < BT_DATA.quietSettings.length - 1 ? <BTRule color={t.rule} /> : null}
+                <Text style={{ color: t.inkMute, fontSize: 18 }}>›</Text>
               </View>
             );
           })}
+          <Pressable
+            style={{
+              paddingHorizontal: 14,
+              paddingVertical: 12,
+              borderRadius: 14,
+              borderWidth: 1.5,
+              borderStyle: "dashed",
+              borderColor: t.ink + "33",
+              alignItems: "center",
+            }}
+          >
+            <Text
+              style={{
+                fontFamily: BTFonts.sans,
+                fontSize: 12,
+                fontWeight: "600",
+                color: t.inkSoft,
+              }}
+            >
+              + Invite someone you trust
+            </Text>
+          </Pressable>
         </View>
+      </View>
+
+      {/* Quiet settings */}
+      <View style={{ paddingHorizontal: 22, paddingBottom: 32 }}>
+        <BTLabel color={t.inkMute} style={{ marginBottom: 8 }}>
+          Quiet settings
+        </BTLabel>
+        {BT_QUIET_SETTINGS.map((row, i, a) => (
+          <View
+            key={row[0]}
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "center",
+              paddingVertical: 12,
+              borderBottomWidth: i < a.length - 1 ? 1 : 0,
+              borderBottomColor: t.ink + "14",
+            }}
+          >
+            <Text style={{ fontFamily: BTFonts.sans, fontSize: 13, color: t.ink }}>{row[0]}</Text>
+            <Text style={{ fontFamily: BTFonts.sans, fontSize: 12, color: t.inkSoft }}>
+              {row[1]} ›
+            </Text>
+          </View>
+        ))}
       </View>
     </ScrollView>
   );
 }
 
 function Timeline({ t }: { t: BTTheme }) {
-  const pulse = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, {
-          toValue: 1,
-          duration: BT_PULSE_DURATION_MS / 2,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: false,
-        }),
-        Animated.timing(pulse, {
-          toValue: 0,
-          duration: BT_PULSE_DURATION_MS / 2,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: false,
-        }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse]);
-
   return (
-    <View style={{ gap: 0 }}>
-      {BT_DATA.memory.map((m, i) => {
-        const last = i === BT_DATA.memory.length - 1;
-        return (
-          <View key={m.id} style={{ flexDirection: "row", gap: 14 }}>
-            {/* Rail */}
-            <View style={{ width: 24, alignItems: "center" }}>
-              <View
-                style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: 6,
-                  backgroundColor: m.recent ? t.accent : t.surface,
-                  borderWidth: 2,
-                  borderColor: m.recent ? t.accent : t.rule,
-                  marginTop: 4,
-                }}
-              />
-              {m.recent ? (
-                <Animated.View
-                  style={{
-                    position: "absolute",
-                    top: -2,
-                    width: 24,
-                    height: 24,
-                    borderRadius: 12,
-                    borderWidth: 2,
-                    borderColor: t.accent,
-                    opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.2, 0.85] }),
-                  }}
-                />
-              ) : null}
-              {!last ? (
-                <View style={{ flex: 1, width: 1.5, backgroundColor: t.rule, marginTop: 4 }} />
-              ) : null}
-            </View>
-            {/* Body */}
-            <View style={{ flex: 1, paddingBottom: last ? 0 : 18, gap: 6 }}>
-              <Text
-                style={{
-                  color: m.recent ? t.accent : t.inkMute,
-                  fontFamily: BTFonts.mono,
-                  fontSize: 10,
-                  letterSpacing: 1.3,
-                  textTransform: "uppercase",
-                  fontWeight: "700",
-                }}
-              >
-                {m.date}
-              </Text>
-              <Text
-                style={{
-                  color: t.ink,
-                  fontFamily: BTFonts.serif,
-                  fontSize: 16,
-                  lineHeight: 22,
-                  fontStyle: "italic",
-                }}
-              >
-                "{m.body}"
-              </Text>
-            </View>
-          </View>
-        );
-      })}
+    <View style={{ paddingHorizontal: 22, paddingBottom: 22, position: "relative" }}>
+      {/* rail */}
+      <View
+        style={{
+          position: "absolute",
+          left: 32 + 22,
+          top: 8,
+          bottom: 8,
+          width: 2,
+          backgroundColor: t.ink + "1a",
+        }}
+      />
+      {BT_MEMORIES.map((m, i) => (
+        <View key={i} style={{ position: "relative", paddingLeft: 38, paddingBottom: 16 }}>
+          <View
+            style={{
+              position: "absolute",
+              left: 26,
+              top: 4,
+              width: 14,
+              height: 14,
+              borderRadius: 7,
+              backgroundColor: i === 0 ? t.accent : t.bg,
+              borderWidth: 2,
+              borderColor: i === 0 ? t.accent : t.ink + "33",
+            }}
+          />
+          {i === 0 ? (
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                left: 21,
+                top: -1,
+                width: 24,
+                height: 24,
+                borderRadius: 12,
+                backgroundColor: t.accent + "22",
+              }}
+            />
+          ) : null}
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 10,
+              color: t.inkMute,
+              letterSpacing: 0.8,
+              textTransform: "uppercase",
+              fontWeight: "600",
+              marginBottom: 4,
+            }}
+          >
+            {m.when}
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 13,
+              color: t.ink,
+              lineHeight: 19,
+              fontStyle: "italic",
+            }}
+          >
+            "{m.text}"
+          </Text>
+        </View>
+      ))}
     </View>
   );
 }

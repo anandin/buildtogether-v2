@@ -1,14 +1,13 @@
 /**
- * BuildTogether (Tilly) — theme tokens.
+ * BuildTogether (Tilly) — theme tokens. Translated 1:1 from `bt-system.jsx`.
  *
- * Four switchable themes per BUILDTOGETHER_SPEC.md §3 ("Color themes").
- * Each defines the full token set used by the BT screens, plus a Tilly palette
- * (body / belly / beak) for the mascot.
+ * Four switchable themes — **dusk · citrus · bloom · neon** — each with the
+ * full token set + a Tilly palette (body / belly / beak). Bloom is the
+ * default (per the source `TWEAK_DEFAULTS`).
  *
- * Bloom is the active default — see spec §3.
+ * NOTE: the "paper" theme from earlier drafts is intentionally removed —
+ * the source ships dusk/citrus/bloom/neon.
  */
-import type { Platform } from "react-native";
-
 export type BTTheme = {
   name: BTThemeKey;
   bg: string;
@@ -28,104 +27,103 @@ export type BTTheme = {
   tilly: { body: string; belly: string; beak: string };
 };
 
-export type BTThemeKey = "paper" | "dusk" | "citrus" | "bloom";
+export type BTThemeKey = "dusk" | "citrus" | "bloom" | "neon";
 
 export const BT_THEMES: Record<BTThemeKey, BTTheme> = {
-  paper: {
-    name: "paper",
-    bg: "#F4EFE6",
-    surface: "#FBF7EF",
-    surfaceAlt: "#EFE7D7",
-    ink: "#1C1A17",
-    inkSoft: "#4A4640",
-    inkMute: "#8A8378",
-    rule: "rgba(28,26,23,0.10)",
-    accent: "#D8602B",
-    accent2: "#7B5A3A",
-    accentSoft: "#F0DAC6",
-    good: "#1F7A4A",
-    warn: "#C68A2A",
-    bad: "#B23A2C",
-    chip: "rgba(28,26,23,0.06)",
-    tilly: { body: "#D8602B", belly: "#F4EFE6", beak: "#1C1A17" },
-  },
   dusk: {
     name: "dusk",
     bg: "#181612",
-    surface: "#23201A",
-    surfaceAlt: "#2C2820",
-    ink: "#F2EBDD",
+    surface: "#221E18",
+    surfaceAlt: "#2C271F",
+    ink: "#F4EFE6",
     inkSoft: "#B8AE9A",
-    inkMute: "#7C7363",
-    rule: "rgba(242,235,221,0.12)",
+    inkMute: "#776E5E",
+    rule: "#3A332A",
     accent: "#F0934A",
-    accent2: "#E0B380",
-    accentSoft: "rgba(240,147,74,0.20)",
-    good: "#7DC596",
-    warn: "#E8C275",
-    bad: "#E68A78",
-    chip: "rgba(242,235,221,0.08)",
-    tilly: { body: "#F0934A", belly: "#3A332A", beak: "#F2EBDD" },
+    accentSoft: "#5A3E2A",
+    accent2: "#8FB89A",
+    good: "#9CBA86",
+    warn: "#E5C25E",
+    bad: "#E07560",
+    chip: "#2C271F",
+    tilly: { body: "#F4EFE6", belly: "#2A2620", beak: "#F0934A" },
   },
   citrus: {
     name: "citrus",
     bg: "#F5E9B8",
-    surface: "#FBF3CB",
-    surfaceAlt: "#F0DE9A",
-    ink: "#22180B",
-    inkSoft: "#5A4520",
-    inkMute: "#8B7440",
-    rule: "rgba(34,24,11,0.12)",
+    surface: "#FBF3CC",
+    surfaceAlt: "#EFD98C",
+    ink: "#1F1A0E",
+    inkSoft: "#5C5236",
+    inkMute: "#9A8E66",
+    rule: "#1F1A0E",
     accent: "#D14A2C",
-    accent2: "#E07F3A",
-    accentSoft: "#F3CFA8",
-    good: "#2E7B3F",
-    warn: "#C58A1A",
-    bad: "#A6321F",
-    chip: "rgba(34,24,11,0.08)",
-    tilly: { body: "#D14A2C", belly: "#F5E9B8", beak: "#22180B" },
+    accentSoft: "#F4B69E",
+    accent2: "#2D5A3D",
+    good: "#2D5A3D",
+    warn: "#B3811F",
+    bad: "#A8392B",
+    chip: "#EFD98C",
+    tilly: { body: "#1F1A0E", belly: "#F5E9B8", beak: "#D14A2C" },
   },
   bloom: {
     name: "bloom",
     bg: "#F6E8E6",
-    surface: "#FCF3F1",
-    surfaceAlt: "#EFD6D2",
-    ink: "#2A1A1C",
-    inkSoft: "#6B4A4D",
-    inkMute: "#A1838A",
-    rule: "rgba(42,26,28,0.10)",
-    accent: "#C3416B",
-    accent2: "#D89180",
-    accentSoft: "#F1CFD4",
-    good: "#3F8770",
-    warn: "#D08A2A",
-    bad: "#B24050",
-    chip: "rgba(42,26,28,0.06)",
-    tilly: { body: "#C3416B", belly: "#FCF3F1", beak: "#2A1A1C" },
+    surface: "#FBF1EE",
+    surfaceAlt: "#EBC9C2",
+    ink: "#2A1518",
+    inkSoft: "#6B4148",
+    inkMute: "#A88087",
+    rule: "#2A1518",
+    accent: "#7A4FE0", // ← purple (was wrong in earlier draft as pink)
+    accentSoft: "#D9C9F5",
+    accent2: "#E0664A",
+    good: "#3F8A6E",
+    warn: "#C97A1F",
+    bad: "#B8392E",
+    chip: "#EBC9C2",
+    tilly: { body: "#2A1518", belly: "#F6E8E6", beak: "#7A4FE0" },
+  },
+  neon: {
+    name: "neon",
+    bg: "#0A0B14",
+    surface: "#15172A",
+    surfaceAlt: "#1F2240",
+    ink: "#F0F4FF",
+    inkSoft: "#A8B0D4",
+    inkMute: "#5C6486",
+    rule: "#2A2D52",
+    accent: "#00FF88",
+    accentSoft: "#00FF8822",
+    accent2: "#FF2EC8",
+    good: "#00FF88",
+    warn: "#FFD60A",
+    bad: "#FF2EC8",
+    chip: "#1F2240",
+    tilly: { body: "#F0F4FF", belly: "#15172A", beak: "#00FF88" },
   },
 };
 
 export const BT_DEFAULT_THEME: BTThemeKey = "bloom";
 
 /**
- * Type ramp per spec §3 ("Type system").
- * Headlines/key numbers — Instrument Serif.
- * UI body — Inter (mapped to system default; Inter font isn't bundled, so we
- * fall back to the platform sans).
- * Mono labels — JetBrains Mono (mapped to platform mono).
+ * Type ramp per spec §3 ("Type system"). Instrument Serif / Inter / JetBrains
+ * Mono. We fall back to the platform serif/sans/mono since the fonts aren't
+ * bundled — the editorial feel is best when the real fonts are loaded via
+ * expo-font, but the type *ramp* still holds with fallbacks.
  */
 export const BTFonts = {
   serif:
-    "Georgia, 'Iowan Old Style', 'Apple Garamond', 'Times New Roman', serif",
+    "'Instrument Serif', 'Cormorant Garamond', Georgia, 'Times New Roman', serif",
   sans:
-    "Nunito, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+    "Inter, Nunito, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
   mono:
-    "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    "'JetBrains Mono', SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
 } as const;
 
-/** Gentle 4s breathing curve used for Tilly + mascot halos. */
-export const BT_BREATHE_DURATION_MS = 4000;
-/** Active milestone pulse + most-recent-memory dot. */
-export const BT_PULSE_DURATION_MS = 1600;
-/** Paycheck banner + dream milestone shimmer. */
-export const BT_SHIMMER_DURATION_MS = 3200;
+/** Animation durations from the source `@keyframes` block in BuildTogether.html. */
+export const BT_BREATHE_DURATION_MS = 4000; // btBreathe: scale 1→1.04, ty 0→-2
+export const BT_FLOAT_DURATION_MS = 4000; // btFloat: ty 0→-4
+export const BT_DRIFT_DURATION_MS = 20000; // btDrift: tx 0→40
+export const BT_SHIMMER_DURATION_MS = 3200; // btShimmer: bg-pos -200% → 200%
+export const BT_PULSE_DURATION_MS = 1600; // btPulse: shadow + opacity

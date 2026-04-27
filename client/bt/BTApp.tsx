@@ -1,18 +1,21 @@
 /**
  * BTApp — the BuildTogether (Tilly) shell.
  *
- * Hosts the BTProvider, the floating Tweaks button, and a 6-tab bottom bar
- * mapping to the spec's six screens (Home, Tilly, Spend, Credit, Dreams,
- * Profile). Self-contained: doesn't depend on the V1 navigation stack so the
- * design system stays clean.
+ * Hosts the BTProvider, the floating Tweaks button, and a **5-tab** bottom
+ * bar matching the source: Today / Spend / Tilly center / Dreams / You.
+ *
+ * **Credit** is *not* a tab — per source `screens.jsx`, it's reached via
+ * deep link. We expose a small "View credit" link on Home and Profile that
+ * pushes to the Credit screen via a stack-like state machine here.
  */
 import React, { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Path } from "react-native-svg";
 
 import { BTProvider, useBT } from "./BTContext";
 import { TweaksToggle } from "./TweaksPanel";
-import { Tilly } from "./Tilly";
+import { BTTabBar, type BTTabId } from "./BTTabBar";
 import { BTFonts } from "./theme";
 import { BTHome } from "./screens/BTHome";
 import { BTGuardian } from "./screens/BTGuardian";
@@ -21,16 +24,7 @@ import { BTCredit } from "./screens/BTCredit";
 import { BTDreams } from "./screens/BTDreams";
 import { BTProfile } from "./screens/BTProfile";
 
-type Tab = "home" | "guardian" | "spend" | "credit" | "dreams" | "profile";
-
-const TABS: { key: Tab; label: string; glyph: string }[] = [
-  { key: "home", label: "Today", glyph: "○" },
-  { key: "guardian", label: "Tilly", glyph: "" },
-  { key: "spend", label: "Spend", glyph: "≣" },
-  { key: "credit", label: "Credit", glyph: "◔" },
-  { key: "dreams", label: "Dreams", glyph: "✺" },
-  { key: "profile", label: "You", glyph: "◍" },
-];
+type Route = BTTabId | "credit";
 
 export function BTApp() {
   return (
@@ -43,110 +37,112 @@ export function BTApp() {
 function BTShell() {
   const { t } = useBT();
   const insets = useSafeAreaInsets();
-  const [tab, setTab] = useState<Tab>("home");
+  const [route, setRoute] = useState<Route>("home");
+
+  // Last visited tab — so the back arrow from Credit returns there.
+  const [lastTab, setLastTab] = useState<BTTabId>("home");
+
+  const onNavTab = (id: BTTabId) => {
+    setRoute(id);
+    setLastTab(id);
+  };
 
   return (
-    <View style={[styles.root, { backgroundColor: t.bg }]}>
-      <View style={[styles.body, { paddingTop: insets.top }]}>
-        <TweaksToggle />
-        {tab === "home" && <BTHome onNav={(r) => setTab(r)} />}
-        {tab === "guardian" && <BTGuardian />}
-        {tab === "spend" && <BTSpend />}
-        {tab === "credit" && <BTCredit />}
-        {tab === "dreams" && <BTDreams />}
-        {tab === "profile" && <BTProfile />}
+    <View style={[styles.root, { backgroundColor: t.bg, paddingTop: insets.top }]}>
+      <TweaksToggle />
+
+      {/* Credit deep-link header (only when on credit) */}
+      {route === "credit" ? (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            paddingHorizontal: 16,
+            paddingVertical: 10,
+            gap: 8,
+          }}
+        >
+          <Pressable
+            onPress={() => setRoute(lastTab)}
+            style={{ paddingHorizontal: 8, paddingVertical: 6 }}
+          >
+            <Svg width={20} height={20} viewBox="0 0 20 20">
+              <Path
+                d="M12 4 L 6 10 L 12 16"
+                stroke={t.ink}
+                strokeWidth={1.6}
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
+          </Pressable>
+          <Text
+            style={{
+              fontFamily: BTFonts.serif,
+              fontSize: 18,
+              color: t.ink,
+            }}
+          >
+            Credit
+          </Text>
+        </View>
+      ) : null}
+
+      <View style={{ flex: 1 }}>
+        {route === "home" ? <BTHome onNav={onNavTab} /> : null}
+        {route === "spend" ? <BTSpend /> : null}
+        {route === "guardian" ? <BTGuardian /> : null}
+        {route === "credit" ? <BTCredit /> : null}
+        {route === "dreams" ? <BTDreams /> : null}
+        {route === "profile" ? (
+          <BTProfile />
+        ) : null}
       </View>
 
-      {/* Custom bottom tab bar — 6 slots, Tilly in the middle */}
-      <View
-        style={[
-          styles.tabbar,
-          {
-            backgroundColor: t.surface,
-            borderTopColor: t.rule,
-            paddingBottom: Math.max(insets.bottom, 8),
-          },
-        ]}
-      >
-        {TABS.map((tb) => {
-          const active = tab === tb.key;
-          if (tb.key === "guardian") {
-            return (
-              <Pressable
-                key={tb.key}
-                onPress={() => setTab(tb.key)}
-                style={styles.tabSlot}
-              >
-                <View
-                  style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: 19,
-                    backgroundColor: active ? t.accentSoft : "transparent",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Tilly t={t} size={28} breathing={active} />
-                </View>
-                <Text
-                  style={[
-                    styles.tabLabel,
-                    { color: active ? t.accent : t.inkMute },
-                  ]}
-                >
-                  {tb.label}
-                </Text>
-              </Pressable>
-            );
-          }
-          return (
-            <Pressable key={tb.key} onPress={() => setTab(tb.key)} style={styles.tabSlot}>
-              <Text
-                style={{
-                  fontSize: 18,
-                  color: active ? t.accent : t.inkMute,
-                  fontFamily: BTFonts.serif,
-                }}
-              >
-                {tb.glyph}
-              </Text>
-              <Text
-                style={[
-                  styles.tabLabel,
-                  { color: active ? t.accent : t.inkMute },
-                ]}
-              >
-                {tb.label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      {/* Floating "View credit" deep link from Home/Profile */}
+      {(route === "home" || route === "profile") && (
+        <Pressable
+          onPress={() => setRoute("credit")}
+          style={{
+            position: "absolute",
+            right: 16,
+            bottom: insets.bottom + 90,
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            borderRadius: 999,
+            backgroundColor: t.ink,
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          <Text
+            style={{
+              color: t.bg,
+              fontFamily: BTFonts.mono,
+              fontSize: 9,
+              letterSpacing: 1.1,
+              textTransform: "uppercase",
+              fontWeight: "700",
+            }}
+          >
+            credit
+          </Text>
+          <Text style={{ color: t.accent, fontSize: 12 }}>→</Text>
+        </Pressable>
+      )}
+
+      <BTTabBar
+        active={route === "credit" ? lastTab : (route as BTTabId)}
+        t={t}
+        onNav={onNavTab}
+        bottomPad={Math.max(insets.bottom, 22)}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  body: { flex: 1 },
-  tabbar: {
-    flexDirection: "row",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 8,
-  },
-  tabSlot: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 4,
-    gap: 2,
-  },
-  tabLabel: {
-    fontFamily: BTFonts.mono,
-    fontSize: 9,
-    letterSpacing: 1.1,
-    textTransform: "uppercase",
-    fontWeight: "700",
-  },
 });

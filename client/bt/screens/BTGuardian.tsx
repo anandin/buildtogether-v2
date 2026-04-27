@@ -1,10 +1,18 @@
 /**
- * BTGuardian — Tilly chat. Spec §4.2 + §5.6 (quick-math analysis card).
+ * BTGuardian — Tilly chat. Translated 1:1 from `screens.jsx::BTGuardian`.
  *
- * Multi-turn chat with three message kinds: text, typing, analysis.
- * The composer + suggested prompts let the user start a thread; the seeded
- * affordability question demonstrates Tilly's "show your math, then make a
- * human call" format.
+ * Critical features:
+ *   - Header: Tilly 36 (state changes to `think` while processing) + serif
+ *     "Tilly" 22px + voice descriptor in mono caps + "memory" pill (top-right)
+ *   - **Time stamp centered** at top of chat (BT_TIMES[time].stamp)
+ *   - Initial messages: tone sample → user $90 ticket → analysis card
+ *   - **Quick-math analysis card**: mono ledger (right-aligned amounts, bad
+ *     in red, dotted line, buffer in green/good), then serif body with
+ *     Tilly's call + ceiling action
+ *   - **Suggested prompts** (4) shown as full-width pill cards
+ *   - Composer: bg-colored input + 38px ink send button
+ *   - Bubble corners: user `14 14 4 14`, tilly `14 14 14 4` (round except
+ *     the corner pointing at the speaker)
  */
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -18,290 +26,353 @@ import {
   View,
 } from "react-native";
 
-import { BT_CHAT_SEED, BT_SUGGESTED_PROMPTS } from "../data";
+import { BT_SUGGESTED_PROMPTS } from "../data";
 import { useBT } from "../BTContext";
 import { Tilly } from "../Tilly";
-import { BTCard, BTLabel, BTRule, BTSerif } from "../atoms";
-import { BTFonts } from "../theme";
+import { BT_TIMES } from "../tones";
+import { BTFonts, type BTTheme } from "../theme";
+import { BTLabel } from "../atoms";
 
 type Msg =
-  | { id: string; role: "user"; kind: "text"; body: string }
-  | { id: string; role: "tilly"; kind: "text"; body: string }
-  | { id: string; role: "tilly"; kind: "typing" }
-  | {
-      id: string;
-      role: "tilly";
-      kind: "analysis";
-      title: string;
-      rows: { label: string; amt: number; sign: "+" | "-" | "=" }[];
-      note: string;
-    };
+  | { id: string; from: "me"; kind: "text"; text: string; when: string }
+  | { id: string; from: "tilly"; kind: "text"; text: string; when: string }
+  | { id: string; from: "tilly"; kind: "typing" }
+  | { id: string; from: "tilly"; kind: "analysis" };
 
 export function BTGuardian() {
-  const { t } = useBT();
-  const [messages, setMessages] = useState<Msg[]>(BT_CHAT_SEED as unknown as Msg[]);
+  const { t, tone, time } = useBT();
   const [draft, setDraft] = useState("");
   const [thinking, setThinking] = useState(false);
+  const [msgs, setMsgs] = useState<Msg[]>([
+    { id: "m1", from: "tilly", kind: "text", text: tone.sample, when: "7:42 AM" },
+    { id: "m2", from: "me", kind: "text", text: "can I afford a $90 concert ticket fri?", when: "7:43 AM" },
+    { id: "m3", from: "tilly", kind: "analysis" },
+  ]);
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
-    // auto-scroll on new content
     requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
-  }, [messages.length, thinking]);
+  }, [msgs.length, thinking]);
 
-  const send = (text: string) => {
-    if (!text.trim()) return;
-    const u: Msg = { id: `u${Date.now()}`, role: "user", kind: "text", body: text };
-    setMessages((prev) => [...prev, u]);
+  const send = () => {
+    if (!draft.trim()) return;
+    const id = `u${Date.now()}`;
+    setMsgs((m) => [...m, { id, from: "me", kind: "text", text: draft, when: "now" }]);
     setDraft("");
     setThinking(true);
     setTimeout(() => {
-      const reply: Msg = {
-        id: `t${Date.now()}`,
-        role: "tilly",
-        kind: "text",
-        body:
-          "Let me think on that — I want to look at your buffer before I answer. Give me a sec.",
-      };
-      setMessages((prev) => [...prev, reply]);
       setThinking(false);
+      setMsgs((m) => [
+        ...m,
+        {
+          id: `t${Date.now()}`,
+          from: "tilly",
+          kind: "text",
+          text:
+            "Honestly? Yes — but only because you skipped takeout twice this week. Want me to move it from your spending money, not from Barcelona?",
+          when: "now",
+        },
+      ]);
     }, 1100);
   };
-
-  const tillyState: "idle" | "think" = thinking ? "think" : "idle";
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
       {/* Header */}
       <View
         style={{
+          paddingHorizontal: 20,
+          paddingTop: 16,
+          paddingBottom: 14,
+          borderBottomWidth: 1,
+          borderBottomColor: t.rule,
           flexDirection: "row",
           alignItems: "center",
           gap: 12,
-          padding: 18,
-          paddingTop: 28,
         }}
       >
-        <Tilly t={t} size={48} state={tillyState} breathing={!thinking} />
+        <Tilly t={t} size={36} state={thinking ? "think" : "idle"} />
         <View style={{ flex: 1 }}>
-          <BTSerif size={26} color={t.ink}>
-            Tilly
-          </BTSerif>
           <Text
             style={{
-              color: t.inkMute,
-              fontFamily: BTFonts.sans,
-              fontSize: 12,
-              marginTop: 2,
+              fontFamily: BTFonts.serif,
+              fontSize: 22,
+              color: t.ink,
+              lineHeight: 24,
             }}
           >
-            calm, wise, plainspoken
+            Tilly
           </Text>
+          <BTLabel color={t.inkSoft}>{tone.voice}</BTLabel>
         </View>
         <Pressable
           style={{
-            paddingHorizontal: 12,
+            paddingHorizontal: 10,
             paddingVertical: 6,
             borderRadius: 999,
             borderWidth: 1,
             borderColor: t.rule,
           }}
         >
-          <BTLabel color={t.inkSoft} size={10}>memory</BTLabel>
+          <Text
+            style={{
+              color: t.inkSoft,
+              fontFamily: BTFonts.mono,
+              fontSize: 9,
+              letterSpacing: 0.9,
+              textTransform: "uppercase",
+              fontWeight: "600",
+            }}
+          >
+            memory
+          </Text>
         </Pressable>
       </View>
 
-      <BTRule color={t.rule} />
-
-      {/* Chat scroll */}
+      {/* Chat */}
       <ScrollView
         ref={scrollRef}
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 18, gap: 12, paddingBottom: 24 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12 }}
       >
-        {messages.map((m) => (
-          <Bubble key={m.id} m={m} />
+        <View style={{ alignItems: "center", marginBottom: 16 }}>
+          <BTLabel color={t.inkMute}>{BT_TIMES[time].stamp}</BTLabel>
+        </View>
+        {msgs.map((m) => (
+          <Bubble key={m.id} m={m} t={t} />
         ))}
-        {thinking ? <TypingBubble /> : null}
-      </ScrollView>
+        {thinking ? <TypingBubble t={t} /> : null}
 
-      {/* Suggested prompts */}
-      {!thinking ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 8, paddingHorizontal: 18, paddingVertical: 8 }}
-        >
-          {BT_SUGGESTED_PROMPTS.map((p) => (
-            <Pressable
-              key={p}
-              onPress={() => send(p)}
-              style={{
-                paddingHorizontal: 14,
-                paddingVertical: 8,
-                borderRadius: 999,
-                backgroundColor: t.surface,
-                borderWidth: 1,
-                borderColor: t.rule,
-              }}
-            >
-              <Text style={{ color: t.inkSoft, fontFamily: BTFonts.sans, fontSize: 13 }}>{p}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
-      ) : null}
+        {!thinking ? (
+          <View style={{ marginTop: 14, gap: 6 }}>
+            <BTLabel color={t.inkMute} style={{ marginBottom: 4 }}>
+              Try asking
+            </BTLabel>
+            {BT_SUGGESTED_PROMPTS.map((s, i) => (
+              <Pressable
+                key={i}
+                onPress={() => setDraft(s)}
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 10,
+                  borderRadius: 12,
+                  borderWidth: 1,
+                  borderColor: t.rule,
+                }}
+              >
+                <Text
+                  style={{
+                    color: t.ink,
+                    fontFamily: BTFonts.sans,
+                    fontSize: 13,
+                  }}
+                >
+                  {s}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+      </ScrollView>
 
       {/* Composer */}
       <View
         style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 8,
-          padding: 12,
-          paddingBottom: 24,
-          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopWidth: 1,
           borderTopColor: t.rule,
+          padding: 12,
+          paddingBottom: 22,
+          flexDirection: "row",
+          gap: 8,
           backgroundColor: t.surface,
         }}
       >
         <TextInput
           value={draft}
           onChangeText={setDraft}
-          placeholder="Talk to Tilly…"
+          placeholder="ask Tilly anything…"
           placeholderTextColor={t.inkMute}
-          onSubmitEditing={() => send(draft)}
+          onSubmitEditing={send}
           returnKeyType="send"
           style={{
             flex: 1,
-            paddingHorizontal: 16,
-            paddingVertical: 12,
+            backgroundColor: t.bg,
+            borderWidth: 1,
+            borderColor: t.rule,
             borderRadius: 999,
-            backgroundColor: t.surfaceAlt,
-            color: t.ink,
+            paddingHorizontal: 14,
+            paddingVertical: 10,
             fontFamily: BTFonts.sans,
-            fontSize: 14,
+            fontSize: 13,
+            color: t.ink,
           }}
         />
         <Pressable
-          onPress={() => send(draft)}
+          onPress={send}
           style={{
-            width: 44,
-            height: 44,
-            borderRadius: 22,
-            backgroundColor: t.accent,
+            width: 38,
+            height: 38,
+            borderRadius: 19,
+            backgroundColor: t.ink,
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <Text style={{ color: "#fff", fontWeight: "700", fontSize: 16 }}>↑</Text>
+          <Text style={{ color: t.bg, fontSize: 16, fontWeight: "700" }}>↑</Text>
         </Pressable>
       </View>
     </View>
   );
 }
 
-function Bubble({ m }: { m: Msg }) {
-  const { t } = useBT();
-
-  if (m.role === "user") {
+function Bubble({ m, t }: { m: Msg; t: BTTheme }) {
+  if (m.from === "me" && m.kind === "text") {
     return (
-      <View style={{ alignSelf: "flex-end", maxWidth: "82%" }}>
+      <View style={{ flexDirection: "row", justifyContent: "flex-end", marginBottom: 10 }}>
         <View
           style={{
+            maxWidth: "78%",
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            borderRadius: 14,
+            borderBottomRightRadius: 4,
             backgroundColor: t.ink,
-            borderRadius: 18,
-            paddingHorizontal: 14,
-            paddingVertical: 10,
           }}
         >
-          <Text style={{ color: t.surface, fontFamily: BTFonts.sans, fontSize: 14 }}>
-            {(m as { body: string }).body}
+          <Text
+            style={{
+              color: t.bg,
+              fontFamily: BTFonts.sans,
+              fontSize: 13,
+              lineHeight: 18,
+            }}
+          >
+            {m.text}
           </Text>
         </View>
       </View>
     );
   }
 
-  if (m.kind === "typing") return <TypingBubble />;
-
-  if (m.kind === "analysis") {
+  if (m.from === "tilly" && m.kind === "analysis") {
     return (
-      <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end", maxWidth: "92%" }}>
-        <Tilly t={t} size={28} breathing={false} />
-        <BTCard t={t} alt padding={14} style={{ flex: 1, gap: 10 }}>
-          <BTLabel color={t.inkMute} size={10}>
-            {m.title}
-          </BTLabel>
-          <View style={{ gap: 6 }}>
-            {m.rows.map((r, i) => {
-              const color = r.sign === "-" ? t.bad : r.sign === "=" ? t.good : t.ink;
-              return (
-                <View key={i} style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                  <Text
-                    style={{
-                      fontFamily: BTFonts.mono,
-                      fontSize: 11,
-                      color: t.inkSoft,
-                      letterSpacing: 1,
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    {r.label}
-                  </Text>
-                  <Text
-                    style={{
-                      fontFamily: BTFonts.mono,
-                      fontSize: 12,
-                      fontWeight: "700",
-                      color,
-                    }}
-                  >
-                    {r.sign === "-" ? "−" : ""}${Math.abs(r.amt).toFixed(2)}
-                  </Text>
-                </View>
-              );
-            })}
+      <View style={{ flexDirection: "row", gap: 8, marginBottom: 10, alignItems: "flex-start" }}>
+        <View style={{ marginTop: 4 }}>
+          <Tilly t={t} size={26} state="idle" />
+        </View>
+        <View
+          style={{
+            flex: 1,
+            maxWidth: "88%",
+            padding: 14,
+            backgroundColor: t.surface,
+            borderWidth: 1,
+            borderColor: t.rule,
+            borderRadius: 14,
+            borderBottomLeftRadius: 4,
+          }}
+        >
+          <BTLabel color={t.inkSoft}>Quick math</BTLabel>
+          <View style={{ marginTop: 10, gap: 4 }}>
+            <LedgerRow label="Available Fri after rent" amt="$412.58" t={t} />
+            <LedgerRow label="Concert ticket" amt="−$90.00" t={t} amtColor={t.bad} />
+            <LedgerRow label="Weekend food (est)" amt="−$60.00" t={t} amtColor={t.bad} />
+            <View style={{ height: 1, backgroundColor: t.rule, marginVertical: 6 }} />
+            <LedgerRow label="Buffer left" amt="$262.58" t={t} amtColor={t.good} bold />
           </View>
-          <BTRule color={t.rule} />
           <Text
             style={{
-              fontFamily: BTFonts.serif,
-              fontSize: 16,
-              lineHeight: 22,
+              marginTop: 10,
+              fontFamily: BTFonts.sans,
+              fontSize: 13,
               color: t.ink,
+              lineHeight: 19,
             }}
           >
-            {m.note}
+            You can do it. The risk isn't the ticket — it's the post-concert dinner. Want me to set
+            a $30 ceiling on Friday night food?
           </Text>
-        </BTCard>
+        </View>
       </View>
     );
   }
 
   // tilly text
+  if (m.from === "tilly" && m.kind === "text") {
+    return (
+      <View style={{ flexDirection: "row", gap: 8, marginBottom: 10, alignItems: "flex-end" }}>
+        <Tilly t={t} size={26} state="idle" />
+        <View
+          style={{
+            maxWidth: "78%",
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+            borderRadius: 14,
+            borderBottomLeftRadius: 4,
+            backgroundColor: t.surface,
+            borderWidth: 1,
+            borderColor: t.rule,
+          }}
+        >
+          <Text
+            style={{
+              color: t.ink,
+              fontFamily: BTFonts.sans,
+              fontSize: 13,
+              lineHeight: 19,
+            }}
+          >
+            {m.text}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  return null;
+}
+
+function LedgerRow({
+  label,
+  amt,
+  t,
+  amtColor,
+  bold,
+}: {
+  label: string;
+  amt: string;
+  t: BTTheme;
+  amtColor?: string;
+  bold?: boolean;
+}) {
   return (
-    <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end", maxWidth: "82%" }}>
-      <Tilly t={t} size={28} breathing={false} />
-      <View
+    <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+      <Text
         style={{
-          backgroundColor: t.surface,
-          borderRadius: 18,
-          paddingHorizontal: 14,
-          paddingVertical: 10,
-          borderWidth: 1,
-          borderColor: t.rule,
+          fontFamily: BTFonts.mono,
+          fontSize: 11,
+          color: t.ink,
+          fontWeight: bold ? "700" : "400",
         }}
       >
-        <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontSize: 14 }}>
-          {(m as { body: string }).body}
-        </Text>
-      </View>
+        {label}
+      </Text>
+      <Text
+        style={{
+          fontFamily: BTFonts.mono,
+          fontSize: 11,
+          color: amtColor ?? t.ink,
+          fontWeight: bold ? "700" : "400",
+          fontVariant: ["tabular-nums"],
+        }}
+      >
+        {amt}
+      </Text>
     </View>
   );
 }
 
-function TypingBubble() {
-  const { t } = useBT();
+function TypingBubble({ t }: { t: BTTheme }) {
   const dots = [useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current];
 
   useEffect(() => {
@@ -311,13 +382,13 @@ function TypingBubble() {
           Animated.delay(i * 180),
           Animated.timing(d, {
             toValue: 1,
-            duration: 420,
+            duration: 360,
             easing: Easing.inOut(Easing.ease),
             useNativeDriver: true,
           }),
           Animated.timing(d, {
             toValue: 0,
-            duration: 420,
+            duration: 360,
             easing: Easing.inOut(Easing.ease),
             useNativeDriver: true,
           }),
@@ -330,28 +401,30 @@ function TypingBubble() {
   }, []);
 
   return (
-    <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end" }}>
-      <Tilly t={t} size={28} state="think" breathing={false} />
+    <View style={{ flexDirection: "row", gap: 8, marginBottom: 10, alignItems: "flex-end" }}>
+      <Tilly t={t} size={26} state="think" />
       <View
         style={{
-          flexDirection: "row",
-          gap: 4,
-          paddingHorizontal: 16,
-          paddingVertical: 12,
+          paddingHorizontal: 14,
+          paddingVertical: 10,
+          borderRadius: 14,
+          borderBottomLeftRadius: 4,
           backgroundColor: t.surface,
-          borderRadius: 18,
           borderWidth: 1,
           borderColor: t.rule,
+          flexDirection: "row",
+          gap: 4,
+          alignItems: "center",
         }}
       >
         {dots.map((d, i) => (
           <Animated.View
             key={i}
             style={{
-              width: 6,
-              height: 6,
-              borderRadius: 3,
-              backgroundColor: t.inkMute,
+              width: 4,
+              height: 4,
+              borderRadius: 2,
+              backgroundColor: t.inkSoft,
               transform: [{ translateY: d.interpolate({ inputRange: [0, 1], outputRange: [0, -3] }) }],
               opacity: d.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }),
             }}

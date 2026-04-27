@@ -1,268 +1,393 @@
 /**
- * BTCredit — the one number. Spec §4.4.
+ * BTCredit — the one number, contextual. Translated 1:1 from `screens.jsx::BTCredit`.
  *
- * Built around utilization. Action over abstraction: a $50 payment moves the
- * gauge to 28% today. Score card sits below as a quieter signal.
+ * Critical features:
+ *   - **Why this matters today** — accent ✦ label + Tilly 32 + 22px serif
+ *     headline with italic accent on "38%"
+ *   - **Utilization gauge card**:
+ *     - Header: "Utilization" mono caps + "$190 of $500" right-aligned
+ *     - **72px BTNum in `bad` red** + 28px % at 0.6 opacity, "aim for 30%" right-aligned with `good`-colored target
+ *     - **Gauge bar**: 10px tall, 999 radius, fill is a `good→warn→bad`
+ *       gradient stopped at the current pct. **Vertical 2px ink line at
+ *       targetPct** with "TARGET" mono label above
+ *     - Action button: full-width ink pill "Pay $50 now → drop to 28%"
+ *   - **Score card** — ink bg with diagonal stripes — "VantageScore" caps,
+ *     56px BTNum 704 + accent +12 chip + "since March · good"
+ *   - **Levers** — 3 rows with vertical 6×36 bar (good or inkMute), name +
+ *     note + value
+ *   - **Tilly protected** — accentSoft card with Tilly 22 + "Tilly protected
+ *     you · 24h" caps + sentence
  */
 import React from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View, StyleSheet } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
-import { BT_DATA } from "../data";
+import { BT_CREDIT } from "../data";
 import { useBT } from "../BTContext";
 import { Tilly } from "../Tilly";
-import { BTCard, BTLabel, BTNum, BTSerif, BTStripes } from "../atoms";
-import { BTFonts } from "../theme";
+import { BTFonts, type BTTheme } from "../theme";
+import { BTLabel, BTNum, BTSerif } from "../atoms";
 
 export function BTCredit() {
   const { t } = useBT();
-  const c = BT_DATA.credit;
+  const c = BT_CREDIT;
 
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: t.bg }}
-      contentContainerStyle={{ padding: 22, paddingTop: 36, paddingBottom: 120, gap: 20 }}
+      contentContainerStyle={{ paddingBottom: 24 }}
       showsVerticalScrollIndicator={false}
     >
       {/* Why this matters today */}
-      <View style={{ gap: 12 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <View style={{ paddingHorizontal: 22, paddingTop: 20, paddingBottom: 0 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 }}>
           <Text style={{ color: t.accent, fontSize: 14 }}>✦</Text>
-          <BTLabel color={t.accent}>Why this matters today</BTLabel>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 11,
+              color: t.accent,
+              letterSpacing: 1.32,
+              textTransform: "uppercase",
+              fontWeight: "700",
+            }}
+          >
+            Why this matters today
+          </Text>
         </View>
-        <View style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>
-          <Tilly t={t} size={56} />
+        <View style={{ flexDirection: "row", gap: 12, alignItems: "flex-start", marginBottom: 18 }}>
+          <View style={{ marginTop: 2, flexShrink: 0 }}>
+            <Tilly t={t} size={32} state="idle" />
+          </View>
           <BTSerif size={22} color={t.ink} style={{ flex: 1, lineHeight: 28 }}>
-            You're at 38% of your limit. Lenders want under 30. Pay{" "}
-            <Text style={{ color: t.accent, fontStyle: "italic", fontFamily: BTFonts.serif }}>$50</Text>{" "}
-            today and you're there.
+            You're at{" "}
+            <Text style={{ color: t.accent, fontStyle: "italic", fontFamily: BTFonts.serif }}>
+              38%
+            </Text>{" "}
+            of your limit. Lenders want under 30. Pay $50 today and you're there.
           </BTSerif>
         </View>
       </View>
 
-      {/* Utilization gauge — the hero */}
-      <BTCard t={t} padding={22}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <View>
-            <BTLabel color={t.inkMute}>Utilization</BTLabel>
+      {/* Utilization gauge card */}
+      <View
+        style={{
+          marginHorizontal: 22,
+          marginBottom: 18,
+          padding: 22,
+          paddingVertical: 24,
+          borderRadius: 18,
+          backgroundColor: t.surface,
+          borderWidth: 1,
+          borderColor: t.ink + "10",
+        }}
+      >
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "baseline",
+            marginBottom: 14,
+          }}
+        >
+          <BTLabel color={t.inkMute}>Utilization</BTLabel>
+          <Text style={{ fontFamily: BTFonts.sans, fontSize: 11, color: t.inkSoft }}>
+            ${c.used} of ${c.limit}
+          </Text>
+        </View>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "baseline",
+            gap: 6,
+            marginBottom: 18,
+          }}
+        >
+          <BTNum size={72} color={t.bad} style={{ lineHeight: 72 }}>
+            {c.utilPct}
+          </BTNum>
+          <BTNum size={28} color={t.bad} style={{ opacity: 0.6 }}>
+            %
+          </BTNum>
+          <View style={{ flex: 1 }} />
+          <View style={{ alignItems: "flex-end" }}>
+            <Text style={{ fontFamily: BTFonts.sans, fontSize: 11, color: t.inkSoft }}>aim for</Text>
             <Text
               style={{
-                color: t.inkSoft,
                 fontFamily: BTFonts.sans,
                 fontSize: 13,
-                marginTop: 4,
+                color: t.good,
+                fontWeight: "700",
               }}
             >
-              ${c.used} of ${c.limit}
+              {c.targetPct}%
             </Text>
           </View>
-          <View style={{ alignItems: "flex-end" }}>
-            <BTLabel color={t.inkMute} size={9}>aim for</BTLabel>
-            <BTSerif size={18} color={t.inkSoft}>{c.target}%</BTSerif>
-          </View>
-        </View>
-
-        <View style={{ marginTop: 16 }}>
-          <BTNum size={72} color={t.bad}>
-            {c.pct}%
-          </BTNum>
         </View>
 
         {/* Gauge bar */}
-        <View style={{ marginTop: 16, height: 12, borderRadius: 999, overflow: "hidden", backgroundColor: t.surfaceAlt }}>
-          <LinearGradient
-            colors={[t.good, t.warn, t.bad]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={{ width: `${c.pct}%`, height: "100%" }}
-          />
-        </View>
-        <View style={{ position: "relative", marginTop: 4, height: 16 }}>
+        <View
+          style={{
+            position: "relative",
+            height: 10,
+            backgroundColor: t.ink + "10",
+            borderRadius: 999,
+            overflow: "visible",
+            marginBottom: 18,
+          }}
+        >
+          {/* fill */}
+          <View
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              bottom: 0,
+              width: `${c.utilPct}%`,
+              borderRadius: 999,
+              overflow: "hidden",
+            }}
+          >
+            <LinearGradient
+              colors={[t.good, t.warn, t.bad]}
+              locations={[0, c.targetPct / c.utilPct, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={StyleSheet.absoluteFillObject}
+            />
+          </View>
           {/* target marker */}
           <View
             style={{
               position: "absolute",
-              left: `${c.target}%`,
-              top: -22,
-              width: 1.5,
-              height: 18,
+              left: `${c.targetPct}%`,
+              top: -4,
+              bottom: -4,
+              width: 2,
               backgroundColor: t.ink,
+              borderRadius: 1,
             }}
           />
           <Text
             style={{
               position: "absolute",
-              left: `${c.target}%`,
+              left: `${c.targetPct}%`,
+              top: -22,
               transform: [{ translateX: -16 }],
-              color: t.ink,
-              fontFamily: BTFonts.mono,
+              fontFamily: BTFonts.sans,
               fontSize: 9,
-              letterSpacing: 1,
-              textTransform: "uppercase",
+              color: t.ink,
               fontWeight: "700",
+              letterSpacing: 0.8,
+              textTransform: "uppercase",
             }}
           >
             target
           </Text>
         </View>
 
-        {/* CTA */}
         <Pressable
           style={{
-            marginTop: 16,
+            paddingHorizontal: 16,
+            paddingVertical: 11,
             backgroundColor: t.ink,
-            borderRadius: 14,
-            paddingVertical: 14,
+            borderRadius: 999,
             alignItems: "center",
           }}
         >
           <Text
             style={{
-              color: t.surface,
+              color: t.bg,
               fontFamily: BTFonts.sans,
-              fontWeight: "700",
-              fontSize: 14,
+              fontSize: 13,
+              fontWeight: "600",
             }}
           >
             Pay $50 now → drop to 28%
           </Text>
         </Pressable>
-      </BTCard>
+      </View>
 
       {/* Score card — ink bg with stripes */}
-      <BTCard t={t} inverted padding={18}>
-        <BTStripes color="#fff" opacity={0.07} />
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-          <View>
-            <Text
-              style={{
-                color: "rgba(255,252,246,0.6)",
-                fontFamily: BTFonts.mono,
-                fontSize: 9,
-                letterSpacing: 1.2,
-                textTransform: "uppercase",
-              }}
-            >
-              VantageScore
-            </Text>
-            <Text
-              style={{
-                color: "#FFFCF6",
-                fontFamily: BTFonts.serif,
-                fontSize: 44,
-                fontWeight: "500",
-                marginTop: 4,
-              }}
-            >
-              {c.score}
-            </Text>
-            <Text
-              style={{
-                color: "rgba(255,252,246,0.55)",
-                fontFamily: BTFonts.sans,
-                fontSize: 12,
-                marginTop: 4,
-              }}
-            >
-              +{c.delta} since {c.since}
-            </Text>
-          </View>
-          <View
+      <View
+        style={{
+          marginHorizontal: 22,
+          marginBottom: 18,
+          padding: 22,
+          paddingVertical: 20,
+          borderRadius: 18,
+          backgroundColor: t.ink,
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <DiagonalStripes color={t.bg} opacity={0.07} />
+        <View>
+          <Text
             style={{
-              backgroundColor: t.accent,
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-              borderRadius: 999,
+              fontFamily: BTFonts.sans,
+              fontSize: 10,
+              color: t.bg,
+              opacity: 0.6,
+              letterSpacing: 1.2,
+              textTransform: "uppercase",
+              marginBottom: 4,
+              fontWeight: "600",
             }}
           >
+            VantageScore
+          </Text>
+          <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
+            <BTNum size={56} color={t.bg} style={{ lineHeight: 56 }}>
+              {c.score}
+            </BTNum>
             <Text
               style={{
-                color: "#fff",
-                fontFamily: BTFonts.mono,
-                fontSize: 10,
-                letterSpacing: 1.2,
-                textTransform: "uppercase",
+                fontFamily: BTFonts.sans,
+                fontSize: 12,
+                color: t.accent,
                 fontWeight: "700",
               }}
             >
-              good
+              +{c.delta}
             </Text>
           </View>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 11,
+              color: t.bg,
+              opacity: 0.7,
+              marginTop: 4,
+            }}
+          >
+            since {c.since} · good
+          </Text>
         </View>
-      </BTCard>
+      </View>
 
       {/* Levers */}
-      <View style={{ gap: 8 }}>
-        <BTLabel color={t.inkMute}>Levers</BTLabel>
-        {[
-          { label: "Payment history", value: c.payment.ratio, state: c.payment.state, note: c.payment.note },
-          { label: "Account age", value: c.age.value, state: c.age.state, note: c.age.note },
-          { label: "Hard inquiries", value: c.inquiries.value, state: c.inquiries.state, note: c.inquiries.note },
-        ].map((l) => (
+      <View style={{ paddingHorizontal: 22, paddingBottom: 18 }}>
+        <BTLabel color={t.inkMute} style={{ marginBottom: 10 }}>
+          Levers
+        </BTLabel>
+        {c.levers.map((f) => (
           <View
-            key={l.label}
+            key={f.f}
             style={{
-              flexDirection: "row",
-              alignItems: "center",
               padding: 14,
-              borderRadius: 16,
+              paddingHorizontal: 14,
+              marginBottom: 6,
+              borderRadius: 12,
               backgroundColor: t.surface,
               borderWidth: 1,
-              borderColor: t.rule,
+              borderColor: t.ink + "10",
+              flexDirection: "row",
+              alignItems: "center",
               gap: 12,
             }}
           >
+            <View
+              style={{
+                width: 6,
+                height: 36,
+                borderRadius: 999,
+                backgroundColor: f.tone === "good" ? t.good : t.inkMute,
+              }}
+            />
             <View style={{ flex: 1 }}>
-              <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontWeight: "600", fontSize: 13 }}>
-                {l.label}
-              </Text>
               <Text
                 style={{
-                  color: t.inkSoft,
                   fontFamily: BTFonts.sans,
-                  fontSize: 12,
-                  marginTop: 2,
+                  fontSize: 13,
+                  fontWeight: "600",
+                  color: t.ink,
                 }}
               >
-                {l.note}
+                {f.f}
               </Text>
-            </View>
-            <View style={{ alignItems: "flex-end" }}>
-              <Text style={{ color: t.ink, fontFamily: BTFonts.serif, fontSize: 18 }}>{l.value}</Text>
               <Text
                 style={{
-                  color:
-                    l.state === "good" ? t.good : l.state === "neutral" ? t.inkMute : t.warn,
-                  fontFamily: BTFonts.mono,
-                  fontSize: 9,
-                  letterSpacing: 1,
-                  textTransform: "uppercase",
-                  fontWeight: "700",
+                  fontFamily: BTFonts.sans,
+                  fontSize: 11,
+                  color: t.inkSoft,
                   marginTop: 2,
                 }}
               >
-                {l.state}
+                {f.note}
               </Text>
             </View>
+            <BTNum size={18} color={t.ink}>
+              {f.v}
+            </BTNum>
           </View>
         ))}
       </View>
 
-      {/* Tilly protected you */}
-      <BTCard t={t} padding={16} style={{ backgroundColor: t.accentSoft, borderColor: "transparent", gap: 10 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Tilly t={t} size={28} breathing={false} />
-          <BTLabel color={t.accent}>Tilly protected you · 24h</BTLabel>
-        </View>
-        {c.protected.map((p, i) => (
+      {/* Tilly protected */}
+      <View
+        style={{
+          marginHorizontal: 22,
+          marginBottom: 24,
+          padding: 16,
+          paddingHorizontal: 16,
+          paddingVertical: 14,
+          borderRadius: 14,
+          backgroundColor: t.accentSoft,
+        }}
+      >
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <Tilly t={t} size={22} state="idle" />
           <Text
-            key={i}
-            style={{ color: t.ink, fontFamily: BTFonts.serif, fontSize: 15, lineHeight: 21 }}
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 11,
+              color: t.ink,
+              letterSpacing: 1.1,
+              textTransform: "uppercase",
+              fontWeight: "700",
+            }}
           >
-            {p}
+            Tilly protected you · 24h
           </Text>
-        ))}
-      </BTCard>
+        </View>
+        <Text
+          style={{
+            fontFamily: BTFonts.sans,
+            fontSize: 13,
+            color: t.ink,
+            lineHeight: 19,
+          }}
+        >
+          {c.protectedNote}
+        </Text>
+      </View>
     </ScrollView>
+  );
+}
+
+function DiagonalStripes({ color, opacity }: { color: string; opacity: number }) {
+  const lines = [];
+  for (let i = 0; i < 28; i++) {
+    lines.push(
+      <View
+        key={i}
+        style={{
+          position: "absolute",
+          width: 800,
+          height: 1,
+          left: -200,
+          top: i * 14 - 200,
+          backgroundColor: color,
+          opacity,
+          transform: [{ rotate: "-45deg" }],
+        }}
+      />,
+    );
+  }
+  return (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFillObject, { overflow: "hidden" }]}>
+      {lines}
+    </View>
   );
 }

@@ -1,8 +1,8 @@
 /**
  * BTContext — holds the three Tweaks values from spec §6:
- *   - visual theme (paper / dusk / citrus / bloom)
- *   - Tilly's tone (sibling / coach / quiet)
- *   - time of day (morning / evening)
+ *   - visual theme (dusk / citrus / bloom / neon) — Bloom default
+ *   - Tilly's tone (sibling / coach / protective) — sibling default
+ *   - time of day (morning / evening) — evening default (matches source)
  *
  * Persisted to AsyncStorage so a chosen theme survives reloads.
  */
@@ -35,7 +35,7 @@ type BTState = {
   setTime: (k: BTTimeOfDay) => void;
 };
 
-const KEY = "bt.tweaks.v1";
+const KEY = "bt.tweaks.v2"; // bumped — tone "quiet" → "protective", themes changed
 
 const BTContext = createContext<BTState | null>(null);
 

@@ -144,7 +144,7 @@ function TweaksPanel({ open, onClose }: { open: boolean; onClose: () => void }) 
           <View style={{ gap: 10 }}>
             <BTLabel color={t.inkMute}>Tilly's tone</BTLabel>
             <View style={{ flexDirection: "row", gap: 8 }}>
-              {(["sibling", "coach", "quiet"] as BTToneKey[]).map((k) => {
+              {(["sibling", "coach", "protective"] as BTToneKey[]).map((k) => {
                 const active = toneKey === k;
                 return (
                   <Pressable
@@ -161,7 +161,7 @@ function TweaksPanel({ open, onClose }: { open: boolean; onClose: () => void }) 
                     }}
                   >
                     <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontWeight: "600", fontSize: 13 }}>
-                      {BT_TONES[k].label}
+                      {BT_TONES[k].name}
                     </Text>
                   </Pressable>
                 );
