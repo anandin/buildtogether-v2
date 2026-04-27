@@ -1,25 +1,28 @@
-import React, { useState } from "react";
+import React from "react";
 import { View, StyleSheet, ActivityIndicator } from "react-native";
-import { NavigationContainer } from "@react-navigation/native";
 
-import RootStackNavigator from "@/navigation/RootStackNavigator";
-import { WelcomeScreen } from "@/screens/WelcomeScreen";
-import { OnboardingScreen } from "@/screens/OnboardingScreen";
-import SignInScreen from "@/screens/SignInScreen";
 import { AIFeedbackToast } from "@/components/AIFeedbackToast";
 import { useApp } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
 import { useAIFeedback } from "@/context/AIFeedbackContext";
 import { useTheme } from "@/hooks/useTheme";
+import { BTApp } from "@/bt/BTApp";
 
-type OnboardingStep = "welcome" | "onboarding" | "complete";
-
+/**
+ * Per BUILDTOGETHER_SPEC.md, the app is now the BuildTogether (Tilly)
+ * student-edition experience. The legacy couples-tracker navigation in
+ * `RootStackNavigator` is retained in the codebase but no longer wired
+ * into the shell — Tilly is the surface.
+ *
+ * Auth gate: while loading, show a spinner; otherwise render the BT shell
+ * unconditionally. The spec's flow doesn't depend on the V1 sign-in/onboarding
+ * couple model, so we skip those screens here.
+ */
 export function AppContent() {
-  const { data, loading, completeOnboarding } = useApp();
-  const { user, isLoading: authLoading, isAuthenticated } = useAuth();
+  const { loading } = useApp();
+  const { isLoading: authLoading } = useAuth();
   const { currentFeedback, dismissFeedback } = useAIFeedback();
   const { theme } = useTheme();
-  const [step, setStep] = useState<OnboardingStep>("welcome");
 
   if (loading || authLoading) {
     return (
@@ -29,43 +32,12 @@ export function AppContent() {
     );
   }
 
-  if (!isAuthenticated) {
-    return <SignInScreen />;
-  }
-
-  const hasCompletedOnboarding = data?.hasCompletedOnboarding === true;
-  const isPartnerB = user?.partnerRole === "partner2";
-  const joinedExistingCouple = data?.connectedSince !== null && isPartnerB;
-
-  if (!hasCompletedOnboarding && !joinedExistingCouple) {
-    if (step === "welcome") {
-      return (
-        <WelcomeScreen 
-          onGetStarted={() => setStep("onboarding")} 
-        />
-      );
-    }
-
-    if (step === "onboarding") {
-      return (
-        <OnboardingScreen 
-          onComplete={async () => {
-            await completeOnboarding();
-            setStep("complete");
-          }} 
-        />
-      );
-    }
-  }
-
   return (
     <View style={styles.container}>
-      <NavigationContainer>
-        <RootStackNavigator />
-      </NavigationContainer>
-      <AIFeedbackToast 
-        feedback={currentFeedback} 
-        onDismiss={dismissFeedback} 
+      <BTApp />
+      <AIFeedbackToast
+        feedback={currentFeedback}
+        onDismiss={dismissFeedback}
       />
     </View>
   );

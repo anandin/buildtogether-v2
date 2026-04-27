@@ -1,0 +1,336 @@
+/**
+ * BTDreams — goal portraits. Spec §4.5.
+ *
+ * Each dream is a portrait card with its own gradient sky and oversized
+ * glyph. A goal isn't a progress bar — it's a place. The portrait makes
+ * saving feel like collecting postcards, not data entry.
+ */
+import React, { useEffect, useRef } from "react";
+import { Animated, Easing, Pressable, ScrollView, Text, View } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
+
+import { BT_DATA, type BTDream } from "../data";
+import { useBT } from "../BTContext";
+import { Tilly } from "../Tilly";
+import { BTCard, BTChip, BTLabel, BTSerif } from "../atoms";
+import { BT_PULSE_DURATION_MS, BT_SHIMMER_DURATION_MS, BTFonts, type BTTheme } from "../theme";
+
+const MILESTONES = [0, 25, 50, 75, 100];
+
+export function BTDreams() {
+  const { t } = useBT();
+
+  return (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: t.bg }}
+      contentContainerStyle={{ padding: 22, paddingTop: 36, paddingBottom: 120, gap: 22 }}
+      showsVerticalScrollIndicator={false}
+    >
+      <View style={{ gap: 8 }}>
+        <BTLabel color={t.inkMute}>What you're building</BTLabel>
+        <BTSerif size={28} color={t.ink} weight="500">
+          <Text style={{ color: t.accent, fontStyle: "italic", fontFamily: BTFonts.serif }}>
+            ${BT_DATA.yearSaved.toLocaleString()}
+          </Text>{" "}
+          set aside this year. About ${BT_DATA.perDay.toFixed(2)} a day.
+        </BTSerif>
+        <Text
+          style={{
+            color: t.inkSoft,
+            fontFamily: BTFonts.sans,
+            fontSize: 13,
+            lineHeight: 19,
+          }}
+        >
+          Tilly auto-moves it after every paycheck — you don't have to remember.
+        </Text>
+      </View>
+
+      {BT_DATA.dreams.map((d) => (
+        <DreamPortrait key={d.id} d={d} t={t} />
+      ))}
+
+      {/* + Name a new dream */}
+      <Pressable
+        style={{
+          padding: 22,
+          borderRadius: 18,
+          borderWidth: 1.5,
+          borderStyle: "dashed",
+          borderColor: t.rule,
+          alignItems: "center",
+          gap: 4,
+        }}
+      >
+        <Text style={{ color: t.inkMute, fontSize: 22 }}>+</Text>
+        <Text style={{ color: t.inkSoft, fontFamily: BTFonts.serif, fontSize: 16, fontStyle: "italic" }}>
+          Name a new dream
+        </Text>
+      </Pressable>
+    </ScrollView>
+  );
+}
+
+function DreamPortrait({ d, t }: { d: BTDream; t: BTTheme }) {
+  const pct = Math.round((d.saved / d.target) * 100);
+  const justCrossed = MILESTONES.find((m) => m > 0 && Math.abs(pct - m) <= 8) ?? null;
+  const shimmerOn = justCrossed !== null;
+
+  const slide = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (shimmerOn) {
+      const loop = Animated.loop(
+        Animated.timing(slide, {
+          toValue: 1,
+          duration: BT_SHIMMER_DURATION_MS,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        }),
+      );
+      loop.start();
+      return () => loop.stop();
+    }
+  }, [shimmerOn, slide]);
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: BT_PULSE_DURATION_MS / 2,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: false,
+        }),
+        Animated.timing(pulse, {
+          toValue: 0,
+          duration: BT_PULSE_DURATION_MS / 2,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: false,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
+
+  const tx = slide.interpolate({ inputRange: [0, 1], outputRange: [-160, 360] });
+
+  return (
+    <View style={{ borderRadius: 22, overflow: "hidden", backgroundColor: t.surface, borderWidth: 1, borderColor: t.rule }}>
+      {/* Gradient header */}
+      <View style={{ height: 132, position: "relative", overflow: "hidden" }}>
+        <LinearGradient
+          colors={d.gradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{ ...StyleSheetAbsoluteFill }}
+        />
+        {/* Diagonal stripes (subtle) */}
+        <DiagonalLines />
+        {/* Big glyph */}
+        <Text
+          style={{
+            position: "absolute",
+            right: 14,
+            bottom: -36,
+            fontSize: 160,
+            color: "#fff",
+            opacity: 0.18,
+            fontFamily: BTFonts.serif,
+            fontWeight: "300",
+          }}
+        >
+          {d.glyph}
+        </Text>
+        {/* Loc + name */}
+        <View style={{ padding: 18, justifyContent: "flex-end", flex: 1 }}>
+          <Text
+            style={{
+              color: "rgba(255,255,255,0.85)",
+              fontFamily: BTFonts.mono,
+              fontSize: 9,
+              letterSpacing: 1.4,
+              textTransform: "uppercase",
+            }}
+          >
+            {d.loc}
+          </Text>
+          <Text
+            style={{
+              color: "#fff",
+              fontFamily: BTFonts.serif,
+              fontSize: 26,
+              fontWeight: "500",
+              marginTop: 4,
+            }}
+          >
+            {d.name}
+          </Text>
+        </View>
+        {shimmerOn ? (
+          <Animated.View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              width: 80,
+              backgroundColor: "rgba(255,255,255,0.22)",
+              transform: [{ translateX: tx }, { skewX: "-22deg" }],
+            }}
+          />
+        ) : null}
+      </View>
+
+      {/* Body */}
+      <View style={{ padding: 18, gap: 14 }}>
+        <View style={{ flexDirection: "row", alignItems: "baseline", justifyContent: "space-between" }}>
+          <Text style={{ color: t.ink, fontFamily: BTFonts.serif, fontSize: 22 }}>
+            ${d.saved.toLocaleString()}
+            <Text style={{ color: t.inkMute, fontSize: 16 }}> of ${d.target.toLocaleString()}</Text>
+          </Text>
+          <BTChip
+            bg={justCrossed ? t.accent : t.chip}
+            fg={justCrossed ? "#fff" : t.inkSoft}
+          >
+            {pct}%
+          </BTChip>
+        </View>
+
+        {/* Milestone track */}
+        <View style={{ position: "relative", height: 18, justifyContent: "center" }}>
+          <View
+            style={{
+              position: "absolute",
+              left: 0,
+              right: 0,
+              height: 4,
+              borderRadius: 2,
+              backgroundColor: t.rule,
+            }}
+          />
+          <LinearGradient
+            colors={[t.accent, t.accent2]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{
+              position: "absolute",
+              left: 0,
+              height: 4,
+              borderRadius: 2,
+              width: `${pct}%`,
+            }}
+          />
+          <View style={{ position: "absolute", left: 0, right: 0, flexDirection: "row", justifyContent: "space-between" }}>
+            {MILESTONES.map((m) => {
+              const reached = pct >= m;
+              const active = justCrossed === m;
+              return (
+                <View
+                  key={m}
+                  style={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: 6,
+                    backgroundColor: reached ? t.accent : t.surface,
+                    borderWidth: 2,
+                    borderColor: reached ? t.accent : t.rule,
+                  }}
+                >
+                  {active ? (
+                    <Animated.View
+                      style={{
+                        position: "absolute",
+                        left: -6,
+                        top: -6,
+                        width: 24,
+                        height: 24,
+                        borderRadius: 12,
+                        borderWidth: 2,
+                        borderColor: t.accent,
+                        opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.2, 0.9] }),
+                      }}
+                    />
+                  ) : null}
+                </View>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* Footer */}
+        <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+          <Text style={{ color: t.inkSoft, fontFamily: BTFonts.sans, fontSize: 12 }}>
+            +${d.weekly}/wk auto
+          </Text>
+          <Text
+            style={{
+              color: t.inkMute,
+              fontFamily: BTFonts.mono,
+              fontSize: 9,
+              letterSpacing: 1,
+              textTransform: "uppercase",
+            }}
+          >
+            due · {d.due}
+          </Text>
+        </View>
+
+        {/* Tilly nudge */}
+        <View
+          style={{
+            flexDirection: "row",
+            gap: 10,
+            padding: 12,
+            borderRadius: 14,
+            backgroundColor: t.surfaceAlt,
+          }}
+        >
+          <Tilly t={t} size={28} breathing={false} />
+          <Text
+            style={{
+              flex: 1,
+              color: t.ink,
+              fontFamily: BTFonts.serif,
+              fontSize: 14,
+              lineHeight: 20,
+              fontStyle: "italic",
+            }}
+          >
+            {d.nudge}
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const StyleSheetAbsoluteFill = { position: "absolute" as const, top: 0, left: 0, right: 0, bottom: 0 };
+
+function DiagonalLines() {
+  const lines = [];
+  for (let i = 0; i < 12; i++) {
+    lines.push(
+      <View
+        key={i}
+        style={{
+          position: "absolute",
+          width: 600,
+          height: 2,
+          left: -200,
+          top: i * 24 - 60,
+          backgroundColor: "#fff",
+          opacity: 0.08,
+          transform: [{ rotate: "-22deg" }],
+        }}
+      />,
+    );
+  }
+  return (
+    <View pointerEvents="none" style={{ ...StyleSheetAbsoluteFill, overflow: "hidden" }}>
+      {lines}
+    </View>
+  );
+}
