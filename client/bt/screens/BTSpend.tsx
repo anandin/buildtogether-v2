@@ -12,9 +12,18 @@ import { BT_DATA } from "../data";
 import { useBT } from "../BTContext";
 import { BT_SHIMMER_DURATION_MS, BTFonts, type BTTheme } from "../theme";
 import { BTCard, BTChip, BTLabel, BTNum, BTSerif } from "../atoms";
+import { useSpend } from "../hooks/useSpend";
 
 export function BTSpend() {
   const { t } = useBT();
+  const spend = useSpend();
+  const live = spend.data && spend.data.ready === true ? spend.data : null;
+
+  // Live data falls through to BT_DATA when no Plaid connected.
+  const spent = live?.spent ?? BT_DATA.week.spent;
+  const headlineSpan = live?.italicSpan ?? "Wednesdays";
+  const bars = live?.bars ?? BT_DATA.week.bars;
+  const categories = live?.categories ?? BT_DATA.spendCategories;
 
   return (
     <ScrollView
@@ -29,9 +38,9 @@ export function BTSpend() {
       <View style={{ gap: 8 }}>
         <BTLabel color={t.inkMute}>This week's pattern</BTLabel>
         <BTSerif size={30} color={t.ink} weight="500">
-          ${BT_DATA.week.spent} spent.{" "}
+          ${spent} spent.{" "}
           <Text style={{ color: t.accent, fontStyle: "italic", fontFamily: BTFonts.serif }}>
-            Wednesdays
+            {headlineSpan}
           </Text>{" "}
           are still your soft spot.
         </BTSerif>
@@ -39,13 +48,13 @@ export function BTSpend() {
 
       {/* Day bars */}
       <BTCard t={t} padding={20}>
-        <DayBars t={t} />
+        <DayBars t={t} bars={bars} />
       </BTCard>
 
       {/* Where it goes */}
       <View style={{ gap: 10 }}>
         <BTLabel color={t.inkMute}>Where it goes</BTLabel>
-        {BT_DATA.spendCategories.map((c) => {
+        {categories.map((c) => {
           const hueColor =
             c.hue === "accent"
               ? t.accent
@@ -171,8 +180,8 @@ export function BTSpend() {
   );
 }
 
-function DayBars({ t }: { t: BTTheme }) {
-  const max = Math.max(...BT_DATA.week.bars.map((b) => b.amt));
+function DayBars({ t, bars }: { t: BTTheme; bars: typeof BT_DATA.week.bars }) {
+  const max = Math.max(1, ...bars.map((b) => b.amt));
   const pulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const loop = Animated.loop(
@@ -187,7 +196,7 @@ function DayBars({ t }: { t: BTTheme }) {
 
   return (
     <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end", height: 140 }}>
-      {BT_DATA.week.bars.map((b, i) => {
+      {bars.map((b, i) => {
         const h = (b.amt / max) * 100;
         const fill = b.today ? t.accent : b.soft ? t.accent2 : t.inkSoft;
         return (

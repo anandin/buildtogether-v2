@@ -148,12 +148,35 @@ export function mountTillyInsightsRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/tilly/spend-pattern", requireAuth, async (_req: Request, res: Response) => {
-    res.json({ phase: 4, ready: false });
+  app.get("/api/tilly/spend-pattern", requireAuth, async (req: Request, res: Response) => {
+    if (!req.user) return res.status(401).json({ error: "auth required" });
+    const householdId = req.user.coupleId;
+    if (!householdId) return res.json({ phase: 4, ready: false });
+
+    try {
+      const { buildWeeklyPattern } = await import("../../tilly/spend-pattern");
+      const pattern = await buildWeeklyPattern(householdId);
+      if (!pattern) return res.json({ phase: 4, ready: false });
+      res.json(pattern);
+    } catch (err) {
+      console.error("/api/tilly/spend-pattern error:", err);
+      res.status(500).json({ error: "spend-pattern failed", phase: 4 });
+    }
   });
 
-  app.get("/api/tilly/credit-snapshot", requireAuth, async (_req: Request, res: Response) => {
-    res.json({ phase: 4, ready: false });
+  app.get("/api/tilly/credit-snapshot", requireAuth, async (req: Request, res: Response) => {
+    if (!req.user) return res.status(401).json({ error: "auth required" });
+    const householdId = req.user.coupleId;
+    if (!householdId) return res.json({ phase: 4, ready: false });
+
+    try {
+      const { buildCreditSnapshot } = await import("../../tilly/credit-snapshot");
+      const snap = await buildCreditSnapshot(householdId);
+      res.json(snap);
+    } catch (err) {
+      console.error("/api/tilly/credit-snapshot error:", err);
+      res.status(500).json({ error: "credit-snapshot failed", phase: 4 });
+    }
   });
 
   app.get("/api/tilly/profile", requireAuth, async (req: Request, res: Response) => {

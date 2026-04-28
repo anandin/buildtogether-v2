@@ -14,9 +14,20 @@ import { Tilly } from "../Tilly";
 import { BTCard, BTLabel, BTNum, BTSerif, BTStripes } from "../atoms";
 import { BTFonts } from "../theme";
 
+import { useCredit } from "../hooks/useCredit";
+
 export function BTCredit() {
   const { t } = useBT();
-  const c = BT_DATA.credit;
+  const credit = useCredit();
+  const live = credit.data && credit.data.ready === true ? credit.data : null;
+  // BT_DATA falls through when no Plaid card is connected.
+  const c = live ?? BT_DATA.credit;
+  const payNow =
+    live && "payNow" in live && live.payNow
+      ? (live.payNow as { amount: number; resultsIn: number })
+      : { amount: 50, resultsIn: 28 };
+  const payNowAmount = payNow.amount;
+  const payNowResult = payNow.resultsIn;
 
   return (
     <ScrollView
@@ -124,7 +135,7 @@ export function BTCredit() {
               fontSize: 14,
             }}
           >
-            Pay $50 now → drop to 28%
+            Pay ${payNowAmount} now → drop to {payNowResult}%
           </Text>
         </Pressable>
       </BTCard>
