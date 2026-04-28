@@ -1,7 +1,7 @@
 {
   "hasHousehold": true,
-  "hasCompletedOnboarding": false,
+  "hasCompletedOnboarding": true,
   "hasPlaid": false,
-  "hasDream": false,
+  "hasDream": true,
   "hasCommitment": false
 }

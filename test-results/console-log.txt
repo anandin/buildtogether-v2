@@ -1,70 +1,194 @@
-[2026-04-28T11:53:24.360Z] PASS 1.1 health endpoint version=f6d8652 provider=openrouter
-[2026-04-28T11:53:24.361Z] Loading https://buildtogether-v2.vercel.app/app/
-[2026-04-28T11:53:27.736Z] PAGE ERROR: Cannot read properties of undefined (reading 'get')
-[2026-04-28T11:53:30.457Z] PASS 1.2 web app loads sign-in screen screenshot 01-signin.png
-[2026-04-28T11:53:30.793Z] PASS 2.1 register works email=tilly-test-1777377210457@example.com
-[2026-04-28T11:53:30.913Z] PASS 2.2 bearer token authenticates session 
-[2026-04-28T11:53:31.007Z] PASS 2.3 onboarding gate blocks new user 
-[2026-04-28T11:53:31.079Z] PAGE ERROR: Cannot read properties of undefined (reading 'get')
-[2026-04-28T11:53:31.183Z] PAGE ERROR: Cannot read properties of undefined (reading 'get')
-[2026-04-28T11:53:36.253Z] PASS 2.4-welcome onboarding welcome card screenshot 02
-[2026-04-28T11:53:42.256Z] couldnt click "Begin": locator.click: Timeout 6000ms exceeded.
-Call log:
-[2m  - waiting for getByText('Begin').first()[22m
-
-[2026-04-28T11:53:42.515Z] Forcing onboarding complete via API for screenshot continuity
-[2026-04-28T11:53:44.045Z] PAGE ERROR: Cannot read properties of undefined (reading 'get')
-[2026-04-28T11:53:49.570Z] SKIP 2.4 onboarding completes via UI :: force-completed via API to keep screenshots flowing
-[2026-04-28T11:53:49.619Z] PASS 2.5 BTHome renders screenshot 07
-[2026-04-28T11:53:55.629Z] couldnt click "Tilly": locator.click: Timeout 6000ms exceeded.
-Call log:
-[2m  - waiting for getByText('Tilly').first()[22m
-
-[2026-04-28T11:54:15.358Z] PASS 2.6 Tilly chat returns a reply kind=text
-[2026-04-28T11:54:42.740Z] SKIP 2.7 affordability question returns analysis card :: got plain text instead — kind=text
-[2026-04-28T11:54:42.824Z] PAGE ERROR: Cannot read properties of undefined (reading 'get')
-[2026-04-28T11:54:53.395Z] couldnt click "Tilly": locator.click: Timeout 6000ms exceeded.
-Call log:
-[2m  - waiting for getByText('Tilly').first()[22m
-
-[2026-04-28T11:55:04.622Z] SKIP 2.5.6 chat creates tilly_memory rows :: no memories written yet (extraction in flight or model returned empty)
-[2026-04-28T11:55:08.625Z] SKIP 2.8 memory inspector opens :: couldnt click memory pill
-[2026-04-28T11:55:13.687Z] SKIP 2.5.2 admin config loads :: test user is not admin (bootstrap email is anand.inbasekaran@gmail.com)
-[2026-04-28T11:55:13.833Z] SKIP 2.5.5 admin memory-stats endpoint :: auth gated
-[2026-04-28T11:55:13.923Z] PASS 3.1 POST /api/dreams creates a dream id=54b43a29-8b20-48b7-891c-6952f9fdc839
-[2026-04-28T11:55:14.032Z] PASS 3.3 contribute increments savedAmount saved=100
-[2026-04-28T11:55:20.044Z] couldnt click "Dreams": locator.click: Timeout 6000ms exceeded.
+[2026-04-28T11:59:55.794Z] PASS 1.1 health endpoint version=c7a7491 provider=openrouter
+[2026-04-28T11:59:55.795Z] Loading https://buildtogether-v2.vercel.app/app/
+[2026-04-28T11:59:59.153Z] PASS 1.2 web app loads sign-in screen screenshot 01-signin.png
+[2026-04-28T11:59:59.368Z] PASS 2.1 register works email=tilly-test-1777377599153@example.com
+[2026-04-28T11:59:59.494Z] PASS 2.2 bearer token authenticates session 
+[2026-04-28T11:59:59.878Z] PASS 2.3 onboarding gate blocks new user 
+[2026-04-28T12:00:05.397Z] PASS 2.4-welcome onboarding welcome card screenshot 02
+[2026-04-28T12:00:08.011Z] PASS 2.4-name onboarding name card screenshot 03
+[2026-04-28T12:00:11.097Z] PASS 2.4-bank onboarding bank card screenshot 04
+[2026-04-28T12:00:13.696Z] PASS 2.4-dream onboarding dream card screenshot 05
+[2026-04-28T12:00:16.281Z] PASS 2.4-commit onboarding commit card screenshot 06
+[2026-04-28T12:00:25.534Z] CONSOLE ERROR: Failed to load resource: the server responded with a status of 500 ()
+[2026-04-28T12:00:27.020Z] PASS 2.4 onboarding completes via UI hasCompletedOnboarding=true
+[2026-04-28T12:00:27.089Z] PASS 2.5 BTHome renders screenshot 07
+[2026-04-28T12:00:45.572Z] PASS 2.6 Tilly chat returns a reply kind=text
+[2026-04-28T12:01:09.714Z] SKIP 2.7 affordability question returns analysis card :: got plain text instead — kind=text
+[2026-04-28T12:01:19.614Z] CONSOLE ERROR: Failed to load resource: the server responded with a status of 500 ()
+[2026-04-28T12:01:38.310Z] SKIP 2.5.6 chat creates tilly_memory rows :: no memories written yet (extraction in flight or model returned empty)
+[2026-04-28T12:01:40.414Z] PASS 2.8 memory inspector opens screenshot 10
+[2026-04-28T12:01:44.920Z] SKIP 2.5.2 admin config loads :: test user is not admin (bootstrap email is anand.inbasekaran@gmail.com)
+[2026-04-28T12:01:45.061Z] SKIP 2.5.5 admin memory-stats endpoint :: auth gated
+[2026-04-28T12:01:45.140Z] PASS 3.1 POST /api/dreams creates a dream id=8cbe45fd-fbcf-41d5-ae4b-9f2174c27cc0
+[2026-04-28T12:01:45.251Z] PASS 3.3 contribute increments savedAmount saved=100
+[2026-04-28T12:01:51.256Z] couldnt click "Dreams": locator.click: Timeout 6000ms exceeded.
 Call log:
 [2m  - waiting for getByText('Dreams').first()[22m
+[2m    - locator resolved to <div dir="auto" class="css-146c3p1 r-102nfrm r-qqjak8 r-b88u0q r-1lybf8k r-tsynxw">Dreams</div>[22m
+[2m  - attempting click action[22m
+[2m    2 × waiting for element to be visible, enabled and stable[22m
+[2m      - element is visible, enabled and stable[22m
+[2m      - scrolling into view if needed[22m
+[2m      - done scrolling[22m
+[2m      - <div class="css-g5y9jx r-150rngu r-eqz5dr r-16y2uox r-1wbh5a2 r-11yh6sk r-1rnoaur r-agouwx r-2eszeu">…</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m    - retrying click action[22m
+[2m    - waiting 20ms[22m
+[2m    2 × waiting for element to be visible, enabled and stable[22m
+[2m      - element is visible, enabled and stable[22m
+[2m      - scrolling into view if needed[22m
+[2m      - done scrolling[22m
+[2m      - <div class="css-g5y9jx r-150rngu r-eqz5dr r-16y2uox r-1wbh5a2 r-11yh6sk r-1rnoaur r-agouwx r-2eszeu">…</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m    - retrying click action[22m
+[2m      - waiting 100ms[22m
+[2m    11 × waiting for element to be visible, enabled and stable[22m
+[2m       - element is visible, enabled and stable[22m
+[2m       - scrolling into view if needed[22m
+[2m       - done scrolling[22m
+[2m       - <div class="css-g5y9jx r-150rngu r-eqz5dr r-16y2uox r-1wbh5a2 r-11yh6sk r-1rnoaur r-agouwx r-2eszeu">…</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m     - retrying click action[22m
+[2m       - waiting 500ms[22m
 
-[2026-04-28T11:55:23.089Z] PASS 3.2 BTDreams renders portrait screenshot 14
-[2026-04-28T11:55:23.600Z] PASS 4.1 /api/tilly/spend-pattern responds gracefully ready=undefined
-[2026-04-28T11:55:29.609Z] couldnt click "Spend": locator.click: Timeout 6000ms exceeded.
+[2026-04-28T12:01:54.332Z] PASS 3.2 BTDreams renders portrait screenshot 14
+[2026-04-28T12:01:54.515Z] PASS 4.1 /api/tilly/spend-pattern responds gracefully ready=undefined
+[2026-04-28T12:02:00.529Z] couldnt click "Spend": locator.click: Timeout 6000ms exceeded.
 Call log:
 [2m  - waiting for getByText('Spend').first()[22m
+[2m    - locator resolved to <div dir="auto" class="css-146c3p1 r-102nfrm r-qqjak8 r-b88u0q r-1lybf8k r-tsynxw">Spend</div>[22m
+[2m  - attempting click action[22m
+[2m    2 × waiting for element to be visible, enabled and stable[22m
+[2m      - element is visible, enabled and stable[22m
+[2m      - scrolling into view if needed[22m
+[2m      - done scrolling[22m
+[2m      - <div class="css-g5y9jx r-150rngu r-eqz5dr r-16y2uox r-1wbh5a2 r-11yh6sk r-1rnoaur r-agouwx r-2eszeu">…</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m    - retrying click action[22m
+[2m    - waiting 20ms[22m
+[2m    2 × waiting for element to be visible, enabled and stable[22m
+[2m      - element is visible, enabled and stable[22m
+[2m      - scrolling into view if needed[22m
+[2m      - done scrolling[22m
+[2m      - <div class="css-g5y9jx r-150rngu r-eqz5dr r-16y2uox r-1wbh5a2 r-11yh6sk r-1rnoaur r-agouwx r-2eszeu">…</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m    - retrying click action[22m
+[2m      - waiting 100ms[22m
+[2m    11 × waiting for element to be visible, enabled and stable[22m
+[2m       - element is visible, enabled and stable[22m
+[2m       - scrolling into view if needed[22m
+[2m       - done scrolling[22m
+[2m       - <div class="css-g5y9jx r-150rngu r-eqz5dr r-16y2uox r-1wbh5a2 r-11yh6sk r-1rnoaur r-agouwx r-2eszeu">…</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m     - retrying click action[22m
+[2m       - waiting 500ms[22m
 
-[2026-04-28T11:55:32.152Z] PASS 4.2 BTSpend renders with BT_DATA fallback screenshot 15
-[2026-04-28T11:55:32.353Z] PASS 4.3 /api/tilly/credit-snapshot responds gracefully ready=undefined reason=n/a
-[2026-04-28T11:55:38.364Z] couldnt click "Credit": locator.click: Timeout 6000ms exceeded.
+[2026-04-28T12:02:03.079Z] PASS 4.2 BTSpend renders with BT_DATA fallback screenshot 15
+[2026-04-28T12:02:03.515Z] PASS 4.3 /api/tilly/credit-snapshot responds gracefully ready=undefined reason=n/a
+[2026-04-28T12:02:09.525Z] couldnt click "Credit": locator.click: Timeout 6000ms exceeded.
 Call log:
 [2m  - waiting for getByText('Credit').first()[22m
+[2m    - locator resolved to <div dir="auto" class="css-146c3p1">help me think about my first credit card</div>[22m
+[2m  - attempting click action[22m
+[2m    2 × waiting for element to be visible, enabled and stable[22m
+[2m      - element is visible, enabled and stable[22m
+[2m      - scrolling into view if needed[22m
+[2m      - done scrolling[22m
+[2m      - <div class="css-g5y9jx">…</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m    - retrying click action[22m
+[2m    - waiting 20ms[22m
+[2m    2 × waiting for element to be visible, enabled and stable[22m
+[2m      - element is visible, enabled and stable[22m
+[2m      - scrolling into view if needed[22m
+[2m      - done scrolling[22m
+[2m      - <div class="css-g5y9jx">…</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m    - retrying click action[22m
+[2m      - waiting 100ms[22m
+[2m    11 × waiting for element to be visible, enabled and stable[22m
+[2m       - element is visible, enabled and stable[22m
+[2m       - scrolling into view if needed[22m
+[2m       - done scrolling[22m
+[2m       - <div class="css-g5y9jx">…</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m     - retrying click action[22m
+[2m       - waiting 500ms[22m
 
-[2026-04-28T11:55:40.901Z] PASS 4.4 BTCredit renders with BT_DATA fallback screenshot 16
-[2026-04-28T11:55:41.519Z] PASS 4.5 /api/subscriptions/scan returns gracefully errors=0
-[2026-04-28T11:55:47.517Z] couldnt click "You": locator.click: Timeout 6000ms exceeded.
+[2026-04-28T12:02:12.091Z] PASS 4.4 BTCredit renders with BT_DATA fallback screenshot 16
+[2026-04-28T12:02:12.661Z] PASS 4.5 /api/subscriptions/scan returns gracefully errors=0
+[2026-04-28T12:02:18.674Z] couldnt click "You": locator.click: Timeout 6000ms exceeded.
 Call log:
 [2m  - waiting for getByText('You').first()[22m
+[2m    - locator resolved to <div dir="auto" class="css-146c3p1">Hey. Let me check where you actually stand.↵↵Look…</div>[22m
+[2m  - attempting click action[22m
+[2m    - waiting for element to be visible, enabled and stable[22m
+[2m    - element is visible, enabled and stable[22m
+[2m    - scrolling into view if needed[22m
+[2m    - done scrolling[22m
+[2m    - <div tabindex="0" class="css-g5y9jx r-1loqt21 r-1otgn73">…</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m  - retrying click action[22m
+[2m    - waiting for element to be visible, enabled and stable[22m
+[2m    - element is visible, enabled and stable[22m
+[2m    - scrolling into view if needed[22m
+[2m    - done scrolling[22m
+[2m    - <div dir="auto" class="css-146c3p1">Export as markdown</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m  - retrying click action[22m
+[2m    - waiting 20ms[22m
+[2m    - waiting for element to be visible, enabled and stable[22m
+[2m    - element is visible, enabled and stable[22m
+[2m    - scrolling into view if needed[22m
+[2m    - done scrolling[22m
+[2m    - <div tabindex="0" class="css-g5y9jx r-1loqt21 r-1otgn73">…</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m  2 × retrying click action[22m
+[2m      - waiting 100ms[22m
+[2m      - waiting for element to be visible, enabled and stable[22m
+[2m      - element is visible, enabled and stable[22m
+[2m      - scrolling into view if needed[22m
+[2m      - done scrolling[22m
+[2m      - <div dir="auto" class="css-146c3p1">Tilly hasn't written anything yet. As you talk, s…</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m  2 × retrying click action[22m
+[2m      - waiting 500ms[22m
+[2m      - waiting for element to be visible, enabled and stable[22m
+[2m      - element is visible, enabled and stable[22m
+[2m      - scrolling into view if needed[22m
+[2m      - done scrolling[22m
+[2m      - <div dir="auto" class="css-146c3p1">Export as markdown</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m    - retrying click action[22m
+[2m      - waiting 500ms[22m
+[2m      - waiting for element to be visible, enabled and stable[22m
+[2m      - element is visible, enabled and stable[22m
+[2m      - scrolling into view if needed[22m
+[2m      - done scrolling[22m
+[2m      - <div tabindex="0" class="css-g5y9jx r-1loqt21 r-1otgn73">…</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m    - retrying click action[22m
+[2m      - waiting 500ms[22m
+[2m      - waiting for element to be visible, enabled and stable[22m
+[2m      - element is visible, enabled and stable[22m
+[2m      - scrolling into view if needed[22m
+[2m      - done scrolling[22m
+[2m      - <div dir="auto" class="css-146c3p1">Tilly hasn't written anything yet. As you talk, s…</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m    - retrying click action[22m
+[2m      - waiting 500ms[22m
+[2m      - waiting for element to be visible, enabled and stable[22m
+[2m      - element is visible, enabled and stable[22m
+[2m      - scrolling into view if needed[22m
+[2m      - done scrolling[22m
+[2m      - <div dir="auto" class="css-146c3p1">Tilly hasn't written anything yet. As you talk, s…</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m  - retrying click action[22m
+[2m    - waiting 500ms[22m
+[2m    - waiting for element to be visible, enabled and stable[22m
+[2m    - element is visible, enabled and stable[22m
+[2m    - scrolling into view if needed[22m
+[2m    - done scrolling[22m
+[2m    - <div dir="auto" class="css-146c3p1">Export as markdown</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m  - retrying click action[22m
+[2m    - waiting 500ms[22m
+[2m    - waiting for element to be visible, enabled and stable[22m
+[2m    - element is visible, enabled and stable[22m
+[2m    - scrolling into view if needed[22m
+[2m    - done scrolling[22m
+[2m    - <div tabindex="0" class="css-g5y9jx r-1loqt21 r-1otgn73">…</div> from <div>…</div> subtree intercepts pointer events[22m
+[2m  - retrying click action[22m
+[2m    - waiting 500ms[22m
 
-[2026-04-28T11:55:50.049Z] PASS 5.1 BTProfile renders timeline + tone tuner screenshot 17
-[2026-04-28T11:55:50.280Z] PASS 5.2 tone change syncs to server 
-[2026-04-28T11:55:50.435Z] PASS 5.3 add trusted person 
-[2026-04-28T11:55:50.506Z] PAGE ERROR: Cannot read properties of undefined (reading 'get')
-[2026-04-28T11:56:00.067Z] couldnt click "You": locator.click: Timeout 6000ms exceeded.
-Call log:
-[2m  - waiting for getByText('You').first()[22m
-
-[2026-04-28T11:56:02.614Z] PASS 5.4 trusted person appears in BTProfile screenshot 18
-[2026-04-28T11:56:02.853Z] PASS 5.5 Venmo deeplink draft venmo://paycharge?txn=charge&audience=private&recipients=priya&amount=14.50&note=Trader+Joe+split
-[2026-04-28T11:56:03.059Z] PASS 5.6 push token registers 
-[2026-04-28T11:56:03.144Z] PASS 5.7 protections scan runs gracefully flagged=0
-[2026-04-28T11:56:03.220Z] final memory count: 0
+[2026-04-28T12:02:21.240Z] PASS 5.1 BTProfile renders timeline + tone tuner screenshot 17
+[2026-04-28T12:02:21.466Z] PASS 5.2 tone change syncs to server 
+[2026-04-28T12:02:21.715Z] PASS 5.3 add trusted person 
+[2026-04-28T12:02:29.181Z] CONSOLE ERROR: Failed to load resource: the server responded with a status of 500 ()
+[2026-04-28T12:02:37.813Z] PASS 5.4 trusted person appears in BTProfile screenshot 18
+[2026-04-28T12:02:37.980Z] PASS 5.5 Venmo deeplink draft venmo://paycharge?txn=charge&audience=private&recipients=priya&amount=14.50&note=Trader+Joe+split
+[2026-04-28T12:02:38.160Z] PASS 5.6 push token registers 
+[2026-04-28T12:02:38.247Z] PASS 5.7 protections scan runs gracefully flagged=0
+[2026-04-28T12:02:38.324Z] final memory count: 0

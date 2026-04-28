@@ -3,7 +3,7 @@
     "id": "1.1",
     "name": "health endpoint",
     "status": "pass",
-    "note": "version=f6d8652 provider=openrouter"
+    "note": "version=c7a7491 provider=openrouter"
   },
   {
     "id": "1.2",
@@ -15,7 +15,7 @@
     "id": "2.1",
     "name": "register works",
     "status": "pass",
-    "note": "email=tilly-test-1777377210457@example.com"
+    "note": "email=tilly-test-1777377599153@example.com"
   },
   {
     "id": "2.2",
@@ -36,10 +36,34 @@
     "note": "screenshot 02"
   },
   {
+    "id": "2.4-name",
+    "name": "onboarding name card",
+    "status": "pass",
+    "note": "screenshot 03"
+  },
+  {
+    "id": "2.4-bank",
+    "name": "onboarding bank card",
+    "status": "pass",
+    "note": "screenshot 04"
+  },
+  {
+    "id": "2.4-dream",
+    "name": "onboarding dream card",
+    "status": "pass",
+    "note": "screenshot 05"
+  },
+  {
+    "id": "2.4-commit",
+    "name": "onboarding commit card",
+    "status": "pass",
+    "note": "screenshot 06"
+  },
+  {
     "id": "2.4",
     "name": "onboarding completes via UI",
-    "status": "skip",
-    "note": "force-completed via API to keep screenshots flowing"
+    "status": "pass",
+    "note": "hasCompletedOnboarding=true"
   },
   {
     "id": "2.5",
@@ -68,8 +92,8 @@
   {
     "id": "2.8",
     "name": "memory inspector opens",
-    "status": "skip",
-    "note": "couldnt click memory pill"
+    "status": "pass",
+    "note": "screenshot 10"
   },
   {
     "id": "2.5.2",
@@ -87,7 +111,7 @@
     "id": "3.1",
     "name": "POST /api/dreams creates a dream",
     "status": "pass",
-    "note": "id=54b43a29-8b20-48b7-891c-6952f9fdc839"
+    "note": "id=8cbe45fd-fbcf-41d5-ae4b-9f2174c27cc0"
   },
   {
     "id": "3.3",

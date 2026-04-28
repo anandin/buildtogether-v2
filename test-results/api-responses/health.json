@@ -1,16 +1,16 @@
 {
   "status": "ok",
-  "version": "f6d8652",
+  "version": "c7a7491",
   "env": "production",
   "region": "iad1",
   "db": {
     "ok": true,
-    "latencyMs": 4
+    "latencyMs": 3
   },
   "ai": {
     "provider": "openrouter",
     "configured": true
   },
   "uptimeMs": 0,
-  "durationMs": 4
+  "durationMs": 3
 }
