@@ -1,0 +1,20 @@
+[
+  {
+    "id": "1.1",
+    "name": "health endpoint",
+    "status": "pass",
+    "note": "version=55ca877 provider=openrouter"
+  },
+  {
+    "id": "1.2",
+    "name": "web app loads sign-in screen",
+    "status": "pass",
+    "note": "screenshot 01-signin.png"
+  },
+  {
+    "id": "2.1",
+    "name": "register works",
+    "status": "fail",
+    "note": "status=500 {\"error\":\"column \\\"is_admin\\\" does not exist\"}"
+  }
+]

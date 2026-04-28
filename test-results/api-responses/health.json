@@ -1,0 +1,16 @@
+{
+  "status": "ok",
+  "version": "55ca877",
+  "env": "production",
+  "region": "iad1",
+  "db": {
+    "ok": true,
+    "latencyMs": 101
+  },
+  "ai": {
+    "provider": "openrouter",
+    "configured": true
+  },
+  "uptimeMs": 0,
+  "durationMs": 101
+}

@@ -5,6 +5,7 @@ import { registerAdminRoutes } from "./admin-routes";
 import { registerTillyRoutes } from "./routes/index";
 import { requestId } from "./middleware/requestId";
 import { pool } from "./db";
+import { applyBootMigrations } from "./migrate-boot";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -293,6 +294,14 @@ export async function getApp(): Promise<express.Application> {
     app.use(requestId); // attach request id + structured logger early
     setupRequestLogging(app);
     setupHealthCheck(app);
+    // Apply hand-written migrations (drizzle-kit push misses some seed +
+    // ALTER cases on Vercel cold starts). Idempotent — safe to run on
+    // every cold start. Best-effort; logs failures but never blocks boot.
+    try {
+      await applyBootMigrations();
+    } catch (err) {
+      console.error("[boot] migration runner errored (non-fatal):", err);
+    }
     configureExpoAndLanding(app);
     registerAdminRoutes(app);
     await registerRoutes(app);
