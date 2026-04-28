@@ -324,9 +324,16 @@ export function mountTillyChatRoutes(app: Express): void {
       })();
 
       res.json({ reply });
-    } catch (err) {
+    } catch (err: any) {
       console.error("/api/tilly/chat error:", err);
-      res.status(500).json({ error: "chat failed" });
+      // Surface the underlying error so we can diagnose production issues
+      // without needing to attach a debugger. This is intentionally
+      // permissive — the message is shown to authenticated users only.
+      res.status(500).json({
+        error: "chat failed",
+        debug: err?.message ?? String(err),
+        stack: process.env.NODE_ENV === "production" ? undefined : err?.stack,
+      });
     }
   });
 
