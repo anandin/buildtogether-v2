@@ -29,7 +29,7 @@ export const sessions = pgTable("sessions", {
 
 export const partnerInvites = pgTable("partner_invites", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  coupleId: varchar("couple_id").notNull().references(() => couples.id, { onDelete: "cascade" }),
+  coupleId: varchar("couple_id").notNull().references(() => households.id, { onDelete: "cascade" }),
   inviteCode: text("invite_code").notNull().unique(),
   invitedBy: varchar("invited_by").notNull().references(() => users.id),
   invitedEmail: text("invited_email"),
@@ -39,11 +39,28 @@ export const partnerInvites = pgTable("partner_invites", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const partners = pgTable("partners", {
+/**
+ * Members of a household. Replaces the V1 couples-tracker `partners` table.
+ *
+ * `role` describes the relationship to the household owner:
+ *   - `owner`           — the primary student / account holder
+ *   - `trusted_viewer`  — sees credit + dreams (e.g. parent)
+ *   - `splitter`        — used in expense splits (roommate)
+ *   - `family`          — informational only (sibling)
+ *
+ * For a student-edition household-of-one, exactly one row exists with
+ * role='owner'. Trusted-people invitations append additional rows.
+ */
+export const members = pgTable("members", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Phase 1: keeping `couple_id` column name for back-compat with V1 partners table data.
+  // Phase 1c renames to `household_id` per-router as we extract.
   coupleId: varchar("couple_id").notNull(),
   partnerId: varchar("partner_id").notNull(),
+  userId: varchar("user_id"), // null until the trusted person accepts an invite + creates an account
   name: text("name").notNull(),
+  role: text("role").notNull().default("owner"), // owner | trusted_viewer | splitter | family
+  scope: text("scope"), // human-readable summary, e.g. "splits — groceries, rent"
   avatar: text("avatar"),
   color: text("color"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -69,8 +86,15 @@ export const expenses = pgTable("expenses", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+/**
+ * Goals / "Dreams" — the spec §4.5 portrait cards. The BT redesign adds
+ * portrait-specific fields (glyph, gradient, loc, weekly auto-save, nudge
+ * copy) on top of the legacy V1 goal shape (kept for backward compatibility
+ * during the transition).
+ */
 export const goals = pgTable("goals", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  // Phase 1: column kept as `couple_id` for incremental rename. Phase 1c renames per-router.
   coupleId: varchar("couple_id").notNull(),
   name: text("name").notNull(),
   targetAmount: real("target_amount").notNull(),
@@ -79,6 +103,13 @@ export const goals = pgTable("goals", {
   color: text("color").notNull(),
   targetDate: text("target_date"),
   whyItMatters: text("why_it_matters"),
+  // BT dream-portrait fields:
+  glyph: text("glyph"), // ✺ ◇ ◉ — single oversized character
+  loc: text("loc"), // "Spring break · Mar 12"
+  gradient: jsonb("gradient"), // [from, to] hex strings for header
+  weeklyAuto: real("weekly_auto"), // amount Tilly moves each Friday (0 = manual)
+  nudge: text("nudge"), // contextual Tilly line, e.g. "Skip two takeouts and Barcelona arrives Feb 18"
+  dueLabel: text("due_label"), // "Mar 5" / "Year-round" — display-friendly target
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -124,10 +155,20 @@ export const settlements = pgTable("settlements", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const couples = pgTable("couples", {
+/**
+ * Households — the 1+ member container that owns expenses, dreams, budgets,
+ * subscriptions, etc. Replaces the V1 couples-tracker `couples` table. A
+ * student-edition household has one member with role='owner'; trusted-people
+ * (parents, roommates, friends) are added via the `members` table.
+ *
+ * Legacy V1 partner1/partner2 fields are retained for back-compat during the
+ * Phase 1 → Phase 2 transition; new code should read from `members` instead.
+ */
+export const households = pgTable("households", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   connectedSince: text("connected_since"),
   hasCompletedOnboarding: boolean("has_completed_onboarding").default(false).notNull(),
+  // Legacy couples fields — kept for back-compat, deprecated in Phase 2.
   partner1Name: text("partner1_name").default("You").notNull(),
   partner2Name: text("partner2_name").default("Partner").notNull(),
   partner1Color: text("partner1_color").default("#FF9AA2"),
@@ -138,6 +179,10 @@ export const couples = pgTable("couples", {
   numTeens: integer("num_teens").default(0),
   city: text("city"),
   country: text("country").default("US"),
+  // BT student-edition fields:
+  schoolName: text("school_name"), // "NYU"
+  schoolShort: text("school_short"), // "NYU"
+  studentRole: text("student_role"), // "NYU Junior"
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -374,9 +419,9 @@ export const goalContributionsRelations = relations(goalContributions, ({ one })
 
 export const usersRelations = relations(users, ({ one, many }) => ({
   sessions: many(sessions),
-  couple: one(couples, {
+  household: one(households, {
     fields: [users.coupleId],
-    references: [couples.id],
+    references: [households.id],
   }),
 }));
 
@@ -388,9 +433,9 @@ export const sessionsRelations = relations(sessions, ({ one }) => ({
 }));
 
 export const partnerInvitesRelations = relations(partnerInvites, ({ one }) => ({
-  couple: one(couples, {
+  household: one(households, {
     fields: [partnerInvites.coupleId],
-    references: [couples.id],
+    references: [households.id],
   }),
   inviter: one(users, {
     fields: [partnerInvites.invitedBy],
@@ -699,3 +744,148 @@ export const plaidTransactions = pgTable("plaid_transactions", {
 });
 
 export type PlaidTransaction = typeof plaidTransactions.$inferSelect;
+
+// ==================== BuildTogether v2 (Tilly student-edition) ====================
+// Spec §5: Tilly's AI learning behavior. New tables introduced for the
+// student-edition pivot. Use `householdId` from day one (no V1 column-name
+// debt) — these tables are write-once new code paths.
+
+/**
+ * Tilly's first-person notes timeline (spec §4.6 Profile, §5.4 memory pill).
+ *
+ * Every durable observation Tilly extracts from chat or actions lands here.
+ * The user can `forget` (archive) any entry; the spec's trust contract
+ * promises this surface is fully transparent and exportable.
+ *
+ * `kind` semantics:
+ *   - observation — "you skipped DoorDash twice this week"
+ *   - anxiety     — verbal cue: "you said money makes you anxious"
+ *   - value       — named priority: "Barcelona is a dream"
+ *   - commitment  — shared rule: "utilization stays under 30%"
+ *   - preference  — quiet hours, tone, alert thresholds
+ */
+export const tillyMemory = pgTable("tilly_memory", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  householdId: varchar("household_id").notNull(),
+  kind: text("kind").notNull(), // observation | anxiety | value | commitment | preference
+  body: text("body").notNull(), // first-person, in Tilly's voice
+  source: text("source").notNull().default("inferred"), // chat | inferred | action | onboarding
+  // Optional structured anchors so we can re-surface or revise this note later.
+  category: text("category"), // spending category if relevant
+  goalId: varchar("goal_id"), // if it references a dream
+  conversationId: varchar("conversation_id"), // if extracted from a chat turn
+  // Date ramps — `dateLabel` is what we render ("Today", "Apr 18"); `noticedAt`
+  // is the actual moment so we can sort + show "X days ago".
+  dateLabel: text("date_label").notNull(),
+  noticedAt: timestamp("noticed_at").defaultNow().notNull(),
+  // The "recent" dot pulses on the most recent note. Computed by a query, but
+  // also stored so we don't need a window function on every read.
+  isMostRecent: boolean("is_most_recent").default(false),
+  archivedAt: timestamp("archived_at"), // null = active
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type TillyMemory = typeof tillyMemory.$inferSelect;
+
+/**
+ * Per-user Tilly tone preference (spec §5.5).
+ *
+ * One row per user. Switching tones updates this row; older Tilly messages
+ * keep their original tone (preserving history per the spec).
+ */
+export const tillyTonePref = pgTable("tilly_tone_pref", {
+  userId: varchar("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  tone: text("tone").notNull().default("sibling"), // sibling | coach | quiet
+  quietHoursStart: text("quiet_hours_start").default("23:00"), // 11pm
+  quietHoursEnd: text("quiet_hours_end").default("07:00"), // 7am
+  bigPurchaseThreshold: real("big_purchase_threshold").default(25),
+  subscriptionScanCadence: text("subscription_scan_cadence").default("weekly"), // weekly | daily | off
+  phishingWatch: boolean("phishing_watch").default(true),
+  memoryRetention: text("memory_retention").default("forever"), // forever | 1y | 90d
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type TillyTonePref = typeof tillyTonePref.$inferSelect;
+
+/**
+ * Subscription detection table (spec §4.1 Home tile, §4.4 Credit "protected"
+ * card, §5.7 protective surface).
+ *
+ * Populated from Plaid's recurring-transactions endpoint and rule-based
+ * detection (same merchant + same amount + ≥2 cycles). The `lastUsedAt`
+ * column lets Tilly say "used twice in 30 days" — we infer usage from
+ * non-recurring transactions at the same merchant.
+ */
+export const subscriptions = pgTable("subscriptions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  householdId: varchar("household_id").notNull(),
+  merchant: text("merchant").notNull(), // "CitiBike", "Spotify", etc.
+  amount: real("amount").notNull(),
+  currency: text("currency").default("USD"),
+  cadence: text("cadence").notNull(), // weekly | monthly | yearly | custom
+  cadenceDays: integer("cadence_days"), // for `custom`
+  lastChargedAt: text("last_charged_at"),
+  nextChargeAt: text("next_charge_at"), // ISO date — used by Home tile "renews tomorrow"
+  lastUsedAt: text("last_used_at"), // last non-recurring tx at this merchant
+  status: text("status").notNull().default("active"), // active | paused | cancelled | flagged
+  source: text("source").notNull().default("plaid_recurring"), // plaid_recurring | rule_based | manual
+  plaidRecurringStreamId: text("plaid_recurring_stream_id"), // for plaid_recurring source
+  // Tilly's contextual line: "Used twice in 30 days"
+  usageNote: text("usage_note"),
+  pausedAt: timestamp("paused_at"),
+  cancelledAt: timestamp("cancelled_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type Subscription = typeof subscriptions.$inferSelect;
+
+/**
+ * Protections inbox (spec §5.7 protective surface).
+ *
+ * Single feed for everything Tilly is watching for and flagging on the
+ * user's behalf — phishing texts, free trials about to convert, unused
+ * subscriptions, unusual charges. The Home tile + Credit "Tilly protected
+ * you · 24h" card both read from this table with different filters.
+ *
+ * Phase 5 lights up phishing & free-trial detection; Phase 4 lights up
+ * unused-sub. The schema is ready for all of them now.
+ */
+export const protections = pgTable("protections", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  householdId: varchar("household_id").notNull(),
+  kind: text("kind").notNull(), // phishing | free_trial | unused_sub | unusual_charge | overdraft_risk
+  severity: text("severity").notNull().default("fyi"), // fyi | decision_needed | act_today
+  summary: text("summary").notNull(), // "Blocked one phishing text pretending to be Chase."
+  detail: text("detail"), // longer explanation
+  // Optional one-tap action: when set, surfaces a CTA button on the card.
+  ctaLabel: text("cta_label"), // "Pause $19.95"
+  ctaAction: text("cta_action"), // pause_subscription | dismiss | review | block_sender
+  ctaTargetId: varchar("cta_target_id"), // e.g. subscriptions.id when ctaAction = pause_subscription
+  // Linkage to source data:
+  subscriptionId: varchar("subscription_id"),
+  plaidTransactionId: varchar("plaid_transaction_id"),
+  status: text("status").notNull().default("flagged"), // flagged | dismissed | acted | expired
+  flaggedAt: timestamp("flagged_at").defaultNow().notNull(),
+  actedAt: timestamp("acted_at"),
+  dismissedAt: timestamp("dismissed_at"),
+  expiresAt: timestamp("expires_at"), // for time-sensitive flags
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type Protection = typeof protections.$inferSelect;
+
+// ==================== Legacy aliases ====================
+// Keep V1-name imports compiling during the Phase 1c route-splitting transition.
+// These re-exports point to the renamed tables. Do NOT use in new code.
+
+/** @deprecated Use `households` instead. */
+export const couples = households;
+/** @deprecated Use `members` instead. */
+export const partners = members;
+
+export type Household = typeof households.$inferSelect;
+export type Member = typeof members.$inferSelect;
+

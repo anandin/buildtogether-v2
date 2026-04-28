@@ -17,7 +17,6 @@ import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
 import { apiRequest } from "@/lib/query-client";
-import { useApp } from "@/context/AppContext";
 
 interface Props {
   variant?: "hero" | "inline"; // hero = big CTA card, inline = compact button
@@ -50,7 +49,9 @@ function loadPlaidScript(): Promise<any> {
 
 export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
   const { theme } = useTheme();
-  const { refreshData } = useApp();
+  // Phase 2 rewires this with React Query invalidation against the BT data layer;
+  // for now connecting just fires onConnected and the parent can refetch.
+  const refreshData = async () => {};
   const [status, setStatus] = useState<"checking" | "available" | "unavailable">("checking");
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);

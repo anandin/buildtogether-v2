@@ -2,29 +2,30 @@ import React from "react";
 import { View, StyleSheet, ActivityIndicator } from "react-native";
 
 import { AIFeedbackToast } from "@/components/AIFeedbackToast";
-import { useApp } from "@/context/AppContext";
 import { useAuth } from "@/context/AuthContext";
 import { useAIFeedback } from "@/context/AIFeedbackContext";
 import { useTheme } from "@/hooks/useTheme";
+import SignInScreen from "@/screens/SignInScreen";
 import { BTApp } from "@/bt/BTApp";
 
 /**
- * Per BUILDTOGETHER_SPEC.md, the app is now the BuildTogether (Tilly)
- * student-edition experience. The legacy couples-tracker navigation in
- * `RootStackNavigator` is retained in the codebase but no longer wired
- * into the shell — Tilly is the surface.
+ * Top-level routing for the BuildTogether (Tilly) student-edition app.
  *
- * Auth gate: while loading, show a spinner; otherwise render the BT shell
- * unconditionally. The spec's flow doesn't depend on the V1 sign-in/onboarding
- * couple model, so we skip those screens here.
+ * The flow:
+ *   1. Auth loading → spinner
+ *   2. Not authenticated → SignInScreen (Apple / Google / email)
+ *   3. Authenticated → BTApp (Phase 2 inserts an onboarding gate inside
+ *      BTApp itself when the household hasn't completed onboarding)
+ *
+ * The legacy V1 couples-tracker navigation is gone; BTApp owns its own
+ * 6-tab bottom bar.
  */
 export function AppContent() {
-  const { loading } = useApp();
-  const { isLoading: authLoading } = useAuth();
+  const { isLoading: authLoading, isAuthenticated } = useAuth();
   const { currentFeedback, dismissFeedback } = useAIFeedback();
   const { theme } = useTheme();
 
-  if (loading || authLoading) {
+  if (authLoading) {
     return (
       <View style={[styles.loading, { backgroundColor: theme.backgroundRoot }]}>
         <ActivityIndicator size="large" color={theme.primary} />
@@ -32,24 +33,19 @@ export function AppContent() {
     );
   }
 
+  if (!isAuthenticated) {
+    return <SignInScreen />;
+  }
+
   return (
     <View style={styles.container}>
       <BTApp />
-      <AIFeedbackToast
-        feedback={currentFeedback}
-        onDismiss={dismissFeedback}
-      />
+      <AIFeedbackToast feedback={currentFeedback} onDismiss={dismissFeedback} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  loading: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
+  container: { flex: 1 },
+  loading: { flex: 1, justifyContent: "center", alignItems: "center" },
 });

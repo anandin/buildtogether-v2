@@ -2,6 +2,7 @@ import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { registerAdminRoutes } from "./admin-routes";
+import { registerTillyRoutes } from "./routes/index";
 import { requestId } from "./middleware/requestId";
 import { pool } from "./db";
 import * as fs from "fs";
@@ -295,6 +296,9 @@ export async function getApp(): Promise<express.Application> {
     configureExpoAndLanding(app);
     registerAdminRoutes(app);
     await registerRoutes(app);
+    // Tilly student-edition feature routers (spec §4–§5).
+    // Mounted after legacy routes so they don't shadow anything during transition.
+    registerTillyRoutes(app);
     setupErrorHandler(app);
     appConfigured = true;
     return app;

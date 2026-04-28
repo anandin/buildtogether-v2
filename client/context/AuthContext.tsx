@@ -4,7 +4,6 @@ import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApiUrl } from "@/lib/query-client";
-import { setCoupleId, clearCoupleId } from "@/lib/cloudStorage";
 
 interface User {
   id: string;
@@ -75,13 +74,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (response.ok) {
         const data = await response.json();
-        if (data.user.coupleId) {
-          await setCoupleId(data.user.coupleId);
-        }
         setUser(data.user);
       } else {
         await removeToken();
-        await clearCoupleId();
         setUser(null);
       }
     } catch (error) {
@@ -132,9 +127,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const data = await response.json();
       await setToken(data.token);
-      if (data.user.coupleId) {
-        await setCoupleId(data.user.coupleId);
-      }
       setUser(data.user);
     } catch (error: any) {
       if (error.code === "ERR_REQUEST_CANCELED") {
@@ -161,9 +153,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     await setToken(data.token);
-    if (data.user.coupleId) {
-      await setCoupleId(data.user.coupleId);
-    }
     setUser(data.user);
   };
 
@@ -183,9 +172,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     await setToken(data.token);
-    if (data.user.coupleId) {
-      await setCoupleId(data.user.coupleId);
-    }
     setUser(data.user);
   };
 
@@ -205,9 +191,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     await setToken(data.token);
-    if (data.user.coupleId) {
-      await setCoupleId(data.user.coupleId);
-    }
     setUser(data.user);
   };
 
@@ -227,7 +210,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error("Logout error:", error);
     } finally {
       await removeToken();
-      await clearCoupleId();
       setUser(null);
     }
   };
@@ -253,7 +235,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       await removeToken();
-      await clearCoupleId();
       setUser(null);
     } catch (error: any) {
       console.error("Delete account error:", error);

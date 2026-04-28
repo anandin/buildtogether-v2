@@ -8,6 +8,13 @@
       "when": 1776144621191,
       "tag": "0000_illegal_mysterio",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1761590400000,
+      "tag": "0001_student_edition_pivot",
+      "breakpoints": true
     }
   ]
 }

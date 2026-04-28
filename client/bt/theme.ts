@@ -109,18 +109,38 @@ export const BT_DEFAULT_THEME: BTThemeKey = "bloom";
 
 /**
  * Type ramp per spec §3 ("Type system").
- * Headlines/key numbers — Instrument Serif.
- * UI body — Inter (mapped to system default; Inter font isn't bundled, so we
- * fall back to the platform sans).
- * Mono labels — JetBrains Mono (mapped to platform mono).
+ * - Headlines & key numbers → Instrument Serif (loaded by App.tsx)
+ * - UI body                → Inter (loaded by App.tsx, weights 400/500/600/700)
+ * - Mono labels & ledger   → JetBrains Mono (loaded by App.tsx, weights 400/500/700)
+ *
+ * In React Native, fontFamily must reference a single loaded face. The
+ * `BTFonts` constants below give the *default* face for each role; for
+ * specific weights/styles use `BTFontsByWeight` so each Text picks the
+ * correct loaded font (RN does not synthesize bold/italic from a regular
+ * face the way browsers do).
  */
 export const BTFonts = {
-  serif:
-    "Georgia, 'Iowan Old Style', 'Apple Garamond', 'Times New Roman', serif",
-  sans:
-    "Nunito, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-  mono:
-    "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+  serif: "InstrumentSerif_400Regular",
+  serifItalic: "InstrumentSerif_400Regular_Italic",
+  sans: "Inter_500Medium",
+  mono: "JetBrainsMono_500Medium",
+} as const;
+
+/**
+ * Per-weight font family lookup. Use these whenever you'd otherwise pair
+ * `BTFonts.sans` with `fontWeight` — RN matches faces by exact name, so
+ * `fontWeight` alone won't switch from Regular to Bold.
+ *
+ * Spec §3 Inter ramp: 400/500/600/700.
+ */
+export const BTFontsByWeight = {
+  sans400: "Inter_400Regular",
+  sans500: "Inter_500Medium",
+  sans600: "Inter_600SemiBold",
+  sans700: "Inter_700Bold",
+  mono400: "JetBrainsMono_400Regular",
+  mono500: "JetBrainsMono_500Medium",
+  mono700: "JetBrainsMono_700Bold",
 } as const;
 
 /** Gentle 4s breathing curve used for Tilly + mascot halos. */
