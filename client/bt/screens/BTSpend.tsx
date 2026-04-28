@@ -29,7 +29,7 @@ export function BTSpend() {
     <View style={{ flex: 1, backgroundColor: t.bg }}>
     <ScrollView
       style={{ flex: 1 }}
-      contentContainerStyle={{ padding: 22, paddingTop: 36, paddingBottom: 140, gap: 22 }}
+      contentContainerStyle={{ padding: 22, paddingTop: 36, paddingBottom: 180, gap: 22 }}
       showsVerticalScrollIndicator={false}
     >
       {/* Paycheck shimmer banner */}
