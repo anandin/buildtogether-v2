@@ -21,6 +21,7 @@ import { mountProtectionsRoutes } from "./protections";
 import { mountHouseholdRoutes } from "./household";
 import { mountAdminTillyRoutes } from "./admin-tilly";
 import { mountAdminPage } from "./admin-page";
+import { mountCronRoutes } from "./cron";
 
 export function registerTillyRoutes(app: Express): void {
   mountHouseholdRoutes(app);
@@ -32,4 +33,5 @@ export function registerTillyRoutes(app: Express): void {
   mountProtectionsRoutes(app);
   mountAdminTillyRoutes(app);
   mountAdminPage(app);
+  mountCronRoutes(app);
 }

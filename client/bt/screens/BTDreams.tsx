@@ -5,8 +5,17 @@
  * glyph. A goal isn't a progress bar — it's a place. The portrait makes
  * saving feel like collecting postcards, not data entry.
  */
-import React, { useEffect, useRef } from "react";
-import { Animated, Easing, Pressable, ScrollView, Text, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  Animated,
+  Easing,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { BT_DATA, type BTDream } from "../data";
@@ -14,11 +23,26 @@ import { useBT } from "../BTContext";
 import { Tilly } from "../Tilly";
 import { BTCard, BTChip, BTLabel, BTSerif } from "../atoms";
 import { BT_PULSE_DURATION_MS, BT_SHIMMER_DURATION_MS, BTFonts, type BTTheme } from "../theme";
+import {
+  useDreams,
+  useCreateDream,
+  useContributeDream,
+} from "../hooks/useDreams";
 
 const MILESTONES = [0, 25, 50, 75, 100];
 
 export function BTDreams() {
   const { t } = useBT();
+  const dreams = useDreams();
+  const [newOpen, setNewOpen] = useState(false);
+  const [contributeFor, setContributeFor] = useState<BTDream | null>(null);
+
+  // Live data takes priority; BT_DATA is the design-time fallback when
+  // the user hasn't created any dreams yet.
+  const live = dreams.data && dreams.data.ready === true ? dreams.data : null;
+  const dreamsList: BTDream[] = live && live.dreams.length > 0 ? live.dreams : BT_DATA.dreams;
+  const yearSaved = live && live.yearSaved > 0 ? live.yearSaved : BT_DATA.yearSaved;
+  const perDay = live && live.perDay > 0 ? live.perDay : BT_DATA.perDay;
 
   return (
     <ScrollView
@@ -30,9 +54,9 @@ export function BTDreams() {
         <BTLabel color={t.inkMute}>What you're building</BTLabel>
         <BTSerif size={28} color={t.ink} weight="500">
           <Text style={{ color: t.accent, fontStyle: "italic", fontFamily: BTFonts.serif }}>
-            ${BT_DATA.yearSaved.toLocaleString()}
+            ${yearSaved.toLocaleString()}
           </Text>{" "}
-          set aside this year. About ${BT_DATA.perDay.toFixed(2)} a day.
+          set aside this year. About ${perDay.toFixed(2)} a day.
         </BTSerif>
         <Text
           style={{
@@ -46,12 +70,18 @@ export function BTDreams() {
         </Text>
       </View>
 
-      {BT_DATA.dreams.map((d) => (
-        <DreamPortrait key={d.id} d={d} t={t} />
+      {dreamsList.map((d) => (
+        <DreamPortrait
+          key={d.id}
+          d={d}
+          t={t}
+          onContribute={() => setContributeFor(d)}
+        />
       ))}
 
       {/* + Name a new dream */}
       <Pressable
+        onPress={() => setNewOpen(true)}
         style={{
           padding: 22,
           borderRadius: 18,
@@ -67,11 +97,235 @@ export function BTDreams() {
           Name a new dream
         </Text>
       </Pressable>
+
+      <NewDreamModal visible={newOpen} onClose={() => setNewOpen(false)} />
+      <ContributeModal
+        dream={contributeFor}
+        onClose={() => setContributeFor(null)}
+      />
     </ScrollView>
   );
 }
 
-function DreamPortrait({ d, t }: { d: BTDream; t: BTTheme }) {
+// ─── Modals ─────────────────────────────────────────────────────────────────
+
+function NewDreamModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const { t } = useBT();
+  const create = useCreateDream();
+  const [name, setName] = useState("");
+  const [target, setTarget] = useState("");
+  const [glyph, setGlyph] = useState("✺");
+
+  const submit = () => {
+    if (!name.trim() || !target.trim()) return;
+    create.mutate(
+      {
+        name: name.trim(),
+        target: Number(target.replace(/[^0-9.]/g, "")) || 0,
+        glyph,
+        gradient: ["#E94B3C", "#F59E0B"],
+        weeklyAuto: 40,
+      },
+      {
+        onSuccess: () => {
+          setName("");
+          setTarget("");
+          setGlyph("✺");
+          onClose();
+        },
+      },
+    );
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <Pressable
+        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}
+        onPress={onClose}
+      >
+        <Pressable
+          onPress={(e) => e.stopPropagation()}
+          style={{
+            backgroundColor: t.surface,
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            padding: 24,
+            paddingBottom: 40,
+            gap: 14,
+          }}
+        >
+          <BTLabel color={t.inkMute}>New dream</BTLabel>
+          <BTSerif size={26} color={t.ink} weight="500">
+            What are you saving toward?
+          </BTSerif>
+          <SimpleField t={t} label="Dream name" value={name} onChangeText={setName} placeholder="Barcelona spring" />
+          <SimpleField t={t} label="Target ($)" value={target} onChangeText={setTarget} placeholder="2400" keyboardType="numeric" />
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {["✺", "◇", "◉", "✿", "❋"].map((g) => (
+              <Pressable
+                key={g}
+                onPress={() => setGlyph(g)}
+                style={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                  backgroundColor: glyph === g ? t.accent : t.surfaceAlt,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ color: glyph === g ? "#fff" : t.ink, fontSize: 22 }}>{g}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Pressable
+            onPress={submit}
+            disabled={create.isPending || !name.trim() || !target.trim()}
+            style={{
+              backgroundColor: create.isPending || !name.trim() || !target.trim() ? t.surfaceAlt : t.ink,
+              borderRadius: 14,
+              paddingVertical: 14,
+              alignItems: "center",
+              marginTop: 4,
+            }}
+          >
+            <Text style={{ color: t.surface, fontFamily: BTFonts.sans, fontWeight: "700", fontSize: 14 }}>
+              {create.isPending ? "Saving…" : "Add to your dreams"}
+            </Text>
+          </Pressable>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function ContributeModal({
+  dream,
+  onClose,
+}: {
+  dream: BTDream | null;
+  onClose: () => void;
+}) {
+  const { t } = useBT();
+  const contribute = useContributeDream();
+  const [amount, setAmount] = useState("");
+
+  const visible = !!dream;
+  const submit = () => {
+    if (!dream || !amount.trim()) return;
+    const value = Number(amount.replace(/[^0-9.]/g, ""));
+    if (!value) return;
+    contribute.mutate(
+      { id: dream.id, amount: value },
+      {
+        onSuccess: () => {
+          setAmount("");
+          onClose();
+        },
+      },
+    );
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <Pressable
+        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}
+        onPress={onClose}
+      >
+        <Pressable
+          onPress={(e) => e.stopPropagation()}
+          style={{
+            backgroundColor: t.surface,
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            padding: 24,
+            paddingBottom: 40,
+            gap: 14,
+          }}
+        >
+          {dream ? (
+            <>
+              <BTLabel color={t.inkMute}>Add to {dream.name}</BTLabel>
+              <BTSerif size={26} color={t.ink} weight="500">
+                How much can you{" "}
+                <Text style={{ color: t.accent, fontStyle: "italic", fontFamily: BTFonts.serif }}>
+                  set aside
+                </Text>
+                ?
+              </BTSerif>
+              <SimpleField t={t} label="Amount ($)" value={amount} onChangeText={setAmount} placeholder="40" keyboardType="numeric" />
+              <Pressable
+                onPress={submit}
+                disabled={contribute.isPending || !amount.trim()}
+                style={{
+                  backgroundColor: contribute.isPending || !amount.trim() ? t.surfaceAlt : t.ink,
+                  borderRadius: 14,
+                  paddingVertical: 14,
+                  alignItems: "center",
+                  marginTop: 4,
+                }}
+              >
+                <Text style={{ color: t.surface, fontFamily: BTFonts.sans, fontWeight: "700", fontSize: 14 }}>
+                  {contribute.isPending ? "Moving…" : `Move to ${dream.name}`}
+                </Text>
+              </Pressable>
+            </>
+          ) : null}
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+function SimpleField({
+  t,
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  keyboardType,
+}: {
+  t: BTTheme;
+  label: string;
+  value: string;
+  onChangeText: (v: string) => void;
+  placeholder?: string;
+  keyboardType?: "default" | "numeric";
+}) {
+  return (
+    <View style={{ gap: 6 }}>
+      <BTLabel color={t.inkMute} size={10}>
+        {label}
+      </BTLabel>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={t.inkMute}
+        keyboardType={keyboardType}
+        style={{
+          paddingHorizontal: 14,
+          paddingVertical: 10,
+          borderRadius: 12,
+          backgroundColor: t.surfaceAlt,
+          color: t.ink,
+          fontFamily: BTFonts.sans,
+          fontSize: 15,
+        }}
+      />
+    </View>
+  );
+}
+
+function DreamPortrait({
+  d,
+  t,
+  onContribute,
+}: {
+  d: BTDream;
+  t: BTTheme;
+  onContribute?: () => void;
+}) {
   const pct = Math.round((d.saved / d.target) * 100);
   const justCrossed = MILESTONES.find((m) => m > 0 && Math.abs(pct - m) <= 8) ?? null;
   const shimmerOn = justCrossed !== null;
@@ -302,6 +556,30 @@ function DreamPortrait({ d, t }: { d: BTDream; t: BTTheme }) {
             {d.nudge}
           </Text>
         </View>
+
+        {/* Contribute now */}
+        {onContribute ? (
+          <Pressable
+            onPress={onContribute}
+            style={{
+              borderRadius: 14,
+              paddingVertical: 12,
+              alignItems: "center",
+              backgroundColor: t.ink,
+            }}
+          >
+            <Text
+              style={{
+                color: t.surface,
+                fontFamily: BTFonts.sans,
+                fontWeight: "700",
+                fontSize: 13,
+              }}
+            >
+              + Move money to {d.name.split(" ")[0]}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
