@@ -83,4 +83,18 @@ export const btApi = {
     postJson<{ ok: true }>(`/api/protections/${id}/dismiss`),
   actProtection: (id: string) =>
     postJson<{ ok: true }>(`/api/protections/${id}/act`),
+
+  // ── Household / onboarding ─────────────────────────────────────────────
+  onboardingStatus: () =>
+    getJson<{
+      hasHousehold: boolean;
+      hasCompletedOnboarding: boolean;
+      hasPlaid: boolean;
+      hasDream: boolean;
+      hasCommitment: boolean;
+    }>("/api/household/onboarding-status"),
+  createHousehold: (body: { name: string; schoolName?: string; studentRole?: string }) =>
+    postJson<{ householdId: string; created: boolean }>("/api/household/create", body),
+  completeOnboarding: () =>
+    postJson<{ ok: true }>("/api/household/complete-onboarding"),
 };

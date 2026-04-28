@@ -7,7 +7,7 @@
  * design system stays clean.
  */
 import React, { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BTProvider, useBT } from "./BTContext";
@@ -20,6 +20,8 @@ import { BTSpend } from "./screens/BTSpend";
 import { BTCredit } from "./screens/BTCredit";
 import { BTDreams } from "./screens/BTDreams";
 import { BTProfile } from "./screens/BTProfile";
+import { Onboarding } from "./onboarding/Onboarding";
+import { useOnboardingStatus } from "./hooks/useOnboarding";
 
 type Tab = "home" | "guardian" | "spend" | "credit" | "dreams" | "profile";
 
@@ -35,9 +37,33 @@ const TABS: { key: Tab; label: string; glyph: string }[] = [
 export function BTApp() {
   return (
     <BTProvider>
-      <BTShell />
+      <BTGate />
     </BTProvider>
   );
+}
+
+/**
+ * Onboarding gate — runs the 5-card flow until the user completes it,
+ * then renders the main 6-tab shell. Loading state shows the breathing
+ * Tilly mascot so the screen never goes blank.
+ */
+function BTGate() {
+  const { t } = useBT();
+  const status = useOnboardingStatus();
+
+  if (status.isLoading || !status.data) {
+    return (
+      <View style={[styles.root, styles.loading, { backgroundColor: t.bg }]}>
+        <Tilly t={t} size={84} halo />
+      </View>
+    );
+  }
+
+  if (!status.data.hasCompletedOnboarding) {
+    return <Onboarding />;
+  }
+
+  return <BTShell />;
 }
 
 function BTShell() {
@@ -130,6 +156,7 @@ function BTShell() {
 const styles = StyleSheet.create({
   root: { flex: 1 },
   body: { flex: 1 },
+  loading: { alignItems: "center", justifyContent: "center" },
   tabbar: {
     flexDirection: "row",
     borderTopWidth: StyleSheet.hairlineWidth,

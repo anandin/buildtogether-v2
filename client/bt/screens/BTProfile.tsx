@@ -15,9 +15,32 @@ import { Tilly } from "../Tilly";
 import { BTLabel, BTRule, BTSerif } from "../atoms";
 import { BT_PULSE_DURATION_MS, BTFonts, type BTTheme } from "../theme";
 import { BT_TONES, type BTToneKey } from "../tones";
+import { useMemory } from "../hooks/useMemory";
+import { useSetTillyTone } from "../hooks/useTillyTone";
 
 export function BTProfile() {
   const { t, tone, setTone } = useBT();
+  const memory = useMemory();
+  const setServerTone = useSetTillyTone();
+
+  // Live memory takes priority; fall back to BT_DATA.memory for the design
+  // demo when no server data exists yet (new users, pre-onboarding).
+  const liveMemory = memory.data?.memory ?? [];
+  const memoryItems =
+    liveMemory.length > 0
+      ? liveMemory.map((m) => ({
+          id: m.id,
+          date: m.dateLabel,
+          body: m.body,
+          recent: m.isMostRecent,
+        }))
+      : BT_DATA.memory;
+
+  // Tone tuner: local state flips instantly via BTContext, server catches up.
+  const handleSetTone = (k: BTToneKey) => {
+    setTone(k);
+    setServerTone.mutate(k);
+  };
 
   return (
     <ScrollView
@@ -87,7 +110,7 @@ export function BTProfile() {
             return (
               <Pressable
                 key={k}
-                onPress={() => setTone(k)}
+                onPress={() => handleSetTone(k)}
                 style={{
                   flex: 1,
                   paddingVertical: 10,
@@ -145,7 +168,7 @@ export function BTProfile() {
           </Text>
           , in her own words
         </BTSerif>
-        <Timeline t={t} />
+        <Timeline t={t} items={memoryItems} />
       </View>
 
       {/* Trusted people */}
@@ -269,7 +292,9 @@ export function BTProfile() {
   );
 }
 
-function Timeline({ t }: { t: BTTheme }) {
+type TimelineItem = { id: string; date: string; body: string; recent?: boolean };
+
+function Timeline({ t, items }: { t: BTTheme; items: TimelineItem[] }) {
   const pulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const loop = Animated.loop(
@@ -294,8 +319,8 @@ function Timeline({ t }: { t: BTTheme }) {
 
   return (
     <View style={{ gap: 0 }}>
-      {BT_DATA.memory.map((m, i) => {
-        const last = i === BT_DATA.memory.length - 1;
+      {items.map((m, i) => {
+        const last = i === items.length - 1;
         return (
           <View key={m.id} style={{ flexDirection: "row", gap: 14 }}>
             {/* Rail */}

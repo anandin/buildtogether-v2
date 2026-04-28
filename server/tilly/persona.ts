@@ -5,28 +5,36 @@
  * never alarmist, and remembers what you've told her." Three selectable
  * tones share this base persona; only surface phrasing differs.
  *
- * Architecture per D2: Anthropic Claude (Sonnet 4.6). The system prompt
- * uses prompt caching (Anthropic's 5-minute cache) so the persona doesn't
- * re-send on every turn — meaningful at scale where each user has many
- * short turns per day.
+ * Architecture per D2: Anthropic Claude. Uses Claude Opus 4.7 with adaptive
+ * thinking — Tilly's quick-math reasoning and tone-aware empathy benefit
+ * from Opus's intelligence; adaptive lets Claude self-moderate cost on
+ * lighter chitchat turns.
  *
- * This module exports:
- *   - `tilly()`           — a configured Anthropic client + Claude model id
- *   - `personaSystemPrompt` — the persona system prompt (cacheable block)
- *   - `withTone(toneKey)`   — returns a tone-modifier system prompt block
- *
- * Phase 2 plumbing reads memories + observation context and assembles them
- * into the user-message portion of each call; persona stays static.
+ * The persona system block uses prompt caching (Anthropic's 5-minute
+ * ephemeral cache) so the ~3.5KB persona doesn't re-send on every turn.
+ * At scale this is meaningful — each user has many short turns per day,
+ * and the persona is exactly the kind of stable prefix that should sit
+ * before the per-turn user content.
  */
 import Anthropic from "@anthropic-ai/sdk";
 import type { BTToneKey } from "./tone";
 
-export const TILLY_MODEL = "claude-sonnet-4-6";
+/**
+ * Skill rule: default to claude-opus-4-7 unless the user explicitly names
+ * another model. The user said "Claude" without specifying — Opus 4.7 it is.
+ *
+ * Migrating to a cheaper model later is a one-line change here.
+ */
+export const TILLY_MODEL = "claude-opus-4-7";
 
 /**
- * Lazy-init client so the module is safe to import even when ANTHROPIC_API_KEY
- * isn't set (e.g. in CI for typecheck).
+ * Default per-call max output tokens. Generous because Tilly's analysis
+ * cards + memory-writer extractions can be long; we'd rather waste a few
+ * tokens than truncate mid-thought. Streaming enabled where >16K is needed.
  */
+export const TILLY_DEFAULT_MAX_TOKENS = 4096;
+
+/** Lazy-init client so the module is safe to import for typecheck/CI. */
 let _client: Anthropic | null = null;
 export function tilly(): Anthropic {
   if (_client) return _client;
@@ -113,9 +121,13 @@ export function personaSystemBlock() {
 /**
  * Tone modifier block — appended to the system array after persona. Tone
  * shifts surface phrasing only; the analysis underneath is identical.
+ *
+ * Intentionally NOT cached — tone changes per-user, and putting a volatile
+ * block after the cached persona block is the correct pattern (cache hits
+ * up to and including the persona block; the tone block runs uncached but
+ * is small).
  */
 export function toneSystemBlock(toneKey: BTToneKey) {
-  // intentionally not cached — tone changes per user/turn
   return {
     type: "text" as const,
     text: TONE_PROMPTS[toneKey],
@@ -135,3 +147,50 @@ Sample voice: "Two no-spend days down. Let's make it three. Coffee at home tomor
 Greeting: "{name}," — just the name and a comma.
 Sample voice: "Three subscriptions you haven't touched in 60 days. Nothing urgent. Just want you to know."`,
 };
+
+/**
+ * Common request shape: persona + tone in `system`, adaptive thinking,
+ * caller-provided messages. Returns the full Message so callers can inspect
+ * usage (cache hits, output tokens) and stop_reason.
+ *
+ * Use this for plain-text Tilly replies. For structured-output flows
+ * (analyze-affordability, memory-writer), build the request directly with
+ * `tilly().messages.parse()` + the persona/tone blocks below; this helper
+ * is for the simple "user message → Tilly text reply" path.
+ */
+export async function callTilly(opts: {
+  toneKey: BTToneKey;
+  messages: Anthropic.MessageParam[];
+  /** Optional override; defaults to TILLY_DEFAULT_MAX_TOKENS. */
+  maxTokens?: number;
+  /** Optional extra system block appended after persona+tone (e.g. user-specific recent memory snippets). NOT cached. */
+  extraSystem?: string;
+}) {
+  const system: Anthropic.TextBlockParam[] = [
+    personaSystemBlock(),
+    toneSystemBlock(opts.toneKey),
+  ];
+  if (opts.extraSystem) {
+    system.push({ type: "text", text: opts.extraSystem });
+  }
+
+  return tilly().messages.create({
+    model: TILLY_MODEL,
+    max_tokens: opts.maxTokens ?? TILLY_DEFAULT_MAX_TOKENS,
+    thinking: { type: "adaptive" },
+    system,
+    messages: opts.messages,
+  });
+}
+
+/**
+ * Extract the first text block from a Claude response. Tilly's plain-text
+ * replies always lead with a text block (post any thinking blocks). Returns
+ * empty string if the response had only thinking blocks (rare for our flows).
+ */
+export function extractText(response: Anthropic.Message): string {
+  for (const block of response.content) {
+    if (block.type === "text") return block.text;
+  }
+  return "";
+}

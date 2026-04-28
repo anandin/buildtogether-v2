@@ -18,8 +18,10 @@ import { mountTillyInsightsRoutes } from "./tilly/insights";
 import { mountDreamsRoutes } from "./dreams";
 import { mountSubscriptionsRoutes } from "./subscriptions";
 import { mountProtectionsRoutes } from "./protections";
+import { mountHouseholdRoutes } from "./household";
 
 export function registerTillyRoutes(app: Express): void {
+  mountHouseholdRoutes(app);
   mountTillyChatRoutes(app);
   mountTillyMemoryRoutes(app);
   mountTillyInsightsRoutes(app);

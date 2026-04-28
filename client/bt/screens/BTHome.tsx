@@ -20,6 +20,7 @@ import {
   BTStripes,
 } from "../atoms";
 import { BTFonts } from "../theme";
+import { useToday } from "../hooks/useToday";
 import { Text } from "react-native";
 
 type Props = { onNav?: (route: BTRoute) => void };
@@ -27,9 +28,22 @@ export type BTRoute = "home" | "guardian" | "spend" | "credit" | "dreams" | "pro
 
 export function BTHome({ onNav }: Props) {
   const { t, tone, time } = useBT();
+  const today = useToday();
+
+  // BT_DATA acts as the design-time fallback when the today endpoint hasn't
+  // returned ready=true yet (loading, no Plaid connected, error). The
+  // screen always renders identical structure; only the values swap once
+  // real data lands.
+  const live =
+    today.data && today.data.ready === true ? today.data : null;
+
   const dayLabel =
-    time === "morning" ? "Tuesday morning" : "Tuesday · 9:18 pm";
-  const greeting = tone.greeting(BT_DATA.user.name);
+    live?.dayLabel ?? (time === "morning" ? "Tuesday morning" : "Tuesday · 9:18 pm");
+  const greeting = live?.greeting ?? tone.greeting(BT_DATA.user.name);
+  const breathing = live?.breathing && live.breathing > 0 ? live.breathing : BT_DATA.hero.breathing;
+  const afterRent = live?.afterRent && live.afterRent > 0 ? live.afterRent : BT_DATA.hero.afterRent;
+  const paycheckCopy = live?.paycheckCopy ?? BT_DATA.hero.paycheckCopy;
+  const invite = live?.tillyInvite ?? "Anything you want to think through?";
 
   return (
     <ScrollView
@@ -47,7 +61,7 @@ export function BTHome({ onNav }: Props) {
           <BTSerif size={22} color={t.inkSoft} weight="400">
             You have{" "}
             <Text style={{ color: t.accent, fontStyle: "italic", fontFamily: BTFonts.serif }}>
-              ${BT_DATA.hero.breathing}
+              ${breathing}
             </Text>{" "}
             of breathing room this week.
           </BTSerif>
@@ -63,7 +77,7 @@ export function BTHome({ onNav }: Props) {
           <BTChip bg={t.accentSoft} fg={t.accent}>↗ +$612</BTChip>
         </View>
         <View style={{ marginTop: 14 }}>
-          <BTCurrency amount={BT_DATA.hero.afterRent} size={68} color="#FFFCF6" />
+          <BTCurrency amount={afterRent} size={68} color="#FFFCF6" />
         </View>
         <Text
           style={{
@@ -73,7 +87,7 @@ export function BTHome({ onNav }: Props) {
             marginTop: 10,
           }}
         >
-          {BT_DATA.hero.paycheckCopy}
+          {paycheckCopy}
         </Text>
       </BTCard>
 
@@ -179,7 +193,7 @@ export function BTHome({ onNav }: Props) {
             fontSize: 16,
           }}
         >
-          Anything you want to think through?
+          {invite}
         </Text>
         <Text style={{ color: t.accent, fontSize: 18 }}>→</Text>
       </Pressable>

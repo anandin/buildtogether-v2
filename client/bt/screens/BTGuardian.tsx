@@ -23,6 +23,9 @@ import { useBT } from "../BTContext";
 import { Tilly } from "../Tilly";
 import { BTCard, BTLabel, BTRule, BTSerif } from "../atoms";
 import { BTFonts } from "../theme";
+import { useTilly as useTillyChat } from "../hooks/useTilly";
+import { MemoryInspector } from "../MemoryInspector";
+import type { TillyMessage } from "../api/types";
 
 type Msg =
   | { id: string; role: "user"; kind: "text"; body: string }
@@ -37,12 +40,38 @@ type Msg =
       note: string;
     };
 
+/** Adapts a server TillyMessage to the local Msg shape used by the bubbles. */
+function toLocal(m: TillyMessage): Msg {
+  if (m.role === "user") return { id: m.id, role: "user", kind: "text", body: m.body };
+  if (m.kind === "typing") return { id: m.id, role: "tilly", kind: "typing" };
+  if (m.kind === "analysis") {
+    return {
+      id: m.id,
+      role: "tilly",
+      kind: "analysis",
+      title: m.title,
+      rows: m.rows,
+      note: m.note,
+    };
+  }
+  return { id: m.id, role: "tilly", kind: "text", body: m.body };
+}
+
 export function BTGuardian() {
   const { t } = useBT();
-  const [messages, setMessages] = useState<Msg[]>(BT_CHAT_SEED as unknown as Msg[]);
+  const tilly = useTillyChat();
   const [draft, setDraft] = useState("");
-  const [thinking, setThinking] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+
+  // Server messages take priority; fall back to BT_CHAT_SEED for the design
+  // demo experience when the conversation is empty (first-time users).
+  const messages: Msg[] =
+    tilly.messages.length > 0
+      ? tilly.messages.map(toLocal)
+      : (BT_CHAT_SEED as unknown as Msg[]);
+
+  const thinking = tilly.isThinking;
 
   useEffect(() => {
     // auto-scroll on new content
@@ -50,22 +79,10 @@ export function BTGuardian() {
   }, [messages.length, thinking]);
 
   const send = (text: string) => {
-    if (!text.trim()) return;
-    const u: Msg = { id: `u${Date.now()}`, role: "user", kind: "text", body: text };
-    setMessages((prev) => [...prev, u]);
+    const trimmed = text.trim();
+    if (!trimmed) return;
     setDraft("");
-    setThinking(true);
-    setTimeout(() => {
-      const reply: Msg = {
-        id: `t${Date.now()}`,
-        role: "tilly",
-        kind: "text",
-        body:
-          "Let me think on that — I want to look at your buffer before I answer. Give me a sec.",
-      };
-      setMessages((prev) => [...prev, reply]);
-      setThinking(false);
-    }, 1100);
+    tilly.send(trimmed);
   };
 
   const tillyState: "idle" | "think" = thinking ? "think" : "idle";
@@ -99,6 +116,7 @@ export function BTGuardian() {
           </Text>
         </View>
         <Pressable
+          onPress={() => setMemoryOpen(true)}
           style={{
             paddingHorizontal: 12,
             paddingVertical: 6,
@@ -110,6 +128,7 @@ export function BTGuardian() {
           <BTLabel color={t.inkSoft} size={10}>memory</BTLabel>
         </Pressable>
       </View>
+      <MemoryInspector visible={memoryOpen} onClose={() => setMemoryOpen(false)} />
 
       <BTRule color={t.rule} />
 

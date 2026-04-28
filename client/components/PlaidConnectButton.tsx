@@ -2,16 +2,22 @@
  * Plaid Link connector button.
  *
  * Web: dynamically loads Plaid's Link JS from the CDN, opens the modal.
- * Native: uses react-native-plaid-link-sdk (not installed yet — falls back
- *   to web-browser path if unavailable).
+ * Native (iOS/Android): uses react-native-plaid-link-sdk's `create()` +
+ *   `open()` to drive the native Plaid Link sheet.
  *
  * Gracefully renders a "coming soon" variant if /api/plaid/status reports
  * the deployment doesn't have Plaid configured.
  */
 import React, { useEffect, useState, useCallback } from "react";
-import { View, StyleSheet, Pressable, ActivityIndicator, Platform, Modal, ScrollView, Linking } from "react-native";
+import { View, StyleSheet, Pressable, ActivityIndicator, Platform, Modal, ScrollView } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import {
+  create as plaidCreate,
+  open as plaidOpen,
+  type LinkSuccess,
+  type LinkExit,
+} from "react-native-plaid-link-sdk";
 
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
@@ -126,17 +132,37 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
         });
         handler.open();
       } else {
-        // 2b. Native: the Plaid Link native SDK isn't bundled in this build yet.
-        // Offer to open the web app in the phone's browser so the connection
-        // still works. User-friendly, no dev jargon.
-        setError(null);
-        setLaunching(false);
-        const webUrl = "https://buildtogether-v2.vercel.app/app";
-        try {
-          await Linking.openURL(webUrl);
-        } catch {
-          setError("Please open buildtogether-v2.vercel.app in your browser to connect a bank. Native support is coming soon.");
-        }
+        // 2b. Native (iOS / Android): use the Plaid Link RN SDK. `create()`
+        // initializes the link configuration with the token; `open()` shows
+        // the native Plaid sheet and resolves with success or exit.
+        plaidCreate({ token: linkToken });
+        plaidOpen({
+          onSuccess: async (success: LinkSuccess) => {
+            try {
+              await apiRequest("POST", "/api/plaid/exchange", {
+                publicToken: success.publicToken,
+                institution: success.metadata?.institution,
+              });
+              await refreshData();
+              onConnected?.();
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch (err: any) {
+              setError(err.message || "Failed to connect bank");
+            } finally {
+              setLaunching(false);
+            }
+          },
+          onExit: (exit: LinkExit) => {
+            setLaunching(false);
+            if (exit?.error) {
+              setError(
+                exit.error.displayMessage ||
+                  exit.error.errorMessage ||
+                  "Connection cancelled",
+              );
+            }
+          },
+        });
       }
     } catch (err: any) {
       setError(err.message || "Couldn't start bank connection");
