@@ -1,0 +1,9 @@
+{
+  "venmoUrl": "venmo://paycharge?txn=charge&audience=private&recipients=priya&amount=14.50&note=Trader+Joe+split",
+  "deeplinks": {
+    "ios": "venmo://paycharge?txn=charge&audience=private&recipients=priya&amount=14.50&note=Trader+Joe+split",
+    "android": "venmo://paycharge?txn=charge&audience=private&recipients=priya&amount=14.50&note=Trader+Joe+split"
+  },
+  "webFallback": "https://venmo.com/priya?txn=charge&amount=14.50&note=Trader%20Joe%20split",
+  "message": "Asking @priya $14.50 for \"Trader Joe split\"."
+}

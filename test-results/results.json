@@ -3,7 +3,7 @@
     "id": "1.1",
     "name": "health endpoint",
     "status": "pass",
-    "note": "version=55ca877 provider=openrouter"
+    "note": "version=82c8c14 provider=openrouter"
   },
   {
     "id": "1.2",
@@ -14,7 +14,163 @@
   {
     "id": "2.1",
     "name": "register works",
+    "status": "pass",
+    "note": "email=tilly-test-1777376422536@example.com"
+  },
+  {
+    "id": "2.2",
+    "name": "bearer token authenticates session",
+    "status": "pass",
+    "note": ""
+  },
+  {
+    "id": "2.3",
+    "name": "onboarding gate blocks new user",
+    "status": "pass",
+    "note": ""
+  },
+  {
+    "id": "2.4-welcome",
+    "name": "onboarding welcome card",
+    "status": "pass",
+    "note": "screenshot 02"
+  },
+  {
+    "id": "2.4",
+    "name": "onboarding completes via UI",
+    "status": "skip",
+    "note": "force-completed via API to keep screenshots flowing"
+  },
+  {
+    "id": "2.5",
+    "name": "BTHome renders",
+    "status": "pass",
+    "note": "screenshot 07"
+  },
+  {
+    "id": "2.6",
+    "name": "Tilly chat returns a reply",
     "status": "fail",
-    "note": "status=500 {\"error\":\"column \\\"is_admin\\\" does not exist\"}"
+    "note": "{\"error\":\"chat failed\"}"
+  },
+  {
+    "id": "2.7",
+    "name": "affordability question returns analysis card",
+    "status": "fail",
+    "note": "{\"error\":\"chat failed\"}"
+  },
+  {
+    "id": "2.5.6",
+    "name": "chat creates tilly_memory rows",
+    "status": "skip",
+    "note": "no memories written yet (extraction in flight or model returned empty)"
+  },
+  {
+    "id": "2.8",
+    "name": "memory inspector opens",
+    "status": "skip",
+    "note": "couldnt click memory pill"
+  },
+  {
+    "id": "2.5.2",
+    "name": "admin config loads",
+    "status": "skip",
+    "note": "test user is not admin (bootstrap email is anand.inbasekaran@gmail.com)"
+  },
+  {
+    "id": "2.5.5",
+    "name": "admin memory-stats endpoint",
+    "status": "skip",
+    "note": "auth gated"
+  },
+  {
+    "id": "3.1",
+    "name": "POST /api/dreams creates a dream",
+    "status": "pass",
+    "note": "id=514614b2-0bc1-4d61-b19a-77e26e929879"
+  },
+  {
+    "id": "3.3",
+    "name": "contribute increments savedAmount",
+    "status": "pass",
+    "note": "saved=100"
+  },
+  {
+    "id": "3.2",
+    "name": "BTDreams renders portrait",
+    "status": "pass",
+    "note": "screenshot 14"
+  },
+  {
+    "id": "4.1",
+    "name": "/api/tilly/spend-pattern responds gracefully",
+    "status": "pass",
+    "note": "ready=undefined"
+  },
+  {
+    "id": "4.2",
+    "name": "BTSpend renders with BT_DATA fallback",
+    "status": "pass",
+    "note": "screenshot 15"
+  },
+  {
+    "id": "4.3",
+    "name": "/api/tilly/credit-snapshot responds gracefully",
+    "status": "pass",
+    "note": "ready=undefined reason=n/a"
+  },
+  {
+    "id": "4.4",
+    "name": "BTCredit renders with BT_DATA fallback",
+    "status": "pass",
+    "note": "screenshot 16"
+  },
+  {
+    "id": "4.5",
+    "name": "/api/subscriptions/scan returns gracefully",
+    "status": "pass",
+    "note": "errors=0"
+  },
+  {
+    "id": "5.1",
+    "name": "BTProfile renders timeline + tone tuner",
+    "status": "pass",
+    "note": "screenshot 17"
+  },
+  {
+    "id": "5.2",
+    "name": "tone change syncs to server",
+    "status": "pass",
+    "note": ""
+  },
+  {
+    "id": "5.3",
+    "name": "add trusted person",
+    "status": "pass",
+    "note": ""
+  },
+  {
+    "id": "5.4",
+    "name": "trusted person appears in BTProfile",
+    "status": "pass",
+    "note": "screenshot 18"
+  },
+  {
+    "id": "5.5",
+    "name": "Venmo deeplink draft",
+    "status": "pass",
+    "note": "venmo://paycharge?txn=charge&audience=private&recipients=priya&amount=14.50&note=Trader+Joe+split"
+  },
+  {
+    "id": "5.6",
+    "name": "push token registers",
+    "status": "pass",
+    "note": ""
+  },
+  {
+    "id": "5.7",
+    "name": "protections scan runs gracefully",
+    "status": "pass",
+    "note": "flagged=0"
   }
 ]

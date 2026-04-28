@@ -1,0 +1,17 @@
+{
+  "dream": {
+    "id": "514614b2-0bc1-4d61-b19a-77e26e929879",
+    "name": "Barcelona spring",
+    "glyph": "*",
+    "loc": "Spring break",
+    "target": 2400,
+    "saved": 0,
+    "weekly": 40,
+    "due": "Mar 5",
+    "gradient": [
+      "#E94B3C",
+      "#F59E0B"
+    ],
+    "nudge": "I'll move what we agreed each week. You don't have to remember."
+  }
+}

@@ -1,9 +1,70 @@
-[2026-04-28T11:36:18.979Z] PASS 1.1 health endpoint version=55ca877 provider=openrouter
-[2026-04-28T11:36:18.980Z] Loading https://buildtogether-v2.vercel.app/app/
-[2026-04-28T11:36:23.232Z] PAGE ERROR: Cannot read properties of undefined (reading 'get')
-[2026-04-28T11:36:25.981Z] PASS 1.2 web app loads sign-in screen screenshot 01-signin.png
-[2026-04-28T11:36:26.173Z] FAIL 2.1 register works :: status=500 {"error":"column \"is_admin\" does not exist"}
-[2026-04-28T11:36:26.173Z] FATAL: Cannot continue without register
-[2026-04-28T11:36:26.173Z] Error: Cannot continue without register
-    at C:\Users\anand\.claude\plugins\cache\playwright-skill\playwright-skill\4.1.0\skills\playwright-skill\.temp-execution-1777376176567.js:97:13
-    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+[2026-04-28T11:40:19.098Z] PASS 1.1 health endpoint version=82c8c14 provider=openrouter
+[2026-04-28T11:40:19.100Z] Loading https://buildtogether-v2.vercel.app/app/
+[2026-04-28T11:40:19.782Z] PAGE ERROR: Cannot read properties of undefined (reading 'get')
+[2026-04-28T11:40:22.536Z] PASS 1.2 web app loads sign-in screen screenshot 01-signin.png
+[2026-04-28T11:40:22.974Z] PASS 2.1 register works email=tilly-test-1777376422536@example.com
+[2026-04-28T11:40:23.180Z] PASS 2.2 bearer token authenticates session 
+[2026-04-28T11:40:23.312Z] PASS 2.3 onboarding gate blocks new user 
+[2026-04-28T11:40:23.432Z] PAGE ERROR: Cannot read properties of undefined (reading 'get')
+[2026-04-28T11:40:23.544Z] PAGE ERROR: Cannot read properties of undefined (reading 'get')
+[2026-04-28T11:40:28.612Z] PASS 2.4-welcome onboarding welcome card screenshot 02
+[2026-04-28T11:40:34.626Z] couldnt click "Begin": locator.click: Timeout 6000ms exceeded.
+Call log:
+[2m  - waiting for getByText('Begin').first()[22m
+
+[2026-04-28T11:40:34.858Z] Forcing onboarding complete via API for screenshot continuity
+[2026-04-28T11:40:35.159Z] PAGE ERROR: Cannot read properties of undefined (reading 'get')
+[2026-04-28T11:40:40.682Z] SKIP 2.4 onboarding completes via UI :: force-completed via API to keep screenshots flowing
+[2026-04-28T11:40:40.730Z] PASS 2.5 BTHome renders screenshot 07
+[2026-04-28T11:40:46.731Z] couldnt click "Tilly": locator.click: Timeout 6000ms exceeded.
+Call log:
+[2m  - waiting for getByText('Tilly').first()[22m
+
+[2026-04-28T11:40:49.029Z] FAIL 2.6 Tilly chat returns a reply :: {"error":"chat failed"}
+[2026-04-28T11:40:49.245Z] FAIL 2.7 affordability question returns analysis card :: {"error":"chat failed"}
+[2026-04-28T11:40:49.327Z] PAGE ERROR: Cannot read properties of undefined (reading 'get')
+[2026-04-28T11:40:59.856Z] couldnt click "Tilly": locator.click: Timeout 6000ms exceeded.
+Call log:
+[2m  - waiting for getByText('Tilly').first()[22m
+
+[2026-04-28T11:41:11.112Z] SKIP 2.5.6 chat creates tilly_memory rows :: no memories written yet (extraction in flight or model returned empty)
+[2026-04-28T11:41:15.118Z] SKIP 2.8 memory inspector opens :: couldnt click memory pill
+[2026-04-28T11:41:20.168Z] SKIP 2.5.2 admin config loads :: test user is not admin (bootstrap email is anand.inbasekaran@gmail.com)
+[2026-04-28T11:41:20.294Z] SKIP 2.5.5 admin memory-stats endpoint :: auth gated
+[2026-04-28T11:41:20.393Z] PASS 3.1 POST /api/dreams creates a dream id=514614b2-0bc1-4d61-b19a-77e26e929879
+[2026-04-28T11:41:20.490Z] PASS 3.3 contribute increments savedAmount saved=100
+[2026-04-28T11:41:26.499Z] couldnt click "Dreams": locator.click: Timeout 6000ms exceeded.
+Call log:
+[2m  - waiting for getByText('Dreams').first()[22m
+
+[2026-04-28T11:41:29.539Z] PASS 3.2 BTDreams renders portrait screenshot 14
+[2026-04-28T11:41:29.803Z] PASS 4.1 /api/tilly/spend-pattern responds gracefully ready=undefined
+[2026-04-28T11:41:35.811Z] couldnt click "Spend": locator.click: Timeout 6000ms exceeded.
+Call log:
+[2m  - waiting for getByText('Spend').first()[22m
+
+[2026-04-28T11:41:38.338Z] PASS 4.2 BTSpend renders with BT_DATA fallback screenshot 15
+[2026-04-28T11:41:38.552Z] PASS 4.3 /api/tilly/credit-snapshot responds gracefully ready=undefined reason=n/a
+[2026-04-28T11:41:44.553Z] couldnt click "Credit": locator.click: Timeout 6000ms exceeded.
+Call log:
+[2m  - waiting for getByText('Credit').first()[22m
+
+[2026-04-28T11:41:47.088Z] PASS 4.4 BTCredit renders with BT_DATA fallback screenshot 16
+[2026-04-28T11:41:47.670Z] PASS 4.5 /api/subscriptions/scan returns gracefully errors=0
+[2026-04-28T11:41:53.670Z] couldnt click "You": locator.click: Timeout 6000ms exceeded.
+Call log:
+[2m  - waiting for getByText('You').first()[22m
+
+[2026-04-28T11:41:56.205Z] PASS 5.1 BTProfile renders timeline + tone tuner screenshot 17
+[2026-04-28T11:41:56.426Z] PASS 5.2 tone change syncs to server 
+[2026-04-28T11:41:56.566Z] PASS 5.3 add trusted person 
+[2026-04-28T11:41:56.649Z] PAGE ERROR: Cannot read properties of undefined (reading 'get')
+[2026-04-28T11:42:06.187Z] couldnt click "You": locator.click: Timeout 6000ms exceeded.
+Call log:
+[2m  - waiting for getByText('You').first()[22m
+
+[2026-04-28T11:42:08.737Z] PASS 5.4 trusted person appears in BTProfile screenshot 18
+[2026-04-28T11:42:08.945Z] PASS 5.5 Venmo deeplink draft venmo://paycharge?txn=charge&audience=private&recipients=priya&amount=14.50&note=Trader+Joe+split
+[2026-04-28T11:42:09.106Z] PASS 5.6 push token registers 
+[2026-04-28T11:42:09.194Z] PASS 5.7 protections scan runs gracefully flagged=0
+[2026-04-28T11:42:09.267Z] final memory count: 0

@@ -1,53 +1,137 @@
 /**
- * OpenRouter LLM client — uses the OpenAI SDK pointed at OpenRouter's
- * OpenAI-compatible endpoint.
+ * OpenRouter LLM client — raw fetch against OpenRouter's OpenAI-compatible
+ * /v1/chat/completions endpoint.
  *
- * Why OpenRouter: single key gets us Claude, GPT, Gemini, Llama, etc.
- * Admin can swap models from the /admin/tilly page without redeploying.
+ * Why not the OpenAI SDK: v6+ of the SDK validates request bodies and
+ * silently drops or rejects unknown fields like `extra_body`. We need
+ * to pass `cache_control` (Anthropic prompt-cache hint) through to the
+ * upstream provider, so a hand-built request is more reliable.
  *
- * Caveats:
- *   - Anthropic prompt caching only applies when the upstream provider
- *     honors `cache_control`. OpenRouter passes through `extra_body` to
- *     Anthropic for that. We add cache_control to the first system block
- *     when the model id is `anthropic/*`.
- *   - Adaptive thinking on Claude 4.6+ is exposed via OpenRouter's
- *     reasoning param; passed through `extra_body.reasoning`.
- *   - Structured outputs use OpenAI's `response_format` with json_schema.
- *     Most modern OpenRouter providers respect strict JSON schemas;
- *     fallback path strips strict if a model errors.
+ * For structured outputs we use OpenRouter's `response_format` with
+ * `type: "json_schema"` and a Zod-derived JSON Schema — same contract
+ * as OpenAI's structured outputs. We validate locally with Zod after
+ * receiving the response.
  */
-import OpenAI from "openai";
-import { zodResponseFormat } from "openai/helpers/zod";
+import type { ZodType } from "zod";
+import { z } from "zod";
 
 import type {
   LLMClient,
   LLMTextOpts,
   LLMTextResult,
   LLMStructuredOpts,
+  ChatMessage,
 } from "./types";
 import { DEFAULT_MODELS } from "./types";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
-let _client: OpenAI | null = null;
-function client(): OpenAI {
-  if (_client) return _client;
-  const apiKey = process.env.OPENROUTER_API_KEY;
-  if (!apiKey) {
+function getApiKey(): string {
+  const key = process.env.OPENROUTER_API_KEY;
+  if (!key) {
     throw new Error(
       "OPENROUTER_API_KEY not set — Tilly cannot speak. Add it to Vercel env vars.",
     );
   }
-  _client = new OpenAI({
-    apiKey,
-    baseURL: OPENROUTER_BASE_URL,
-    // OpenRouter recommends setting these so usage shows up under your app.
-    defaultHeaders: {
+  return key;
+}
+
+/**
+ * Convert a Zod schema to a JSON Schema object suitable for OpenRouter's
+ * structured-output `response_format`. Uses zod-to-json-schema if available,
+ * otherwise falls back to a hand-rolled converter for simple schemas.
+ *
+ * Zod's `.describe()` calls become JSON Schema `description` fields, which
+ * the upstream provider uses as guidance.
+ */
+function zodToJsonSchemaSafe(schema: ZodType, name: string): {
+  name: string;
+  schema: Record<string, unknown>;
+  strict: boolean;
+} {
+  // Use the standard library if installed (it ships with Zod ^3.24+).
+  // We avoid a hard import by trying require-style resolution first.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
+    const mod = require("zod-to-json-schema");
+    const ztjs = mod.zodToJsonSchema || mod.default;
+    if (ztjs) {
+      const json = ztjs(schema, { name, $refStrategy: "none" }) as Record<string, unknown>;
+      // Some versions wrap under definitions[name]; unwrap.
+      let body: Record<string, unknown> = json;
+      if ((json as any).definitions && (json as any).definitions[name]) {
+        body = (json as any).definitions[name] as Record<string, unknown>;
+      } else if ((json as any).$ref) {
+        body = (json as any).definitions?.[name] ?? json;
+      }
+      stripUnsupported(body);
+      return { name, schema: body, strict: false };
+    }
+  } catch {
+    // fall through
+  }
+  // Trivial fallback — Zod has _def we could walk, but the schemas we use
+  // here are simple objects of primitives + enums + arrays, and the model
+  // tolerates an empty schema with just `type: object` (it just won't be
+  // strict). Better than failing.
+  stripUnsupported({});
+  return { name, schema: { type: "object" }, strict: false };
+}
+
+/**
+ * JSON Schema features OpenRouter / upstream providers commonly reject
+ * (or that pull in unsupported keywords). We strip them defensively.
+ */
+function stripUnsupported(s: Record<string, unknown>) {
+  if (!s || typeof s !== "object") return;
+  delete (s as any).$schema;
+  delete (s as any).default;
+  if ((s as any).properties) {
+    for (const k of Object.keys((s as any).properties)) {
+      stripUnsupported((s as any).properties[k]);
+    }
+  }
+  if ((s as any).items) stripUnsupported((s as any).items);
+}
+
+type ChatRequestBody = {
+  model: string;
+  max_tokens: number;
+  messages: { role: "system" | "user" | "assistant"; content: string }[];
+  response_format?: {
+    type: "json_schema";
+    json_schema: { name: string; schema: Record<string, unknown>; strict?: boolean };
+  };
+  // Allow arbitrary fields for OpenRouter pass-through.
+  [k: string]: unknown;
+};
+
+async function callOpenRouter(body: ChatRequestBody): Promise<{
+  text: string;
+  usage: { prompt_tokens?: number; completion_tokens?: number };
+  raw: any;
+}> {
+  const res = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${getApiKey()}`,
+      "Content-Type": "application/json",
       "HTTP-Referer": "https://buildtogether-v2.vercel.app",
       "X-Title": "BuildTogether (Tilly)",
     },
+    body: JSON.stringify(body),
   });
-  return _client;
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 500)}`);
+  }
+  const json = (await res.json()) as any;
+  const text = json?.choices?.[0]?.message?.content ?? "";
+  return {
+    text,
+    usage: json?.usage ?? {},
+    raw: json,
+  };
 }
 
 export class OpenRouterLLM implements LLMClient {
@@ -59,76 +143,67 @@ export class OpenRouterLLM implements LLMClient {
   }
 
   /**
-   * Build the message array. Multiple `systemPrompts` are concatenated into
-   * one system message because the OpenAI Chat API only supports a single
-   * `system` role at the start. For Claude routes, we set `cache_control`
-   * on the system message via `extra_body` so the upstream Anthropic
-   * provider can prompt-cache the persona prefix.
+   * Concatenate `systemPrompts[]` into a single system message because
+   * OpenAI Chat Completions only supports one role:"system" at the start.
+   * Anthropic prompt-cache hint goes through extra fields (currently no
+   * effect through OpenRouter's normal flow but harmless if upstream
+   * extends).
    */
-  private buildMessages(opts: LLMTextOpts): {
-    messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
-    extraBody: Record<string, unknown>;
-  } {
+  private buildBody(opts: LLMTextOpts): ChatRequestBody {
     const sysJoined = opts.systemPrompts.filter(Boolean).join("\n\n---\n\n");
-    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+    const messages: ChatRequestBody["messages"] = [
       { role: "system", content: sysJoined },
       ...opts.messages.map((m) => ({ role: m.role, content: m.content })),
     ];
-
-    // For Anthropic-routed models, ask OpenRouter to apply prompt caching to
-    // the system block. OpenRouter's pass-through cache_control surfaces
-    // this to Claude.
-    const extraBody: Record<string, unknown> = {};
-    if (this.modelId.startsWith("anthropic/")) {
-      // OpenRouter's extension: per-message cache hints inside extra_body
-      extraBody.cache_control = { type: "ephemeral" };
-    }
-    if (opts.extra) Object.assign(extraBody, opts.extra);
-
-    return { messages, extraBody };
-  }
-
-  async textReply(opts: LLMTextOpts): Promise<LLMTextResult> {
-    const { messages, extraBody } = this.buildMessages(opts);
-
-    const completion = await client().chat.completions.create({
+    const body: ChatRequestBody = {
       model: this.modelId,
       max_tokens: opts.maxTokens ?? 4096,
       messages,
-      // The OpenAI SDK type doesn't list `extra_body` but OpenRouter forwards
-      // unknown fields through. Cast to bypass strict typing.
-      ...(Object.keys(extraBody).length ? { extra_body: extraBody } : {}),
-    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+    };
+    if (opts.extra) Object.assign(body, opts.extra);
+    return body;
+  }
 
-    const text = completion.choices[0]?.message?.content ?? "";
+  async textReply(opts: LLMTextOpts): Promise<LLMTextResult> {
+    const body = this.buildBody(opts);
+    const { text, usage } = await callOpenRouter(body);
     return {
       text,
       modelId: this.modelId,
       usage: {
-        inputTokens: completion.usage?.prompt_tokens ?? 0,
-        outputTokens: completion.usage?.completion_tokens ?? 0,
+        inputTokens: usage.prompt_tokens ?? 0,
+        outputTokens: usage.completion_tokens ?? 0,
       },
     };
   }
 
   async structuredOutput<T>(opts: LLMStructuredOpts<T>): Promise<T> {
-    const { messages, extraBody } = this.buildMessages(opts);
+    const body = this.buildBody(opts);
+    body.response_format = {
+      type: "json_schema",
+      json_schema: zodToJsonSchemaSafe(opts.schema, opts.schemaName),
+    };
 
-    const completion = await client().chat.completions.parse({
-      model: this.modelId,
-      max_tokens: opts.maxTokens ?? 4096,
-      messages,
-      response_format: zodResponseFormat(opts.schema, opts.schemaName),
-      ...(Object.keys(extraBody).length ? { extra_body: extraBody } : {}),
-    } as any);
-
-    const parsed = completion.choices[0]?.message?.parsed;
-    if (!parsed) {
+    const { text } = await callOpenRouter(body);
+    if (!text) {
       throw new Error(
-        `OpenRouterLLM.structuredOutput: model ${this.modelId} returned no parseable output ` +
-          `(refusal=${completion.choices[0]?.message?.refusal ?? "none"})`,
+        `OpenRouterLLM.structuredOutput: empty response from ${this.modelId}`,
       );
     }
-    return parsed as T;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch (err) {
+      throw new Error(
+        `OpenRouterLLM.structuredOutput: model returned non-JSON content: ${text.slice(0, 200)}`,
+      );
+    }
+    const validated = (opts.schema as ZodType).safeParse(parsed);
+    if (!validated.success) {
+      throw new Error(
+        `OpenRouterLLM.structuredOutput: schema validation failed: ${validated.error.message}`,
+      );
+    }
+    return validated.data as T;
   }
 }
