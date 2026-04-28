@@ -1,0 +1,30 @@
+[12:34:53] Setup done. Token=9f86b939a842...
+[12:35:07] 📛 CONSOLE ERR: Failed to load resource: the server responded with a status of 500 ()
+[12:35:12] 📸 00-bthome-loaded
+[12:35:12] DOM audit: 10 clickable elements
+[12:35:12] bottom tabs found: ○Today | Tilly | ≣Spend | ◔Credit | ✺Dreams | ◍You
+[12:35:14] TODAY tab clicked
+[12:35:17] 📸 tab-today
+[12:35:18] TILLY tab clicked
+[12:35:21] 📸 tab-tilly
+[12:35:23] SPEND tab clicked
+[12:35:23] 📛 CONSOLE ERR: Failed to load resource: the server responded with a status of 500 ()
+[12:35:25] 📸 tab-spend
+[12:35:27] CREDIT tab clicked
+[12:35:27] 📛 CONSOLE ERR: Failed to load resource: the server responded with a status of 500 ()
+[12:35:29] 📸 tab-credit
+[12:35:31] DREAMS tab clicked
+[12:35:34] 📸 tab-dreams
+[12:35:35] YOU tab clicked
+[12:35:38] 📸 tab-you
+[12:36:10] chat input visible: false
+[12:36:43] 📸 profile-before-tone
+[12:36:43] clicked Coach tone
+[12:36:45] 📸 profile-coach-tone
+[12:36:47] 📸 tweaks-open
+[12:36:47] clicked theme paper
+[12:36:48] 📸 theme-paper
+[12:37:21] 📸 dreams-loaded
+[12:37:53] 📸 credit-loaded
+[12:38:26] 📸 back-home
+[12:38:26] Done. 14 ok / 0 issues

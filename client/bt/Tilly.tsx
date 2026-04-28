@@ -89,43 +89,52 @@ export function Tilly({
 function TillySvg({ t, size, state }: { t: BTTheme; size: number; state: TillyState }) {
   const { body, belly, beak } = t.tilly;
   // Eye y-coordinate shifts up when "thinking" so she's looking up.
-  const eyeY = state === "think" ? 38 : 44;
-  const pupilY = state === "think" ? 36 : 44;
-  const eyeR = 5;
-  const pupilR = 2.4;
+  // Eyes are intentionally small + close together — leans calm/observant
+  // rather than wide-eyed cartoon.
+  const eyeY = state === "think" ? 40 : 46;
+  const pupilY = state === "think" ? 38.5 : 46;
+  const eyeR = 3;
+  const pupilR = 1.5;
 
   return (
     <Svg width={size} height={size} viewBox="0 0 100 100">
-      {/* Body — rounded oval */}
-      <Ellipse cx={50} cy={58} rx={32} ry={30} fill={body} />
-      {/* Belly */}
-      <Ellipse cx={50} cy={66} rx={20} ry={18} fill={belly} />
-      {/* Wing fold — subtle inner curve */}
+      {/* Body — taller egg shape (35 high vs 28 wide) for a leaner, more
+          deliberate silhouette. The 32×30 round previously read as
+          "preschool round bird"; this reads "considered, calm." */}
+      <Ellipse cx={50} cy={56} rx={28} ry={35} fill={body} />
+      {/* Belly — narrower oval, sits lower */}
+      <Ellipse cx={50} cy={70} rx={18} ry={22} fill={belly} />
+      {/* Wing fold — a longer, softer curve down the side */}
       <Path
-        d="M70 56 Q 78 64 70 76"
+        d="M72 50 Q 78 70 68 84"
         stroke={beak}
-        strokeOpacity={0.18}
-        strokeWidth={2}
+        strokeOpacity={0.15}
+        strokeWidth={1.6}
         fill="none"
         strokeLinecap="round"
       />
-      {/* Tuft */}
+      {/* Subtle tuft — a single feather flick rather than the previous
+          rounded crest. Reads like an idle thought rather than a kid's drawing. */}
       <Path
-        d="M44 26 Q 50 18 56 26 Q 50 24 44 26 Z"
-        fill={body}
+        d="M50 22 Q 53 14 55 20"
+        stroke={beak}
+        strokeOpacity={0.5}
+        strokeWidth={1.8}
+        fill="none"
+        strokeLinecap="round"
       />
-      {/* Eyes */}
+      {/* Eyes — small, close-set, expressive */}
       <G>
-        <Circle cx={40} cy={eyeY} r={eyeR} fill="#FFFFFF" />
-        <Circle cx={60} cy={eyeY} r={eyeR} fill="#FFFFFF" />
-        <Circle cx={40.5} cy={pupilY} r={pupilR} fill={beak} />
-        <Circle cx={60.5} cy={pupilY} r={pupilR} fill={beak} />
+        <Circle cx={43} cy={eyeY} r={eyeR} fill="#FFFFFF" />
+        <Circle cx={57} cy={eyeY} r={eyeR} fill="#FFFFFF" />
+        <Circle cx={43} cy={pupilY} r={pupilR} fill={beak} />
+        <Circle cx={57} cy={pupilY} r={pupilR} fill={beak} />
       </G>
-      {/* Beak — small triangle */}
-      <Path d="M46 52 L 54 52 L 50 58 Z" fill={beak} />
-      {/* Feet */}
-      <Path d="M42 88 L 42 94 M 38 94 L 46 94" stroke={beak} strokeWidth={2.2} strokeLinecap="round" />
-      <Path d="M58 88 L 58 94 M 54 94 L 62 94" stroke={beak} strokeWidth={2.2} strokeLinecap="round" />
+      {/* Beak — leaner, longer triangle */}
+      <Path d="M47 52 L 53 52 L 50 60 Z" fill={beak} />
+      {/* Feet — a touch lower + thinner */}
+      <Path d="M44 90 L 44 95 M 41 95 L 47 95" stroke={beak} strokeWidth={1.6} strokeLinecap="round" />
+      <Path d="M56 90 L 56 95 M 53 95 L 59 95" stroke={beak} strokeWidth={1.6} strokeLinecap="round" />
     </Svg>
   );
 }

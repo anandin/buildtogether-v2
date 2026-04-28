@@ -5,7 +5,7 @@
  * banner up top, day-bars in the middle, emotional category rows below.
  */
 import React, { useEffect, useRef } from "react";
-import { Animated, Easing, Pressable, ScrollView, Text, View } from "react-native";
+import { Animated, Easing, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { BT_DATA } from "../data";
@@ -26,9 +26,10 @@ export function BTSpend() {
   const categories = live?.categories ?? BT_DATA.spendCategories;
 
   return (
+    <View style={{ flex: 1, backgroundColor: t.bg }}>
     <ScrollView
-      style={{ flex: 1, backgroundColor: t.bg }}
-      contentContainerStyle={{ padding: 22, paddingTop: 36, paddingBottom: 120, gap: 22 }}
+      style={{ flex: 1 }}
+      contentContainerStyle={{ padding: 22, paddingTop: 36, paddingBottom: 140, gap: 22 }}
       showsVerticalScrollIndicator={false}
     >
       {/* Paycheck shimmer banner */}
@@ -155,28 +156,45 @@ export function BTSpend() {
         </BTCard>
       </View>
 
-      {/* FAB */}
+    </ScrollView>
+
+      {/* FAB — sits OUTSIDE the ScrollView so it floats over content but
+          stays anchored above the tab bar. Uses Platform.select so the
+          web build gets a real boxShadow (RN's shadow* props don't
+          translate on web). */}
       <Pressable
-        style={{
-          position: "absolute",
-          bottom: 28,
-          right: 22,
-          width: 56,
-          height: 56,
-          borderRadius: 28,
-          backgroundColor: t.accent,
-          alignItems: "center",
-          justifyContent: "center",
-          shadowColor: t.accent,
-          shadowOffset: { width: 0, height: 4 },
-          shadowOpacity: 0.4,
-          shadowRadius: 12,
-          elevation: 6,
-        }}
+        accessibilityRole="button"
+        accessibilityLabel="Add expense"
+        style={[
+          {
+            position: "absolute",
+            bottom: 18,
+            right: 22,
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            backgroundColor: t.accent,
+            alignItems: "center",
+            justifyContent: "center",
+            elevation: 6,
+          },
+          Platform.select({
+            web: {
+              // @ts-ignore — boxShadow is a valid web style at runtime
+              boxShadow: `0 4px 12px ${t.accent}66`,
+            },
+            default: {
+              shadowColor: t.accent,
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.4,
+              shadowRadius: 12,
+            },
+          }) as any,
+        ]}
       >
         <Text style={{ color: "#fff", fontSize: 28, lineHeight: 28, fontWeight: "300" }}>+</Text>
       </Pressable>
-    </ScrollView>
+    </View>
   );
 }
 

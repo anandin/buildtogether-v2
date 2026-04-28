@@ -1,0 +1,58 @@
+fix(ui): 7 visual + interaction bugs from click-through audit
+
+Did a real Playwright click-through against the live deploy, captured
+screenshots after every interaction, and found a stack of bugs the
+earlier headless API-driven test missed.
+
+S1 — Tilly chat suggested-prompts pills rendered as enormous empty
+ovals filling half the chat area. Root cause: RN-web horizontal
+ScrollView stretches Pressable children vertically when no height
+constraint is set on the container. Fixed by wrapping the row in a
+height-capped View (52px) and giving each pill an explicit 36px height
++ alignItems:center.
+
+S2 — Chat bubbles rendered raw markdown (literal triple-backticks +
+asterisks). Replaced the plain Text with a tiny RichTillyText component
+that splits on asterisk-wrapped phrases for italic accent spans, strips
+fenced code blocks, and renders triple-dash as a hairline divider.
+Tightened the persona prompt to ban code fences and explicitly call
+out single asterisks as the italic-accent convention.
+
+S3 — BTSpend FAB shadow did not render on web (RN's shadow* props
+don't translate). FAB also lived inside the ScrollView so it scrolled
+with content instead of floating. Pulled it out as a sibling, added
+Platform.select for boxShadow vs native shadow, moved it up to
+bottom:18 so it sits above the tab bar.
+
+S4 — Tweaks panel used React Native Modal whose backdrop covered the
+tab bar, making Spend/Credit/Dreams feel unclickable while open.
+Replaced with an animated slide-up View anchored to bottom:80 (above
+the tab bar). Backdrop is a separate Animated.View that stops at the
+tab bar's top edge so tabs stay reachable.
+
+S5 — Tilly mascot read as preschool round bird. Reshaped: taller
+egg silhouette (28x35 vs 32x30), smaller closer-set eyes (3px vs 5px),
+leaner longer beak, thinner legs, single feather flick instead of
+rounded crest. Theme colors unchanged.
+
+S6 — SignInScreen still used V1 purple/Nunito design. Rewrote in BT
+aesthetic: paper background, Tilly with halo, "I'm Tilly." Instrument
+Serif headline with italic accent, mono caps labels, ink-bg primary
+button, "Money is already complicated. I'll do the watching so you
+don't have to." tagline. All auth providers (Apple/Google/email) keep
+working through useAuth.
+
+S8 — Memory writer Zod schema used nullable for optional fields
+(category, goalIdHint). OpenRouter providers vary on null-vs-absent
+behavior; some omit fields entirely, breaking validation. Switched to
+nullable+optional so both shapes parse. Also added prompt-body logging
+on validation failure.
+
+S9 (rolled into S1) — RN Pressable on web wraps Text in a div without
+role=button by default. Added accessibilityRole=button +
+accessibilityLabel to all CTAs.
+
+GAP_ANALYSIS.md added under test-results/ with the full audit and
+priority-ordered fix plan.
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>

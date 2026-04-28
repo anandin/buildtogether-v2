@@ -1,0 +1,102 @@
+[
+  {
+    "idx": 0,
+    "tag": "DIV",
+    "text": "✦tweaks",
+    "role": null,
+    "x": 319,
+    "y": 18,
+    "w": 77,
+    "h": 29
+  },
+  {
+    "idx": 1,
+    "tag": "DIV",
+    "text": "Pause $19.95",
+    "role": null,
+    "x": 39,
+    "y": 480,
+    "w": 101,
+    "h": 31
+  },
+  {
+    "idx": 2,
+    "tag": "DIV",
+    "text": "Anything you want to think through?→",
+    "role": null,
+    "x": 22,
+    "y": 550,
+    "w": 370,
+    "h": 66
+  },
+  {
+    "idx": 3,
+    "tag": "DIV",
+    "text": "○Today",
+    "role": null,
+    "x": 0,
+    "y": 828,
+    "w": 69,
+    "h": 60
+  },
+  {
+    "idx": 4,
+    "tag": "DIV",
+    "text": "Tilly",
+    "role": null,
+    "x": 69,
+    "y": 828,
+    "w": 69,
+    "h": 60
+  },
+  {
+    "idx": 5,
+    "tag": "DIV",
+    "text": "≣Spend",
+    "role": null,
+    "x": 138,
+    "y": 828,
+    "w": 69,
+    "h": 60
+  },
+  {
+    "idx": 6,
+    "tag": "DIV",
+    "text": "◔Credit",
+    "role": null,
+    "x": 207,
+    "y": 828,
+    "w": 69,
+    "h": 60
+  },
+  {
+    "idx": 7,
+    "tag": "DIV",
+    "text": "✺Dreams",
+    "role": null,
+    "x": 276,
+    "y": 828,
+    "w": 69,
+    "h": 60
+  },
+  {
+    "idx": 8,
+    "tag": "DIV",
+    "text": "◍You",
+    "role": null,
+    "x": 345,
+    "y": 828,
+    "w": 69,
+    "h": 60
+  },
+  {
+    "idx": 9,
+    "tag": "IFRAME",
+    "text": "",
+    "role": "presentation",
+    "x": 0,
+    "y": 896,
+    "w": 414,
+    "h": 1
+  }
+]

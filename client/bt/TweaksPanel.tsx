@@ -5,8 +5,15 @@
  * surface presentation: theme, tone, time of day. Lives behind a small
  * floating "✦ tweaks" button in the top-right of the BT shell.
  */
-import React, { useState } from "react";
-import { Modal, Pressable, Text, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  Animated,
+  Easing,
+  Pressable,
+  Text,
+  View,
+  StyleSheet,
+} from "react-native";
 
 import { useBT } from "./BTContext";
 import { BT_THEMES, BTFonts, type BTThemeKey } from "./theme";
@@ -57,21 +64,59 @@ export function TweaksToggle() {
 
 function TweaksPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t, themeKey, setTheme, toneKey, setTone, time, setTime } = useBT();
+  // Animated slide-up. Replaces the previous RN Modal because Modal's
+  // backdrop covered the tab bar — making "Spend" / other tabs feel
+  // unclickable while Tweaks was open. This panel is a sibling overlay
+  // anchored above the tab bar so the tabs stay reachable.
+  const slide = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.timing(slide, {
+      toValue: open ? 1 : 0,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [open, slide]);
+
+  if (!open && (slide as any)._value === 0) return null;
+
+  const translateY = slide.interpolate({ inputRange: [0, 1], outputRange: [600, 0] });
+  const backdropOpacity = slide.interpolate({ inputRange: [0, 1], outputRange: [0, 0.35] });
+
   return (
-    <Modal visible={open} animationType="slide" transparent onRequestClose={onClose}>
-      <Pressable
-        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}
-        onPress={onClose}
+    <View style={StyleSheet.absoluteFillObject} pointerEvents={open ? "auto" : "none"}>
+      {/* Backdrop — only covers the screen ABOVE the tab bar (~80px) so
+          tabs stay clickable. Tap to dismiss. */}
+      <Animated.View
+        style={[
+          StyleSheet.absoluteFillObject,
+          { bottom: 80, backgroundColor: "#000", opacity: backdropOpacity },
+        ]}
+        pointerEvents={open ? "auto" : "none"}
       >
-        <Pressable
-          onPress={(e) => e.stopPropagation()}
+        <Pressable style={{ flex: 1 }} onPress={onClose} />
+      </Animated.View>
+
+      {/* Slide-up sheet */}
+      <Animated.View
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 80,
+          transform: [{ translateY }],
+        }}
+      >
+        <View
           style={{
             backgroundColor: t.surface,
             borderTopLeftRadius: 24,
             borderTopRightRadius: 24,
             padding: 22,
-            paddingBottom: 40,
+            paddingBottom: 28,
             gap: 22,
+            borderTopWidth: 1,
+            borderTopColor: t.rule,
           }}
         >
           <View
@@ -198,8 +243,8 @@ function TweaksPanel({ open, onClose }: { open: boolean; onClose: () => void }) 
               })}
             </View>
           </View>
-        </Pressable>
-      </Pressable>
-    </Modal>
+        </View>
+      </Animated.View>
+    </View>
   );
 }

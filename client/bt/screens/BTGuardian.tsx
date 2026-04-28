@@ -144,30 +144,52 @@ export function BTGuardian() {
         {thinking ? <TypingBubble /> : null}
       </ScrollView>
 
-      {/* Suggested prompts */}
+      {/* Suggested prompts — height-capped horizontal pill row.
+          Without an explicit height, RN-web stretches Pressable children
+          vertically to fill the ScrollView's flex parent, painting tall
+          empty capsules. The 52px cap keeps them as proper pills. */}
       {!thinking ? (
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 8, paddingHorizontal: 18, paddingVertical: 8 }}
-        >
-          {BT_SUGGESTED_PROMPTS.map((p) => (
-            <Pressable
-              key={p}
-              onPress={() => send(p)}
-              style={{
-                paddingHorizontal: 14,
-                paddingVertical: 8,
-                borderRadius: 999,
-                backgroundColor: t.surface,
-                borderWidth: 1,
-                borderColor: t.rule,
-              }}
-            >
-              <Text style={{ color: t.inkSoft, fontFamily: BTFonts.sans, fontSize: 13 }}>{p}</Text>
-            </Pressable>
-          ))}
-        </ScrollView>
+        <View style={{ height: 52 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{
+              gap: 8,
+              paddingHorizontal: 18,
+              alignItems: "center",
+              height: 52,
+            }}
+          >
+            {BT_SUGGESTED_PROMPTS.map((p) => (
+              <Pressable
+                key={p}
+                onPress={() => send(p)}
+                accessibilityRole="button"
+                accessibilityLabel={`Suggested: ${p}`}
+                style={{
+                  paddingHorizontal: 14,
+                  height: 36,
+                  borderRadius: 999,
+                  backgroundColor: t.surface,
+                  borderWidth: 1,
+                  borderColor: t.rule,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text
+                  style={{
+                    color: t.inkSoft,
+                    fontFamily: BTFonts.sans,
+                    fontSize: 13,
+                  }}
+                >
+                  {p}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
       ) : null}
 
       {/* Composer */}
@@ -311,10 +333,68 @@ function Bubble({ m }: { m: Msg }) {
           borderColor: t.rule,
         }}
       >
-        <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontSize: 14 }}>
-          {(m as { body: string }).body}
-        </Text>
+        <RichTillyText body={(m as { body: string }).body} color={t.ink} />
       </View>
+    </View>
+  );
+}
+
+/**
+ * Render Tilly's reply with the small slice of markdown the persona uses:
+ *   - `*phrase*` → italic span
+ *   - triple-backtick fences are stripped (we discourage them in the
+ *     persona prompt but the model occasionally uses them anyway)
+ *   - `---` standalone lines render as a hairline divider
+ *   - paragraph breaks come from \n\n
+ */
+function RichTillyText({ body, color }: { body: string; color: string }) {
+  const { t } = useBT();
+  // Strip ``` fences entirely (keep the inner text).
+  const cleaned = body.replace(/```[a-z]*\n?/gi, "").replace(/\n```/g, "");
+  const blocks = cleaned.split(/\n\n+/);
+  return (
+    <View style={{ gap: 6 }}>
+      {blocks.map((block, blockIdx) => {
+        if (block.trim() === "---" || block.trim() === "—") {
+          return (
+            <View
+              key={blockIdx}
+              style={{ height: 1, backgroundColor: t.rule, marginVertical: 4 }}
+            />
+          );
+        }
+        const segments = block.split(/(\*[^*\n]+\*)/g).filter(Boolean);
+        return (
+          <Text
+            key={blockIdx}
+            style={{
+              color,
+              fontFamily: BTFonts.sans,
+              fontSize: 14,
+              lineHeight: 21,
+            }}
+          >
+            {segments.map((seg, segIdx) => {
+              if (seg.startsWith("*") && seg.endsWith("*") && seg.length > 2) {
+                return (
+                  <Text
+                    key={segIdx}
+                    style={{
+                      fontFamily: BTFonts.serif,
+                      fontStyle: "italic",
+                      color: t.accent,
+                      fontSize: 15,
+                    }}
+                  >
+                    {seg.slice(1, -1)}
+                  </Text>
+                );
+              }
+              return <Text key={segIdx}>{seg}</Text>;
+            })}
+          </Text>
+        );
+      })}
     </View>
   );
 }

@@ -35,15 +35,18 @@ const ExtractedMemorySchema = z.object({
     .describe(
       "Display label for the timeline: 'Today', 'Apr 18', 'Aug 2025'. Use 'Today' for things observed in this turn.",
     ),
+  // OpenRouter providers vary on null vs absent fields. Allow both.
   category: z
     .string()
     .nullable()
-    .describe("Spending category if relevant (e.g. 'Coffee'), else null."),
+    .optional()
+    .describe("Spending category if relevant (e.g. 'Coffee'). Omit or null if not applicable."),
   goalIdHint: z
     .string()
     .nullable()
+    .optional()
     .describe(
-      "Dream/goal name if this memory references one, else null. The caller resolves the actual goalId.",
+      "Dream/goal name if this memory references one. Omit or null if not applicable. The caller resolves the actual goalId.",
     ),
 });
 
@@ -107,9 +110,15 @@ Extract 0–3 memories worth keeping. Empty array if nothing here is durable.`;
       schemaName: "memory_extraction",
     });
     return result.extract;
-  } catch (err) {
-    // Memory extraction must never block a chat reply. Log and return empty.
-    console.error("extractMemories failed:", err);
+  } catch (err: any) {
+    // Memory extraction must never block a chat reply. Log details so we
+    // can iterate on the prompt or schema next time, then return empty.
+    console.error(
+      "extractMemories failed:",
+      err?.message ?? err,
+      "\nPrompt body (truncated):",
+      input.body.slice(0, 200),
+    );
     return [];
   }
 }
