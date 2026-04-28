@@ -1,11 +1,11 @@
 {
   "user": {
-    "id": "cf3954db-f436-4d88-b4e5-71e80ece9e5a",
-    "email": "tilly-test-1777376422536@example.com",
+    "id": "4a70a24c-7e13-463d-8d35-7de353f765a0",
+    "email": "tilly-test-1777377210457@example.com",
     "name": "Maya Tester",
-    "coupleId": "cb383f36-a9e7-405a-adf3-b0c30c1dbe6e",
+    "coupleId": "428f69d5-ca8e-4f7e-9054-59d1c565f7f4",
     "partnerRole": "partner1"
   },
-  "token": "1677d17ba685403a49c3fd6a54c8623720cbf6b9a44dc08c160bf67a40d266f2",
-  "expiresAt": "2026-05-28T11:40:22.510Z"
+  "token": "47fbef19d7e361225a7e014e0da66bf150de4eef822b97132b4afd09079bb74f",
+  "expiresAt": "2026-05-28T11:53:30.419Z"
 }

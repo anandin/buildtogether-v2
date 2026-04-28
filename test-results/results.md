@@ -1,26 +1,26 @@
-# Tilly autonomous test run -- 2026-04-28T11:42:09.272Z
+# Tilly autonomous test run -- 2026-04-28T11:56:03.226Z
 
 Live deployment: https://buildtogether-v2.vercel.app
 
-**22 pass / 2 fail / 5 skip / 29 total**
+**23 pass / 0 fail / 6 skip / 29 total**
 
 | ID | Scenario | Result | Note |
 | --- | --- | --- | --- |
-| 1.1 | health endpoint | PASS | version=82c8c14 provider=openrouter |
+| 1.1 | health endpoint | PASS | version=f6d8652 provider=openrouter |
 | 1.2 | web app loads sign-in screen | PASS | screenshot 01-signin.png |
-| 2.1 | register works | PASS | email=tilly-test-1777376422536@example.com |
+| 2.1 | register works | PASS | email=tilly-test-1777377210457@example.com |
 | 2.2 | bearer token authenticates session | PASS |  |
 | 2.3 | onboarding gate blocks new user | PASS |  |
 | 2.4-welcome | onboarding welcome card | PASS | screenshot 02 |
 | 2.4 | onboarding completes via UI | SKIP | force-completed via API to keep screenshots flowing |
 | 2.5 | BTHome renders | PASS | screenshot 07 |
-| 2.6 | Tilly chat returns a reply | FAIL | {"error":"chat failed"} |
-| 2.7 | affordability question returns analysis card | FAIL | {"error":"chat failed"} |
+| 2.6 | Tilly chat returns a reply | PASS | kind=text |
+| 2.7 | affordability question returns analysis card | SKIP | got plain text instead — kind=text |
 | 2.5.6 | chat creates tilly_memory rows | SKIP | no memories written yet (extraction in flight or model returned empty) |
 | 2.8 | memory inspector opens | SKIP | couldnt click memory pill |
 | 2.5.2 | admin config loads | SKIP | test user is not admin (bootstrap email is anand.inbasekaran@gmail.com) |
 | 2.5.5 | admin memory-stats endpoint | SKIP | auth gated |
-| 3.1 | POST /api/dreams creates a dream | PASS | id=514614b2-0bc1-4d61-b19a-77e26e929879 |
+| 3.1 | POST /api/dreams creates a dream | PASS | id=54b43a29-8b20-48b7-891c-6952f9fdc839 |
 | 3.3 | contribute increments savedAmount | PASS | saved=100 |
 | 3.2 | BTDreams renders portrait | PASS | screenshot 14 |
 | 4.1 | /api/tilly/spend-pattern responds gracefully | PASS | ready=undefined |

@@ -1,3 +1,9 @@
 {
-  "error": "chat failed"
+  "reply": {
+    "id": "d9e37d9d-3003-49e1-b753-5b47a8ae9026",
+    "role": "tilly",
+    "kind": "text",
+    "body": "Hey. Let me see where you're at.\n\nFirst, the real numbers. Walk me through what \"broke\" means — what's your current balance, and what needs to hit before your next money comes in? \n\nWhile you're checking, here's what I'm thinking about: which bills are must-pays this week, what food situation looks like, and whether there's any padding we can find in subscriptions or pending charges.\n\nThe immediate move is usually:\n- Cancel anything that auto-renews in the next few days\n- Check if any recent purchases are still returnable\n- See if your meal plan has guest swipes left\n\nBut I need to see your actual position first. What's the checking account showing?",
+    "createdAt": "2026-04-28T11:54:14.978Z"
+  }
 }

@@ -3,7 +3,7 @@
     "id": "1.1",
     "name": "health endpoint",
     "status": "pass",
-    "note": "version=82c8c14 provider=openrouter"
+    "note": "version=f6d8652 provider=openrouter"
   },
   {
     "id": "1.2",
@@ -15,7 +15,7 @@
     "id": "2.1",
     "name": "register works",
     "status": "pass",
-    "note": "email=tilly-test-1777376422536@example.com"
+    "note": "email=tilly-test-1777377210457@example.com"
   },
   {
     "id": "2.2",
@@ -50,14 +50,14 @@
   {
     "id": "2.6",
     "name": "Tilly chat returns a reply",
-    "status": "fail",
-    "note": "{\"error\":\"chat failed\"}"
+    "status": "pass",
+    "note": "kind=text"
   },
   {
     "id": "2.7",
     "name": "affordability question returns analysis card",
-    "status": "fail",
-    "note": "{\"error\":\"chat failed\"}"
+    "status": "skip",
+    "note": "got plain text instead — kind=text"
   },
   {
     "id": "2.5.6",
@@ -87,7 +87,7 @@
     "id": "3.1",
     "name": "POST /api/dreams creates a dream",
     "status": "pass",
-    "note": "id=514614b2-0bc1-4d61-b19a-77e26e929879"
+    "note": "id=54b43a29-8b20-48b7-891c-6952f9fdc839"
   },
   {
     "id": "3.3",

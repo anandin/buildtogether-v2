@@ -1,3 +1,9 @@
 {
-  "error": "chat failed"
+  "reply": {
+    "id": "f50931a2-676c-42f8-9a5c-ad4651b30bcc",
+    "role": "tilly",
+    "kind": "text",
+    "body": "Let me run the math. What's your current checking balance, and when does your next money come in?\n\nI need to see:\n- Starting buffer\n- Any bills hitting before the concert\n- What you're planning for food this week\n- Whether you've got gas/transport covered\n\nWithout those numbers, I can't make a real call. But here's my gut check: $90 entertainment when you just said you're broke usually means choosing between the concert and eating real food for several days.\n\nWhat's the actual balance right now?",
+    "createdAt": "2026-04-28T11:54:42.356Z"
+  }
 }

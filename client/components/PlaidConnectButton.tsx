@@ -12,11 +12,14 @@ import React, { useEffect, useState, useCallback } from "react";
 import { View, StyleSheet, Pressable, ActivityIndicator, Platform, Modal, ScrollView } from "react-native";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import {
-  create as plaidCreate,
-  open as plaidOpen,
-  type LinkSuccess,
-  type LinkExit,
+
+// react-native-plaid-link-sdk crashes on web at module-load (the package
+// reaches into the native bridge eagerly). Lazy-load it only on iOS/Android
+// inside the launch handler. The SDK type imports are fine to ship since
+// they erase to nothing in the web bundle.
+import type {
+  LinkSuccess as PlaidLinkSuccess,
+  LinkExit as PlaidLinkExit,
 } from "react-native-plaid-link-sdk";
 
 import { ThemedText } from "@/components/ThemedText";
@@ -132,12 +135,13 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
         });
         handler.open();
       } else {
-        // 2b. Native (iOS / Android): use the Plaid Link RN SDK. `create()`
-        // initializes the link configuration with the token; `open()` shows
-        // the native Plaid sheet and resolves with success or exit.
-        plaidCreate({ token: linkToken });
-        plaidOpen({
-          onSuccess: async (success: LinkSuccess) => {
+        // 2b. Native (iOS / Android): lazy-import the Plaid Link SDK. We
+        // can't import at module top because the package crashes on web
+        // when it reaches into the native bridge.
+        const sdk = await import("react-native-plaid-link-sdk");
+        sdk.create({ token: linkToken });
+        sdk.open({
+          onSuccess: async (success: PlaidLinkSuccess) => {
             try {
               await apiRequest("POST", "/api/plaid/exchange", {
                 publicToken: success.publicToken,
@@ -152,7 +156,7 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
               setLaunching(false);
             }
           },
-          onExit: (exit: LinkExit) => {
+          onExit: (exit: PlaidLinkExit) => {
             setLaunching(false);
             if (exit?.error) {
               setError(
