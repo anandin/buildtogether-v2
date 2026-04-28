@@ -888,6 +888,23 @@ export const protections = pgTable("protections", {
 export type Protection = typeof protections.$inferSelect;
 
 /**
+ * Push notification tokens — one per (user, device). Registered by the
+ * client on app launch via expo-notifications.getExpoPushTokenAsync().
+ */
+export const pushTokens = pgTable("push_tokens", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  token: text("token").notNull().unique(),
+  platform: text("platform").notNull(), // ios | android | web
+  deviceLabel: text("device_label"),
+  lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
+  disabledAt: timestamp("disabled_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type PushToken = typeof pushTokens.$inferSelect;
+
+/**
  * Tilly runtime configuration — singleton row keyed by id='default'. Admins
  * tune these via /admin/tilly without redeploying. The factory in
  * `server/tilly/llm/factory.ts` reads this row, builds the right LLMClient,

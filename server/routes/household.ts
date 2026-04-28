@@ -11,7 +11,7 @@
  * legacy `users.coupleId` column for back-compat (Phase 1c will migrate it).
  */
 import type { Express, Request, Response } from "express";
-import { eq, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 
 import { requireAuth } from "../middleware/auth";
 import { db } from "../db";
@@ -141,6 +141,103 @@ export function mountHouseholdRoutes(app: Express): void {
       } catch (err) {
         console.error("/api/household/complete-onboarding error:", err);
         res.status(500).json({ error: "complete failed" });
+      }
+    },
+  );
+
+  // ─── Trusted people (members) ─────────────────────────────────────────
+  // Spec §4.6 trusted people. Roles: owner | trusted_viewer | splitter | family.
+
+  app.get("/api/household/members", requireAuth, async (req: Request, res: Response) => {
+    if (!req.user) return res.status(401).json({ error: "auth required" });
+    const householdId = req.user.coupleId;
+    if (!householdId) return res.json({ members: [] });
+    try {
+      const rows = await db
+        .select()
+        .from(members)
+        .where(eq(members.coupleId, householdId));
+      res.json({
+        members: rows.map((m) => ({
+          id: m.id,
+          name: m.name,
+          role: m.role,
+          scope: m.scope,
+          color: m.color,
+        })),
+      });
+    } catch (err) {
+      console.error("/api/household/members error:", err);
+      res.status(500).json({ error: "list failed" });
+    }
+  });
+
+  app.post(
+    "/api/household/members",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const householdId = req.user.coupleId;
+      if (!householdId) return res.status(400).json({ error: "no household" });
+
+      const { name, role, scope, color } = req.body ?? {};
+      if (typeof name !== "string" || !name.trim()) {
+        return res.status(400).json({ error: "name required" });
+      }
+      if (!["trusted_viewer", "splitter", "family"].includes(role)) {
+        return res.status(400).json({ error: "role must be trusted_viewer | splitter | family" });
+      }
+
+      try {
+        const [created] = await db
+          .insert(members)
+          .values({
+            coupleId: householdId,
+            partnerId: "",
+            name: name.trim(),
+            role,
+            scope: typeof scope === "string" ? scope : null,
+            color: typeof color === "string" ? color : null,
+          })
+          .returning();
+        res.json({
+          member: {
+            id: created.id,
+            name: created.name,
+            role: created.role,
+            scope: created.scope,
+            color: created.color,
+          },
+        });
+      } catch (err) {
+        console.error("/api/household/members POST error:", err);
+        res.status(500).json({ error: "invite failed" });
+      }
+    },
+  );
+
+  app.delete(
+    "/api/household/members/:id",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const householdId = req.user.coupleId;
+      if (!householdId) return res.status(400).json({ error: "no household" });
+      const id = String(req.params.id);
+
+      try {
+        const result = await db
+          .delete(members)
+          .where(and(eq(members.id, id), eq(members.coupleId, householdId)))
+          .returning({ id: members.id, role: members.role });
+        if (!result.length) return res.status(404).json({ error: "member not found" });
+        if (result[0].role === "owner") {
+          return res.status(400).json({ error: "cannot remove the owner" });
+        }
+        res.json({ ok: true });
+      } catch (err) {
+        console.error("/api/household/members DELETE error:", err);
+        res.status(500).json({ error: "remove failed" });
       }
     },
   );

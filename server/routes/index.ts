@@ -22,6 +22,8 @@ import { mountHouseholdRoutes } from "./household";
 import { mountAdminTillyRoutes } from "./admin-tilly";
 import { mountAdminPage } from "./admin-page";
 import { mountCronRoutes } from "./cron";
+import { mountSplitsRoutes } from "./splits";
+import { mountPushRoutes } from "./push";
 
 export function registerTillyRoutes(app: Express): void {
   mountHouseholdRoutes(app);
@@ -34,4 +36,6 @@ export function registerTillyRoutes(app: Express): void {
   mountAdminTillyRoutes(app);
   mountAdminPage(app);
   mountCronRoutes(app);
+  mountSplitsRoutes(app);
+  mountPushRoutes(app);
 }
