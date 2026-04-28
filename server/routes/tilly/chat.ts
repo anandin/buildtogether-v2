@@ -25,13 +25,14 @@ import {
 } from "../../../shared/schema";
 import {
   callTilly,
-  extractText,
 } from "../../tilly/persona";
 import {
   analyzeAffordability,
   type AffordabilityAnalysis,
 } from "../../tilly/analyze-affordability";
 import { extractMemories } from "../../tilly/memory-writer";
+import { embed } from "../../tilly/embeddings";
+import { retrieveContextSnippets } from "../../tilly/retriever";
 import {
   isValidTone,
   DEFAULT_TONE,
@@ -76,17 +77,9 @@ function isAffordabilityQuestion(text: string): boolean {
   return hasMoney && hasAsk;
 }
 
-// ─── Memory snippets for context ───────────────────────────────────────────
-
-async function recentMemoriesFor(userId: string, limit = 5): Promise<string[]> {
-  const rows = await db
-    .select({ body: tillyMemory.body })
-    .from(tillyMemory)
-    .where(and(eq(tillyMemory.userId, userId)))
-    .orderBy(desc(tillyMemory.noticedAt))
-    .limit(limit);
-  return rows.map((r) => r.body);
-}
+// Memory context now comes from the hybrid retriever (RAG, spec D7).
+// `retrieveContextSnippets(userId, queryText)` runs cosine over the user's
+// active memory embeddings + recency boost, returns the top-K most relevant.
 
 // ─── Persisted-message → wire shape ────────────────────────────────────────
 
@@ -194,7 +187,7 @@ export function mountTillyChatRoutes(app: Express): void {
               activeDreamAutoSaves: [],
             },
             tone,
-            recentMemorySnippets: await recentMemoriesFor(userId),
+            recentMemorySnippets: await retrieveContextSnippets(userId, message),
           });
         } catch (err) {
           // Fall through to plain text on parse/model errors.
@@ -243,9 +236,9 @@ export function mountTillyChatRoutes(app: Express): void {
             content: r.content,
           }));
 
-        const memSnippets = await recentMemoriesFor(userId);
+        const memSnippets = await retrieveContextSnippets(userId, message);
         const extraSystem = memSnippets.length
-          ? `What you remember about them (in your voice):\n${memSnippets.map((s) => `- ${s}`).join("\n")}`
+          ? `What you remember about them (in your voice, from RAG):\n${memSnippets.map((s) => `- ${s}`).join("\n")}`
           : undefined;
 
         const response = await callTilly({
@@ -253,7 +246,7 @@ export function mountTillyChatRoutes(app: Express): void {
           messages: history,
           extraSystem,
         });
-        const text = extractText(response);
+        const text = response.text;
 
         const [tillyRow] = await db
           .insert(guardianConversations)
@@ -291,7 +284,12 @@ export function mountTillyChatRoutes(app: Express): void {
             now: new Date().toISOString(),
           });
           if (drafts.length) {
-            // Insert + flip is_most_recent flag in a single transaction.
+            // Compute embeddings BEFORE the transaction so RAG can find these
+            // memories on the next chat turn. embed() returns null on failure
+            // — we still save the memory, just without an embedding (the
+            // retriever will fall back to recency for those rows).
+            const embeddings = await Promise.all(drafts.map((d) => embed(d.body)));
+
             await db.transaction(async (tx) => {
               await tx
                 .update(tillyMemory)
@@ -310,11 +308,12 @@ export function mountTillyChatRoutes(app: Express): void {
                   kind: d.kind,
                   body: d.body,
                   source: "chat",
-                  category: d.category,
+                  category: d.category ?? undefined,
                   conversationId: userRow.id,
                   dateLabel: d.dateLabel,
                   // Most recently extracted memory of this batch carries the dot.
                   isMostRecent: i === 0,
+                  embedding: embeddings[i] ?? undefined,
                 });
               }
             });

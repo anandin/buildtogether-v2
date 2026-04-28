@@ -15,6 +15,13 @@
       "when": 1761590400000,
       "tag": "0001_student_edition_pivot",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1761625200000,
+      "tag": "0002_admin_llm_config_rag",
+      "breakpoints": true
     }
   ]
 }

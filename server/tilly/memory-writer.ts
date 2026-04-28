@@ -2,40 +2,22 @@
  * Memory writer — extracts durable observations from chat & actions and
  * persists them to `tilly_memory` (spec §5.2).
  *
- * Triggers:
- *   - After every chat turn — analyze the user's message + Tilly's reply
- *   - On named-dream creation — record value
- *   - On commitment acceptance — record commitment
- *   - On pattern detection — record observation (e.g. "Wednesdays soft spot")
- *
- * Implementation uses Anthropic's structured outputs to constrain the
- * extraction shape: `{ extract: ExtractedMemory[] }`. The persona is in the
- * system block so Tilly's voice and privacy contract are enforced at the
- * model level, not bolted on by a wrapper.
+ * Flow per chat turn:
+ *   1. extractMemories(...) returns 0+ ExtractedMemory drafts
+ *   2. Caller (chat route) computes an embedding for each draft body
+ *   3. Caller inserts in a tx, flips is_most_recent flag
  *
  * Privacy contract (spec §5.4) — enforced by the system prompt:
  *   - Never persists raw transactions
  *   - Never persists ephemeral chat (small talk, jokes)
  *   - Only persists what's referenceable later: anxieties, values, commitments,
  *     preferences, and meaningful observations
- *
- * The caller is responsible for inserting the returned drafts and flipping
- * the `is_most_recent` flag in a single transaction.
  */
-import Anthropic from "@anthropic-ai/sdk";
-import { zodOutputFormat } from "@anthropic-ai/sdk/helpers/zod";
 import { z } from "zod";
 
-import {
-  TILLY_MODEL,
-  TILLY_DEFAULT_MAX_TOKENS,
-  personaSystemBlock,
-  toneSystemBlock,
-  tilly,
-} from "./persona";
+import { getLLM } from "./llm/factory";
+import { buildSystemPrompts } from "./persona";
 import type { BTToneKey } from "./tone";
-
-// ─── Schema ────────────────────────────────────────────────────────────────
 
 const ExtractedMemorySchema = z.object({
   kind: z
@@ -55,12 +37,14 @@ const ExtractedMemorySchema = z.object({
     ),
   category: z
     .string()
-    .optional()
-    .describe("Spending category if relevant (e.g. 'Coffee'), else omit."),
+    .nullable()
+    .describe("Spending category if relevant (e.g. 'Coffee'), else null."),
   goalIdHint: z
     .string()
-    .optional()
-    .describe("Dream/goal name if this memory references one, else omit. The caller resolves the actual goalId."),
+    .nullable()
+    .describe(
+      "Dream/goal name if this memory references one, else null. The caller resolves the actual goalId.",
+    ),
 });
 
 export const MemoryExtractionSchema = z.object({
@@ -74,26 +58,15 @@ export const MemoryExtractionSchema = z.object({
 export type ExtractedMemory = z.infer<typeof ExtractedMemorySchema>;
 export type MemoryExtraction = z.infer<typeof MemoryExtractionSchema>;
 
-// ─── Input shape ───────────────────────────────────────────────────────────
-
 export type MemoryExtractInput = {
   userId: string;
   householdId: string;
   source: "chat" | "action" | "onboarding" | "inferred";
-  /** Conversation id when source=chat; lets us attribute notes back to a turn. */
   conversationId?: string;
-  /**
-   * The exchange to analyze. For source=chat, format as:
-   *   "USER: <user message>\nTILLY: <tilly reply>"
-   * For other sources, a free-text description of what happened.
-   */
   body: string;
   tone: BTToneKey;
-  /** ISO timestamp; "Today" labels are computed from this. */
   now: string;
 };
-
-// ─── Implementation ────────────────────────────────────────────────────────
 
 const EXTRACTION_SYSTEM = `You are doing memory extraction, not chat. Your job is to read the exchange below and decide what (if anything) is worth remembering durably.
 
@@ -112,14 +85,6 @@ What NOT to save:
 
 Return 0–3 memories. Empty array is the right answer most of the time. Quality over quantity. Each memory is in YOUR voice, first-person, like you're writing it down for yourself to find later.`;
 
-/**
- * Extract memories from a chat exchange or action. Returns 0+ drafts; the
- * caller persists them to `tilly_memory` and updates the most-recent flag.
- *
- * Returns an empty array on extraction failure (logged) — memory extraction
- * should never block a chat turn from completing. If Claude returns nothing
- * parseable, we just don't save anything from this turn.
- */
 export async function extractMemories(
   input: MemoryExtractInput,
 ): Promise<ExtractedMemory[]> {
@@ -131,27 +96,17 @@ ${input.body}
 
 Extract 0–3 memories worth keeping. Empty array if nothing here is durable.`;
 
-  const messages: Anthropic.MessageParam[] = [
-    { role: "user", content: userContent },
-  ];
-
   try {
-    const response = await tilly().messages.parse({
-      model: TILLY_MODEL,
-      max_tokens: TILLY_DEFAULT_MAX_TOKENS,
-      thinking: { type: "adaptive" },
-      system: [
-        personaSystemBlock(),
-        toneSystemBlock(input.tone),
-        { type: "text", text: EXTRACTION_SYSTEM },
-      ],
-      messages,
-      output_config: {
-        format: zodOutputFormat(MemoryExtractionSchema),
-      },
-    });
+    const systemPrompts = await buildSystemPrompts(input.tone, [EXTRACTION_SYSTEM]);
+    const llm = await getLLM();
 
-    return response.parsed_output?.extract ?? [];
+    const result = await llm.structuredOutput<MemoryExtraction>({
+      systemPrompts,
+      messages: [{ role: "user", content: userContent }],
+      schema: MemoryExtractionSchema,
+      schemaName: "memory_extraction",
+    });
+    return result.extract;
   } catch (err) {
     // Memory extraction must never block a chat reply. Log and return empty.
     console.error("extractMemories failed:", err);

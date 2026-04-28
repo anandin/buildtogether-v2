@@ -5,48 +5,19 @@
  * never alarmist, and remembers what you've told her." Three selectable
  * tones share this base persona; only surface phrasing differs.
  *
- * Architecture per D2: Anthropic Claude. Uses Claude Opus 4.7 with adaptive
- * thinking — Tilly's quick-math reasoning and tone-aware empathy benefit
- * from Opus's intelligence; adaptive lets Claude self-moderate cost on
- * lighter chitchat turns.
+ * Architecture:
+ *   - Provider-agnostic via `LLMClient` from ./llm/. Default OpenRouter →
+ *     `anthropic/claude-opus-4`; admin can swap from /admin/tilly.
+ *   - Persona prompt + tone prompts can be overridden per-deployment via
+ *     tilly_config columns (admin tunes them live without redeploying).
  *
- * The persona system block uses prompt caching (Anthropic's 5-minute
- * ephemeral cache) so the ~3.5KB persona doesn't re-send on every turn.
- * At scale this is meaningful — each user has many short turns per day,
- * and the persona is exactly the kind of stable prefix that should sit
- * before the per-turn user content.
+ * This module owns prompt assembly. The LLMClient owns transport.
  */
-import Anthropic from "@anthropic-ai/sdk";
+import type { Anthropic } from "@anthropic-ai/sdk";
+
+import { getLLM, getTillyConfig } from "./llm/factory";
+import type { ChatMessage, LLMTextResult } from "./llm/types";
 import type { BTToneKey } from "./tone";
-
-/**
- * Skill rule: default to claude-opus-4-7 unless the user explicitly names
- * another model. The user said "Claude" without specifying — Opus 4.7 it is.
- *
- * Migrating to a cheaper model later is a one-line change here.
- */
-export const TILLY_MODEL = "claude-opus-4-7";
-
-/**
- * Default per-call max output tokens. Generous because Tilly's analysis
- * cards + memory-writer extractions can be long; we'd rather waste a few
- * tokens than truncate mid-thought. Streaming enabled where >16K is needed.
- */
-export const TILLY_DEFAULT_MAX_TOKENS = 4096;
-
-/** Lazy-init client so the module is safe to import for typecheck/CI. */
-let _client: Anthropic | null = null;
-export function tilly(): Anthropic {
-  if (_client) return _client;
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    throw new Error(
-      "ANTHROPIC_API_KEY not set — Tilly cannot speak. Add it to Vercel env vars.",
-    );
-  }
-  _client = new Anthropic({ apiKey });
-  return _client;
-}
 
 /**
  * The persona is intentionally specific. Editorial fintech voice. Real
@@ -54,7 +25,8 @@ export function tilly(): Anthropic {
  *
  * Spec §3 ("Voice / vibe") + §5 ("AI learning behavior") feed this.
  *
- * NEVER edit this without re-reading both sections of BUILDTOGETHER_SPEC.md.
+ * Admin can override this string from /admin/tilly. NEVER edit this without
+ * re-reading both sections of BUILDTOGETHER_SPEC.md.
  */
 export const PERSONA_SYSTEM_PROMPT = `You are Tilly, a financial agent for an 18–23 year old US college student.
 
@@ -105,36 +77,7 @@ What you NEVER do:
 
 You are not a tool the student logs into. You are a relationship that has history.`;
 
-/**
- * Returns the persona system block as Anthropic's `system` array element with
- * cache_control set so identical persona text is served from cache on
- * repeated calls within 5 minutes.
- */
-export function personaSystemBlock() {
-  return {
-    type: "text" as const,
-    text: PERSONA_SYSTEM_PROMPT,
-    cache_control: { type: "ephemeral" as const },
-  };
-}
-
-/**
- * Tone modifier block — appended to the system array after persona. Tone
- * shifts surface phrasing only; the analysis underneath is identical.
- *
- * Intentionally NOT cached — tone changes per-user, and putting a volatile
- * block after the cached persona block is the correct pattern (cache hits
- * up to and including the persona block; the tone block runs uncached but
- * is small).
- */
-export function toneSystemBlock(toneKey: BTToneKey) {
-  return {
-    type: "text" as const,
-    text: TONE_PROMPTS[toneKey],
-  };
-}
-
-const TONE_PROMPTS: Record<BTToneKey, string> = {
+export const TONE_PROMPTS: Record<BTToneKey, string> = {
   sibling: `Tone: Sibling. Calm, wise, plainspoken. Casual but grounded.
 Greeting: "Hey {name}." Conversational openers. Short sentences. Use contractions.
 Sample voice: "Hey. Rent's covered. You've got $312 of breathing room — doable, just tight if takeout twice this week."`,
@@ -149,47 +92,71 @@ Sample voice: "Three subscriptions you haven't touched in 60 days. Nothing urgen
 };
 
 /**
- * Common request shape: persona + tone in `system`, adaptive thinking,
- * caller-provided messages. Returns the full Message so callers can inspect
- * usage (cache hits, output tokens) and stop_reason.
- *
- * Use this for plain-text Tilly replies. For structured-output flows
- * (analyze-affordability, memory-writer), build the request directly with
- * `tilly().messages.parse()` + the persona/tone blocks below; this helper
- * is for the simple "user message → Tilly text reply" path.
+ * Resolved prompts — applies admin overrides on top of the in-code defaults.
+ * Called by every Tilly module at request time so live admin changes
+ * propagate within ~30s (factory cache TTL).
+ */
+export async function resolvedPersonaPrompt(): Promise<string> {
+  const config = await getTillyConfig();
+  return config.personaPromptOverride?.trim() || PERSONA_SYSTEM_PROMPT;
+}
+
+export async function resolvedTonePrompt(toneKey: BTToneKey): Promise<string> {
+  const config = await getTillyConfig();
+  switch (toneKey) {
+    case "sibling":
+      return config.toneSiblingOverride?.trim() || TONE_PROMPTS.sibling;
+    case "coach":
+      return config.toneCoachOverride?.trim() || TONE_PROMPTS.coach;
+    case "quiet":
+      return config.toneQuietOverride?.trim() || TONE_PROMPTS.quiet;
+  }
+}
+
+/**
+ * Assemble the standard system block stack: persona + tone (+ any extras).
+ */
+export async function buildSystemPrompts(
+  toneKey: BTToneKey,
+  extras: string[] = [],
+): Promise<string[]> {
+  const persona = await resolvedPersonaPrompt();
+  const tone = await resolvedTonePrompt(toneKey);
+  return [persona, tone, ...extras.filter(Boolean)];
+}
+
+/**
+ * Convenience helper for plain-text Tilly replies. Caller provides messages
+ * + tone; this assembles persona+tone, dispatches via the LLMClient, and
+ * returns the result + usage (for logging / cost tracking).
  */
 export async function callTilly(opts: {
   toneKey: BTToneKey;
-  messages: Anthropic.MessageParam[];
-  /** Optional override; defaults to TILLY_DEFAULT_MAX_TOKENS. */
-  maxTokens?: number;
-  /** Optional extra system block appended after persona+tone (e.g. user-specific recent memory snippets). NOT cached. */
+  messages: ChatMessage[];
+  /** Extra system content (e.g. retrieved memories) appended after persona+tone. */
   extraSystem?: string;
-}) {
-  const system: Anthropic.TextBlockParam[] = [
-    personaSystemBlock(),
-    toneSystemBlock(opts.toneKey),
-  ];
-  if (opts.extraSystem) {
-    system.push({ type: "text", text: opts.extraSystem });
-  }
+  maxTokens?: number;
+}): Promise<LLMTextResult> {
+  const llm = await getLLM();
+  const systemPrompts = await buildSystemPrompts(
+    opts.toneKey,
+    opts.extraSystem ? [opts.extraSystem] : [],
+  );
 
-  return tilly().messages.create({
-    model: TILLY_MODEL,
-    max_tokens: opts.maxTokens ?? TILLY_DEFAULT_MAX_TOKENS,
-    thinking: { type: "adaptive" },
-    system,
+  return llm.textReply({
+    systemPrompts,
     messages: opts.messages,
+    maxTokens: opts.maxTokens,
   });
 }
 
 /**
- * Extract the first text block from a Claude response. Tilly's plain-text
- * replies always lead with a text block (post any thinking blocks). Returns
- * empty string if the response had only thinking blocks (rare for our flows).
+ * Compatibility helper retained for anywhere still passing Anthropic.Message
+ * shapes. New code should consume LLMTextResult.text directly.
  */
-export function extractText(response: Anthropic.Message): string {
-  for (const block of response.content) {
+export function extractText(response: LLMTextResult | Anthropic.Message): string {
+  if ("text" in response) return response.text;
+  for (const block of (response as Anthropic.Message).content ?? []) {
     if (block.type === "text") return block.text;
   }
   return "";

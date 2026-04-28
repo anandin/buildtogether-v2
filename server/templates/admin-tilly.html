@@ -1,0 +1,451 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tilly admin · BuildTogether</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+    />
+    <style>
+      :root {
+        --bg: #f4efe6;
+        --surface: #fbf7ef;
+        --surface-alt: #efe7d7;
+        --ink: #1c1a17;
+        --ink-soft: #4a4640;
+        --ink-mute: #8a8378;
+        --rule: rgba(28, 26, 23, 0.1);
+        --accent: #d8602b;
+        --accent-soft: #f0dac6;
+        --good: #1f7a4a;
+        --bad: #b23a2c;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Inter", system-ui, -apple-system, sans-serif;
+        font-size: 14px;
+        color: var(--ink);
+        background: var(--bg);
+        line-height: 1.5;
+      }
+      .wrap { max-width: 980px; margin: 0 auto; padding: 36px 28px 80px; }
+      h1 { font-family: "Instrument Serif", Georgia, serif; font-size: 44px; font-weight: 500; margin: 0 0 6px; }
+      .accent { color: var(--accent); font-style: italic; }
+      .label {
+        font-family: "JetBrains Mono", Menlo, monospace;
+        font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase;
+        font-weight: 700; color: var(--ink-mute);
+      }
+      .subhead {
+        font-family: "Instrument Serif", Georgia, serif;
+        font-size: 19px; color: var(--ink-soft); margin: 4px 0 28px; font-style: italic;
+      }
+      .card {
+        background: var(--surface); border: 1px solid var(--rule);
+        border-radius: 14px; padding: 22px; margin-bottom: 18px;
+      }
+      .card h2 {
+        font-family: "Instrument Serif", Georgia, serif;
+        font-size: 22px; font-weight: 500; margin: 0 0 4px;
+      }
+      .card .hint { color: var(--ink-mute); font-size: 12px; margin: 0 0 14px; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      .grid .full { grid-column: span 2; }
+      .field { display: flex; flex-direction: column; gap: 6px; }
+      .field label {
+        font-family: "JetBrains Mono", Menlo, monospace;
+        font-size: 9.5px; letter-spacing: 1.3px; text-transform: uppercase;
+        color: var(--ink-mute); font-weight: 700;
+      }
+      .field input, .field select, .field textarea {
+        font-family: "Inter", system-ui, -apple-system, sans-serif;
+        font-size: 14px; padding: 10px 12px; border: 1px solid var(--rule);
+        border-radius: 10px; background: var(--surface); color: var(--ink);
+        transition: border-color 0.15s ease;
+      }
+      .field input:focus, .field select:focus, .field textarea:focus {
+        outline: none; border-color: var(--accent);
+      }
+      .field textarea {
+        min-height: 110px; font-family: "Instrument Serif", Georgia, serif;
+        font-size: 15px; line-height: 1.5; font-style: italic; resize: vertical;
+      }
+      .field .hint { font-size: 11px; color: var(--ink-mute); margin-top: 2px; }
+      .row { display: flex; gap: 10px; align-items: center; }
+      button {
+        font-family: "Inter", system-ui, -apple-system, sans-serif;
+        font-size: 13px; font-weight: 700; padding: 11px 18px;
+        border: none; border-radius: 10px; cursor: pointer;
+        background: var(--ink); color: var(--surface);
+        transition: opacity 0.15s ease;
+      }
+      button:hover { opacity: 0.9; }
+      button.secondary { background: var(--surface-alt); color: var(--ink); }
+      button:disabled { opacity: 0.4; cursor: not-allowed; }
+      .stat {
+        display: inline-block; background: var(--accent-soft); color: var(--accent);
+        font-family: "JetBrains Mono", Menlo, monospace;
+        font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+        padding: 4px 10px; border-radius: 999px; margin: 0 6px 6px 0;
+      }
+      .preview {
+        background: var(--surface-alt); border-radius: 14px; padding: 16px; margin-top: 12px;
+        font-family: "Instrument Serif", Georgia, serif;
+        font-size: 16px; line-height: 1.6; font-style: italic;
+        color: var(--ink); min-height: 56px; white-space: pre-wrap;
+      }
+      .toast {
+        position: fixed; right: 24px; bottom: 24px;
+        background: var(--ink); color: var(--surface);
+        padding: 12px 18px; border-radius: 12px;
+        font-size: 13px; font-weight: 600;
+        opacity: 0; transform: translateY(8px);
+        transition: opacity 0.2s ease, transform 0.2s ease;
+        pointer-events: none;
+      }
+      .toast.show { opacity: 1; transform: translateY(0); }
+      .toast.error { background: var(--bad); }
+      .auth { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 50; }
+      .auth-card { background: var(--surface); padding: 28px; border-radius: 18px; max-width: 440px; width: 92%; }
+      .hide { display: none; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <span class="label">Admin · Tilly</span>
+      <h1>Tune <span class="accent">Tilly</span>.</h1>
+      <p class="subhead">Provider, model, retrieval, prompts. Changes propagate live within ~30 seconds.</p>
+
+      <div class="card">
+        <h2>Memory & embeddings</h2>
+        <p class="hint">RAG state across all users.</p>
+        <div id="stats"><span class="label">loading…</span></div>
+      </div>
+
+      <div class="card">
+        <h2>Provider & model</h2>
+        <p class="hint">Switch model without redeploying.</p>
+        <div class="grid">
+          <div class="field">
+            <label>Provider</label>
+            <select id="provider">
+              <option value="openrouter">openrouter</option>
+              <option value="anthropic">anthropic</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Chat model</label>
+            <input id="model" placeholder="anthropic/claude-opus-4" />
+            <span class="hint">OpenRouter format (vendor/model). Try <code>anthropic/claude-sonnet-4</code> for cheaper.</span>
+          </div>
+          <div class="field">
+            <label>Embedding model</label>
+            <input id="embeddingModel" placeholder="openai/text-embedding-3-small" />
+            <span class="hint">1536 dims default. Re-embed if changed.</span>
+          </div>
+          <div class="field">
+            <label>Max tokens</label>
+            <input id="maxTokens" type="number" />
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Retrieval (RAG)</h2>
+        <p class="hint">How Tilly recalls past memories per chat turn.</p>
+        <div class="grid">
+          <div class="field">
+            <label>Strategy</label>
+            <select id="retrievalStrategy">
+              <option value="hybrid">hybrid (semantic + recency)</option>
+              <option value="semantic_only">semantic only</option>
+              <option value="recency_only">recency only</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Top-K</label>
+            <input id="retrievalTopK" type="number" min="1" max="20" />
+          </div>
+          <div class="field">
+            <label>Similarity threshold</label>
+            <input id="similarityThreshold" type="number" step="0.01" min="0" max="1" />
+            <span class="hint">0.65 default. Lower = more inclusive.</span>
+          </div>
+          <div class="field">
+            <label>Recency half-life (hours)</label>
+            <input id="recencyHalfLifeHours" type="number" />
+            <span class="hint">168 = 1 week. Older notes decay below 0.5.</span>
+          </div>
+        </div>
+        <div class="row" style="margin-top: 14px;">
+          <button class="secondary" id="reembed-btn">Re-embed all active memories</button>
+          <span class="hint" id="reembed-status"></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Prompt overrides</h2>
+        <p class="hint">Empty = use the in-code default. Be careful — these are the soul of Tilly's voice.</p>
+        <div class="grid">
+          <div class="field full">
+            <label>Persona prompt override</label>
+            <textarea id="personaPromptOverride" placeholder="(default: spec §3 + §5)"></textarea>
+          </div>
+          <div class="field">
+            <label>Sibling tone override</label>
+            <textarea id="toneSiblingOverride" placeholder="(default sibling)"></textarea>
+          </div>
+          <div class="field">
+            <label>Coach tone override</label>
+            <textarea id="toneCoachOverride" placeholder="(default coach)"></textarea>
+          </div>
+          <div class="field full">
+            <label>Quiet tone override</label>
+            <textarea id="toneQuietOverride" placeholder="(default quiet)"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <div class="row" style="margin: 18px 0;">
+        <button id="save-btn">Save changes</button>
+        <button class="secondary" id="reset-btn">Reset form to current</button>
+      </div>
+
+      <div class="card">
+        <h2>Live preview</h2>
+        <p class="hint">Try a one-shot Tilly reply with the current saved config (no memories committed).</p>
+        <div class="grid">
+          <div class="field">
+            <label>Tone</label>
+            <select id="preview-tone">
+              <option value="sibling">sibling</option>
+              <option value="coach">coach</option>
+              <option value="quiet">quiet</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>User message</label>
+            <input id="preview-message" placeholder="hey, what's up?" />
+          </div>
+        </div>
+        <div class="row" style="margin-top: 12px;">
+          <button id="preview-btn">Run preview</button>
+          <span class="hint" id="preview-meta"></span>
+        </div>
+        <div class="preview" id="preview-output">(Tilly hasn't said anything yet.)</div>
+      </div>
+    </div>
+
+    <div class="auth hide" id="auth-modal">
+      <div class="auth-card">
+        <span class="label">Admin sign-in</span>
+        <h2 style="font-family: 'Instrument Serif', Georgia, serif; font-weight: 500; margin: 8px 0 6px;">
+          Paste your bearer token.
+        </h2>
+        <p style="color: var(--ink-mute); font-size: 12px; margin: 0 0 14px;">
+          Get this from <code>localStorage.getItem('build_together_auth_token')</code> in the main app, or sign in via <code>POST /api/auth/login</code>. Stored only in this browser.
+        </p>
+        <div class="field">
+          <label>Bearer token</label>
+          <input id="token-input" placeholder="eyJ..." />
+        </div>
+        <div class="row" style="margin-top: 14px;">
+          <button id="token-save">Continue</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast">Saved</div>
+
+    <script>
+      const TOKEN_KEY = "build_together_auth_token";
+      const $ = (id) => document.getElementById(id);
+      const getToken = () => localStorage.getItem(TOKEN_KEY);
+      const setToken = (t) => localStorage.setItem(TOKEN_KEY, t);
+
+      function api(method, path, body) {
+        const token = getToken();
+        return fetch(path, {
+          method,
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: "Bearer " + token } : {}),
+          },
+          body: body ? JSON.stringify(body) : undefined,
+        }).then(async (r) => {
+          if (r.status === 401 || r.status === 403) {
+            showAuthModal();
+            throw new Error("auth required");
+          }
+          if (!r.ok) {
+            const text = await r.text();
+            throw new Error(text);
+          }
+          return r.json();
+        });
+      }
+
+      function showAuthModal() { $("auth-modal").classList.remove("hide"); }
+      function hideAuthModal() { $("auth-modal").classList.add("hide"); }
+
+      function showToast(msg, isError) {
+        const el = $("toast");
+        el.textContent = msg;
+        el.classList.toggle("error", !!isError);
+        el.classList.add("show");
+        setTimeout(() => el.classList.remove("show"), 2200);
+      }
+
+      function fillForm(c) {
+        $("provider").value = c.provider;
+        $("model").value = c.model;
+        $("embeddingModel").value = c.embeddingModel;
+        $("maxTokens").value = c.maxTokens;
+        $("retrievalStrategy").value = c.retrievalStrategy;
+        $("retrievalTopK").value = c.retrievalTopK;
+        $("similarityThreshold").value = c.similarityThreshold;
+        $("recencyHalfLifeHours").value = c.recencyHalfLifeHours;
+        $("personaPromptOverride").value = c.personaPromptOverride || "";
+        $("toneSiblingOverride").value = c.toneSiblingOverride || "";
+        $("toneCoachOverride").value = c.toneCoachOverride || "";
+        $("toneQuietOverride").value = c.toneQuietOverride || "";
+      }
+
+      function readForm() {
+        return {
+          provider: $("provider").value,
+          model: $("model").value,
+          embeddingModel: $("embeddingModel").value,
+          maxTokens: Number($("maxTokens").value),
+          retrievalStrategy: $("retrievalStrategy").value,
+          retrievalTopK: Number($("retrievalTopK").value),
+          similarityThreshold: Number($("similarityThreshold").value),
+          recencyHalfLifeHours: Number($("recencyHalfLifeHours").value),
+          personaPromptOverride: $("personaPromptOverride").value || null,
+          toneSiblingOverride: $("toneSiblingOverride").value || null,
+          toneCoachOverride: $("toneCoachOverride").value || null,
+          toneQuietOverride: $("toneQuietOverride").value || null,
+        };
+      }
+
+      // Build the stats DOM from JSON without using innerHTML — values
+      // come from the DB and could in principle be tainted, so we
+      // construct elements with textContent only.
+      function renderStats(s) {
+        const root = $("stats");
+        while (root.firstChild) root.removeChild(root.firstChild);
+
+        function chip(text) {
+          const span = document.createElement("span");
+          span.className = "stat";
+          span.textContent = text;
+          return span;
+        }
+
+        root.appendChild(chip("total: " + s.total));
+        root.appendChild(chip("active: " + s.active));
+        root.appendChild(chip("archived: " + s.archived));
+        root.appendChild(chip("embedded: " + s.withEmbedding + "/" + s.total));
+
+        const wrap = document.createElement("div");
+        wrap.style.marginTop = "8px";
+        const entries = Object.entries(s.byKind || {});
+        if (entries.length === 0) {
+          const hint = document.createElement("span");
+          hint.className = "hint";
+          hint.textContent = "no memories yet";
+          wrap.appendChild(hint);
+        } else {
+          for (const [kind, count] of entries) {
+            wrap.appendChild(chip(kind + ": " + count));
+          }
+        }
+        root.appendChild(wrap);
+      }
+
+      async function loadConfig() {
+        try {
+          const { config } = await api("GET", "/api/admin/tilly/config");
+          fillForm(config);
+        } catch (err) { /* auth handler shows modal */ }
+      }
+
+      async function loadStats() {
+        try {
+          const s = await api("GET", "/api/admin/tilly/memory-stats");
+          renderStats(s);
+        } catch (err) {
+          const root = $("stats");
+          while (root.firstChild) root.removeChild(root.firstChild);
+          const hint = document.createElement("span");
+          hint.className = "hint";
+          hint.textContent = "stats unavailable";
+          root.appendChild(hint);
+        }
+      }
+
+      $("save-btn").addEventListener("click", async () => {
+        try {
+          const updates = readForm();
+          await api("PUT", "/api/admin/tilly/config", updates);
+          showToast("Saved");
+          await loadConfig();
+        } catch (err) {
+          showToast("Save failed", true);
+        }
+      });
+
+      $("reset-btn").addEventListener("click", () => loadConfig());
+
+      $("reembed-btn").addEventListener("click", async () => {
+        const status = $("reembed-status");
+        status.textContent = "running…";
+        try {
+          const r = await api("POST", "/api/admin/tilly/reembed");
+          status.textContent = "re-embedded " + r.updated + "/" + r.scanned;
+          await loadStats();
+        } catch (err) {
+          status.textContent = "failed";
+        }
+      });
+
+      $("preview-btn").addEventListener("click", async () => {
+        const out = $("preview-output");
+        const meta = $("preview-meta");
+        out.textContent = "Tilly is thinking…";
+        meta.textContent = "";
+        try {
+          const r = await api("POST", "/api/admin/tilly/preview", {
+            tone: $("preview-tone").value,
+            message: $("preview-message").value,
+          });
+          out.textContent = r.reply || "(empty reply)";
+          meta.textContent = r.model + " · in " + r.usage.inputTokens + " → out " + r.usage.outputTokens;
+        } catch (err) {
+          out.textContent = "Preview failed: " + (err && err.message ? err.message : "unknown");
+        }
+      });
+
+      $("token-save").addEventListener("click", () => {
+        const t = $("token-input").value.trim();
+        if (!t) return;
+        setToken(t);
+        hideAuthModal();
+        loadConfig();
+        loadStats();
+      });
+
+      // Bootstrap.
+      if (!getToken()) {
+        showAuthModal();
+      } else {
+        loadConfig();
+        loadStats();
+      }
+    </script>
+  </body>
+</html>

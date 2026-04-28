@@ -19,6 +19,8 @@ import { mountDreamsRoutes } from "./dreams";
 import { mountSubscriptionsRoutes } from "./subscriptions";
 import { mountProtectionsRoutes } from "./protections";
 import { mountHouseholdRoutes } from "./household";
+import { mountAdminTillyRoutes } from "./admin-tilly";
+import { mountAdminPage } from "./admin-page";
 
 export function registerTillyRoutes(app: Express): void {
   mountHouseholdRoutes(app);
@@ -28,4 +30,6 @@ export function registerTillyRoutes(app: Express): void {
   mountDreamsRoutes(app);
   mountSubscriptionsRoutes(app);
   mountProtectionsRoutes(app);
+  mountAdminTillyRoutes(app);
+  mountAdminPage(app);
 }

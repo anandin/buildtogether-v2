@@ -15,6 +15,8 @@ export const users = pgTable("users", {
   coupleId: varchar("couple_id"),
   partnerRole: text("partner_role"),
   avatarUrl: text("avatar_url"),
+  /** Admin flag — gates access to /api/admin/* + /admin/* routes (spec D8). */
+  isAdmin: boolean("is_admin").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastLoginAt: timestamp("last_login_at"),
 });
@@ -783,6 +785,14 @@ export const tillyMemory = pgTable("tilly_memory", {
   // also stored so we don't need a window function on every read.
   isMostRecent: boolean("is_most_recent").default(false),
   archivedAt: timestamp("archived_at"), // null = active
+  /**
+   * Embedding for hybrid RAG retrieval (spec D7). 1536 dims for OpenAI's
+   * text-embedding-3-small. Stored as `real[]` for portability — we do
+   * cosine in JS for now (Tilly's scale: a few hundred memories per user).
+   * Phase 6 can migrate to pgvector + an HNSW index when read volume
+   * justifies it.
+   */
+  embedding: real("embedding").array(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -876,6 +886,34 @@ export const protections = pgTable("protections", {
 });
 
 export type Protection = typeof protections.$inferSelect;
+
+/**
+ * Tilly runtime configuration — singleton row keyed by id='default'. Admins
+ * tune these via /admin/tilly without redeploying. The factory in
+ * `server/tilly/llm/factory.ts` reads this row, builds the right LLMClient,
+ * and caches it for ~30s.
+ */
+export const tillyConfig = pgTable("tilly_config", {
+  id: varchar("id").primaryKey().default("default"),
+  // LLM provider + model — admin can swap providers from the UI.
+  provider: text("provider").notNull().default("openrouter"), // openrouter | anthropic
+  model: text("model").notNull().default("anthropic/claude-opus-4"),
+  embeddingModel: text("embedding_model").notNull().default("openai/text-embedding-3-small"),
+  maxTokens: integer("max_tokens").notNull().default(4096),
+  // Retrieval knobs (RAG)
+  retrievalTopK: integer("retrieval_top_k").notNull().default(5),
+  similarityThreshold: real("similarity_threshold").notNull().default(0.65),
+  retrievalStrategy: text("retrieval_strategy").notNull().default("hybrid"), // recency_only | semantic_only | hybrid
+  recencyHalfLifeHours: real("recency_half_life_hours").notNull().default(168), // 1 week
+  // Prompt overrides — null means use the in-code defaults.
+  personaPromptOverride: text("persona_prompt_override"),
+  toneSiblingOverride: text("tone_sibling_override"),
+  toneCoachOverride: text("tone_coach_override"),
+  toneQuietOverride: text("tone_quiet_override"),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type TillyConfig = typeof tillyConfig.$inferSelect;
 
 // ==================== Legacy aliases ====================
 // Keep V1-name imports compiling during the Phase 1c route-splitting transition.
