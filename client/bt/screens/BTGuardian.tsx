@@ -342,7 +342,58 @@ function Bubble({ m }: { m: Msg }) {
     );
   }
 
-  // tilly text
+  // tilly text — but if Tilly wrote a Starting buffer / Final buffer
+  // ledger inline, promote it to the structured Quick Math card so it
+  // matches the design (mono labels, right-aligned numbers, green
+  // closing balance). Bypasses the structured-output flake on Sonnet
+  // by parsing the plain-text reply we already have.
+  const body = (m as { body: string }).body;
+  const parsed = parseQuickMath(body);
+  if (parsed) {
+    return (
+      <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end", maxWidth: "92%" }}>
+        <Tilly t={t} size={28} breathing={false} />
+        <BTCard t={t} alt padding={14} style={{ flex: 1, gap: 10 }}>
+          <BTLabel color={t.inkMute} size={10}>
+            Quick math
+          </BTLabel>
+          <View style={{ gap: 6 }}>
+            {parsed.rows.map((r, i) => {
+              const color = r.sign === "-" ? t.bad : r.sign === "=" ? t.good : t.ink;
+              return (
+                <View key={i} style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                  <Text
+                    style={{
+                      fontFamily: BTFonts.mono,
+                      fontSize: 11,
+                      color: t.inkSoft,
+                      letterSpacing: 1,
+                      textTransform: "uppercase",
+                    }}
+                  >
+                    {r.label}
+                  </Text>
+                  <Text
+                    style={{
+                      fontFamily: BTFonts.mono,
+                      fontSize: 12,
+                      fontWeight: "700",
+                      color,
+                    }}
+                  >
+                    {r.sign === "-" ? "−" : ""}${Math.abs(r.amt).toFixed(2)}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
+          <BTRule color={t.rule} />
+          <RichTillyText body={parsed.note} color={t.ink} />
+        </BTCard>
+      </View>
+    );
+  }
+
   return (
     <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end", maxWidth: "82%" }}>
       <Tilly t={t} size={26} breathing={false} />
@@ -362,10 +413,63 @@ function Bubble({ m }: { m: Msg }) {
           borderColor: t.rule,
         }}
       >
-        <RichTillyText body={(m as { body: string }).body} color={t.ink} />
+        <RichTillyText body={body} color={t.ink} />
       </View>
     </View>
   );
+}
+
+/**
+ * Parse Tilly's plain-text affordability reply into a structured Quick
+ * Math card. Tilly's persona prompt asks her to lay out a ledger as
+ * "<label>  $<amt>" lines with positives, negatives ("-$X"), and a
+ * "Final buffer / Final position $X" closing line.
+ *
+ * Returns null when the reply doesn't look like a ledger so plain text
+ * still renders normally.
+ */
+function parseQuickMath(
+  body: string,
+): { rows: { label: string; amt: number; sign: "+" | "-" | "=" }[]; note: string } | null {
+  // Look for at least one "starting / available" line and a "final / total /
+  // buffer left" closing line — that's the shape of an affordability ledger.
+  const hasStart = /\b(starting|available|on hand|buffer)\b/i.test(body);
+  const hasFinal = /\b(final|buffer left|left over|after|total)\b.*\$\d/i.test(body);
+  if (!hasStart || !hasFinal) return null;
+
+  // Pull "<label>   $<amt>" or "<label>   -$<amt>" lines out of the reply.
+  const rows: { label: string; amt: number; sign: "+" | "-" | "=" }[] = [];
+  const lines = body.split(/\n/);
+  let lastLedgerIdx = -1;
+  lines.forEach((line, i) => {
+    const m = line.match(/^\s*([A-Za-z][A-Za-z'\- ()]{2,40}?)\s+(-?\$?\s?-?\$?\d{1,4}(?:\.\d{1,2})?)\s*$/);
+    if (!m) return;
+    const label = m[1].trim();
+    const rawAmt = m[2].replace(/\$|\s/g, "");
+    const amt = Math.abs(Number(rawAmt));
+    if (!isFinite(amt)) return;
+    const isNeg = /^-/.test(m[2].trim()) || /^-\$/.test(m[2].trim()) || /^\$\s?-/.test(m[2].trim()) || rawAmt.startsWith("-");
+    const isFinalRow = /\b(final|buffer left|left over|total)\b/i.test(label);
+    rows.push({
+      label,
+      amt,
+      sign: isFinalRow ? "=" : isNeg ? "-" : "+",
+    });
+    lastLedgerIdx = i;
+  });
+
+  if (rows.length < 3) return null;
+  if (!rows.some((r) => r.sign === "=")) return null;
+
+  // Everything after the last ledger line is the note.
+  const note = lines
+    .slice(lastLedgerIdx + 1)
+    .join("\n")
+    .replace(/^[\s-]+/, "")
+    .trim();
+  if (!note) return null;
+
+  return { rows, note };
 }
 
 /**
