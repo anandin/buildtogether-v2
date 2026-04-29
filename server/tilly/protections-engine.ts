@@ -16,6 +16,7 @@
 import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
+  activityFeed,
   expenses,
   protections,
   subscriptions,
@@ -24,7 +25,7 @@ import {
 } from "../../shared/schema";
 
 type RuleHit = {
-  kind: "free_trial" | "unused_sub" | "unusual_charge" | "overdraft_risk" | "phishing";
+  kind: "free_trial" | "unused_sub" | "unusual_charge" | "overdraft_risk" | "phishing" | "settle_up";
   severity: "fyi" | "decision_needed" | "act_today";
   summary: string;
   detail?: string;
@@ -50,6 +51,7 @@ export async function runProtectionsForHousehold(
   hits.push(...(await ruleUnusedSubscriptions(householdId)));
   hits.push(...(await ruleFreeTrialConverging(householdId)));
   hits.push(...(await ruleUnusualLargeCharge(householdId)));
+  hits.push(...(await ruleSettleUp(householdId)));
 
   // Persist with dedupe — same kind + same target within 24h becomes a noop.
   const written: RuleHit[] = [];
@@ -199,6 +201,53 @@ async function ruleUnusualLargeCharge(householdId: string): Promise<RuleHit[]> {
       ctaLabel: "I see it",
       ctaAction: "ack",
     }));
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Settle-up — splits drafted more than 7 days ago that the user hasn't
+ * marked paid. Surfaces as 'fyi' (calm reminder) not 'act_today' so it
+ * doesn't push at 11pm. Uses activity_feed where split_drafted intents
+ * live.
+ */
+async function ruleSettleUp(householdId: string): Promise<RuleHit[]> {
+  try {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const rows = await db
+      .select()
+      .from(activityFeed)
+      .where(
+        and(
+          eq(activityFeed.coupleId, householdId),
+          eq(activityFeed.activityType, "split_drafted"),
+        ),
+      )
+      .limit(50);
+    const stale = rows.filter((r) => {
+      if (r.createdAt > sevenDaysAgo) return false;
+      const meta = (r.metadata ?? {}) as Record<string, unknown>;
+      return !(meta.settled === true);
+    });
+    return stale.slice(0, 3).map((r) => {
+      const meta = (r.metadata ?? {}) as any;
+      const name = meta.recipient?.name ?? "someone";
+      const amt = meta.amount ?? 0;
+      const direction = meta.direction === "i_owe" ? "you owe" : "owes you";
+      const days = Math.round((Date.now() - r.createdAt.getTime()) / (24 * 60 * 60 * 1000));
+      return {
+        kind: "settle_up" as const,
+        severity: "fyi" as const,
+        summary:
+          direction === "you owe"
+            ? `You still owe ${name} $${amt.toFixed(0)} from ${days} days ago.`
+            : `${name} still ${direction} $${amt.toFixed(0)} from ${days} days ago.`,
+        detail: meta.label ?? undefined,
+        ctaLabel: "Mark settled",
+        ctaAction: `settle_split:${r.id}`,
+      };
+    });
   } catch {
     return [];
   }

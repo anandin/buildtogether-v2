@@ -8,6 +8,7 @@ import { requireAuth } from "../middleware/auth";
 import { db } from "../db";
 import { subscriptions } from "../../shared/schema";
 import { scanSubscriptions } from "../tilly/subscription-detect";
+import { findCancelLink } from "../tilly/merchant-cancel-links";
 
 type WireSub = {
   id: string;
@@ -18,6 +19,7 @@ type WireSub = {
   lastUsedAt: string | null;
   status: string;
   usageNote: string | null;
+  cancelLink: { url: string; verb: string; surface: string };
 };
 
 function toWire(row: typeof subscriptions.$inferSelect): WireSub {
@@ -30,6 +32,9 @@ function toWire(row: typeof subscriptions.$inferSelect): WireSub {
     lastUsedAt: row.lastUsedAt,
     status: row.status,
     usageNote: row.usageNote,
+    // Curated merchant→cancel-page lookup. Falls back to a Google search
+    // for unknown merchants so the CTA still does something predictable.
+    cancelLink: findCancelLink(row.merchant),
   };
 }
 

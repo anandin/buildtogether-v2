@@ -267,7 +267,7 @@ export function BTProfile() {
                   {p.name}
                 </Text>
                 <Text style={{ color: t.inkSoft, fontFamily: BTFonts.sans, fontSize: 12, marginTop: 2 }}>
-                  {p.scope}
+                  {scopeLabel(p.scope)}
                 </Text>
               </View>
               <Text style={{ color: t.inkMute, fontSize: 18, fontFamily: BTFonts.sans }}>›</Text>
@@ -391,6 +391,32 @@ function tonePreviewBg(k: BTToneKey, t: BTTheme): string {
   if (k === "sibling") return t.accentSoft;
   if (k === "coach") return "rgba(63,135,112,0.12)";
   return t.surfaceAlt;
+}
+
+/**
+ * Translate the raw scope token (e.g. "credit_dreams") or role string into
+ * the human copy the user actually wants to read. Falls through verbatim
+ * for unknown values so future scopes still render something legible.
+ */
+function scopeLabel(scope: string): string {
+  switch (scope) {
+    case "credit_dreams":
+      return "sees credit + dreams";
+    case "splits":
+      return "splits only — rent, groceries";
+    case "everything":
+      return "the whole picture";
+    case "owner":
+      return "you";
+    case "trusted_viewer":
+      return "view-only";
+    case "splitter":
+      return "splits only";
+    case "family":
+      return "family";
+    default:
+      return scope;
+  }
 }
 
 /**
