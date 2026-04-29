@@ -120,6 +120,10 @@ export const btApi = {
   invitePerson: (body: { phone?: string; email?: string; name: string; scope: string }) =>
     postJson<{ ok: true; inviteId: string }>("/api/invites", body),
 
+  // ── Demo seeder (sandbox / no-Plaid play mode) ───────────────────────
+  seedDemo: () => postJson<{ ok: true; expensesSeeded: number }>("/api/demo/seed"),
+  clearDemo: () => postJson<{ ok: true }>("/api/demo/clear"),
+
   // ── Splits (Venmo for US, Interac for CA) ────────────────────────────
   draftSplit: (body: {
     region?: "CA" | "US";

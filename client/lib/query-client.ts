@@ -2,22 +2,30 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { getToken } from "@/context/AuthContext";
 
 /**
- * Gets the base URL for the Express API server (e.g., "http://localhost:3000")
- * @returns {string} The API base URL
+ * Gets the base URL for the Express API server.
+ *
+ * Priority:
+ *   1. EXPO_PUBLIC_DOMAIN env var (set in .env / EAS secrets) — overrides
+ *      everything. Use this for staging or to point a beta build at a
+ *      preview deploy.
+ *   2. window.location.origin — for the web build (we always serve API
+ *      from the same origin).
+ *   3. The hardcoded production domain — for native builds (Expo Go,
+ *      EAS dev/preview/prod) where there's no window. Without this,
+ *      the app crashes on launch with "EXPO_PUBLIC_DOMAIN is not set".
  */
+const PROD_API_DOMAIN = "buildtogether-v2.vercel.app";
+
 export function getApiUrl(): string {
-  let host = process.env.EXPO_PUBLIC_DOMAIN;
-
-  if (!host) {
-    if (typeof window !== "undefined" && window.location?.origin) {
-      return window.location.origin + "/";
-    }
-    throw new Error("EXPO_PUBLIC_DOMAIN is not set");
+  const envHost = process.env.EXPO_PUBLIC_DOMAIN;
+  if (envHost) {
+    return new URL(`https://${envHost}`).href;
   }
-
-  let url = new URL(`https://${host}`);
-
-  return url.href;
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return window.location.origin + "/";
+  }
+  // Native — fall through to the production deploy.
+  return new URL(`https://${PROD_API_DOMAIN}`).href;
 }
 
 async function getAuthHeaders(): Promise<Record<string, string>> {

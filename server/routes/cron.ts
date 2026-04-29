@@ -132,7 +132,34 @@ export function mountCronRoutes(app: Express): void {
     "/api/cron/notify",
     requireCron,
     async (_req: Request, res: Response) => {
-      res.json({ ok: true, phase: 5, ready: false });
+      try {
+        const { runNotify } = await import("../tilly/notify-cron");
+        const r = await runNotify();
+        res.json({ ok: true, ...r });
+      } catch (err) {
+        console.error("/api/cron/notify error:", err);
+        res.status(500).json({ error: "notify cron failed" });
+      }
+    },
+  );
+
+  // Pattern detection cron — runs weekly. Captures repeating soft-spot
+  // patterns into tilly_observations rows so the Tilly Learned card can
+  // surface them. Currently a thin wrapper around buildWeeklyPattern;
+  // future versions will identify multi-week recurrence beyond the
+  // current sigma test.
+  app.post(
+    "/api/cron/patterns",
+    requireCron,
+    async (_req: Request, res: Response) => {
+      try {
+        const { runPatternDetectionAll } = await import("../tilly/pattern-cron");
+        const r = await runPatternDetectionAll();
+        res.json({ ok: true, ...r });
+      } catch (err) {
+        console.error("/api/cron/patterns error:", err);
+        res.status(500).json({ error: "pattern cron failed" });
+      }
     },
   );
 }

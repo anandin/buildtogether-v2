@@ -26,6 +26,7 @@ import { mountSplitsRoutes } from "./splits";
 import { mountPushRoutes } from "./push";
 import { mountExpensesRoutes } from "./expenses";
 import { mountInvitesRoutes } from "./invites";
+import { mountDemoRoutes } from "./demo";
 
 export function registerTillyRoutes(app: Express): void {
   mountHouseholdRoutes(app);
@@ -42,4 +43,5 @@ export function registerTillyRoutes(app: Express): void {
   mountPushRoutes(app);
   mountExpensesRoutes(app);
   mountInvitesRoutes(app);
+  mountDemoRoutes(app);
 }

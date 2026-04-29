@@ -19,7 +19,17 @@ import { useSpend } from "../hooks/useSpend";
 import { useExpenses } from "../hooks/useExpenses";
 import { AddExpenseModal } from "../AddExpenseModal";
 import { SplitModal } from "../SplitModal";
+import { btApi } from "../api/client";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import type { DayBar } from "../api/types";
+
+function useSplitsList() {
+  return useQuery({
+    queryKey: ["/api/splits"],
+    queryFn: btApi.splits,
+    staleTime: 60_000,
+  });
+}
 
 export function BTSpend() {
   const { t } = useBT();
@@ -38,6 +48,26 @@ export function BTSpend() {
     });
     setSplitOpen(true);
   };
+
+  const qc = useQueryClient();
+  const seed = useMutation({
+    mutationFn: btApi.seedDemo,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/expenses"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/spend-pattern"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/today"] });
+      qc.invalidateQueries({ queryKey: ["/api/subscriptions"] });
+      qc.invalidateQueries({ queryKey: ["/api/protections"] });
+    },
+  });
+  const splitsList = useSplitsList();
+  const settle = useMutation({
+    mutationFn: btApi.settleSplit,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/splits"] }),
+  });
+  const pendingSplits = (splitsList.data?.splits ?? []).filter(
+    (s) => !(s.metadata?.settled ?? false),
+  );
 
   if (!live) {
     // No spend pattern computed yet — but the user may still have logged
@@ -90,6 +120,33 @@ export function BTSpend() {
               </View>
             </View>
           </BTCard>
+
+          {recent.length === 0 ? (
+            <Pressable
+              onPress={() => seed.mutate()}
+              disabled={seed.isPending}
+              accessibilityRole="button"
+              accessibilityLabel="Try with demo data"
+              style={{
+                alignSelf: "center",
+                paddingVertical: 8,
+                paddingHorizontal: 14,
+              }}
+            >
+              <Text
+                style={{
+                  color: t.inkMute,
+                  fontFamily: BTFonts.mono,
+                  fontSize: 10,
+                  letterSpacing: 1.2,
+                  textTransform: "uppercase",
+                  fontWeight: "700",
+                }}
+              >
+                {seed.isPending ? "Seeding…" : "✦ try with demo data"}
+              </Text>
+            </Pressable>
+          ) : null}
 
           {recent.length > 0 ? (
             <View style={{ gap: 10 }}>
@@ -225,6 +282,53 @@ export function BTSpend() {
             );
           })}
         </View>
+
+        {pendingSplits.length > 0 ? (
+          <View style={{ gap: 10 }}>
+            <BTLabel color={t.inkMute}>Pending splits</BTLabel>
+            <BTCard t={t} alt padding={14} style={{ gap: 12 }}>
+              {pendingSplits.slice(0, 3).map((s) => (
+                <View key={s.id} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontWeight: "600", fontSize: 13 }}>
+                      {s.summary}
+                    </Text>
+                    <Text
+                      style={{
+                        color: t.inkMute,
+                        fontFamily: BTFonts.mono,
+                        fontSize: 10,
+                        letterSpacing: 1,
+                        textTransform: "uppercase",
+                        marginTop: 2,
+                      }}
+                    >
+                      {s.metadata?.region === "CA" ? "interac" : "venmo"} ·{" "}
+                      {new Date(s.createdAt).toLocaleDateString()}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => settle.mutate(s.id)}
+                    disabled={settle.isPending}
+                    accessibilityRole="button"
+                    accessibilityLabel="Mark settled"
+                    style={{
+                      paddingHorizontal: 10,
+                      paddingVertical: 6,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: t.rule,
+                    }}
+                  >
+                    <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontSize: 11, fontWeight: "600" }}>
+                      Mark paid
+                    </Text>
+                  </Pressable>
+                </View>
+              ))}
+            </BTCard>
+          </View>
+        ) : null}
 
         {todayLedger.length > 0 ? (
           <View style={{ gap: 10 }}>

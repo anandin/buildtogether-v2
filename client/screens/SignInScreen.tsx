@@ -32,6 +32,7 @@ import {
   BTFontsByWeight,
   type BTTheme,
 } from "@/bt/theme";
+import { apiRequest } from "@/lib/query-client";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -52,6 +53,33 @@ export default function SignInScreen() {
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Trusted-people invite — when the user opens
+  // `https://.../?invite=<token>`, persist the token, default the form to
+  // signup, and POST accept after auth completes (handled inside AuthContext
+  // via the inviteToken local effect below).
+  const [inviteToken, setInviteToken] = useState<string | null>(null);
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const tok = params.get("invite");
+      if (tok) {
+        setInviteToken(tok);
+        setMode("signup");
+        // Persist so it survives an OAuth round-trip.
+        try {
+          localStorage.setItem("bt.pendingInviteToken", tok);
+        } catch {}
+      } else {
+        // Pull a previously-stashed token (e.g. after Google redirect).
+        try {
+          const stash = localStorage.getItem("bt.pendingInviteToken");
+          if (stash) setInviteToken(stash);
+        } catch {}
+      }
+    } catch {}
+  }, []);
 
   const [request, response, promptAsync] = Google.useAuthRequest({
     clientId: GOOGLE_CLIENT_ID,
@@ -121,6 +149,22 @@ export default function SignInScreen() {
         await signUpWithEmail(email.trim(), password, name.trim() || undefined);
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      // If the user arrived via an invite link, complete the accept now
+      // that they're authenticated. Best-effort — failures don't block
+      // sign-in.
+      if (inviteToken) {
+        try {
+          await apiRequest("POST", `/api/invites/${inviteToken}/accept`);
+          if (Platform.OS === "web") {
+            try {
+              localStorage.removeItem("bt.pendingInviteToken");
+            } catch {}
+          }
+        } catch (acceptErr) {
+          console.warn("invite accept failed:", acceptErr);
+        }
+      }
     } catch (err: any) {
       setError(err.message || "Something went wrong. Try again?");
     } finally {
@@ -148,6 +192,42 @@ export default function SignInScreen() {
         ]}
         keyboardShouldPersistTaps="handled"
       >
+        {inviteToken ? (
+          <View
+            style={{
+              padding: 14,
+              borderRadius: 14,
+              backgroundColor: t.accentSoft,
+              borderWidth: 1,
+              borderColor: t.accent,
+              gap: 4,
+              marginBottom: 4,
+            }}
+          >
+            <Text
+              style={{
+                color: t.accent,
+                fontFamily: BTFontsByWeight.mono700,
+                fontSize: 10,
+                letterSpacing: 1.4,
+                textTransform: "uppercase",
+              }}
+            >
+              You've been invited
+            </Text>
+            <Text
+              style={{
+                color: t.ink,
+                fontFamily: BTFonts.serifItalic,
+                fontSize: 16,
+                lineHeight: 22,
+              }}
+            >
+              Sign up below and you'll be added to their household automatically.
+            </Text>
+          </View>
+        ) : null}
+
         {/* Hero */}
         <View style={styles.hero}>
           <Tilly t={t} size={108} halo />

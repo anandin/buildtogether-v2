@@ -37,6 +37,7 @@ import {
   useOnboardingStatus,
 } from "../hooks/useOnboarding";
 import { useCreateDream } from "../hooks/useDreams";
+import { useUser } from "../hooks/useUser";
 
 type Step = "welcome" | "name" | "bank" | "dream" | "commit";
 const STEPS: Step[] = ["welcome", "name", "bank", "dream", "commit"];
@@ -50,6 +51,8 @@ export function Onboarding() {
   const createHousehold = useCreateHousehold();
   const createDream = useCreateDream();
   const completeOnboarding = useCompleteOnboarding();
+  const { user } = useUser();
+  const initialName = user?.name?.split(" ")[0] ?? "";
 
   const advance = (next: Step) => setStep(next);
   const stepIdx = STEPS.indexOf(step);
@@ -90,6 +93,7 @@ export function Onboarding() {
         )}
         {step === "name" && (
           <NameCard
+            initialName={initialName}
             isPending={createHousehold.isPending}
             onNext={(payload) =>
               createHousehold.mutate(payload, {
@@ -161,19 +165,29 @@ function WelcomeCard({ onNext }: { onNext: () => void }) {
 function NameCard({
   onNext,
   isPending,
+  initialName,
 }: {
   onNext: (p: { name: string; schoolName?: string; studentRole?: string }) => void;
   isPending: boolean;
+  initialName?: string;
 }) {
   const { t } = useBT();
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName ?? "");
   const [school, setSchool] = useState("");
+
+  // The most common case: user signed up with their name, so we prefill it
+  // and lead with confirmation copy instead of asking a fresh question.
+  const isPrefilled = !!initialName;
 
   return (
     <View style={{ gap: 18 }}>
-      <BTLabel color={t.inkMute}>What should I call you?</BTLabel>
+      <BTLabel color={t.inkMute}>
+        {isPrefilled ? "Quick check" : "What should I call you?"}
+      </BTLabel>
       <BTSerif size={28} color={t.ink} weight="500">
-        Let's start with your name.
+        {isPrefilled
+          ? "I should call you " + (name || initialName) + ", right?"
+          : "Let's start with your name."}
       </BTSerif>
       <Field t={t} label="Your name" value={name} onChangeText={setName} placeholder="Maya" />
       <Field
