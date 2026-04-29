@@ -64,9 +64,21 @@ export function BTProfile() {
       contentContainerStyle={{ padding: 22, paddingTop: 36, paddingBottom: 120, gap: 26 }}
       showsVerticalScrollIndicator={false}
     >
-      {/* Hero "You + Tilly" */}
-      <View style={{ alignItems: "center", gap: 14, paddingVertical: 12 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 14 }}>
+      {/* Hero "You + Tilly" — soft accent halo behind the pair per design */}
+      <View style={{ alignItems: "center", gap: 14, paddingVertical: 12, position: "relative" }}>
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            top: -10,
+            width: 240,
+            height: 240,
+            borderRadius: 120,
+            backgroundColor: t.accent,
+            opacity: 0.12,
+          }}
+        />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 12, zIndex: 1 }}>
           <View
             style={{
               width: 64,
@@ -79,7 +91,7 @@ export function BTProfile() {
           >
             <Text
               style={{
-                color: t.accent,
+                color: t.ink,
                 fontFamily: BTFonts.serif,
                 fontSize: 28,
                 fontWeight: "500",
@@ -88,8 +100,8 @@ export function BTProfile() {
               {userName[0]}
             </Text>
           </View>
-          <Text style={{ color: t.accentSoft, fontSize: 22, fontWeight: "300" }}>✦</Text>
-          <Tilly t={t} size={64} halo />
+          <Text style={{ color: t.inkMute, fontSize: 22, fontFamily: BTFonts.serif }}>+</Text>
+          <Tilly t={t} size={64} breathing />
         </View>
         <BTSerif size={26} color={t.ink} weight="500">
           {userName} & Tilly
@@ -211,7 +223,10 @@ export function BTProfile() {
         {trusted.map((p) => {
           const c1 =
             p.hue === "accent" ? t.accent : p.hue === "accent2" ? t.accent2 : t.warn;
-          const c2 = t.surface;
+          // Per design: single-color gradient (color → 53% opacity of itself).
+          // The 88-hex-suffix pattern in the spec equals ~53% alpha. Use rgba
+          // so it works across web + native consistently.
+          const c2 = withAlpha(c1, 0.53);
           return (
             <View
               key={p.id}
@@ -220,7 +235,7 @@ export function BTProfile() {
                 alignItems: "center",
                 gap: 12,
                 padding: 14,
-                borderRadius: 16,
+                borderRadius: 14,
                 backgroundColor: t.surface,
                 borderWidth: 1,
                 borderColor: t.rule,
@@ -231,14 +246,14 @@ export function BTProfile() {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 20,
+                  width: 38,
+                  height: 38,
+                  borderRadius: 19,
                   alignItems: "center",
                   justifyContent: "center",
                 }}
               >
-                <Text style={{ color: t.ink, fontFamily: BTFonts.serif, fontWeight: "600" }}>
+                <Text style={{ color: "#fff", fontFamily: BTFonts.serif, fontSize: 18, fontWeight: "600" }}>
                   {p.name[0]}
                 </Text>
               </LinearGradient>
@@ -250,6 +265,7 @@ export function BTProfile() {
                   {p.scope}
                 </Text>
               </View>
+              <Text style={{ color: t.inkMute, fontSize: 18, fontFamily: BTFonts.sans }}>›</Text>
             </View>
           );
         })}
@@ -295,6 +311,7 @@ export function BTProfile() {
                     justifyContent: "space-between",
                     alignItems: "center",
                     padding: 14,
+                    gap: 8,
                   }}
                 >
                   <Text
@@ -307,17 +324,20 @@ export function BTProfile() {
                   >
                     {s.label}
                   </Text>
-                  <Text
-                    style={{
-                      color: emphasize ? t.accent : t.inkSoft,
-                      fontFamily: emphasize ? BTFonts.serifItalic : BTFonts.mono,
-                      fontSize: emphasize ? 14 : 11,
-                      letterSpacing: emphasize ? 0 : 0.8,
-                      textTransform: emphasize ? "none" : "uppercase",
-                    }}
-                  >
-                    {s.value}
-                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text
+                      style={{
+                        color: emphasize ? t.accent : t.inkSoft,
+                        fontFamily: emphasize ? BTFonts.serifItalic : BTFonts.mono,
+                        fontSize: emphasize ? 14 : 11,
+                        letterSpacing: emphasize ? 0 : 0.8,
+                        textTransform: emphasize ? "none" : "uppercase",
+                      }}
+                    >
+                      {s.value}
+                    </Text>
+                    <Text style={{ color: t.inkMute, fontSize: 14, fontFamily: BTFonts.sans }}>›</Text>
+                  </View>
                 </View>
                 {i < QUIET_SETTINGS.length - 1 ? <BTRule color={t.rule} /> : null}
               </View>
@@ -336,6 +356,20 @@ function tonePreviewBg(k: BTToneKey, t: BTTheme): string {
   if (k === "sibling") return t.accentSoft;
   if (k === "coach") return "rgba(63,135,112,0.12)";
   return t.surfaceAlt;
+}
+
+/**
+ * Pull a CSS rgba() string from a hex (#RRGGBB) plus an alpha 0-1. Used by
+ * the trusted-people gradient so we get a single-color fade independent of
+ * theme. Hex-with-alpha-suffix doesn't render reliably on RN-web, hence the
+ * conversion.
+ */
+function withAlpha(hex: string, alpha: number): string {
+  if (!hex.startsWith("#") || hex.length < 7) return hex;
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 type TimelineItem = { id: string; date: string; body: string; recent?: boolean };

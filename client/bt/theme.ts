@@ -1,11 +1,10 @@
 /**
  * BuildTogether (Tilly) — theme tokens.
  *
- * Four switchable themes per BUILDTOGETHER_SPEC.md §3 ("Color themes").
- * Each defines the full token set used by the BT screens, plus a Tilly palette
- * (body / belly / beak) for the mascot.
- *
- * Bloom is the active default — see spec §3.
+ * Four switchable themes per the design system (`design/bt-system.jsx`):
+ * Dusk, Citrus, Bloom (default), and Neon. Each defines the full token set
+ * used by the BT screens, plus a Tilly palette (body / belly / beak) for
+ * the mascot.
  */
 import type { Platform } from "react-native";
 
@@ -28,99 +27,107 @@ export type BTTheme = {
   tilly: { body: string; belly: string; beak: string };
 };
 
-export type BTThemeKey = "paper" | "dusk" | "citrus" | "bloom";
+export type BTThemeKey = "dusk" | "citrus" | "bloom" | "neon";
 
 export const BT_THEMES: Record<BTThemeKey, BTTheme> = {
-  paper: {
-    name: "paper",
-    bg: "#F4EFE6",
-    surface: "#FBF7EF",
-    surfaceAlt: "#EFE7D7",
-    ink: "#1C1A17",
-    inkSoft: "#4A4640",
-    inkMute: "#8A8378",
-    rule: "rgba(28,26,23,0.10)",
-    accent: "#D8602B",
-    accent2: "#7B5A3A",
-    accentSoft: "#F0DAC6",
-    good: "#1F7A4A",
-    warn: "#C68A2A",
-    bad: "#B23A2C",
-    chip: "rgba(28,26,23,0.06)",
-    tilly: { body: "#D8602B", belly: "#F4EFE6", beak: "#1C1A17" },
-  },
-  dusk: {
-    name: "dusk",
-    bg: "#181612",
-    surface: "#23201A",
-    surfaceAlt: "#2C2820",
-    ink: "#F2EBDD",
-    inkSoft: "#B8AE9A",
-    inkMute: "#7C7363",
-    rule: "rgba(242,235,221,0.12)",
-    accent: "#F0934A",
-    accent2: "#E0B380",
-    accentSoft: "rgba(240,147,74,0.20)",
-    good: "#7DC596",
-    warn: "#E8C275",
-    bad: "#E68A78",
-    chip: "rgba(242,235,221,0.08)",
-    tilly: { body: "#F0934A", belly: "#3A332A", beak: "#F2EBDD" },
-  },
-  citrus: {
-    name: "citrus",
-    bg: "#F5E9B8",
-    surface: "#FBF3CB",
-    surfaceAlt: "#F0DE9A",
-    ink: "#22180B",
-    inkSoft: "#5A4520",
-    inkMute: "#8B7440",
-    rule: "rgba(34,24,11,0.12)",
-    accent: "#D14A2C",
-    accent2: "#E07F3A",
-    accentSoft: "#F3CFA8",
-    good: "#2E7B3F",
-    warn: "#C58A1A",
-    bad: "#A6321F",
-    chip: "rgba(34,24,11,0.08)",
-    tilly: { body: "#D14A2C", belly: "#F5E9B8", beak: "#22180B" },
-  },
+  // Bloom — soft pink ground with PURPLE accent and dark-wine bird (not
+  // pink-on-pink). The orange accent2 lets the sky-portrait gradient blend
+  // pink → orange → peach, the spec's signature warm sunset.
   bloom: {
     name: "bloom",
     bg: "#F6E8E6",
-    surface: "#FCF3F1",
-    surfaceAlt: "#EFD6D2",
-    ink: "#2A1A1C",
-    inkSoft: "#6B4A4D",
-    // Darkened from #A1838A to hit WCAG AA on the Bloom paper backgrounds —
-    // BTLabel mono caps + day-bar dollar amounts were failing contrast at
-    // 2.7:1. New value scores ~4.6:1 on `bg`, ~5.0:1 on `surface`.
-    inkMute: "#6B5058",
-    rule: "rgba(42,26,28,0.10)",
-    accent: "#C3416B",
-    accent2: "#D89180",
-    accentSoft: "#F1CFD4",
-    good: "#3F8770",
-    warn: "#D08A2A",
-    bad: "#B24050",
-    chip: "rgba(42,26,28,0.06)",
-    tilly: { body: "#C3416B", belly: "#FCF3F1", beak: "#2A1A1C" },
+    surface: "#FBF1EE",
+    surfaceAlt: "#EBC9C2",
+    ink: "#2A1518",
+    inkSoft: "#6B4148",
+    inkMute: "#A88087",
+    rule: "rgba(42,21,24,0.10)",
+    accent: "#7A4FE0",
+    accent2: "#E0664A",
+    accentSoft: "#D9C9F5",
+    good: "#3F8A6E",
+    warn: "#C97A1F",
+    bad: "#B8392E",
+    chip: "rgba(42,21,24,0.06)",
+    tilly: { body: "#2A1518", belly: "#F6E8E6", beak: "#7A4FE0" },
+  },
+
+  // Dusk — warm dark with cream Tilly silhouette (body=cream, belly=dark
+  // interior). Orange accent + sage accent2.
+  dusk: {
+    name: "dusk",
+    bg: "#181612",
+    surface: "#221E18",
+    surfaceAlt: "#2C271F",
+    ink: "#F4EFE6",
+    inkSoft: "#B8AE9A",
+    inkMute: "#776E5E",
+    rule: "rgba(244,239,230,0.12)",
+    accent: "#F0934A",
+    accent2: "#8FB89A",
+    accentSoft: "#5A3E2A",
+    good: "#9CBA86",
+    warn: "#E5C25E",
+    bad: "#E07560",
+    chip: "rgba(244,239,230,0.06)",
+    tilly: { body: "#F4EFE6", belly: "#2A2620", beak: "#F0934A" },
+  },
+
+  // Citrus — yellow paper with deep red-orange accent + forest-green
+  // accent2. Tilly is dark ink against the cream background.
+  citrus: {
+    name: "citrus",
+    bg: "#F5E9B8",
+    surface: "#FBF3CC",
+    surfaceAlt: "#EFD98C",
+    ink: "#1F1A0E",
+    inkSoft: "#5C5236",
+    inkMute: "#9A8E66",
+    rule: "rgba(31,26,14,0.12)",
+    accent: "#D14A2C",
+    accent2: "#2D5A3D",
+    accentSoft: "#F4B69E",
+    good: "#2D5A3D",
+    warn: "#B3811F",
+    bad: "#A8392B",
+    chip: "rgba(31,26,14,0.06)",
+    tilly: { body: "#1F1A0E", belly: "#F5E9B8", beak: "#D14A2C" },
+  },
+
+  // Neon — cool near-black with electric green accent + hot magenta
+  // accent2. The "wired up" theme.
+  neon: {
+    name: "neon",
+    bg: "#0A0B14",
+    surface: "#15172A",
+    surfaceAlt: "#1F2240",
+    ink: "#F0F4FF",
+    inkSoft: "#A8B0D4",
+    inkMute: "#5C6486",
+    rule: "rgba(168,176,212,0.16)",
+    accent: "#00FF88",
+    accent2: "#FF2EC8",
+    accentSoft: "rgba(0,255,136,0.16)",
+    good: "#00FF88",
+    warn: "#FFD60A",
+    bad: "#FF2EC8",
+    chip: "rgba(168,176,212,0.10)",
+    tilly: { body: "#F0F4FF", belly: "#15172A", beak: "#00FF88" },
   },
 };
 
 export const BT_DEFAULT_THEME: BTThemeKey = "bloom";
 
 /**
- * Type ramp per spec §3 ("Type system").
- * - Headlines & key numbers → Instrument Serif (loaded by App.tsx)
- * - UI body                → Inter (loaded by App.tsx, weights 400/500/600/700)
- * - Mono labels & ledger   → JetBrains Mono (loaded by App.tsx, weights 400/500/700)
+ * Type ramp per spec §3 ("Type system"):
+ *   Headlines & key numbers → Instrument Serif
+ *   UI body                 → Inter (400/500/600/700)
+ *   Mono labels & ledger    → JetBrains Mono (400/500/700)
  *
- * In React Native, fontFamily must reference a single loaded face. The
- * `BTFonts` constants below give the *default* face for each role; for
- * specific weights/styles use `BTFontsByWeight` so each Text picks the
- * correct loaded font (RN does not synthesize bold/italic from a regular
- * face the way browsers do).
+ * In React Native, `fontFamily` must reference a single loaded face.
+ * `BTFonts` gives the *default* face for each role; for specific weights
+ * or styles use `BTFontsByWeight` so each Text picks the correct loaded
+ * font (RN does not synthesize bold/italic from a regular face).
  */
 export const BTFonts = {
   serif: "InstrumentSerif_400Regular",
@@ -129,13 +136,6 @@ export const BTFonts = {
   mono: "JetBrainsMono_500Medium",
 } as const;
 
-/**
- * Per-weight font family lookup. Use these whenever you'd otherwise pair
- * `BTFonts.sans` with `fontWeight` — RN matches faces by exact name, so
- * `fontWeight` alone won't switch from Regular to Bold.
- *
- * Spec §3 Inter ramp: 400/500/600/700.
- */
 export const BTFontsByWeight = {
   sans400: "Inter_400Regular",
   sans500: "Inter_500Medium",
@@ -146,9 +146,6 @@ export const BTFontsByWeight = {
   mono700: "JetBrainsMono_700Bold",
 } as const;
 
-/** Gentle 4s breathing curve used for Tilly + mascot halos. */
 export const BT_BREATHE_DURATION_MS = 4000;
-/** Active milestone pulse + most-recent-memory dot. */
 export const BT_PULSE_DURATION_MS = 1600;
-/** Paycheck banner + dream milestone shimmer. */
 export const BT_SHIMMER_DURATION_MS = 3200;

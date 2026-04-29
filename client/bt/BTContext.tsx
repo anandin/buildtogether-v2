@@ -1,6 +1,6 @@
 /**
  * BTContext — holds the three Tweaks values from spec §6:
- *   - visual theme (paper / dusk / citrus / bloom)
+ *   - visual theme (bloom / dusk / citrus / neon)
  *   - Tilly's tone (sibling / coach / quiet)
  *   - time of day (morning / evening)
  *
