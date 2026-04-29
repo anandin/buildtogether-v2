@@ -232,10 +232,10 @@ export const BT_DATA = {
 };
 
 export const BT_SUGGESTED_PROMPTS = [
-  "split groceries with priya",
   "what's killing my budget?",
-  "is this $90 ticket okay?",
   "help me think about my first credit card",
+  "how do I split rent fairly with roommates?",
+  "is this purchase okay?",
 ];
 
 /**

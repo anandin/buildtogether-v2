@@ -1,14 +1,18 @@
 /**
  * BTApp — the BuildTogether (Tilly) shell.
  *
- * Hosts the BTProvider, the floating Tweaks button, and a 6-tab bottom bar
- * mapping to the spec's six screens (Home, Tilly, Spend, Credit, Dreams,
- * Profile). Self-contained: doesn't depend on the V1 navigation stack so the
- * design system stays clean.
+ * Hosts the BTProvider, the floating Tweaks button, and the 5-tab bottom bar
+ * mapping to the spec's screens (Today, Spend, Tilly, Dreams, You). Credit
+ * lives inside the Today flow per design (it's a contextual surface, not a
+ * destination), so the bottom nav doesn't expose it as a peer.
+ *
+ * Self-contained: doesn't depend on the V1 navigation stack so the design
+ * system stays clean.
  */
 import React, { useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Svg, { Circle, Path } from "react-native-svg";
 
 import { BTProvider, useBT } from "./BTContext";
 import { TweaksToggle } from "./TweaksPanel";
@@ -23,15 +27,16 @@ import { BTProfile } from "./screens/BTProfile";
 import { Onboarding } from "./onboarding/Onboarding";
 import { useOnboardingStatus } from "./hooks/useOnboarding";
 
-type Tab = "home" | "guardian" | "spend" | "credit" | "dreams" | "profile";
+type Tab = "home" | "spend" | "guardian" | "credit" | "dreams" | "profile";
 
-const TABS: { key: Tab; label: string; glyph: string }[] = [
-  { key: "home", label: "Today", glyph: "○" },
-  { key: "guardian", label: "Tilly", glyph: "" },
-  { key: "spend", label: "Spend", glyph: "≣" },
-  { key: "credit", label: "Credit", glyph: "◔" },
-  { key: "dreams", label: "Dreams", glyph: "✺" },
-  { key: "profile", label: "You", glyph: "◍" },
+// Order matches design/screens.jsx tab bar exactly: Today, Spend, Tilly
+// (center), Dreams, You. Credit is reachable from Home but not in the bar.
+const TABS: { key: Tab; label: string }[] = [
+  { key: "home", label: "Today" },
+  { key: "spend", label: "Spend" },
+  { key: "guardian", label: "Tilly" },
+  { key: "dreams", label: "Dreams" },
+  { key: "profile", label: "You" },
 ];
 
 export function BTApp() {
@@ -42,11 +47,6 @@ export function BTApp() {
   );
 }
 
-/**
- * Onboarding gate — runs the 5-card flow until the user completes it,
- * then renders the main 6-tab shell. Loading state shows the breathing
- * Tilly mascot so the screen never goes blank.
- */
 function BTGate() {
   const { t } = useBT();
   const status = useOnboardingStatus();
@@ -80,13 +80,9 @@ function BTShell() {
         {tab === "credit" && <BTCredit />}
         {tab === "dreams" && <BTDreams />}
         {tab === "profile" && <BTProfile />}
-        {/* Render LAST so the absolute-positioned Tweaks panel overlay sits
-            above the screen content. RN-web has no z-index without extra
-            ceremony — DOM order is the simple, reliable lever. */}
         <TweaksToggle />
       </View>
 
-      {/* Custom bottom tab bar — 6 slots, Tilly in the middle */}
       <View
         style={[
           styles.tabbar,
@@ -105,55 +101,96 @@ function BTShell() {
                 key={tb.key}
                 onPress={() => setTab(tb.key)}
                 style={styles.tabSlot}
+                accessibilityRole="button"
+                accessibilityLabel={tb.label}
               >
                 <View
                   style={{
-                    width: 38,
-                    height: 38,
-                    borderRadius: 19,
-                    backgroundColor: active ? t.accentSoft : "transparent",
+                    width: 32,
+                    height: 32,
                     alignItems: "center",
                     justifyContent: "center",
                   }}
                 >
-                  <Tilly t={t} size={28} breathing={active} />
+                  <Tilly t={t} size={26} breathing={active} />
                 </View>
                 <Text
                   style={[
                     styles.tabLabel,
-                    { color: active ? t.accent : t.inkMute },
+                    { color: active ? t.ink : t.inkMute },
                   ]}
                 >
                   {tb.label}
                 </Text>
+                {active ? <View style={[styles.tabDot, { backgroundColor: t.accent }]} /> : <View style={styles.tabDotPlaceholder} />}
               </Pressable>
             );
           }
           return (
-            <Pressable key={tb.key} onPress={() => setTab(tb.key)} style={styles.tabSlot}>
-              <Text
-                style={{
-                  fontSize: 18,
-                  color: active ? t.accent : t.inkMute,
-                  fontFamily: BTFonts.serif,
-                }}
-              >
-                {tb.glyph}
-              </Text>
+            <Pressable
+              key={tb.key}
+              onPress={() => setTab(tb.key)}
+              style={styles.tabSlot}
+              accessibilityRole="button"
+              accessibilityLabel={tb.label}
+            >
+              <View style={{ width: 22, height: 22, alignItems: "center", justifyContent: "center" }}>
+                <TabIcon id={tb.key} color={active ? t.ink : t.inkMute} />
+              </View>
               <Text
                 style={[
                   styles.tabLabel,
-                  { color: active ? t.accent : t.inkMute },
+                  { color: active ? t.ink : t.inkMute },
                 ]}
               >
                 {tb.label}
               </Text>
+              {active ? <View style={[styles.tabDot, { backgroundColor: t.accent }]} /> : <View style={styles.tabDotPlaceholder} />}
             </Pressable>
           );
         })}
       </View>
     </View>
   );
+}
+
+/**
+ * Line-icon set per design/bt-system.jsx — clean 20×20 strokes, 1.6 width.
+ * Replaces the old serif-glyph approach which read as a kid's drawing.
+ */
+function TabIcon({ id, color }: { id: Tab; color: string }) {
+  const stroke = { stroke: color, strokeWidth: 1.6, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, fill: "none" };
+  if (id === "home") {
+    return (
+      <Svg width={20} height={20} viewBox="0 0 20 20">
+        <Circle cx={10} cy={10} r={7} {...stroke} />
+        <Path d="M10 6v4l2.5 1.5" {...stroke} />
+      </Svg>
+    );
+  }
+  if (id === "spend") {
+    return (
+      <Svg width={20} height={20} viewBox="0 0 20 20">
+        <Path d="M3 6h14M3 10h14M3 14h9" {...stroke} />
+      </Svg>
+    );
+  }
+  if (id === "dreams") {
+    return (
+      <Svg width={20} height={20} viewBox="0 0 20 20">
+        <Path d="M10 3l2 4 4 .5-3 3 1 4-4-2-4 2 1-4-3-3 4-.5z" {...stroke} />
+      </Svg>
+    );
+  }
+  if (id === "profile") {
+    return (
+      <Svg width={20} height={20} viewBox="0 0 20 20">
+        <Circle cx={10} cy={7} r={3} {...stroke} />
+        <Path d="M4 17c1-3 4-4.5 6-4.5s5 1.5 6 4.5" {...stroke} />
+      </Svg>
+    );
+  }
+  return null;
 }
 
 const styles = StyleSheet.create({
@@ -163,20 +200,34 @@ const styles = StyleSheet.create({
   tabbar: {
     flexDirection: "row",
     borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 8,
+    paddingTop: 10,
+    paddingHorizontal: 8,
   },
   tabSlot: {
     flex: 1,
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "flex-start",
     paddingVertical: 4,
-    gap: 2,
+    gap: 4,
   },
   tabLabel: {
     fontFamily: BTFonts.mono,
     fontSize: 9,
-    letterSpacing: 1.1,
+    letterSpacing: 1.2,
     textTransform: "uppercase",
     fontWeight: "700",
+  },
+  tabDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    marginTop: -2,
+  },
+  // Reserves the same vertical slot as the active dot so labels don't shift
+  // when a tab is selected.
+  tabDotPlaceholder: {
+    width: 4,
+    height: 4,
+    marginTop: -2,
   },
 });

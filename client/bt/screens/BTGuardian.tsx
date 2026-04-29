@@ -161,51 +161,40 @@ export function BTGuardian() {
         {thinking ? <TypingBubble /> : null}
       </ScrollView>
 
-      {/* Suggested prompts — height-capped horizontal pill row.
-          Without an explicit height, RN-web stretches Pressable children
-          vertically to fill the ScrollView's flex parent, painting tall
-          empty capsules. The 52px cap keeps them as proper pills. */}
-      {!thinking ? (
-        <View style={{ height: 52 }}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{
-              gap: 8,
-              paddingHorizontal: 18,
-              alignItems: "center",
-              height: 52,
-            }}
-          >
-            {BT_SUGGESTED_PROMPTS.map((p) => (
-              <Pressable
-                key={p}
-                onPress={() => send(p)}
-                accessibilityRole="button"
-                accessibilityLabel={`Suggested: ${p}`}
+      {/* Suggested prompts — vertical stack per design/screens.jsx. Each
+          prompt is a left-aligned bordered button, not a pill. Only renders
+          when the user hasn't started a conversation yet (idle, no thinking
+          state). */}
+      {!thinking && tilly.messages.length <= 1 ? (
+        <View style={{ paddingHorizontal: 18, paddingVertical: 14, gap: 6 }}>
+          <BTLabel color={t.inkMute}>Try asking</BTLabel>
+          {BT_SUGGESTED_PROMPTS.map((p) => (
+            <Pressable
+              key={p}
+              onPress={() => send(p)}
+              accessibilityRole="button"
+              accessibilityLabel={`Suggested: ${p}`}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 10,
+                borderRadius: 12,
+                backgroundColor: "transparent",
+                borderWidth: 1,
+                borderColor: t.rule,
+                alignItems: "flex-start",
+              }}
+            >
+              <Text
                 style={{
-                  paddingHorizontal: 14,
-                  height: 36,
-                  borderRadius: 999,
-                  backgroundColor: t.surface,
-                  borderWidth: 1,
-                  borderColor: t.rule,
-                  alignItems: "center",
-                  justifyContent: "center",
+                  color: t.ink,
+                  fontFamily: BTFonts.sans,
+                  fontSize: 13,
                 }}
               >
-                <Text
-                  style={{
-                    color: t.inkSoft,
-                    fontFamily: BTFonts.sans,
-                    fontSize: 13,
-                  }}
-                >
-                  {p}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
+                {p}
+              </Text>
+            </Pressable>
+          ))}
         </View>
       ) : null}
 
@@ -263,11 +252,16 @@ function Bubble({ m }: { m: Msg }) {
 
   if (m.role === "user") {
     return (
-      <View style={{ alignSelf: "flex-end", maxWidth: "72%" }}>
+      <View style={{ alignSelf: "flex-end", maxWidth: "78%" }}>
         <View
           style={{
             backgroundColor: t.ink,
-            borderRadius: 18,
+            // Asymmetric corners give the bubble a "tail" anchor toward the
+            // right edge — matches design/screens.jsx user bubble shape.
+            borderTopLeftRadius: 14,
+            borderTopRightRadius: 14,
+            borderBottomLeftRadius: 14,
+            borderBottomRightRadius: 4,
             paddingHorizontal: 14,
             paddingVertical: 10,
           }}
@@ -339,15 +333,17 @@ function Bubble({ m }: { m: Msg }) {
   // tilly text
   return (
     <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end", maxWidth: "82%" }}>
-      <Tilly t={t} size={28} breathing={false} />
+      <Tilly t={t} size={26} breathing={false} />
       <View
         style={{
-          // flexShrink: 1 lets the bubble shrink within the 82% parent so the
-          // inner Text wraps. Without this, RN-web treats the bubble as
-          // natural-width and longer messages overflow the viewport.
           flexShrink: 1,
           backgroundColor: t.surface,
-          borderRadius: 18,
+          // Asymmetric: round except bottom-left, mirroring the user bubble's
+          // bottom-right tail. Anchors the bubble to its avatar.
+          borderTopLeftRadius: 14,
+          borderTopRightRadius: 14,
+          borderBottomLeftRadius: 4,
+          borderBottomRightRadius: 14,
           paddingHorizontal: 14,
           paddingVertical: 10,
           borderWidth: 1,
