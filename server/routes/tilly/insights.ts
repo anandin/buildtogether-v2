@@ -26,6 +26,8 @@ import {
 } from "../../../shared/schema";
 import { buildDailyBrief } from "../../tilly/daily-brief";
 import { isValidTone, DEFAULT_TONE, type BTToneKey } from "../../tilly/tone";
+import { buildWeeklyPattern } from "../../tilly/spend-pattern";
+import { buildCreditSnapshot } from "../../tilly/credit-snapshot";
 
 /**
  * Deterministic fallback brief when the LLM is unavailable. Mirrors the
@@ -202,7 +204,6 @@ export function mountTillyInsightsRoutes(app: Express): void {
     if (!householdId) return res.json({ phase: 4, ready: false });
 
     try {
-      const { buildWeeklyPattern } = await import("../../tilly/spend-pattern");
       const pattern = await buildWeeklyPattern(householdId);
       if (!pattern) return res.json({ phase: 4, ready: false });
       res.json(pattern);
@@ -211,8 +212,7 @@ export function mountTillyInsightsRoutes(app: Express): void {
       // either way: the screen renders its connect-bank empty state. We
       // return ready:false instead of 500 so the browser console stays clean.
       console.warn("/api/tilly/spend-pattern soft-fail:", err);
-      const debugMsg = err instanceof Error ? err.message : String(err);
-      res.json({ phase: 4, ready: false, reason: "transient", debug: debugMsg });
+      res.json({ phase: 4, ready: false, reason: "transient" });
     }
   });
 
@@ -222,7 +222,6 @@ export function mountTillyInsightsRoutes(app: Express): void {
     if (!householdId) return res.json({ phase: 4, ready: false });
 
     try {
-      const { buildCreditSnapshot } = await import("../../tilly/credit-snapshot");
       const snap = await buildCreditSnapshot(householdId);
       res.json(snap);
     } catch (err) {
