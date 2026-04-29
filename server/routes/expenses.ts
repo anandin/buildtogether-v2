@@ -20,6 +20,7 @@ import { requireAuth } from "../middleware/auth";
 import { db } from "../db";
 import { expenses } from "../../shared/schema";
 import { getLLM } from "../tilly/llm/factory";
+import { runProtectionsForHousehold } from "../tilly/protections-engine";
 
 const ParsedExpenseSchema = z.object({
   amount: z.number().describe("Dollar amount as a positive number, no $."),
@@ -198,9 +199,6 @@ export function mountExpensesRoutes(app: Express): void {
     // to block the response on. If it errors we still return the saved
     // expense.
     try {
-      const { runProtectionsForHousehold } = await import(
-        "../tilly/protections-engine"
-      );
       await runProtectionsForHousehold(householdId);
     } catch (err) {
       console.warn("[expenses] protections sweep failed:", err);

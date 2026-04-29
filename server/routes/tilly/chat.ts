@@ -33,6 +33,7 @@ import {
 import { extractMemories } from "../../tilly/memory-writer";
 import { embed } from "../../tilly/embeddings";
 import { retrieveContextSnippets } from "../../tilly/retriever";
+import { assertUnderCap } from "../../tilly/usage";
 import {
   isValidTone,
   DEFAULT_TONE,
@@ -159,7 +160,6 @@ export function mountTillyChatRoutes(app: Express): void {
     // token budget. Returns 429 with a Tilly-voiced message rather than an
     // opaque server error so the chat surface can render it inline.
     try {
-      const { assertUnderCap } = await import("../../tilly/usage");
       await assertUnderCap(userId);
     } catch (capErr) {
       return res.status(429).json({

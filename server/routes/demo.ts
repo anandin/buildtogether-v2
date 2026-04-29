@@ -27,6 +27,7 @@ import { randomBytes } from "crypto";
 import { requireAuth } from "../middleware/auth";
 import { db } from "../db";
 import { expenses, subscriptions } from "../../shared/schema";
+import { runProtectionsForHousehold } from "../tilly/protections-engine";
 
 type SeedExpense = {
   daysAgo: number;
@@ -215,9 +216,6 @@ export function mountDemoRoutes(app: Express): void {
     // Run the protections engine immediately so the demo includes
     // flagged rows.
     try {
-      const { runProtectionsForHousehold } = await import(
-        "../tilly/protections-engine"
-      );
       await runProtectionsForHousehold(householdId);
     } catch (err) {
       console.warn("[demo/seed] protections sweep failed:", err);

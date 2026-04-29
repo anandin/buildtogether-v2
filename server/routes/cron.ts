@@ -17,6 +17,9 @@ import { eq, and, gt, sql } from "drizzle-orm";
 
 import { db } from "../db";
 import { goals, goalContributions } from "../../shared/schema";
+import { runProtectionsAll } from "../tilly/protections-engine";
+import { runNotify } from "../tilly/notify-cron";
+import { runPatternDetectionAll } from "../tilly/pattern-cron";
 
 function requireCron(req: Request, res: Response, next: NextFunction) {
   const expected = process.env.CRON_SECRET;
@@ -115,12 +118,12 @@ export function mountCronRoutes(app: Express): void {
     requireCron,
     async (_req: Request, res: Response) => {
       try {
-        const { runProtectionsAll } = await import("../tilly/protections-engine");
         const r = await runProtectionsAll();
         res.json({ ok: true, ...r });
       } catch (err) {
         console.error("/api/cron/protections error:", err);
-        res.status(500).json({ error: "protections cron failed" });
+        const msg = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error: "protections cron failed", debug: msg });
       }
     },
   );
@@ -133,12 +136,12 @@ export function mountCronRoutes(app: Express): void {
     requireCron,
     async (_req: Request, res: Response) => {
       try {
-        const { runNotify } = await import("../tilly/notify-cron");
         const r = await runNotify();
         res.json({ ok: true, ...r });
       } catch (err) {
         console.error("/api/cron/notify error:", err);
-        res.status(500).json({ error: "notify cron failed" });
+        const msg = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error: "notify cron failed", debug: msg });
       }
     },
   );
@@ -153,12 +156,12 @@ export function mountCronRoutes(app: Express): void {
     requireCron,
     async (_req: Request, res: Response) => {
       try {
-        const { runPatternDetectionAll } = await import("../tilly/pattern-cron");
         const r = await runPatternDetectionAll();
         res.json({ ok: true, ...r });
       } catch (err) {
         console.error("/api/cron/patterns error:", err);
-        res.status(500).json({ error: "pattern cron failed" });
+        const msg = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error: "pattern cron failed", debug: msg });
       }
     },
   );
