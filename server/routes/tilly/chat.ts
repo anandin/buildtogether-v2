@@ -34,6 +34,7 @@ import { extractMemories } from "../../tilly/memory-writer";
 import { embed } from "../../tilly/embeddings";
 import { retrieveContextSnippets } from "../../tilly/retriever";
 import { assertUnderCap } from "../../tilly/usage";
+import { buildFinancialStateSummary } from "../../tilly/state-summary";
 import {
   isValidTone,
   DEFAULT_TONE,
@@ -255,10 +256,22 @@ export function mountTillyChatRoutes(app: Express): void {
             content: r.content,
           }));
 
-        const memSnippets = await retrieveContextSnippets(userId, message);
-        const extraSystem = memSnippets.length
-          ? `What you remember about them (in your voice, from RAG):\n${memSnippets.map((s) => `- ${s}`).join("\n")}`
-          : undefined;
+        const [memSnippets, state] = await Promise.all([
+          retrieveContextSnippets(userId, message),
+          buildFinancialStateSummary(householdId),
+        ]);
+        const sections: string[] = [];
+        if (state.hasData) {
+          sections.push(
+            `Their current state — use this when they ask about money:\n${state.text}\n\nDO NOT say you can't see their balance or that you need them to connect; the data above is your access. If a specific thing isn't listed (e.g. credit utilization), say you don't see THAT specific thing yet.`,
+          );
+        }
+        if (memSnippets.length) {
+          sections.push(
+            `What you remember about them (in your voice, from RAG):\n${memSnippets.map((s) => `- ${s}`).join("\n")}`,
+          );
+        }
+        const extraSystem = sections.length ? sections.join("\n\n") : undefined;
 
         const response = await callTilly({
           toneKey: tone,
