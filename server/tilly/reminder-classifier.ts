@@ -66,7 +66,9 @@ Examples that are NOT reminders (don't flag):
 
 If unsure: hasReminder=false. False positives are worse than false negatives — students don't want surprise pings they didn't ask for.
 
-Today is {NOW}. Resolve relative dates (tomorrow, Friday, "before ticket day") to ISO-8601 timestamps in the student's timezone (assume America/Toronto unless told otherwise).`;
+Today is {NOW}. Resolve relative dates (tomorrow, Friday, "before ticket day") to ISO-8601 timestamps in the student's timezone (assume America/Toronto unless told otherwise).
+
+Important: in the label field, use ASCII characters only. No em-dashes, no smart quotes, no curly apostrophes. Use plain "-" and "'" instead. The label is rendered through layers that don't always handle UTF-8 cleanly.`;
 
 export async function extractReminderFromReply(
   tillyReply: string,

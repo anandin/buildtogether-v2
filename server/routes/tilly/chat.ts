@@ -251,22 +251,31 @@ export function mountTillyChatRoutes(app: Express): void {
 
       if (isAffordabilityQuestion(message)) {
         try {
-          // Phase 2 ledger: empty placeholder. Phase 4 wires real Plaid data —
-          // until then Claude will compute against whatever's provided and
-          // explain what it doesn't know.
+          // Hand the analyzer the real financial state instead of zeros.
+          // Without this, the LLM has nothing to anchor "Starting buffer"
+          // and either refuses structured output or returns a fabricated
+          // ledger — both end up falling through to plain text.
+          const state = await buildFinancialStateSummary(householdId);
+          // Pull recent expenses too so the "weekly drain" line is real.
           analysisPayload = await analyzeAffordability({
             userMessage: message,
             ledger: {
-              balance: 0,
+              balance: 0, // True bank balance lands when Plaid prod approves.
               upcomingBills: [],
               activeDreamAutoSaves: [],
             },
+            stateSummary: state.hasData ? state.text : null,
             tone,
             recentMemorySnippets: await retrieveContextSnippets(userId, message),
           });
         } catch (err) {
-          // Fall through to plain text on parse/model errors.
-          console.error("analyzeAffordability failed, falling back to text:", err);
+          // Surface the error so we can diagnose, but don't crash — the
+          // plain-text reply still lands.
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(
+            "[tilly chat] analyzeAffordability failed, falling back to text:",
+            msg,
+          );
         }
       }
 

@@ -65,6 +65,9 @@ export type AffordabilityInput = {
     nextPaycheck?: { amount: number; dayLabel: string };
     activeDreamAutoSaves: { name: string; weekly: number }[];
   };
+  /** Plain-text summary of the student's actual financial state — fed
+   *  into the model so "Starting buffer" reflects reality instead of 0. */
+  stateSummary?: string | null;
   tone: BTToneKey;
   recentMemorySnippets: string[];
 };
@@ -99,12 +102,16 @@ export async function analyzeAffordability(
     ? `\n\nWhat you remember about them (in your own voice):\n${input.recentMemorySnippets.map((s) => `- ${s}`).join("\n")}`
     : "";
 
+  const stateBlock = input.stateSummary
+    ? `\n\nTheir current financial state (use this when computing the ledger — DO NOT say you can't see their balance):\n${input.stateSummary}`
+    : "";
+
   const userContent = `The student just asked: "${input.userMessage}"
 
 Their ledger right now:
-${formatLedger(input.ledger)}${memContext}
+${formatLedger(input.ledger)}${stateBlock}${memContext}
 
-Compute the affordability ledger and return the structured analysis. Show your math first (3–5 rows: starting buffer → deductions → final buffer), then give the call in 1–2 sentences in your voice. Use the active tone. The 'note' must lead with a clear yes/no and explain the tradeoff in plain language.`;
+Compute the affordability ledger and return the structured analysis. Show your math first (3-5 rows: starting buffer -> deductions -> final buffer), then give the call in 1-2 sentences in your voice. Use the active tone. The 'note' must lead with a clear yes/no and explain the tradeoff in plain language. Use ASCII chars only in labels and notes (no em-dashes, no smart quotes).`;
 
   const systemPrompts = await buildSystemPrompts(input.tone);
   const llm = await getLLM();
