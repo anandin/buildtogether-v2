@@ -14,7 +14,7 @@
  * reconstructed in the BT message shape.
  */
 import type { Express, Request, Response } from "express";
-import { eq, and, desc, asc } from "drizzle-orm";
+import { eq, and, desc, asc, sql } from "drizzle-orm";
 
 import { requireAuth } from "../../middleware/auth";
 import { db } from "../../db";
@@ -399,4 +399,139 @@ export function mountTillyChatRoutes(app: Express): void {
     await setUserTone(req.user.id, tone);
     res.json({ tone });
   });
+
+  // GET /api/tilly/quiet — read all quiet-settings fields the Profile
+  // Quiet Settings card surfaces (hours, big-purchase threshold, sub
+  // scan cadence, phishing watch, memory retention).
+  app.get("/api/tilly/quiet", requireAuth, async (req: Request, res: Response) => {
+    if (!req.user) return res.status(401).json({ error: "auth required" });
+    const userId = req.user.id;
+    const pref = await db.query.tillyTonePref.findFirst({
+      where: eq(tillyTonePref.userId, userId),
+    });
+    res.json({
+      quietHoursStart: pref?.quietHoursStart ?? "23:00",
+      quietHoursEnd: pref?.quietHoursEnd ?? "07:00",
+      bigPurchaseThreshold: pref?.bigPurchaseThreshold ?? 25,
+      subscriptionScanCadence: pref?.subscriptionScanCadence ?? "weekly",
+      phishingWatch: pref?.phishingWatch ?? true,
+      memoryRetention: pref?.memoryRetention ?? "forever",
+    });
+  });
+
+  // PUT /api/tilly/quiet — update one or more quiet-settings fields.
+  app.put("/api/tilly/quiet", requireAuth, async (req: Request, res: Response) => {
+    if (!req.user) return res.status(401).json({ error: "auth required" });
+    const userId = req.user.id;
+    const body = req.body ?? {};
+    const set: Record<string, unknown> = { updatedAt: new Date() };
+
+    if (typeof body.quietHoursStart === "string" && /^\d{2}:\d{2}$/.test(body.quietHoursStart))
+      set.quietHoursStart = body.quietHoursStart;
+    if (typeof body.quietHoursEnd === "string" && /^\d{2}:\d{2}$/.test(body.quietHoursEnd))
+      set.quietHoursEnd = body.quietHoursEnd;
+    if (typeof body.bigPurchaseThreshold === "number" && body.bigPurchaseThreshold >= 0)
+      set.bigPurchaseThreshold = body.bigPurchaseThreshold;
+    if (
+      typeof body.subscriptionScanCadence === "string" &&
+      ["daily", "weekly", "monthly", "off"].includes(body.subscriptionScanCadence)
+    )
+      set.subscriptionScanCadence = body.subscriptionScanCadence;
+    if (typeof body.phishingWatch === "boolean") set.phishingWatch = body.phishingWatch;
+    if (
+      typeof body.memoryRetention === "string" &&
+      ["forever", "year", "month", "session"].includes(body.memoryRetention)
+    )
+      set.memoryRetention = body.memoryRetention;
+
+    // Upsert: insert with defaults if no pref row exists, otherwise update.
+    await db
+      .insert(tillyTonePref)
+      .values({ userId, ...(set as any) })
+      .onConflictDoUpdate({ target: tillyTonePref.userId, set });
+
+    res.json({ ok: true });
+  });
+
+  // POST /api/tilly/learned/dismiss — archive the most recent observation
+  // memory ("Don't worry about it" button on the Tilly Learned card).
+  app.post(
+    "/api/tilly/learned/dismiss",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const userId = req.user.id;
+      try {
+        const { tillyMemory } = await import("../../../shared/schema");
+        const recent = await db
+          .select()
+          .from(tillyMemory)
+          .where(
+            and(
+              eq(tillyMemory.userId, userId),
+              eq(tillyMemory.kind, "observation"),
+              sql`${tillyMemory.archivedAt} IS NULL`,
+            ),
+          )
+          .orderBy(desc(tillyMemory.noticedAt))
+          .limit(1);
+        if (recent[0]) {
+          await db
+            .update(tillyMemory)
+            .set({ archivedAt: new Date() })
+            .where(eq(tillyMemory.id, recent[0].id));
+        }
+        res.json({ ok: true });
+      } catch (err) {
+        console.error("/api/tilly/learned/dismiss error:", err);
+        res.status(500).json({ error: "dismiss failed" });
+      }
+    },
+  );
+
+  // POST /api/tilly/learned/remind — confirm the user wants Tilly to
+  // nudge them about this pattern. Writes a preference memory the chat
+  // system prompt sees on every turn ("user wants Tuesday-night nudge
+  // before their Wednesday soft-spot").
+  app.post(
+    "/api/tilly/learned/remind",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const userId = req.user.id;
+      const householdId = req.user.coupleId;
+      if (!householdId) return res.status(400).json({ error: "no_household" });
+      try {
+        const { tillyMemory } = await import("../../../shared/schema");
+        // Find the most recent observation to anchor the preference to.
+        const recent = await db
+          .select()
+          .from(tillyMemory)
+          .where(
+            and(
+              eq(tillyMemory.userId, userId),
+              eq(tillyMemory.kind, "observation"),
+              sql`${tillyMemory.archivedAt} IS NULL`,
+            ),
+          )
+          .orderBy(desc(tillyMemory.noticedAt))
+          .limit(1);
+        const obsBody = recent[0]?.body ?? "this week's pattern";
+
+        await db.insert(tillyMemory).values({
+          userId,
+          householdId,
+          kind: "preference",
+          body: `They asked me to nudge them the night before — re: ${obsBody}`,
+          source: "action",
+          dateLabel: "Today",
+          isMostRecent: true,
+        });
+        res.json({ ok: true });
+      } catch (err) {
+        console.error("/api/tilly/learned/remind error:", err);
+        res.status(500).json({ error: "remind failed" });
+      }
+    },
+  );
 }

@@ -35,6 +35,8 @@ import { useDreams } from "../hooks/useDreams";
 import { useUser } from "../hooks/useUser";
 import { useExpenses } from "../hooks/useExpenses";
 import { useSpend } from "../hooks/useSpend";
+import { btApi } from "../api/client";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Text } from "react-native";
 
 type Props = { onNav?: (route: BTRoute) => void };
@@ -74,6 +76,20 @@ export function BTHome({ onNav }: Props) {
       : null;
 
   const spendLive = spend.data && spend.data.ready === true ? spend.data : null;
+
+  // Tilly Learned actions: remind / dismiss. Both invalidate the memory
+  // query so the observation either disappears (dismiss) or persists
+  // with a new preference memory anchored to it (remind).
+  const qc = useQueryClient();
+  const learnedRemind = useMutation({
+    mutationFn: btApi.remindLearned,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/tilly/memory"] }),
+  });
+  const learnedDismiss = useMutation({
+    mutationFn: btApi.dismissLearned,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/tilly/memory"] }),
+  });
+  const learnedActed = learnedRemind.isSuccess || learnedDismiss.isSuccess;
   const recentExpenses = expenses.data?.expenses ?? [];
   const expenseTotalThisWeek = recentExpenses
     .filter((e) => {
@@ -272,33 +288,58 @@ export function BTHome({ onNav }: Props) {
             >
               Want me to nudge you the night before?
             </Text>
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <Pressable
+            {learnedActed ? (
+              <Text
                 style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderRadius: 999,
-                  backgroundColor: t.ink,
+                  color: t.accent,
+                  fontFamily: BTFonts.serifItalic,
+                  fontSize: 14,
+                  lineHeight: 20,
                 }}
               >
-                <Text style={{ color: t.surface, fontFamily: BTFonts.sans, fontSize: 12, fontWeight: "600" }}>
-                  Yes, remind me
-                </Text>
-              </Pressable>
-              <Pressable
-                style={{
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderRadius: 999,
-                  borderWidth: 1,
-                  borderColor: t.rule,
-                }}
-              >
-                <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontSize: 12, fontWeight: "600" }}>
-                  Don't worry about it
-                </Text>
-              </Pressable>
-            </View>
+                {learnedRemind.isSuccess
+                  ? "Got it. I'll nudge you Tuesday night."
+                  : "Okay, I'll let it ride."}
+              </Text>
+            ) : (
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <Pressable
+                  onPress={() => learnedRemind.mutate()}
+                  disabled={learnedRemind.isPending || learnedDismiss.isPending}
+                  accessibilityRole="button"
+                  accessibilityLabel="Yes, remind me"
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    borderRadius: 999,
+                    backgroundColor: t.ink,
+                    opacity: learnedRemind.isPending ? 0.6 : 1,
+                  }}
+                >
+                  <Text style={{ color: t.surface, fontFamily: BTFonts.sans, fontSize: 12, fontWeight: "600" }}>
+                    {learnedRemind.isPending ? "Saving…" : "Yes, remind me"}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => learnedDismiss.mutate()}
+                  disabled={learnedRemind.isPending || learnedDismiss.isPending}
+                  accessibilityRole="button"
+                  accessibilityLabel="Don't worry about it"
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 8,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: t.rule,
+                    opacity: learnedDismiss.isPending ? 0.6 : 1,
+                  }}
+                >
+                  <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontSize: 12, fontWeight: "600" }}>
+                    {learnedDismiss.isPending ? "Hiding…" : "Don't worry about it"}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
           </BTCard>
         ) : null}
 

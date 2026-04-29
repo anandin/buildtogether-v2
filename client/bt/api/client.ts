@@ -116,6 +116,29 @@ export const btApi = {
       image: imageDataUrl,
     }),
 
+  // ── Tilly Learned card actions ──────────────────────────────────────
+  dismissLearned: () => postJson<{ ok: true }>("/api/tilly/learned/dismiss"),
+  remindLearned: () => postJson<{ ok: true }>("/api/tilly/learned/remind"),
+
+  // ── Quiet settings (notifications, thresholds, retention) ───────────
+  getQuietSettings: () =>
+    getJson<{
+      quietHoursStart: string;
+      quietHoursEnd: string;
+      bigPurchaseThreshold: number;
+      subscriptionScanCadence: string;
+      phishingWatch: boolean;
+      memoryRetention: string;
+    }>("/api/tilly/quiet"),
+  setQuietSettings: (body: Partial<{
+    quietHoursStart: string;
+    quietHoursEnd: string;
+    bigPurchaseThreshold: number;
+    subscriptionScanCadence: string;
+    phishingWatch: boolean;
+    memoryRetention: string;
+  }>) => putJson<{ ok: true }>("/api/tilly/quiet", body),
+
   // ── Trusted-people invites (Twilio SMS) ───────────────────────────────
   invitePerson: (body: { phone?: string; email?: string; name: string; scope: string }) =>
     postJson<{ ok: true; inviteId: string }>("/api/invites", body),

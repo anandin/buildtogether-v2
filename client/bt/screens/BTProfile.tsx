@@ -23,16 +23,64 @@ import { useSetTillyTone } from "../hooks/useTillyTone";
 import { useProfile } from "../hooks/useProfile";
 import { useUser } from "../hooks/useUser";
 import { InvitePersonModal } from "../InvitePersonModal";
+import { QuietSettingsEditor, type QuietSettingKey } from "../QuietSettingsEditor";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { useQuery } from "@tanstack/react-query";
+import { btApi } from "../api/client";
 
-const QUIET_SETTINGS = [
-  { id: "q1", label: "Quiet hours", value: "11pm — 7am" },
-  { id: "q2", label: "Big-purchase alert", value: "> $25" },
-  { id: "q3", label: "Subscription scan", value: "weekly" },
-  { id: "q4", label: "Phishing watch", value: "on" },
-  { id: "q5", label: "Memory", value: "forever — your choice", emphasize: true as const },
+type QuietRow = { id: QuietSettingKey | "memory_legacy"; label: string };
+
+const QUIET_ROWS: QuietRow[] = [
+  { id: "quiet_hours", label: "Quiet hours" },
+  { id: "big_purchase", label: "Big-purchase alert" },
+  { id: "subscription_scan", label: "Subscription scan" },
+  { id: "phishing_watch", label: "Phishing watch" },
+  { id: "memory_retention", label: "Memory" },
 ];
+
+/**
+ * Render the live value for a quiet-settings row using the loaded
+ * preferences. Falls back to sensible defaults so the row never
+ * renders blank during the first load.
+ */
+function quietValue(
+  row: QuietRow,
+  s:
+    | {
+        quietHoursStart?: string;
+        quietHoursEnd?: string;
+        bigPurchaseThreshold?: number;
+        subscriptionScanCadence?: string;
+        phishingWatch?: boolean;
+        memoryRetention?: string;
+      }
+    | undefined,
+): string {
+  if (!s) return "—";
+  const fmt12 = (hhmm?: string) => {
+    if (!hhmm) return "—";
+    const [h, m] = hhmm.split(":").map((x) => parseInt(x, 10));
+    if (Number.isNaN(h)) return hhmm;
+    const ampm = h >= 12 ? "pm" : "am";
+    const h12 = ((h + 11) % 12) + 1;
+    const mm = String(m ?? 0).padStart(2, "0");
+    return mm === "00" ? `${h12}${ampm}` : `${h12}:${mm}${ampm}`;
+  };
+  if (row.id === "quiet_hours") return `${fmt12(s.quietHoursStart)} — ${fmt12(s.quietHoursEnd)}`;
+  if (row.id === "big_purchase") return `> $${s.bigPurchaseThreshold ?? 25}`;
+  if (row.id === "subscription_scan") return s.subscriptionScanCadence ?? "weekly";
+  if (row.id === "phishing_watch") return s.phishingWatch === false ? "off" : "on";
+  if (row.id === "memory_retention") {
+    const m = s.memoryRetention ?? "forever";
+    if (m === "forever") return "forever — your choice";
+    if (m === "year") return "one year";
+    if (m === "month") return "30 days";
+    if (m === "session") return "session only";
+    return m;
+  }
+  return "";
+}
 
 export function BTProfile() {
   const { t, tone, setTone } = useBT();
@@ -41,7 +89,13 @@ export function BTProfile() {
   const profile = useProfile();
   const { user } = useUser();
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [quietOpen, setQuietOpen] = useState<QuietSettingKey | null>(null);
   const { signOut } = useAuth();
+  const quiet = useQuery({
+    queryKey: ["/api/tilly/quiet"],
+    queryFn: btApi.getQuietSettings,
+    staleTime: 5 * 60_000,
+  });
 
   const live = profile.data && (profile.data as any).ready === true ? (profile.data as any) : null;
   const userName = live?.name ?? user?.name ?? "You";
@@ -295,6 +349,11 @@ export function BTProfile() {
         </Pressable>
       </View>
       <InvitePersonModal visible={inviteOpen} onClose={() => setInviteOpen(false)} />
+      <QuietSettingsEditor
+        visible={!!quietOpen}
+        settingKey={quietOpen}
+        onClose={() => setQuietOpen(null)}
+      />
 
       {/* Sign out — quiet, at the very bottom of Profile so it's reachable
           without being prominent. Forgotten how to leave is a worse UX
@@ -336,11 +395,15 @@ export function BTProfile() {
             overflow: "hidden",
           }}
         >
-          {QUIET_SETTINGS.map((s, i) => {
-            const emphasize = "emphasize" in s && s.emphasize;
+          {QUIET_ROWS.map((row, i) => {
+            const emphasize = row.id === "memory_retention";
+            const value = quietValue(row, quiet.data);
             return (
-              <View key={s.id}>
-                <View
+              <View key={row.id}>
+                <Pressable
+                  onPress={() => setQuietOpen(row.id as QuietSettingKey)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Edit ${row.label}`}
                   style={{
                     flexDirection: "row",
                     justifyContent: "space-between",
@@ -357,7 +420,7 @@ export function BTProfile() {
                       fontSize: 13,
                     }}
                   >
-                    {s.label}
+                    {row.label}
                   </Text>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                     <Text
@@ -369,12 +432,12 @@ export function BTProfile() {
                         textTransform: emphasize ? "none" : "uppercase",
                       }}
                     >
-                      {s.value}
+                      {value}
                     </Text>
                     <Text style={{ color: t.inkMute, fontSize: 14, fontFamily: BTFonts.sans }}>›</Text>
                   </View>
-                </View>
-                {i < QUIET_SETTINGS.length - 1 ? <BTRule color={t.rule} /> : null}
+                </Pressable>
+                {i < QUIET_ROWS.length - 1 ? <BTRule color={t.rule} /> : null}
               </View>
             );
           })}
