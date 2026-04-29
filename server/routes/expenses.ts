@@ -53,71 +53,158 @@ const ParsedExpenseSchema = z.object({
 
 type ParsedExpense = z.infer<typeof ParsedExpenseSchema>;
 
+// Word→number for spelled-out amounts. STT often turns "$8 lunch" into
+// "eight dollar lunch" or even "a dollar lunch" (mishears "$8" as the
+// indefinite article). Without this, "A dollar lunch at my cafeteria"
+// won't fast-path and falls into a brittle LLM call that 500s when the
+// schema doesn't fit.
+const NUMBER_WORDS: Record<string, number> = {
+  a: 1,
+  an: 1,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  fifteen: 15,
+  twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fifty: 50,
+};
+
+function categorize(text: string): ParsedExpense["category"] {
+  const lc = text.toLowerCase();
+  if (/coffee|latte|espresso|cafe|stumptown|starbucks|joe/.test(lc)) return "coffee";
+  if (/grocer|trader joe|whole foods|safeway|aldi/.test(lc)) return "groceries";
+  if (/doordash|grubhub|uber eats|takeout|halal|pizza|burger|lunch|dinner|breakfast|cafeteria|sushi|chipotle/.test(lc))
+    return "eatout";
+  if (/uber|lyft|subway|metro|bus|gas|citibike|train/.test(lc)) return "transit";
+  if (/textbook|pearson|tuition|school|class|exam/.test(lc)) return "school";
+  if (/spotify|netflix|hulu|apple tv|sub /.test(lc)) return "subs";
+  return "other";
+}
+
 /**
  * Parse free-form user text ("$5 coffee at stumptown") into a structured
- * expense via the persona LLM. Falls back to a simple regex extractor for
- * the common case so we don't burn an LLM call on "$5 coffee".
+ * expense. Tries digit regex first, then spelled-out numbers ("eight
+ * dollars"), then falls back to the LLM. NEVER throws — when nothing
+ * parses, returns amount=0 so the row still saves and the user can edit
+ * it on the spend tab.
  */
 async function parseToExpense(raw: string): Promise<ParsedExpense> {
   const trimmed = raw.trim();
+  const lc = trimmed.toLowerCase();
 
-  // Cheap regex fast-path: "<amount> <description>" / "<description> <amount>".
-  const amountMatch = trimmed.match(/\$?\s*(\d+(?:\.\d{1,2})?)/);
-  const amount = amountMatch ? Number(amountMatch[1]) : null;
-  if (amount && trimmed.length < 60) {
-    const rest = trimmed.replace(amountMatch![0], "").replace(/\s+/g, " ").trim();
-    const lc = rest.toLowerCase();
-    let category: ParsedExpense["category"] = "other";
-    if (/coffee|latte|espresso|cafe|stumptown|starbucks|joe/.test(lc)) category = "coffee";
-    else if (/grocer|trader joe|whole foods|safeway|aldi/.test(lc)) category = "groceries";
-    else if (/doordash|grubhub|uber eats|takeout|halal|pizza|burger/.test(lc)) category = "eatout";
-    else if (/uber|lyft|subway|metro|bus|gas|citibike/.test(lc)) category = "transit";
-    else if (/textbook|pearson|tuition|school|class/.test(lc)) category = "school";
-    else if (/spotify|netflix|hulu|apple|sub /.test(lc)) category = "subs";
+  // 1) Digit fast-path: "$5", "5 dollars", "5.50".
+  const digitMatch = trimmed.match(/\$?\s*(\d+(?:\.\d{1,2})?)/);
+  if (digitMatch && trimmed.length < 80) {
+    const amount = Number(digitMatch[1]);
+    const rest = trimmed.replace(digitMatch[0], "").replace(/\s+/g, " ").trim();
+    const description = rest || `$${amount}`;
+    return {
+      amount,
+      merchant: rest || null,
+      description,
+      category: categorize(rest || trimmed),
+      isRecurring: /\bsubscription|monthly|recurring\b/i.test(trimmed),
+    };
+  }
+
+  // 2) Spelled-out number fast-path: "eight dollar lunch",
+  //    "a dollar lunch at my cafeteria", "five bucks coffee".
+  const spelledMatch = lc.match(
+    /\b(a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty)\s+(dollar|dollars|buck|bucks)\b/,
+  );
+  if (spelledMatch) {
+    const amount = NUMBER_WORDS[spelledMatch[1]] ?? 0;
+    // Remove the "<word> dollar(s)" chunk from the human description so it
+    // reads cleanly: "lunch at my cafeteria" rather than "a dollar lunch
+    // at my cafeteria".
+    const idx = lc.indexOf(spelledMatch[0]);
+    const rest = (
+      trimmed.slice(0, idx) + trimmed.slice(idx + spelledMatch[0].length)
+    )
+      .replace(/\s+/g, " ")
+      .trim();
     return {
       amount,
       merchant: rest || null,
       description: rest || `$${amount}`,
-      category,
-      isRecurring: category === "subs",
+      category: categorize(rest || trimmed),
+      isRecurring: /\bsubscription|monthly|recurring\b/i.test(trimmed),
     };
   }
 
-  const llm = await getLLM();
-  return llm.structuredOutput<ParsedExpense>({
-    systemPrompts: [
-      "You parse a brief user note about a purchase into structured fields. Be conservative — if you can't tell, return category 'other' and amount as best guess. Never invent details that aren't in the note.",
-    ],
-    messages: [{ role: "user", content: trimmed }],
-    schema: ParsedExpenseSchema,
-    schemaName: "expense_parse",
-  });
+  // 3) LLM fallback — any failure (network / schema mismatch / bad json)
+  //    must not 500 the request. We log + degrade to amount=0 so the row
+  //    still lands and the user can correct it.
+  try {
+    const llm = await getLLM();
+    return await llm.structuredOutput<ParsedExpense>({
+      systemPrompts: [
+        "You parse a brief user note about a purchase into structured fields. Be conservative — if you can't tell, return category 'other' and amount=0. Never invent details that aren't in the note.",
+      ],
+      messages: [{ role: "user", content: trimmed }],
+      schema: ParsedExpenseSchema,
+      schemaName: "expense_parse",
+    });
+  } catch (err) {
+    console.warn("[expenses] LLM parse fell back to stub:", err);
+    return {
+      amount: 0,
+      merchant: null,
+      description: trimmed.slice(0, 80) || "Unspecified expense",
+      category: categorize(trimmed),
+      isRecurring: false,
+    };
+  }
 }
 
 /**
  * Parse a receipt image. The vision call returns the same shape as text
- * parse so the downstream insert is identical.
+ * parse so the downstream insert is identical. Like `parseToExpense`,
+ * NEVER throws — bad/unreadable images degrade to amount=0 with a
+ * description placeholder so the row lands and the user can edit.
  */
 async function parsePhotoToExpense(
   imageDataUrl: string,
 ): Promise<ParsedExpense> {
-  const llm = await getLLM();
-  return llm.structuredOutput<ParsedExpense>({
-    systemPrompts: [
-      "You read a photo of a receipt and extract the total + merchant + best category. Read only what's on the receipt — never invent a line item. If multiple totals exist, pick the grand total (the one with tip + tax included). Return amount as a positive USD number.",
-    ],
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "text", text: "Extract the receipt total and merchant from this photo." },
-          { type: "image_url", image_url: { url: imageDataUrl } },
-        ] as any,
-      },
-    ],
-    schema: ParsedExpenseSchema,
-    schemaName: "expense_photo",
-  });
+  try {
+    const llm = await getLLM();
+    return await llm.structuredOutput<ParsedExpense>({
+      systemPrompts: [
+        "You read a photo of a receipt and extract the total + merchant + best category. Read only what's on the receipt — never invent a line item. If multiple totals exist, pick the grand total (the one with tip + tax included). Return amount as a positive number, or 0 if you genuinely can't read it.",
+      ],
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Extract the receipt total and merchant from this photo." },
+            { type: "image_url", image_url: { url: imageDataUrl } },
+          ] as any,
+        },
+      ],
+      schema: ParsedExpenseSchema,
+      schemaName: "expense_photo",
+    });
+  } catch (err) {
+    console.warn("[expenses] photo parse fell back to stub:", err);
+    return {
+      amount: 0,
+      merchant: null,
+      description: "Receipt — needs amount",
+      category: "other",
+      isRecurring: false,
+    };
+  }
 }
 
 export function mountExpensesRoutes(app: Express): void {
@@ -235,10 +322,18 @@ export function mountExpensesRoutes(app: Express): void {
             isRecurring: parsed.isRecurring,
           })
           .returning();
-        res.json({ ok: true, expense: row, parsed });
+        // needsAmount lets the client surface a "Tilly couldn't tell — tap
+        // to set the amount" prompt instead of silently saving a $0 row.
+        res.json({
+          ok: true,
+          expense: row,
+          parsed,
+          needsAmount: !parsed.amount || parsed.amount <= 0,
+        });
       } catch (err) {
         console.error("/api/expenses/voice error:", err);
-        res.status(500).json({ error: "voice_parse_failed" });
+        const msg = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error: "voice_parse_failed", debug: msg });
       }
     },
   );
@@ -276,10 +371,16 @@ export function mountExpensesRoutes(app: Express): void {
             receiptImage: "captured",
           })
           .returning();
-        res.json({ ok: true, expense: row, parsed });
+        res.json({
+          ok: true,
+          expense: row,
+          parsed,
+          needsAmount: !parsed.amount || parsed.amount <= 0,
+        });
       } catch (err) {
         console.error("/api/expenses/photo error:", err);
-        res.status(500).json({ error: "photo_parse_failed" });
+        const msg = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error: "photo_parse_failed", debug: msg });
       }
     },
   );

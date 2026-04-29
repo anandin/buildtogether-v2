@@ -241,6 +241,7 @@ function VoiceEntry({ onSaved }: { onSaved: () => void }) {
   const [editing, setEditing] = useState(false);
   const [recording, setRecording] = useState(false);
   const [supported, setSupported] = useState<boolean | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const recRef = useRef<any>(null);
   const voice = useVoiceExpense();
 
@@ -285,10 +286,33 @@ function VoiceEntry({ onSaved }: { onSaved: () => void }) {
   const submit = () => {
     const trimmed = transcript.trim();
     if (!trimmed) return;
+    setErrorMsg(null);
     voice.mutate(trimmed, {
-      onSuccess: () => {
+      onSuccess: (resp: any) => {
+        // Server returns needsAmount when STT didn't include a clear $.
+        // Keep the modal open so the user can switch to the text tab and
+        // type the corrected amount instead of silently saving $0.
+        if (resp?.needsAmount) {
+          setErrorMsg(
+            "I logged it but couldn't tell the amount. Tap the row in Spend to set it.",
+          );
+          // Still close after 2s so a stuck user isn't trapped.
+          setTimeout(() => {
+            setTranscript("");
+            setErrorMsg(null);
+            onSaved();
+          }, 2200);
+          return;
+        }
         setTranscript("");
         onSaved();
+      },
+      onError: (err: any) => {
+        const msg =
+          err?.response?.data?.error ||
+          err?.message ||
+          "Couldn't save that. Try again, or use text.";
+        setErrorMsg(typeof msg === "string" ? msg : "Couldn't save that.");
       },
     });
   };
@@ -413,6 +437,18 @@ function VoiceEntry({ onSaved }: { onSaved: () => void }) {
           </Text>
         </Pressable>
       </View>
+      {errorMsg ? (
+        <Text
+          style={{
+            color: t.bad,
+            fontFamily: BTFonts.serifItalic,
+            fontSize: 13,
+            lineHeight: 19,
+          }}
+        >
+          {errorMsg}
+        </Text>
+      ) : null}
       <PrimaryButton
         label={voice.isPending ? "Tilly's thinking…" : "Save what I said"}
         onPress={submit}
@@ -450,6 +486,7 @@ function PhotoEntry({ onSaved }: { onSaved: () => void }) {
   const { t } = useBT();
   const photo = usePhotoExpense();
   const [preview, setPreview] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const cameraInputRef = useRef<any>(null);
   const libraryInputRef = useRef<any>(null);
 
@@ -524,10 +561,29 @@ function PhotoEntry({ onSaved }: { onSaved: () => void }) {
 
   const submit = () => {
     if (!preview) return;
+    setErrorMsg(null);
     photo.mutate(preview, {
-      onSuccess: () => {
+      onSuccess: (resp: any) => {
+        if (resp?.needsAmount) {
+          setErrorMsg(
+            "I logged the receipt but couldn't read the total. Tap the row in Spend to set it.",
+          );
+          setTimeout(() => {
+            setPreview(null);
+            setErrorMsg(null);
+            onSaved();
+          }, 2400);
+          return;
+        }
         setPreview(null);
         onSaved();
+      },
+      onError: (err: any) => {
+        const msg =
+          err?.response?.data?.error ||
+          err?.message ||
+          "Couldn't read that receipt. Try a clearer photo or use text.";
+        setErrorMsg(typeof msg === "string" ? msg : "Couldn't save the receipt.");
       },
     });
   };
@@ -589,6 +645,18 @@ function PhotoEntry({ onSaved }: { onSaved: () => void }) {
             </Text>
           </Pressable>
         </View>
+      ) : null}
+      {errorMsg ? (
+        <Text
+          style={{
+            color: t.bad,
+            fontFamily: BTFonts.serifItalic,
+            fontSize: 13,
+            lineHeight: 19,
+          }}
+        >
+          {errorMsg}
+        </Text>
       ) : null}
       <PrimaryButton
         label={photo.isPending ? "Tilly's reading the receipt…" : "Save from receipt"}
