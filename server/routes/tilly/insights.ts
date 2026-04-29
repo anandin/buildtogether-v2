@@ -211,7 +211,8 @@ export function mountTillyInsightsRoutes(app: Express): void {
       // either way: the screen renders its connect-bank empty state. We
       // return ready:false instead of 500 so the browser console stays clean.
       console.warn("/api/tilly/spend-pattern soft-fail:", err);
-      res.json({ phase: 4, ready: false, reason: "transient" });
+      const debugMsg = err instanceof Error ? err.message : String(err);
+      res.json({ phase: 4, ready: false, reason: "transient", debug: debugMsg });
     }
   });
 
