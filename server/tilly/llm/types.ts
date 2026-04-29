@@ -72,11 +72,11 @@ export const DEFAULT_MODELS = {
     // tone holds up well. Receipt OCR + the "is this affordable" math
     // blocks both fit comfortably inside Sonnet. Swap back to Opus only
     // if a specific user reports tone regression.
-    chat: "anthropic/claude-sonnet-4-6",
+    chat: "anthropic/claude-sonnet-4.6",
     embedding: "openai/text-embedding-3-small",
   },
   anthropic: {
-    chat: "claude-sonnet-4-6",
+    chat: "claude-sonnet-4-6",  // anthropic-direct uses hyphens, OpenRouter uses dots
     // Anthropic doesn't host embeddings — fall back to OpenRouter for embeds
     // even on anthropic-direct provider, or use Voyage AI separately.
     embedding: "openai/text-embedding-3-small",

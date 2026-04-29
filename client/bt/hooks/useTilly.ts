@@ -39,6 +39,10 @@ export function useTilly() {
         ["/api/tilly/chat/history"],
         (prev) => ({ messages: [...(prev?.messages ?? []), data.reply] }),
       );
+      // The server may have classified Tilly's reply as a follow-up
+      // promise and inserted a tilly_reminders row. Refetch so the
+      // RemindersStrip picks it up immediately.
+      qc.invalidateQueries({ queryKey: ["/api/tilly/reminders"] });
     },
   });
 

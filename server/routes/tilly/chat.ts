@@ -36,6 +36,7 @@ import { embed } from "../../tilly/embeddings";
 import { retrieveContextSnippets } from "../../tilly/retriever";
 import { assertUnderCap } from "../../tilly/usage";
 import { buildFinancialStateSummary } from "../../tilly/state-summary";
+import { extractReminderFromReply } from "../../tilly/reminder-classifier";
 import {
   isValidTone,
   DEFAULT_TONE,
@@ -332,29 +333,23 @@ export function mountTillyChatRoutes(app: Express): void {
           messages: history,
           extraSystem,
         });
-        const rawText = response.text;
-        // Extract any reminder tags Tilly emitted, persist them, and strip
-        // the tag markup from the visible reply.
-        const { cleaned: text, reminders: drafts } =
-          extractReminderTags(rawText);
-        if (drafts.length) {
-          try {
-            await db.insert(tillyReminders).values(
-              drafts.map((d) => ({
-                userId,
-                householdId,
-                kind: d.kind,
-                label: d.label,
-                fireAt: d.fireAt,
-                metadata: d.metadata ?? null,
-              })),
-            );
-          } catch (err) {
-            console.warn(
-              "[chat] failed to persist Tilly reminders, dropping:",
-              err,
-            );
+        const text = response.text;
+        // Detect whether Tilly promised a follow-up — Haiku 4.5 classifier
+        // (~1-2s, ~250 tok). Inline so the row exists by the time we return,
+        // and the client can refetch reminders on the same mutation success.
+        try {
+          const draft = await extractReminderFromReply(text, message);
+          if (draft) {
+            await db.insert(tillyReminders).values({
+              userId,
+              householdId,
+              kind: draft.kind,
+              label: draft.label,
+              fireAt: draft.fireAt,
+            });
           }
+        } catch (err) {
+          console.warn("[chat] reminder persist failed:", err);
         }
 
         const [tillyRow] = await db
