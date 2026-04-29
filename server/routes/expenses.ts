@@ -169,40 +169,69 @@ async function parseToExpense(raw: string): Promise<ParsedExpense> {
 }
 
 /**
- * Parse a receipt image. The vision call returns the same shape as text
- * parse so the downstream insert is identical. Like `parseToExpense`,
- * NEVER throws — bad/unreadable images degrade to amount=0 with a
- * description placeholder so the row lands and the user can edit.
+ * Parse a receipt image. Two-step pattern because OpenRouter+Anthropic
+ * don't reliably honour `response_format: json_schema` on multimodal
+ * (image) requests. Step 1 reads the receipt as plain text. Step 2
+ * normalises that into the structured ParsedExpense via a regular
+ * text-only structured-output call.
+ *
+ * Like `parseToExpense`, NEVER throws — bad/unreadable images degrade
+ * to amount=0 so the row lands and the user can correct it.
  */
 async function parsePhotoToExpense(
   imageDataUrl: string,
-): Promise<ParsedExpense> {
+): Promise<ParsedExpense & { _debug?: string }> {
+  let visionText = "";
   try {
     const llm = await getLLM();
-    return await llm.structuredOutput<ParsedExpense>({
+    // Step 1 — vision read (no schema; just plain text). Anthropic via
+    // OpenRouter accepts OpenAI-shaped image_url parts.
+    const read = await llm.textReply({
       systemPrompts: [
-        "You read a photo of a receipt and extract the total + merchant + best category. Read only what's on the receipt — never invent a line item. If multiple totals exist, pick the grand total (the one with tip + tax included). Return amount as a positive number, or 0 if you genuinely can't read it.",
+        "You read photos of receipts. Reply with: MERCHANT=<name>; TOTAL=<grand total in dollars, just the number>; ITEMS=<comma-sep items>. If you cannot read the receipt clearly, reply: TOTAL=0.",
       ],
       messages: [
         {
           role: "user",
           content: [
-            { type: "text", text: "Extract the receipt total and merchant from this photo." },
+            { type: "text", text: "Read this receipt." },
             { type: "image_url", image_url: { url: imageDataUrl } },
           ] as any,
         },
       ],
-      schema: ParsedExpenseSchema,
-      schemaName: "expense_photo",
+      maxTokens: 500,
     });
+    visionText = read.text || "";
+    // Step 2 — parse the plain text. Reuse the regex/word fast path for
+    // amount extraction so we don't burn another LLM call when "TOTAL=25.40"
+    // is right there.
+    const totalMatch = visionText.match(/TOTAL\s*=\s*\$?\s*(\d+(?:\.\d{1,2})?)/i);
+    const merchantMatch = visionText.match(/MERCHANT\s*=\s*([^;\n]+)/i);
+    const itemsMatch = visionText.match(/ITEMS\s*=\s*([^;\n]+)/i);
+    const amount = totalMatch ? Number(totalMatch[1]) : 0;
+    const merchant = merchantMatch ? merchantMatch[1].trim() : null;
+    const items = itemsMatch ? itemsMatch[1].trim() : "";
+    return {
+      amount,
+      merchant: merchant || null,
+      description: merchant
+        ? items
+          ? `${merchant} — ${items.slice(0, 60)}`
+          : merchant
+        : items.slice(0, 80) || "Receipt — needs amount",
+      category: categorize(`${merchant ?? ""} ${items}`),
+      isRecurring: false,
+    };
   } catch (err) {
-    console.warn("[expenses] photo parse fell back to stub:", err);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn("[expenses] photo parse fell back to stub:", msg);
     return {
       amount: 0,
       merchant: null,
       description: "Receipt — needs amount",
       category: "other",
       isRecurring: false,
+      _debug: `vision_text=${visionText.slice(0, 200)} | err=${msg.slice(0, 200)}`,
     };
   }
 }
@@ -376,6 +405,7 @@ export function mountExpensesRoutes(app: Express): void {
           expense: row,
           parsed,
           needsAmount: !parsed.amount || parsed.amount <= 0,
+          _debug: (parsed as any)._debug,
         });
       } catch (err) {
         console.error("/api/expenses/photo error:", err);
