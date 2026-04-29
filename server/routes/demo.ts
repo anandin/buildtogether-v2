@@ -293,54 +293,37 @@ export function mountDemoRoutes(app: Express): void {
           })
           .returning();
 
-        // 4. Initial sync. Plaid sandbox seeding can take 20-40s on first
-        // call; we retry with a longer cap. Also tracks what got filtered
-        // out so the response is debuggable.
+        // 4. Initial pull via transactionsGet (more reliable for first
+        // sandbox load than /transactions/sync, which can return empty
+        // success while the seed is still being generated). We poll
+        // until Plaid says the data is ready, up to ~60s.
+        const today = new Date().toISOString().slice(0, 10);
+        const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .slice(0, 10);
+
         let added = 0;
         let returnedByPlaid = 0;
         let filteredOut = 0;
-        let cursor: string | undefined = undefined;
-        let hasMore = true;
         let attempts = 0;
         let lastErrorCode: string | undefined;
-        while (hasMore && attempts < 20) {
+        let allTransactions: any[] = [];
+        while (attempts < 20) {
           attempts++;
           try {
-            const resp: any = await (plaid as any).transactionsSync({
+            const resp: any = await (plaid as any).transactionsGet({
               access_token: accessToken,
-              cursor,
+              start_date: ninetyDaysAgo,
+              end_date: today,
+              options: { count: 250 },
             });
-            const data = resp.data;
-            returnedByPlaid += (data.added || []).length;
-            for (const tx of data.added || []) {
-              if (!shouldImportPlaidTransaction(tx)) {
-                filteredOut++;
-                continue;
-              }
-              try {
-                await db.insert(plaidTransactions).values({
-                  coupleId: householdId,
-                  plaidItemId: item.id,
-                  plaidTransactionId: tx.transaction_id,
-                  accountId: tx.account_id,
-                  amount: tx.amount,
-                  date: tx.date,
-                  merchantName: tx.merchant_name ?? null,
-                  name: tx.name ?? "Unknown",
-                  plaidCategory: tx.category ?? null,
-                  ourCategory: mapPlaidCategory(tx.category, tx.personal_finance_category),
-                  pending: tx.pending ?? false,
-                  status: "pending_review",
-                });
-                added++;
-              } catch (e: any) {
-                if (!String(e.message ?? "").includes("duplicate")) {
-                  console.warn("plaid tx insert:", e.message);
-                }
-              }
+            allTransactions = resp.data.transactions ?? [];
+            // total_transactions is only > 0 once the initial pull lands.
+            if (allTransactions.length > 0 || resp.data.total_transactions > 0) {
+              break;
             }
-            cursor = data.next_cursor;
-            hasMore = data.has_more;
+            // Empty pull — still seeding. Wait + retry.
+            await new Promise((r) => setTimeout(r, 3000));
           } catch (err: any) {
             const code = err?.response?.data?.error_code;
             lastErrorCode = code ?? err?.message ?? "unknown";
@@ -349,6 +332,35 @@ export function mountDemoRoutes(app: Express): void {
               continue;
             }
             throw err;
+          }
+        }
+
+        returnedByPlaid = allTransactions.length;
+        for (const tx of allTransactions) {
+          if (!shouldImportPlaidTransaction(tx)) {
+            filteredOut++;
+            continue;
+          }
+          try {
+            await db.insert(plaidTransactions).values({
+              coupleId: householdId,
+              plaidItemId: item.id,
+              plaidTransactionId: tx.transaction_id,
+              accountId: tx.account_id,
+              amount: tx.amount,
+              date: tx.date,
+              merchantName: tx.merchant_name ?? null,
+              name: tx.name ?? "Unknown",
+              plaidCategory: tx.category ?? null,
+              ourCategory: mapPlaidCategory(tx.category, tx.personal_finance_category),
+              pending: tx.pending ?? false,
+              status: "pending_review",
+            });
+            added++;
+          } catch (e: any) {
+            if (!String(e.message ?? "").includes("duplicate")) {
+              console.warn("plaid tx insert:", e.message);
+            }
           }
         }
         await db
