@@ -19,11 +19,47 @@ import {
   TextInput,
   View,
 } from "react-native";
+import Svg, { Path, Rect } from "react-native-svg";
 
 import { useBT } from "./BTContext";
 import { Tilly } from "./Tilly";
 import { BTFonts } from "./theme";
 import { BTLabel, BTSerif } from "./atoms";
+
+// Inline mic icon — matches the line-art style of the rest of the BT theme
+// (Tilly, hero glyphs). Stroke colour is themed via `color` prop so the
+// icon flips with light/dark surfaces.
+function MicIcon({ color, size = 16 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Rect x="9" y="3" width="6" height="11" rx="3" stroke={color} strokeWidth="1.6" />
+      <Path
+        d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"
+        stroke={color}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+// Tiny pencil — used on the voice transcript "edit" affordance so users
+// can correct STT mishears (e.g. STT writes "a dollar lunch" when they
+// said "$8 lunch").
+function PencilIcon({ color, size = 14 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 20h4l10-10-4-4L4 16v4z M14 6l4 4"
+        stroke={color}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
 import {
   useCreateExpense,
   useVoiceExpense,
@@ -202,6 +238,7 @@ function TextEntry({ onSaved }: { onSaved: () => void }) {
 function VoiceEntry({ onSaved }: { onSaved: () => void }) {
   const { t } = useBT();
   const [transcript, setTranscript] = useState("");
+  const [editing, setEditing] = useState(false);
   const [recording, setRecording] = useState(false);
   const [supported, setSupported] = useState<boolean | null>(null);
   const recRef = useRef<any>(null);
@@ -274,27 +311,75 @@ function VoiceEntry({ onSaved }: { onSaved: () => void }) {
     );
   }
 
+  // Transcript area: read-only bubble by default, but tapping it (or the
+  // "edit" affordance) flips it to a TextInput so STT mishears are
+  // correctable before save. Speech-to-text on cafeteria-noisy mics often
+  // turns "$8" into "a dollar" — without an edit path the only fix is
+  // re-recording, which is brittle.
   return (
     <View style={{ gap: 14 }}>
-      <View
+      <Pressable
+        onPress={() => transcript && setEditing(true)}
+        accessibilityRole={transcript ? "button" : "none"}
+        accessibilityLabel={transcript ? "Edit transcript" : undefined}
         style={{
           padding: 18,
           borderRadius: 14,
           backgroundColor: t.surfaceAlt,
           minHeight: 80,
+          gap: 8,
         }}
       >
-        <Text
-          style={{
-            color: transcript ? t.ink : t.inkMute,
-            fontFamily: transcript ? BTFonts.sans : BTFonts.serifItalic,
-            fontSize: 15,
-            lineHeight: 22,
-          }}
-        >
-          {transcript || "Tap mic, then say something like \"$8 lunch at the bodega\"."}
-        </Text>
-      </View>
+        {editing ? (
+          <TextInput
+            value={transcript}
+            onChangeText={setTranscript}
+            multiline
+            autoFocus
+            onBlur={() => setEditing(false)}
+            placeholder="$8 lunch at the cafeteria"
+            placeholderTextColor={t.inkMute}
+            style={
+              {
+                color: t.ink,
+                fontFamily: BTFonts.sans,
+                fontSize: 15,
+                lineHeight: 22,
+                minHeight: 44,
+                outlineStyle: "none",
+                padding: 0,
+              } as any
+            }
+          />
+        ) : (
+          <Text
+            style={{
+              color: transcript ? t.ink : t.inkMute,
+              fontFamily: transcript ? BTFonts.sans : BTFonts.serifItalic,
+              fontSize: 15,
+              lineHeight: 22,
+            }}
+          >
+            {transcript || "Tap the mic, then say something like \"$8 lunch at the cafeteria\"."}
+          </Text>
+        )}
+        {transcript && !editing ? (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <PencilIcon color={t.inkMute} size={12} />
+            <Text
+              style={{
+                color: t.inkMute,
+                fontFamily: BTFonts.mono,
+                fontSize: 10,
+                letterSpacing: 1,
+                textTransform: "uppercase",
+              }}
+            >
+              tap to edit
+            </Text>
+          </View>
+        ) : null}
+      </Pressable>
       <View style={{ flexDirection: "row", gap: 10 }}>
         <Pressable
           onPress={recording ? stop : start}
@@ -306,10 +391,25 @@ function VoiceEntry({ onSaved }: { onSaved: () => void }) {
             borderRadius: 14,
             backgroundColor: recording ? t.bad : t.accent,
             alignItems: "center",
+            flexDirection: "row",
+            justifyContent: "center",
+            gap: 8,
           }}
         >
+          {recording ? (
+            <View
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: 5,
+                backgroundColor: "#fff",
+              }}
+            />
+          ) : (
+            <MicIcon color="#fff" size={16} />
+          )}
           <Text style={{ color: "#fff", fontFamily: BTFonts.sans, fontWeight: "700", fontSize: 14 }}>
-            {recording ? "● Recording — tap to stop" : "🎙  Hold to talk"}
+            {recording ? "Recording — tap to stop" : "Hold to talk"}
           </Text>
         </Pressable>
       </View>
@@ -322,60 +422,103 @@ function VoiceEntry({ onSaved }: { onSaved: () => void }) {
   );
 }
 
+// Camera / gallery icons — line-art to match MicIcon + Tilly's style.
+function CameraIcon({ color, size = 22 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M4 8h3l1.5-2h7L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"
+        stroke={color}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <Path d="M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" stroke={color} strokeWidth="1.6" />
+    </Svg>
+  );
+}
+function ImageIcon({ color, size = 22 }: { color: string; size?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Rect x="3" y="4" width="18" height="16" rx="2" stroke={color} strokeWidth="1.6" />
+      <Path d="M3 17l5-5 4 4 3-3 6 6" stroke={color} strokeWidth="1.6" strokeLinejoin="round" />
+      <Path d="M9 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z" stroke={color} strokeWidth="1.6" />
+    </Svg>
+  );
+}
+
 function PhotoEntry({ onSaved }: { onSaved: () => void }) {
   const { t } = useBT();
   const photo = usePhotoExpense();
   const [preview, setPreview] = useState<string | null>(null);
-  const fileInputRef = useRef<any>(null);
+  const cameraInputRef = useRef<any>(null);
+  const libraryInputRef = useRef<any>(null);
 
-  // Pick a receipt — uses expo-image-picker on native (camera + gallery)
-  // and a hidden <input type=file> on web. Both produce a data URL we can
-  // POST straight to the photo endpoint.
-  const pickFile = async () => {
+  // Web file picker. `capture="environment"` on the camera input asks
+  // mobile browsers to open the camera; the library input omits capture
+  // so it opens the photo roll. Both share the same FileReader → dataURL
+  // path so `submit()` doesn't care which was used.
+  const ensureWebInput = (mode: "camera" | "library") => {
+    const ref = mode === "camera" ? cameraInputRef : libraryInputRef;
+    if (!ref.current) {
+      const el = document.createElement("input");
+      el.type = "file";
+      el.accept = "image/*";
+      if (mode === "camera") (el as any).capture = "environment";
+      el.onchange = () => {
+        const f = el.files?.[0];
+        if (!f) return;
+        const r = new FileReader();
+        r.onload = () => setPreview(r.result as string);
+        r.readAsDataURL(f);
+        // reset so picking the same file twice still fires onchange
+        el.value = "";
+      };
+      ref.current = el;
+    }
+    return ref.current;
+  };
+
+  const pickFromCamera = async () => {
     if (Platform.OS === "web") {
-      if (!fileInputRef.current) {
-        const el = document.createElement("input");
-        el.type = "file";
-        el.accept = "image/*";
-        (el as any).capture = "environment";
-        el.onchange = () => {
-          const f = el.files?.[0];
-          if (!f) return;
-          const r = new FileReader();
-          r.onload = () => setPreview(r.result as string);
-          r.readAsDataURL(f);
-        };
-        fileInputRef.current = el;
-      }
-      fileInputRef.current.click();
+      ensureWebInput("camera").click();
       return;
     }
-    // Native — dynamic import so Expo Go / web bundling doesn't trip.
     try {
       const ImagePicker = await import("expo-image-picker");
       const perm = await ImagePicker.requestCameraPermissionsAsync();
-      if (!perm.granted) {
-        // Fall back to library if camera denied.
-        const lib = await ImagePicker.requestMediaLibraryPermissionsAsync();
-        if (!lib.granted) return;
-      }
-      const result = perm.granted
-        ? await ImagePicker.launchCameraAsync({
-            base64: true,
-            quality: 0.6,
-            allowsEditing: false,
-          })
-        : await ImagePicker.launchImageLibraryAsync({
-            base64: true,
-            quality: 0.6,
-            allowsEditing: false,
-          });
+      if (!perm.granted) return;
+      const result = await ImagePicker.launchCameraAsync({
+        base64: true,
+        quality: 0.6,
+        allowsEditing: false,
+      });
       if (!result.canceled && result.assets?.[0]?.base64) {
-        const a = result.assets[0];
-        setPreview(`data:image/jpeg;base64,${a.base64}`);
+        setPreview(`data:image/jpeg;base64,${result.assets[0].base64}`);
       }
     } catch (err) {
-      console.warn("expo-image-picker error:", err);
+      console.warn("camera error:", err);
+    }
+  };
+
+  const pickFromLibrary = async () => {
+    if (Platform.OS === "web") {
+      ensureWebInput("library").click();
+      return;
+    }
+    try {
+      const ImagePicker = await import("expo-image-picker");
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) return;
+      const result = await ImagePicker.launchImageLibraryAsync({
+        base64: true,
+        quality: 0.6,
+        allowsEditing: false,
+      });
+      if (!result.canceled && result.assets?.[0]?.base64) {
+        setPreview(`data:image/jpeg;base64,${result.assets[0].base64}`);
+      }
+    } catch (err) {
+      console.warn("library error:", err);
     }
   };
 
@@ -404,40 +547,48 @@ function PhotoEntry({ onSaved }: { onSaved: () => void }) {
           )}
         </View>
       ) : (
-        <Pressable
-          onPress={pickFile}
-          accessibilityRole="button"
-          accessibilityLabel="Pick a receipt"
-          style={{
-            paddingVertical: 32,
-            borderRadius: 14,
-            borderWidth: 1.5,
-            borderStyle: "dashed",
-            borderColor: t.rule,
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <Text style={{ color: t.accent, fontSize: 28 }}>📷</Text>
-          <Text style={{ color: t.inkSoft, fontFamily: BTFonts.serifItalic, fontSize: 15 }}>
-            Tap to pick a receipt
-          </Text>
-        </Pressable>
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          <PhotoSourceTile
+            label="Take a photo"
+            onPress={pickFromCamera}
+            icon={<CameraIcon color={t.accent} size={26} />}
+          />
+          <PhotoSourceTile
+            label="Upload from photos"
+            onPress={pickFromLibrary}
+            icon={<ImageIcon color={t.accent} size={26} />}
+          />
+        </View>
       )}
       {preview ? (
-        <Pressable onPress={pickFile} style={{ alignSelf: "center", paddingVertical: 6 }}>
-          <Text
-            style={{
-              color: t.inkMute,
-              fontFamily: BTFonts.mono,
-              fontSize: 10,
-              letterSpacing: 1,
-              textTransform: "uppercase",
-            }}
-          >
-            change photo
-          </Text>
-        </Pressable>
+        <View style={{ flexDirection: "row", gap: 16, justifyContent: "center" }}>
+          <Pressable onPress={pickFromCamera} style={{ paddingVertical: 6 }}>
+            <Text
+              style={{
+                color: t.inkMute,
+                fontFamily: BTFonts.mono,
+                fontSize: 10,
+                letterSpacing: 1,
+                textTransform: "uppercase",
+              }}
+            >
+              retake
+            </Text>
+          </Pressable>
+          <Pressable onPress={pickFromLibrary} style={{ paddingVertical: 6 }}>
+            <Text
+              style={{
+                color: t.inkMute,
+                fontFamily: BTFonts.mono,
+                fontSize: 10,
+                letterSpacing: 1,
+                textTransform: "uppercase",
+              }}
+            >
+              choose another
+            </Text>
+          </Pressable>
+        </View>
       ) : null}
       <PrimaryButton
         label={photo.isPending ? "Tilly's reading the receipt…" : "Save from receipt"}
@@ -445,6 +596,48 @@ function PhotoEntry({ onSaved }: { onSaved: () => void }) {
         disabled={!preview || photo.isPending}
       />
     </View>
+  );
+}
+
+function PhotoSourceTile({
+  label,
+  onPress,
+  icon,
+}: {
+  label: string;
+  onPress: () => void;
+  icon: React.ReactNode;
+}) {
+  const { t } = useBT();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={{
+        flex: 1,
+        paddingVertical: 24,
+        paddingHorizontal: 12,
+        borderRadius: 14,
+        borderWidth: 1.5,
+        borderStyle: "dashed",
+        borderColor: t.rule,
+        alignItems: "center",
+        gap: 10,
+      }}
+    >
+      {icon}
+      <Text
+        style={{
+          color: t.inkSoft,
+          fontFamily: BTFonts.serifItalic,
+          fontSize: 14,
+          textAlign: "center",
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 

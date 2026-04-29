@@ -23,6 +23,8 @@
       "package": "app.replit.buildtogether",
       "permissions": [
         "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
       ]
     },
@@ -66,6 +68,12 @@
         "projectId": "f0f43ec6-20c9-4821-9111-a3d72ff4277b"
       }
     },
-    "owner": "anandin"
+    "owner": "anandin",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/f0f43ec6-20c9-4821-9111-a3d72ff4277b"
+    }
   }
 }
