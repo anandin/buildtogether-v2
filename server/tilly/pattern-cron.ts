@@ -58,7 +58,9 @@ export async function runPatternDetectionAll(): Promise<{
       const pattern = await buildWeeklyPattern(h.id);
       if (!pattern || !pattern.italicSpan) continue;
 
-      const body = `${pattern.italicSpan} are still your soft spot. ${pattern.headline}`;
+      // Just the headline. It already starts with "$X spent. {italicSpan}…"
+      // so prepending italicSpan duplicated the day name.
+      const body = pattern.headline;
 
       // 14-day dedupe by body.
       const dupe = await db
