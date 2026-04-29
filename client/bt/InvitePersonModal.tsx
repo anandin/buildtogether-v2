@@ -7,7 +7,9 @@
  */
 import React, { useState } from "react";
 import {
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Text,
@@ -75,6 +77,10 @@ export function InvitePersonModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
       <Pressable
         style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}
         onPress={onClose}
@@ -112,7 +118,7 @@ export function InvitePersonModal({
             ?
           </BTSerif>
 
-          <ScrollView style={{ maxHeight: 480 }} showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ maxHeight: 480 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <View style={{ gap: 14 }}>
               <Field
                 label="Their name"
@@ -222,6 +228,7 @@ export function InvitePersonModal({
           </ScrollView>
         </Pressable>
       </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

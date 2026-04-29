@@ -10,6 +10,7 @@
  */
 import React, { useEffect, useRef, useState } from "react";
 import {
+  KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
@@ -43,6 +44,10 @@ export function AddExpenseModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
       <Pressable
         style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}
         onPress={onClose}
@@ -122,13 +127,14 @@ export function AddExpenseModal({
             })}
           </View>
 
-          <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             {tab === "text" ? <TextEntry onSaved={onClose} /> : null}
             {tab === "voice" ? <VoiceEntry onSaved={onClose} /> : null}
             {tab === "photo" ? <PhotoEntry onSaved={onClose} /> : null}
           </ScrollView>
         </Pressable>
       </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

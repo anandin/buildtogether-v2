@@ -10,6 +10,8 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Easing,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -103,7 +105,13 @@ export function BTGuardian() {
   const tillyState: "idle" | "think" = thinking ? "think" : "idle";
 
   return (
-    <View style={{ flex: 1, backgroundColor: t.bg }}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      // The bottom tab bar is ~70px; offset so the keyboard pushes the
+      // composer above it without leaving a black gap.
+      keyboardVerticalOffset={Platform.OS === "ios" ? 70 : 0}
+      style={{ flex: 1, backgroundColor: t.bg }}
+    >
       {/* Header */}
       <View
         style={{
@@ -243,7 +251,7 @@ export function BTGuardian() {
           <Text style={{ color: "#fff", fontWeight: "700", fontSize: 16 }}>↑</Text>
         </Pressable>
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

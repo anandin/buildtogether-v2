@@ -7,6 +7,7 @@
  */
 import React, { useState } from "react";
 import {
+  KeyboardAvoidingView,
   Linking,
   Modal,
   Platform,
@@ -79,6 +80,10 @@ export function SplitModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
       <Pressable
         style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}
         onPress={() => {
@@ -134,7 +139,7 @@ export function SplitModal({
             )}
           </BTSerif>
 
-          <ScrollView style={{ maxHeight: 540 }} showsVerticalScrollIndicator={false}>
+          <ScrollView style={{ maxHeight: 540 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
             <View style={{ gap: 14 }}>
               {/* Direction toggle */}
               <View
@@ -293,6 +298,7 @@ export function SplitModal({
           </ScrollView>
         </Pressable>
       </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
