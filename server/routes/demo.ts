@@ -36,9 +36,18 @@ type SeedExpense = {
   category: string;
 };
 
-const COFFEE_AMOUNTS = [4.5, 5.25, 4.75, 5.5, 5.0];
-const FOOD_NIGHT_AMOUNTS = [18, 22, 19, 24, 21];
-const GROC_AMOUNTS = [38, 42, 35, 47];
+// Wider variance per cell so the soft-spot detector (1.5σ test) can
+// actually fire. Real student spend has way more jitter than the
+// previous tight clusters.
+const COFFEE_AMOUNTS = [4.5, 5.25, 4.75, 5.5, 5.0, 6.25];
+const FOOD_NIGHT_AMOUNTS = [12, 18, 22, 28, 19, 38, 24, 16];
+const GROC_AMOUNTS = [22, 38, 42, 35, 67, 28, 47];
+
+function jitter(base: number, pct = 0.12): number {
+  // ±pct random walk so historical samples have non-zero std-dev.
+  const delta = base * pct * (Math.random() * 2 - 1);
+  return Math.round((base + delta) * 100) / 100;
+}
 
 function buildSixWeeks(): SeedExpense[] {
   const out: SeedExpense[] = [];
@@ -49,10 +58,10 @@ function buildSixWeeks(): SeedExpense[] {
     // Anchor each week to its Monday relative to today.
     const weekMondayOffset = todayDow + weekIdx * 7;
 
-    // Mon: subway commute
+    // Mon: subway commute (small, consistent)
     out.push({
       daysAgo: weekMondayOffset,
-      amount: 2.9,
+      amount: jitter(2.9, 0.05),
       merchant: "MTA",
       description: "subway",
       category: "transit",
@@ -61,23 +70,29 @@ function buildSixWeeks(): SeedExpense[] {
     // Tue: light spend
     out.push({
       daysAgo: weekMondayOffset - 1,
-      amount: 8.5,
+      amount: jitter(8.5),
       merchant: "Subway",
       description: "lunch",
       category: "eatout",
     });
 
-    // Wed: THE PATTERN — coffee + late food
+    // Wed: THE PATTERN — coffee + late food. The Wed late-food amount
+    // is intentionally larger this week (the spike that fires the soft
+    // spot detector) — historical Wednesdays cluster low, this Wed
+    // doubles up.
+    const isThisWeekWed = weekIdx === 0;
     out.push({
       daysAgo: weekMondayOffset - 2,
-      amount: COFFEE_AMOUNTS[weekIdx % COFFEE_AMOUNTS.length],
+      amount: jitter(COFFEE_AMOUNTS[weekIdx % COFFEE_AMOUNTS.length]),
       merchant: "Stumptown",
       description: "Wednesday coffee",
       category: "coffee",
     });
     out.push({
       daysAgo: weekMondayOffset - 2,
-      amount: FOOD_NIGHT_AMOUNTS[weekIdx % FOOD_NIGHT_AMOUNTS.length],
+      amount: isThisWeekWed
+        ? 41 // this week's spike — 2× the historical mean
+        : jitter(FOOD_NIGHT_AMOUNTS[weekIdx % FOOD_NIGHT_AMOUNTS.length], 0.18),
       merchant: "DoorDash · Halal Guys",
       description: "late night DoorDash",
       category: "eatout",
@@ -86,7 +101,7 @@ function buildSixWeeks(): SeedExpense[] {
     // Thu: small
     out.push({
       daysAgo: weekMondayOffset - 3,
-      amount: 6.25,
+      amount: jitter(6.25),
       merchant: "Joe Coffee",
       description: "morning coffee",
       category: "coffee",
@@ -95,7 +110,7 @@ function buildSixWeeks(): SeedExpense[] {
     // Fri: paycheck-day groceries
     out.push({
       daysAgo: weekMondayOffset - 4,
-      amount: GROC_AMOUNTS[weekIdx % GROC_AMOUNTS.length],
+      amount: jitter(GROC_AMOUNTS[weekIdx % GROC_AMOUNTS.length], 0.20),
       merchant: "Trader Joe's",
       description: "groceries",
       category: "groceries",
@@ -104,7 +119,7 @@ function buildSixWeeks(): SeedExpense[] {
     // Sat: brunch out
     out.push({
       daysAgo: weekMondayOffset - 5,
-      amount: 28,
+      amount: jitter(28, 0.15),
       merchant: "Bluestone Lane",
       description: "brunch",
       category: "eatout",
