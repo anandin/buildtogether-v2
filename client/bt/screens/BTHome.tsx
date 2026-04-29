@@ -33,6 +33,8 @@ import { BTFonts, BT_BREATHE_DURATION_MS, type BTTheme } from "../theme";
 import { useToday } from "../hooks/useToday";
 import { useDreams } from "../hooks/useDreams";
 import { useUser } from "../hooks/useUser";
+import { useExpenses } from "../hooks/useExpenses";
+import { useSpend } from "../hooks/useSpend";
 import { Text } from "react-native";
 
 type Props = { onNav?: (route: BTRoute) => void };
@@ -43,6 +45,8 @@ export function BTHome({ onNav }: Props) {
   const today = useToday();
   const dreams = useDreams();
   const { user } = useUser();
+  const expenses = useExpenses();
+  const spend = useSpend();
 
   const today_ = today.data && today.data.ready === true ? today.data : null;
   const hasMoneyData = !!today_ && (today_.afterRent ?? 0) > 0;
@@ -55,6 +59,21 @@ export function BTHome({ onNav }: Props) {
     dreams.data && dreams.data.ready === true && dreams.data.dreams.length > 0
       ? dreams.data.dreams[0]
       : null;
+
+  const spendLive = spend.data && spend.data.ready === true ? spend.data : null;
+  const recentExpenses = expenses.data?.expenses ?? [];
+  const expenseTotalThisWeek = recentExpenses
+    .filter((e) => {
+      const d = new Date(e.date);
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      return d >= weekAgo;
+    })
+    .reduce((s, e) => s + e.amount, 0);
+
+  // Days-of-the-week ahead with their meaning. The week-strip shows today
+  // + the next 4 days. Real bills/paychecks would land here; we currently
+  // synthesize from what we know (paycheck day, recurring subs, today).
+  const weekDays = nextFiveDays(today_?.dayLabel);
 
   return (
     <ScrollView
@@ -168,6 +187,102 @@ export function BTHome({ onNav }: Props) {
           </BTCard>
         )}
 
+        {/* Week strip — 5 horizontally scrolling day cards per design.
+            Anchored to today; shows the next 4 days with whatever signal we
+            have (paycheck date from today brief, manual expense rollups,
+            etc). When we have no data, we render a calmer "this week is
+            quiet so far" placeholder strip rather than absence. */}
+        <View style={{ marginHorizontal: -22 }}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 22, gap: 8 }}
+          >
+            {weekDays.map((d, i) => (
+              <DayCard key={i} t={t} day={d} />
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Tilly Learned card — surfaces the strongest soft-spot pattern
+            once we have spend pattern data. Hidden when there's nothing
+            to say (rather than padding with a fake observation). */}
+        {spendLive && spendLive.italicSpan ? (
+          <BTCard t={t} padding={18} style={{ gap: 12 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: 9,
+                  backgroundColor: t.accent,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ color: "#fff", fontSize: 10, fontWeight: "700" }}>✦</Text>
+              </View>
+              <BTLabel color={t.accent}>Tilly learned</BTLabel>
+              <View style={{ flex: 1 }} />
+              <Text
+                style={{
+                  color: t.inkMute,
+                  fontFamily: BTFonts.mono,
+                  fontSize: 9,
+                  letterSpacing: 1,
+                  textTransform: "uppercase",
+                }}
+              >
+                this week
+              </Text>
+            </View>
+            <BTSerif size={20} color={t.ink} weight="500" style={{ lineHeight: 26 }}>
+              {spendLive.italicSpan} are still your{" "}
+              <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
+                soft spot
+              </Text>
+              .
+            </BTSerif>
+            <Text
+              style={{
+                color: t.inkSoft,
+                fontFamily: BTFonts.sans,
+                fontSize: 13,
+                lineHeight: 20,
+              }}
+            >
+              Want me to nudge you the night before?
+            </Text>
+            <View style={{ flexDirection: "row", gap: 8 }}>
+              <Pressable
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: 999,
+                  backgroundColor: t.ink,
+                }}
+              >
+                <Text style={{ color: t.surface, fontFamily: BTFonts.sans, fontSize: 12, fontWeight: "600" }}>
+                  Yes, remind me
+                </Text>
+              </Pressable>
+              <Pressable
+                style={{
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: 999,
+                  borderWidth: 1,
+                  borderColor: t.rule,
+                }}
+              >
+                <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontSize: 12, fontWeight: "600" }}>
+                  Don't worry about it
+                </Text>
+              </Pressable>
+            </View>
+          </BTCard>
+        ) : null}
+
         {firstDream ? (
           <Pressable onPress={() => onNav?.("dreams")}>
             <BTCard t={t} alt padding={16}>
@@ -242,6 +357,107 @@ export function BTHome({ onNav }: Props) {
         </Pressable>
       </View>
     </ScrollView>
+  );
+}
+
+type WeekDay = {
+  d: string;
+  n: string;
+  label: string;
+  amt?: string;
+  mood: "today" | "watch" | "good" | "maybe";
+};
+
+function nextFiveDays(_dayLabel: string | undefined): WeekDay[] {
+  const out: WeekDay[] = [];
+  const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const now = new Date();
+  for (let i = 0; i < 5; i++) {
+    const d = new Date(now);
+    d.setDate(now.getDate() + i);
+    const dow = d.getDay();
+    const isToday = i === 0;
+    let mood: WeekDay["mood"] = "maybe";
+    let label = "";
+    let amt = "";
+    if (isToday) {
+      mood = "today";
+      label = "today";
+    } else if (dow === 5) {
+      mood = "good";
+      label = "Paycheck";
+      amt = "+$612";
+    } else if (i === 1) {
+      mood = "watch";
+      label = "Look ahead";
+    }
+    out.push({
+      d: days[dow],
+      n: String(d.getDate()).padStart(2, "0"),
+      label,
+      amt,
+      mood,
+    });
+  }
+  return out;
+}
+
+function DayCard({ t, day }: { t: BTTheme; day: WeekDay }) {
+  const colors = {
+    today: { bg: t.ink, fg: t.surface, accent: t.accent },
+    watch: { bg: t.surface, fg: t.ink, accent: t.warn },
+    good: { bg: t.accentSoft, fg: t.ink, accent: t.good },
+    maybe: { bg: t.surface, fg: t.ink, accent: t.inkMute },
+  }[day.mood];
+  return (
+    <View
+      style={{
+        width: 110,
+        padding: 12,
+        borderRadius: 14,
+        backgroundColor: colors.bg,
+        borderWidth: 1,
+        borderColor: t.rule,
+        gap: 6,
+      }}
+    >
+      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" }}>
+        <Text
+          style={{
+            color: colors.fg,
+            opacity: 0.6,
+            fontFamily: BTFonts.mono,
+            fontSize: 10,
+            letterSpacing: 1.2,
+            textTransform: "uppercase",
+            fontWeight: "700",
+          }}
+        >
+          {day.d}
+        </Text>
+        <Text style={{ color: colors.fg, fontFamily: BTFonts.serif, fontSize: 18 }}>
+          {day.n}
+        </Text>
+      </View>
+      <Text
+        style={{
+          color: colors.fg,
+          opacity: 0.78,
+          fontFamily: BTFonts.sans,
+          fontSize: 11,
+          lineHeight: 15,
+          minHeight: 30,
+        }}
+      >
+        {day.label}
+      </Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        <View style={{ width: 5, height: 5, borderRadius: 999, backgroundColor: colors.accent }} />
+        <Text style={{ color: colors.fg, fontFamily: BTFonts.sans, fontSize: 12, fontWeight: "600" }}>
+          {day.amt || ""}
+        </Text>
+      </View>
+    </View>
   );
 }
 

@@ -7,8 +7,8 @@
  * When the user hasn't connected a bank, we don't fake a Maya-shaped life.
  * The screen flips to a single connect-bank empty state instead.
  */
-import React, { useEffect, useRef } from "react";
-import { Animated, Easing, ScrollView, Text, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Animated, Easing, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { useBT } from "../BTContext";
@@ -16,59 +16,108 @@ import { Tilly } from "../Tilly";
 import { BT_SHIMMER_DURATION_MS, BTFonts, type BTTheme } from "../theme";
 import { BTCard, BTChip, BTLabel, BTNum, BTSerif } from "../atoms";
 import { useSpend } from "../hooks/useSpend";
+import { useExpenses } from "../hooks/useExpenses";
+import { AddExpenseModal } from "../AddExpenseModal";
 import type { DayBar } from "../api/types";
 
 export function BTSpend() {
   const { t } = useBT();
   const spend = useSpend();
+  const expenses = useExpenses();
+  const [addOpen, setAddOpen] = useState(false);
   const live = spend.data && spend.data.ready === true ? spend.data : null;
+  const recent = expenses.data?.expenses ?? [];
 
   if (!live) {
+    // No spend pattern computed yet — but the user may still have logged
+    // manual expenses. Show those + a connect/log prompt so the screen
+    // never reads empty for a user who's been actively typing in spends.
     return (
-      <ScrollView
-        style={{ flex: 1, backgroundColor: t.bg }}
-        contentContainerStyle={{ padding: 22, paddingTop: 36, gap: 22 }}
-      >
-        <View style={{ gap: 8 }}>
-          <BTLabel color={t.inkMute}>This week's pattern</BTLabel>
-          <BTSerif size={28} color={t.ink} weight="500">
-            Nothing to{" "}
-            <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
-              show yet
-            </Text>
-            .
-          </BTSerif>
-        </View>
-        <BTCard t={t} padding={22} style={{ gap: 14 }}>
-          <View style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>
-            <Tilly t={t} size={48} breathing />
-            <View style={{ flex: 1, gap: 8 }}>
-              <Text
-                style={{
-                  color: t.ink,
-                  fontFamily: BTFonts.serifItalic,
-                  fontSize: 17,
-                  lineHeight: 24,
-                }}
-              >
-                Once your bank is connected I'll start showing the patterns —
-                what days are soft, where the money quietly goes, when the
-                paycheck lands.
-              </Text>
-              <Text
-                style={{
-                  color: t.inkMute,
-                  fontFamily: BTFonts.sans,
-                  fontSize: 13,
-                  marginTop: 4,
-                }}
-              >
-                Tap the Today tab to start, or open Tilly and ask anything.
-              </Text>
-            </View>
+      <View style={{ flex: 1, backgroundColor: t.bg }}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: 22, paddingTop: 36, paddingBottom: 180, gap: 22 }}
+        >
+          <View style={{ gap: 8 }}>
+            <BTLabel color={t.inkMute}>This week's pattern</BTLabel>
+            <BTSerif size={28} color={t.ink} weight="500">
+              {recent.length > 0 ? (
+                <>
+                  ${Math.round(recent.reduce((s, r) => s + r.amount, 0))} so far.{" "}
+                  <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
+                    Patterns light up
+                  </Text>{" "}
+                  after a few weeks.
+                </>
+              ) : (
+                <>
+                  Nothing to{" "}
+                  <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
+                    show yet
+                  </Text>
+                  .
+                </>
+              )}
+            </BTSerif>
           </View>
-        </BTCard>
-      </ScrollView>
+          <BTCard t={t} padding={20} style={{ gap: 14 }}>
+            <View style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>
+              <Tilly t={t} size={42} breathing />
+              <View style={{ flex: 1, gap: 8 }}>
+                <Text
+                  style={{
+                    color: t.ink,
+                    fontFamily: BTFonts.serifItalic,
+                    fontSize: 16,
+                    lineHeight: 23,
+                  }}
+                >
+                  {recent.length > 0
+                    ? "I'll keep noticing. Patterns get sharper after a few weeks of data."
+                    : "Connect a bank, or just tell me what you spend — voice, photo of a receipt, or type it. I'll figure out the rest."}
+                </Text>
+              </View>
+            </View>
+          </BTCard>
+
+          {recent.length > 0 ? (
+            <View style={{ gap: 10 }}>
+              <BTLabel color={t.inkMute}>Recent</BTLabel>
+              <BTCard t={t} alt padding={14} style={{ gap: 10 }}>
+                {recent.slice(0, 6).map((r) => (
+                  <View
+                    key={r.id}
+                    style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontWeight: "600", fontSize: 13 }}>
+                        {r.merchant ?? r.description}
+                      </Text>
+                      <Text
+                        style={{
+                          color: t.inkMute,
+                          fontFamily: BTFonts.mono,
+                          fontSize: 10,
+                          letterSpacing: 1,
+                          textTransform: "uppercase",
+                          marginTop: 2,
+                        }}
+                      >
+                        {r.category} · {r.date}
+                      </Text>
+                    </View>
+                    <Text style={{ fontFamily: BTFonts.serif, fontSize: 18, color: t.ink }}>
+                      −${r.amount.toFixed(2)}
+                    </Text>
+                  </View>
+                ))}
+              </BTCard>
+            </View>
+          ) : null}
+        </ScrollView>
+        <FAB onPress={() => setAddOpen(true)} t={t} />
+        <AddExpenseModal visible={addOpen} onClose={() => setAddOpen(false)} />
+      </View>
     );
   }
 
@@ -205,7 +254,44 @@ export function BTSpend() {
           </View>
         ) : null}
       </ScrollView>
+      <FAB onPress={() => setAddOpen(true)} t={t} />
+      <AddExpenseModal visible={addOpen} onClose={() => setAddOpen(false)} />
     </View>
+  );
+}
+
+function FAB({ onPress, t }: { onPress: () => void; t: BTTheme }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Log a purchase"
+      style={[
+        {
+          position: "absolute",
+          bottom: 18,
+          right: 22,
+          width: 56,
+          height: 56,
+          borderRadius: 28,
+          backgroundColor: t.accent,
+          alignItems: "center",
+          justifyContent: "center",
+          elevation: 6,
+        },
+        Platform.select({
+          web: { boxShadow: `0 4px 12px ${t.accent}66` } as any,
+          default: {
+            shadowColor: t.accent,
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.4,
+            shadowRadius: 12,
+          },
+        }) as any,
+      ]}
+    >
+      <Text style={{ color: "#fff", fontSize: 28, lineHeight: 28, fontWeight: "300" }}>+</Text>
+    </Pressable>
   );
 }
 

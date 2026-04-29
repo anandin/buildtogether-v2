@@ -12,7 +12,69 @@
  */
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "../db";
-import { plaidTransactions } from "../../shared/schema";
+import { plaidTransactions, expenses } from "../../shared/schema";
+
+/**
+ * Unified read across Plaid + manual sources. The pattern engine doesn't
+ * care whether a $5 coffee came in via Plaid sync or via the user voicing
+ * "$5 coffee at stumptown" into the FAB modal — both are equally real.
+ */
+type UnifiedTx = {
+  amount: number;
+  date: string;
+  category: string;
+  source: "plaid" | "manual_text" | "manual_voice" | "manual_photo";
+  who?: string;
+};
+
+async function readAllTransactions(
+  householdId: string,
+  sinceIso: string,
+): Promise<UnifiedTx[]> {
+  const [plaidRows, manualRows] = await Promise.all([
+    db
+      .select()
+      .from(plaidTransactions)
+      .where(
+        and(
+          eq(plaidTransactions.coupleId, householdId),
+          sql`${plaidTransactions.date} >= ${sinceIso}`,
+          sql`${plaidTransactions.amount} > 0`,
+        ),
+      ),
+    db
+      .select()
+      .from(expenses)
+      .where(
+        and(
+          eq(expenses.coupleId, householdId),
+          sql`${expenses.date} >= ${sinceIso}`,
+          sql`${expenses.amount} > 0`,
+        ),
+      ),
+  ]);
+  const out: UnifiedTx[] = [];
+  for (const t of plaidRows) {
+    out.push({
+      amount: t.amount,
+      date: t.date,
+      category: (t.ourCategory || "Uncategorized").trim(),
+      source: "plaid",
+      who: t.merchantName ?? t.name ?? undefined,
+    });
+  }
+  for (const e of manualRows) {
+    if (e.source === "plaid") continue; // dedupe — Plaid copies use plaid source
+    out.push({
+      amount: e.amount,
+      date: e.date,
+      category: (e.category || "other").trim(),
+      source: (e.source as UnifiedTx["source"]) ?? "manual_text",
+      who: e.merchant ?? e.description,
+    });
+  }
+  return out;
+}
 
 export type DayBar = {
   d: string; // M T W T F S S
@@ -100,16 +162,10 @@ export async function buildWeeklyPattern(
   const eightWeeksAgo = new Date(weekStart);
   eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 8 * 7);
 
-  const txRows = await db
-    .select()
-    .from(plaidTransactions)
-    .where(
-      and(
-        eq(plaidTransactions.coupleId, householdId),
-        sql`${plaidTransactions.date} >= ${eightWeeksAgo.toISOString().slice(0, 10)}`,
-        sql`${plaidTransactions.amount} > 0`, // only outflows; Plaid positives = debits
-      ),
-    );
+  const txRows = await readAllTransactions(
+    householdId,
+    eightWeeksAgo.toISOString().slice(0, 10),
+  );
 
   if (txRows.length === 0) return null;
 
@@ -128,7 +184,7 @@ export async function buildWeeklyPattern(
   const cellAmounts = new Map<string, number[]>(); // key = "category|dayIdx"
   const olderTx = txRows.filter((t) => t.date < weekStartIso);
   for (const t of olderTx) {
-    const cat = (t.ourCategory || "Uncategorized").trim();
+    const cat = t.category;
     const di = dayOfWeekIndex(t.date);
     const key = `${cat}|${di}`;
     const arr = cellAmounts.get(key) ?? [];
@@ -139,7 +195,7 @@ export async function buildWeeklyPattern(
   // This-week per-cell totals.
   const thisWeekCells = new Map<string, number>();
   for (const t of thisWeekTx) {
-    const cat = (t.ourCategory || "Uncategorized").trim();
+    const cat = t.category;
     const di = dayOfWeekIndex(t.date);
     const key = `${cat}|${di}`;
     thisWeekCells.set(key, (thisWeekCells.get(key) ?? 0) + t.amount);
@@ -174,7 +230,7 @@ export async function buildWeeklyPattern(
   // ─── Categories: this week's top spends with soft-spot tag ─────────────
   const catTotals = new Map<string, number>();
   for (const t of thisWeekTx) {
-    const cat = (t.ourCategory || "Uncategorized").trim();
+    const cat = t.category;
     catTotals.set(cat, (catTotals.get(cat) ?? 0) + t.amount);
   }
   const sortedCats = [...catTotals.entries()]
@@ -211,10 +267,10 @@ export async function buildWeeklyPattern(
   const todayTx = txRows
     .filter((t) => t.date === todayIso)
     .slice(0, 3)
-    .map((t) => ({
-      id: t.id,
-      who: t.merchantName || t.name,
-      cat: t.ourCategory || "Uncategorized",
+    .map((t, i) => ({
+      id: `today-${i}`,
+      who: t.who || t.category,
+      cat: t.category,
       amt: t.amount,
       time: "today",
     }));

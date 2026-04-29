@@ -124,6 +124,15 @@ const CRITICAL_STATEMENTS: string[] = [
   )`,
   `INSERT INTO "tilly_config" ("id") VALUES ('default') ON CONFLICT ("id") DO NOTHING`,
 
+  // Phase 6: manual expense capture (text/voice/photo) — for users without
+  // Plaid. The expenses table already exists (V1) but lacked a source column
+  // to discriminate manual vs Plaid-imported entries. Spend pattern engine
+  // reads from this column to know what to attribute to Tilly's "I noticed".
+  `ALTER TABLE "expenses" ADD COLUMN IF NOT EXISTS "source" text NOT NULL DEFAULT 'manual_text'`,
+  `ALTER TABLE "expenses" ADD COLUMN IF NOT EXISTS "user_id" varchar`,
+  `ALTER TABLE "expenses" ADD COLUMN IF NOT EXISTS "raw_input" text`,
+  `CREATE INDEX IF NOT EXISTS "expenses_household_date_idx" ON "expenses" ("couple_id", "date")`,
+
   // Phase 5: push tokens
   `CREATE TABLE IF NOT EXISTS "push_tokens" (
     "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,

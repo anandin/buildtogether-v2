@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>BuildTogether — Student</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    html, body { margin: 0; padding: 0; background: #1a1814; }
+    body { font-family: "Inter", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+    * { box-sizing: border-box; }
+    @keyframes btBreathe {
+      0%, 100% { transform: scale(1) translateY(0); }
+      50% { transform: scale(1.04) translateY(-2px); }
+    }
+    @keyframes btFloat {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+    @keyframes btDrift {
+      0%, 100% { transform: translateX(0); }
+      50% { transform: translateX(40px); }
+    }
+    @keyframes btShimmer {
+      0% { background-position: -200% 0; }
+      100% { background-position: 200% 0; }
+    }
+    @keyframes btPulse {
+      0%, 100% { box-shadow: 0 0 0 4px currentColor; opacity: 1; }
+      50% { box-shadow: 0 0 0 10px transparent; opacity: 0.85; }
+    }
+    @keyframes tilly-dot {
+      0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+      30% { transform: translateY(-3px); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="ios-frame.jsx"></script>
+  <script type="text/babel" src="android-frame.jsx"></script>
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+  <script type="text/babel" src="tilly.jsx"></script>
+  <script type="text/babel" src="bt-system.jsx"></script>
+  <script type="text/babel" src="screens.jsx"></script>
+
+  <script type="text/babel">
+    const { useState } = React;
+
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "theme": "bloom",
+      "tone": "sibling",
+      "time": "evening"
+    }/*EDITMODE-END*/;
+
+    function App() {
+      const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+      const t = BT_THEMES[tweaks.theme];
+      const tone = tweaks.tone;
+      const time = tweaks.time;
+
+      // shared per-frame nav for all artboards (just for visual highlight)
+      const [iosTab, setIosTab] = useState('home');
+      const [androidTab, setAndroidTab] = useState('home');
+
+      // map tab -> screen component
+      const screenFor = (id) => {
+        switch (id) {
+          case 'home': return BTHome;
+          case 'spend': return BTSpending;
+          case 'guardian': return BTGuardian;
+          case 'dreams': return BTDreams;
+          case 'profile': return BTProfile;
+          default: return BTHome;
+        }
+      };
+
+      // CSS vars for Tilly tints picked from theme
+      const tillyVars = {
+        '--tilly-body': t.tilly.body,
+        '--tilly-belly': t.tilly.belly,
+        '--tilly-beak': t.tilly.beak,
+      };
+
+      const phoneIOS = (id, ScreenComp, label) => (
+        <DCArtboard key={`ios-${id}`} id={`ios-${id}`} label={`iOS · ${label}`} width={402} height={874}>
+          <div style={tillyVars}>
+            <IOSDevice dark={tweaks.theme === 'dusk'}>
+              <div style={{ height: '100%', display: 'flex', flexDirection: 'column', paddingTop: 56 }}>
+                <ScreenComp t={t} tone={tone} time={time}
+                  onNav={setIosTab} active={iosTab === id ? id : iosTab}/>
+              </div>
+            </IOSDevice>
+          </div>
+        </DCArtboard>
+      );
+
+      const phoneAndroid = (id, ScreenComp, label) => (
+        <DCArtboard key={`and-${id}`} id={`and-${id}`} label={`Android · ${label}`} width={412} height={892}>
+          <div style={tillyVars}>
+            <AndroidDevice dark={tweaks.theme === 'dusk'}>
+              <ScreenComp t={t} tone={tone} time={time}
+                onNav={setAndroidTab} active={androidTab === id ? id : androidTab}/>
+            </AndroidDevice>
+          </div>
+        </DCArtboard>
+      );
+
+      const screens = [
+        ['home', BTHome, 'Today'],
+        ['guardian', BTGuardian, 'Tilly'],
+        ['spend', BTSpending, 'Spend'],
+        ['credit', BTCredit, 'Credit'],
+        ['dreams', BTDreams, 'Dreams'],
+        ['profile', BTProfile, 'You'],
+      ];
+
+      return (
+        <>
+          <DesignCanvas>
+            <DCSection id="intro" title="BuildTogether — for students" subtitle="Original brand spirit (warm, partnership) reimagined for an 18-23 year old. Tilly is the Guardian AI — quietly protective, calm older-sibling tone. Editorial fintech aesthetic: cream paper + ink + warm amber, Instrument Serif headlines.">
+            </DCSection>
+            <DCSection id="ios" title="iOS — full app tour" subtitle="Six screens, in tab order. Use the Tweaks panel (top-right) to switch theme, Tilly's tone, and the time of day.">
+              {screens.map(([id, S, label]) => phoneIOS(id, S, label))}
+            </DCSection>
+            <DCSection id="android" title="Android — same app, Material chrome" subtitle="Same screens in the Material 3 frame, so you can compare densities and treatments side by side.">
+              {screens.map(([id, S, label]) => phoneAndroid(id, S, label))}
+            </DCSection>
+          </DesignCanvas>
+
+          <TweaksPanel title="Tweaks">
+            <TweakSection title="Visual theme">
+              <TweakRadio
+                value={tweaks.theme}
+                onChange={(v) => setTweak('theme', v)}
+                options={[
+                  { value: 'dusk', label: 'Dusk' },
+                  { value: 'citrus', label: 'Citrus' },
+                  { value: 'bloom', label: 'Bloom' },
+                  { value: 'neon', label: 'Neon' },
+                ]}/>
+            </TweakSection>
+            <TweakSection title="Tilly's tone">
+              <TweakRadio
+                value={tweaks.tone}
+                onChange={(v) => setTweak('tone', v)}
+                options={[
+                  { value: 'sibling', label: 'Sibling' },
+                  { value: 'coach', label: 'Coach' },
+                  { value: 'protective', label: 'Quiet' },
+                ]}/>
+            </TweakSection>
+            <TweakSection title="Time of day">
+              <TweakRadio
+                value={tweaks.time}
+                onChange={(v) => setTweak('time', v)}
+                options={[
+                  { value: 'morning', label: 'Morning' },
+                  { value: 'evening', label: 'Evening' },
+                ]}/>
+            </TweakSection>
+          </TweaksPanel>
+        </>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>

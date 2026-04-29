@@ -71,6 +71,12 @@ export const members = pgTable("members", {
 export const expenses = pgTable("expenses", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   coupleId: varchar("couple_id").notNull(),
+  // Phase 6: who entered this and how it got here. plaid | manual_text |
+  // manual_voice | manual_photo. Manual flows post here directly; Plaid
+  // imports go through plaidTransactions and copy into expenses on accept.
+  userId: varchar("user_id"),
+  source: text("source").notNull().default("manual_text"),
+  rawInput: text("raw_input"), // verbatim user voice transcript / SMS / photo OCR text
   amount: real("amount").notNull(),
   description: text("description").notNull(),
   merchant: text("merchant"),

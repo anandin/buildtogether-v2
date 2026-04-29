@@ -85,6 +85,41 @@ export const btApi = {
   actProtection: (id: string) =>
     postJson<{ ok: true }>(`/api/protections/${id}/act`),
 
+  // ── Manual expenses (text/voice/photo capture) ───────────────────────────
+  expenses: (days = 30) =>
+    getJson<{
+      ready: boolean;
+      expenses: Array<{
+        id: string;
+        amount: number;
+        description: string;
+        merchant: string | null;
+        category: string;
+        date: string;
+        source: string;
+      }>;
+    }>(`/api/expenses?days=${days}`),
+  createExpense: (body: {
+    raw?: string;
+    amount?: number;
+    description?: string;
+    merchant?: string;
+    category?: string;
+    source?: "manual_text" | "manual_voice";
+  }) => postJson<{ ok: true; expense: any }>("/api/expenses", body),
+  voiceExpense: (transcript: string) =>
+    postJson<{ ok: true; expense: any; parsed: any }>("/api/expenses/voice", {
+      transcript,
+    }),
+  photoExpense: (imageDataUrl: string) =>
+    postJson<{ ok: true; expense: any; parsed: any }>("/api/expenses/photo", {
+      image: imageDataUrl,
+    }),
+
+  // ── Trusted-people invites (Twilio SMS) ───────────────────────────────
+  invitePerson: (body: { phone?: string; email?: string; name: string; scope: string }) =>
+    postJson<{ ok: true; inviteId: string }>("/api/invites", body),
+
   // ── Household / onboarding ─────────────────────────────────────────────
   onboardingStatus: () =>
     getJson<{

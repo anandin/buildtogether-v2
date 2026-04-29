@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>BuildTogether — Student · Print</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    html, body { margin: 0; padding: 0; background: #F4EFE6; }
+    body { font-family: "Inter", system-ui, sans-serif; -webkit-font-smoothing: antialiased; color: #16140F; }
+    * { box-sizing: border-box; }
+
+    /* Static keyframes — keep defined so any animation rule resolves, but durations are zeroed for print */
+    @keyframes btBreathe { 0%,100% { transform: none; } }
+    @keyframes btFloat   { 0%,100% { transform: none; } }
+    @keyframes btDrift   { 0%,100% { transform: none; } }
+    @keyframes btShimmer { 0%,100% { background-position: 0 0; } }
+    @keyframes btPulse   { 0%,100% { box-shadow: 0 0 0 4px currentColor; } }
+    @keyframes tilly-dot { 0%,100% { transform: none; opacity: 0.6; } }
+
+    .print-cover {
+      padding: 60px 64px 40px;
+      break-after: page;
+    }
+    .print-cover h1 {
+      font-family: "Instrument Serif", Georgia, serif;
+      font-weight: 400; font-size: 84px; line-height: 1; letter-spacing: -0.02em;
+      margin: 0 0 18px; color: #16140F;
+    }
+    .print-cover h1 em { color: #D8602B; font-style: italic; }
+    .print-cover p {
+      font-size: 16px; line-height: 1.55; color: #5A5347; max-width: 680px; margin: 0 0 12px;
+    }
+    .print-cover .label {
+      font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: #9C9484;
+      margin-bottom: 16px; font-weight: 600;
+    }
+    .print-cover .meta {
+      margin-top: 36px; padding-top: 20px; border-top: 1px solid #1F1B14;
+      display: flex; justify-content: space-between; font-size: 11px; color: #5A5347;
+      letter-spacing: 0.08em; text-transform: uppercase; font-weight: 600;
+    }
+
+    .platform-page {
+      padding: 36px 40px 40px;
+      break-before: page;
+    }
+    .platform-page h2 {
+      font-family: "Instrument Serif", Georgia, serif;
+      font-weight: 400; font-size: 36px; margin: 0 0 6px; color: #16140F;
+    }
+    .platform-page .sub {
+      font-size: 12px; color: #5A5347; letter-spacing: 0.08em; text-transform: uppercase;
+      font-weight: 600; margin-bottom: 22px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 28px 20px;
+      justify-items: center;
+    }
+    .frame-card {
+      width: 100%;
+      display: flex; flex-direction: column; align-items: center;
+      break-inside: avoid;
+    }
+    .frame-card .scale-wrap {
+      transform-origin: top center;
+    }
+    .frame-card .label {
+      margin-top: 10px;
+      font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+      color: #5A5347; font-weight: 600; text-align: center;
+    }
+    .frame-card .label .num {
+      font-family: "JetBrains Mono", monospace; color: #D8602B; margin-right: 6px;
+    }
+
+    @page {
+      size: letter portrait;
+      margin: 0.4in;
+    }
+    @media print {
+      html, body { background: #FFFFFF !important; }
+      .print-cover, .platform-page { break-inside: avoid; }
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <!-- Stub DesignCanvas / TweaksPanel exports the screens file expects but we don't use -->
+  <script type="text/babel">
+    // Stub canvas + tweak controls so imports below don't error.
+    function DesignCanvas() { return null; }
+    function DCSection() { return null; }
+    function DCArtboard() { return null; }
+    function TweaksPanel() { return null; }
+    function TweakSection() { return null; }
+    function TweakRadio() { return null; }
+    function useTweaks(d) { return [d, () => {}]; }
+    Object.assign(window, { DesignCanvas, DCSection, DCArtboard, TweaksPanel, TweakSection, TweakRadio, useTweaks });
+  </script>
+
+  <script type="text/babel" src="ios-frame.jsx"></script>
+  <script type="text/babel" src="android-frame.jsx"></script>
+  <script type="text/babel" src="tilly.jsx"></script>
+  <script type="text/babel" src="bt-system.jsx"></script>
+  <script type="text/babel" src="screens.jsx"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // Selected theme for print — bloom (current user pick)
+    const THEME_ID = 'bloom';
+    const TONE = 'sibling';
+    const TIME = 'evening';
+
+    function PhoneCard({ kind, screenId, label, idx, ScreenComp, t, scale = 0.5 }) {
+      const isIOS = kind === 'ios';
+      const w = isIOS ? 402 : 412;
+      const h = isIOS ? 874 : 892;
+      const Frame = isIOS ? IOSDevice : AndroidDevice;
+      const tillyVars = {
+        '--tilly-body': t.tilly.body,
+        '--tilly-belly': t.tilly.belly,
+        '--tilly-beak': t.tilly.beak,
+      };
+      return (
+        <div className="frame-card" style={{ height: h * scale + 60 }}>
+          <div className="scale-wrap" style={{
+            width: w * scale,
+            height: h * scale,
+            position: 'relative',
+          }}>
+            <div style={{
+              transform: `scale(${scale})`,
+              transformOrigin: 'top left',
+              width: w, height: h,
+              position: 'absolute', top: 0, left: 0,
+            }}>
+              <div style={tillyVars}>
+                <Frame dark={THEME_ID === 'dusk'}>
+                  <div style={{ height: '100%', display: 'flex', flexDirection: 'column', paddingTop: isIOS ? 56 : 0 }}>
+                    <ScreenComp t={t} tone={TONE} time={TIME} onNav={()=>{}} active={screenId}/>
+                  </div>
+                </Frame>
+              </div>
+            </div>
+          </div>
+          <div className="label"><span className="num">{String(idx).padStart(2,'0')}</span>{label}</div>
+        </div>
+      );
+    }
+
+    function App() {
+      const t = BT_THEMES[THEME_ID];
+      const screens = [
+        ['home',     BTHome,     'Today'],
+        ['guardian', BTGuardian, 'Tilly'],
+        ['spend',    BTSpending, 'Spend'],
+        ['credit',   BTCredit,   'Credit'],
+        ['dreams',   BTDreams,   'Dreams'],
+        ['profile',  BTProfile,  'You'],
+      ];
+      return (
+        <>
+          <section className="print-cover">
+            <div className="label">BuildTogether · Student edition · Apr 2026</div>
+            <h1>A money app that<br/>actually <em>knows you.</em></h1>
+            <p>BuildTogether reimagined for an 18-23 year old college student. <strong>Tilly</strong>, a calm older-sibling AI, watches your accounts, surfaces patterns before they hurt, and quietly moves money toward what you said matters.</p>
+            <p>Twelve screens — six on iOS, six on Android — covering the morning briefing, daily spend pattern, credit-utilization gauge, goal portraits, the conversational guardian, and the relationship surface where Tilly tells you what she's learned about you.</p>
+            <div className="meta">
+              <span>Theme · Bloom</span>
+              <span>Tone · Older sibling</span>
+              <span>Time · Evening</span>
+            </div>
+          </section>
+
+          <section className="platform-page">
+            <h2>iOS</h2>
+            <div className="sub">Six screens · iPhone frame</div>
+            <div className="grid">
+              {screens.map(([id, S, label], i) => (
+                <PhoneCard key={`ios-${id}`} kind="ios" screenId={id} label={label} idx={i+1} ScreenComp={S} t={t} scale={0.48}/>
+              ))}
+            </div>
+          </section>
+
+          <section className="platform-page">
+            <h2>Android</h2>
+            <div className="sub">Same app · Material 3 frame</div>
+            <div className="grid">
+              {screens.map(([id, S, label], i) => (
+                <PhoneCard key={`and-${id}`} kind="android" screenId={id} label={label} idx={i+1} ScreenComp={S} t={t} scale={0.48}/>
+              ))}
+            </div>
+          </section>
+        </>
+      );
+    }
+
+      ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+
+      // Auto-print: wait for fonts + Babel + a settle delay
+      (async () => {
+        if (document.fonts && document.fonts.ready) {
+          try { await document.fonts.ready; } catch (e) {}
+        }
+        // Wait for any remaining images
+        const imgs = Array.from(document.images || []);
+        await Promise.all(imgs.map(img => img.complete ? Promise.resolve()
+          : new Promise(res => { img.onload = img.onerror = res; })));
+        // Settle delay
+        await new Promise(res => setTimeout(res, 800));
+        window.print();
+      })();
+  </script>
+</body>
+</html>
