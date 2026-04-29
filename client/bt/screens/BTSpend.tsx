@@ -17,10 +17,12 @@ import { BT_SHIMMER_DURATION_MS, BTFonts, type BTTheme } from "../theme";
 import { BTCard, BTChip, BTLabel, BTNum, BTSerif } from "../atoms";
 import { useSpend } from "../hooks/useSpend";
 import { useExpenses } from "../hooks/useExpenses";
+import { useSubscriptions } from "../hooks/useSubscriptions";
 import { AddExpenseModal } from "../AddExpenseModal";
 import { SplitModal } from "../SplitModal";
 import { btApi } from "../api/client";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import { Linking } from "react-native";
 import type { DayBar } from "../api/types";
 
 function useSplitsList() {
@@ -68,6 +70,11 @@ export function BTSpend() {
   const pendingSplits = (splitsList.data?.splits ?? []).filter(
     (s) => !(s.metadata?.settled ?? false),
   );
+
+  const subs = useSubscriptions();
+  const activeSubs = (subs.data && subs.data.ready === true ? subs.data.subscriptions : [])
+    .filter((s) => s.status === "active")
+    .slice(0, 4);
 
   if (!live) {
     // No spend pattern computed yet — but the user may still have logged
@@ -282,6 +289,54 @@ export function BTSpend() {
             );
           })}
         </View>
+
+        {activeSubs.length > 0 ? (
+          <View style={{ gap: 10 }}>
+            <BTLabel color={t.inkMute}>Subscriptions</BTLabel>
+            <BTCard t={t} alt padding={14} style={{ gap: 12 }}>
+              {activeSubs.map((s) => (
+                <View key={s.id} style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontWeight: "600", fontSize: 13 }}>
+                      {s.merchant}
+                    </Text>
+                    <Text
+                      style={{
+                        color: t.inkMute,
+                        fontFamily: BTFonts.mono,
+                        fontSize: 10,
+                        letterSpacing: 1,
+                        textTransform: "uppercase",
+                        marginTop: 2,
+                      }}
+                    >
+                      ${s.amount.toFixed(2)} · {s.cadence}
+                      {s.usageNote ? ` · ${s.usageNote}` : ""}
+                    </Text>
+                  </View>
+                  {s.cancelLink ? (
+                    <Pressable
+                      onPress={() => Linking.openURL(s.cancelLink!.url).catch(() => {})}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${s.cancelLink.verb} ${s.merchant}`}
+                      style={{
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 999,
+                        borderWidth: 1,
+                        borderColor: t.rule,
+                      }}
+                    >
+                      <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontSize: 11, fontWeight: "600", textTransform: "capitalize" }}>
+                        {s.cancelLink.verb} →
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ))}
+            </BTCard>
+          </View>
+        ) : null}
 
         {pendingSplits.length > 0 ? (
           <View style={{ gap: 10 }}>

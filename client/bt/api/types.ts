@@ -128,6 +128,8 @@ export type Subscription = {
   lastUsedAt: string | null;
   status: "active" | "paused" | "cancelled" | "flagged";
   usageNote: string | null;
+  /** Per-merchant cancel/manage link (D19). */
+  cancelLink?: { url: string; verb: "cancel" | "manage" | "review"; surface: string };
 };
 export type SubscriptionsList =
   | StubEnvelope
