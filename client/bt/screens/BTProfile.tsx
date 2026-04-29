@@ -24,6 +24,7 @@ import { useProfile } from "../hooks/useProfile";
 import { useUser } from "../hooks/useUser";
 import { InvitePersonModal } from "../InvitePersonModal";
 import { useState } from "react";
+import { useAuth } from "@/context/AuthContext";
 
 const QUIET_SETTINGS = [
   { id: "q1", label: "Quiet hours", value: "11pm — 7am" },
@@ -40,6 +41,7 @@ export function BTProfile() {
   const profile = useProfile();
   const { user } = useUser();
   const [inviteOpen, setInviteOpen] = useState(false);
+  const { signOut } = useAuth();
 
   const live = profile.data && (profile.data as any).ready === true ? (profile.data as any) : null;
   const userName = live?.name ?? user?.name ?? "You";
@@ -293,6 +295,34 @@ export function BTProfile() {
         </Pressable>
       </View>
       <InvitePersonModal visible={inviteOpen} onClose={() => setInviteOpen(false)} />
+
+      {/* Sign out — quiet, at the very bottom of Profile so it's reachable
+          without being prominent. Forgotten how to leave is a worse UX
+          than seeing the option. */}
+      <Pressable
+        onPress={() => signOut().catch(() => {})}
+        accessibilityRole="button"
+        accessibilityLabel="Sign out"
+        style={{
+          alignSelf: "center",
+          paddingVertical: 14,
+          paddingHorizontal: 18,
+          marginTop: 8,
+        }}
+      >
+        <Text
+          style={{
+            color: t.inkMute,
+            fontFamily: BTFonts.mono,
+            fontSize: 10,
+            letterSpacing: 1.4,
+            textTransform: "uppercase",
+            fontWeight: "700",
+          }}
+        >
+          Sign out
+        </Text>
+      </Pressable>
 
       {/* Quiet settings */}
       <View style={{ gap: 8 }}>
