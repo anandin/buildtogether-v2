@@ -22,6 +22,8 @@ import { useMemory } from "../hooks/useMemory";
 import { useSetTillyTone } from "../hooks/useTillyTone";
 import { useProfile } from "../hooks/useProfile";
 import { useUser } from "../hooks/useUser";
+import { InvitePersonModal } from "../InvitePersonModal";
+import { useState } from "react";
 
 const QUIET_SETTINGS = [
   { id: "q1", label: "Quiet hours", value: "11pm — 7am" },
@@ -37,6 +39,7 @@ export function BTProfile() {
   const setServerTone = useSetTillyTone();
   const profile = useProfile();
   const { user } = useUser();
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const live = profile.data && (profile.data as any).ready === true ? (profile.data as any) : null;
   const userName = live?.name ?? user?.name ?? "You";
@@ -270,6 +273,7 @@ export function BTProfile() {
           );
         })}
         <Pressable
+          onPress={() => setInviteOpen(true)}
           accessibilityRole="button"
           accessibilityLabel="Invite someone you trust"
           style={{
@@ -288,6 +292,7 @@ export function BTProfile() {
           </Text>
         </Pressable>
       </View>
+      <InvitePersonModal visible={inviteOpen} onClose={() => setInviteOpen(false)} />
 
       {/* Quiet settings */}
       <View style={{ gap: 8 }}>

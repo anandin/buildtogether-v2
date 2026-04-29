@@ -108,15 +108,26 @@ export function mountCronRoutes(app: Express): void {
     },
   );
 
-  // Stubs for protections + notify — Phases 4-5 fill these.
+  // Sweeps the protections engine over every household. Vercel Cron hits
+  // this hourly; the dedupe window inside the engine keeps it idempotent.
   app.post(
     "/api/cron/protections",
     requireCron,
     async (_req: Request, res: Response) => {
-      res.json({ ok: true, phase: 4, ready: false });
+      try {
+        const { runProtectionsAll } = await import("../tilly/protections-engine");
+        const r = await runProtectionsAll();
+        res.json({ ok: true, ...r });
+      } catch (err) {
+        console.error("/api/cron/protections error:", err);
+        res.status(500).json({ error: "protections cron failed" });
+      }
     },
   );
 
+  // Fan-out cron — finds protections with severity 'act_today' that
+  // haven't been pushed yet, sends a push to every active token, marks
+  // them as 'pushed'. Quiet hours respected.
   app.post(
     "/api/cron/notify",
     requireCron,

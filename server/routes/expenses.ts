@@ -193,6 +193,19 @@ export function mountExpensesRoutes(app: Express): void {
         isRecurring: parsed.isRecurring,
       })
       .returning();
+
+    // Inline protections sweep — fast (rule-based, no LLM) so it's safe
+    // to block the response on. If it errors we still return the saved
+    // expense.
+    try {
+      const { runProtectionsForHousehold } = await import(
+        "../tilly/protections-engine"
+      );
+      await runProtectionsForHousehold(householdId);
+    } catch (err) {
+      console.warn("[expenses] protections sweep failed:", err);
+    }
+
     res.json({ ok: true, expense: row });
   });
 

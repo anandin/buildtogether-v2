@@ -155,6 +155,25 @@ export function mountTillyChatRoutes(app: Express): void {
     const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
     if (!message) return res.status(400).json({ error: "message required" });
 
+    // Cost guardrail — refuse early if the user has spent through their daily
+    // token budget. Returns 429 with a Tilly-voiced message rather than an
+    // opaque server error so the chat surface can render it inline.
+    try {
+      const { assertUnderCap } = await import("../../tilly/usage");
+      await assertUnderCap(userId);
+    } catch (capErr) {
+      return res.status(429).json({
+        error: "daily_cap",
+        reply: {
+          id: "cap-" + Date.now(),
+          role: "tilly",
+          kind: "text",
+          body: "I've thought a lot today. Let's pick this back up tomorrow — or open the admin page if you're testing.",
+          createdAt: new Date().toISOString(),
+        },
+      });
+    }
+
     try {
       const tone = await getTone(userId);
 

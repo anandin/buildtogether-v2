@@ -320,27 +320,57 @@ function PhotoEntry({ onSaved }: { onSaved: () => void }) {
   const { t } = useBT();
   const photo = usePhotoExpense();
   const [preview, setPreview] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputRef = useRef<any>(null);
 
-  // Web-only: file picker. On native, this would route through Expo
-  // ImagePicker; we'll wire that in the EAS build pass.
-  const pickFile = () => {
-    if (Platform.OS !== "web") return;
-    if (!fileInputRef.current) {
-      const el = document.createElement("input");
-      el.type = "file";
-      el.accept = "image/*";
-      el.capture = "environment" as any;
-      el.onchange = () => {
-        const f = el.files?.[0];
-        if (!f) return;
-        const r = new FileReader();
-        r.onload = () => setPreview(r.result as string);
-        r.readAsDataURL(f);
-      };
-      fileInputRef.current = el;
+  // Pick a receipt — uses expo-image-picker on native (camera + gallery)
+  // and a hidden <input type=file> on web. Both produce a data URL we can
+  // POST straight to the photo endpoint.
+  const pickFile = async () => {
+    if (Platform.OS === "web") {
+      if (!fileInputRef.current) {
+        const el = document.createElement("input");
+        el.type = "file";
+        el.accept = "image/*";
+        (el as any).capture = "environment";
+        el.onchange = () => {
+          const f = el.files?.[0];
+          if (!f) return;
+          const r = new FileReader();
+          r.onload = () => setPreview(r.result as string);
+          r.readAsDataURL(f);
+        };
+        fileInputRef.current = el;
+      }
+      fileInputRef.current.click();
+      return;
     }
-    fileInputRef.current.click();
+    // Native — dynamic import so Expo Go / web bundling doesn't trip.
+    try {
+      const ImagePicker = await import("expo-image-picker");
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        // Fall back to library if camera denied.
+        const lib = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (!lib.granted) return;
+      }
+      const result = perm.granted
+        ? await ImagePicker.launchCameraAsync({
+            base64: true,
+            quality: 0.6,
+            allowsEditing: false,
+          })
+        : await ImagePicker.launchImageLibraryAsync({
+            base64: true,
+            quality: 0.6,
+            allowsEditing: false,
+          });
+      if (!result.canceled && result.assets?.[0]?.base64) {
+        const a = result.assets[0];
+        setPreview(`data:image/jpeg;base64,${a.base64}`);
+      }
+    } catch (err) {
+      console.warn("expo-image-picker error:", err);
+    }
   };
 
   const submit = () => {
@@ -353,31 +383,19 @@ function PhotoEntry({ onSaved }: { onSaved: () => void }) {
     });
   };
 
-  if (Platform.OS !== "web") {
-    return (
-      <Text
-        style={{
-          color: t.inkSoft,
-          fontFamily: BTFonts.serifItalic,
-          fontSize: 15,
-          lineHeight: 22,
-        }}
-      >
-        Receipt scanning lights up in the mobile build. For now, log via text.
-      </Text>
-    );
-  }
-
   return (
     <View style={{ gap: 14 }}>
       {preview ? (
         <View style={{ borderRadius: 14, overflow: "hidden" }}>
-          {/* eslint-disable-next-line jsx-a11y/alt-text */}
-          {/* @ts-ignore — img is fine on RN-web */}
-          <img
-            src={preview}
-            style={{ width: "100%", maxHeight: 240, objectFit: "cover", display: "block" }}
-          />
+          {Platform.OS === "web" ? (
+            // @ts-ignore — img is fine on RN-web
+            <img
+              src={preview}
+              style={{ width: "100%", maxHeight: 240, objectFit: "cover", display: "block" }}
+            />
+          ) : (
+            <NativeImagePreview uri={preview} />
+          )}
         </View>
       ) : (
         <Pressable
@@ -422,6 +440,12 @@ function PhotoEntry({ onSaved }: { onSaved: () => void }) {
       />
     </View>
   );
+}
+
+function NativeImagePreview({ uri }: { uri: string }) {
+  // Avoid pulling RN Image at the top level so web bundles don't bloat.
+  const { Image } = require("react-native") as { Image: any };
+  return <Image source={{ uri }} style={{ width: "100%", height: 240 }} resizeMode="cover" />;
 }
 
 function PrimaryButton({
