@@ -304,10 +304,15 @@ export async function getApp(): Promise<express.Application> {
     }
     configureExpoAndLanding(app);
     registerAdminRoutes(app);
-    await registerRoutes(app);
-    // Tilly student-edition feature routers (spec §4–§5).
-    // Mounted after legacy routes so they don't shadow anything during transition.
+    // Tilly student-edition routers MUST mount before the legacy V1 routes:
+    // V1 declares `app.post("/api/expenses/:coupleId")` which Express
+    // matches greedily, swallowing `/api/expenses/voice` and
+    // `/api/expenses/photo` (it treats `voice`/`photo` as the coupleId
+    // and then `requireCoupleAccess` rejects them with 403). The student
+    // edition is the canonical surface — V1 only needs to win for paths
+    // V2 doesn't define.
     registerTillyRoutes(app);
+    await registerRoutes(app);
     setupErrorHandler(app);
     appConfigured = true;
     return app;
