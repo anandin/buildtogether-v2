@@ -169,8 +169,7 @@ export default function SignInScreen() {
             <Text
               style={{
                 color: t.accent,
-                fontStyle: "italic",
-                fontFamily: BTFonts.serif,
+                fontFamily: BTFonts.serifItalic,
               }}
             >
               Tilly
@@ -180,7 +179,7 @@ export default function SignInScreen() {
           <Text
             style={[
               styles.sub,
-              { color: t.inkSoft, fontFamily: BTFonts.serif },
+              { color: t.inkSoft, fontFamily: BTFonts.serifItalic },
             ]}
           >
             Money is already complicated. I'll do the watching so you don't
@@ -200,9 +199,8 @@ export default function SignInScreen() {
               <Text
                 style={{
                   color: t.bad,
-                  fontFamily: BTFonts.serif,
+                  fontFamily: BTFonts.serifItalic,
                   fontSize: 14,
-                  fontStyle: "italic",
                 }}
               >
                 {error}
@@ -284,7 +282,7 @@ export default function SignInScreen() {
                   fontFamily: BTFontsByWeight.sans600,
                 }}
               >
-                {mode === "signin" ? "Make an account" : "Sign in"}
+                {mode === "signin" ? "Create an account" : "Sign in"}
               </Text>
             </Text>
           </Pressable>
@@ -401,11 +399,12 @@ function Field({
   autoComplete?: any;
   testID?: string;
 }) {
+  const [focused, setFocused] = useState(false);
   return (
     <View style={{ gap: 6 }}>
       <Text
         style={{
-          color: t.inkMute,
+          color: focused ? t.accent : t.inkMute,
           fontFamily: BTFontsByWeight.mono700,
           fontSize: 10,
           letterSpacing: 1.3,
@@ -417,6 +416,8 @@ function Field({
       <TextInput
         value={value}
         onChangeText={onChangeText}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         placeholder={placeholder}
         placeholderTextColor={t.inkMute}
         secureTextEntry={secureTextEntry}
@@ -424,17 +425,21 @@ function Field({
         autoCapitalize={autoCapitalize ?? "sentences"}
         autoComplete={autoComplete}
         testID={testID}
-        style={{
-          paddingHorizontal: 14,
-          paddingVertical: 12,
-          borderRadius: 12,
-          backgroundColor: t.surface,
-          borderWidth: 1,
-          borderColor: t.rule,
-          color: t.ink,
-          fontFamily: BTFonts.sans,
-          fontSize: 15,
-        }}
+        style={
+          {
+            paddingHorizontal: 14,
+            paddingVertical: 12,
+            borderRadius: 12,
+            backgroundColor: t.surface,
+            borderWidth: 1,
+            borderColor: focused ? t.accent : t.rule,
+            color: t.ink,
+            fontFamily: BTFonts.sans,
+            fontSize: 15,
+            // outlineStyle is a web-only RN-web style; cast escapes RN types
+            outlineStyle: "none",
+          } as any
+        }
       />
     </View>
   );
@@ -459,7 +464,6 @@ const styles = StyleSheet.create({
   sub: {
     fontSize: 16,
     lineHeight: 24,
-    fontStyle: "italic",
     textAlign: "center",
     maxWidth: 320,
   },

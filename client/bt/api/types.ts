@@ -150,3 +150,23 @@ export type ProtectionsList =
   | { ready: true; protections: Protection[] };
 
 export type TonePref = { tone: BTToneKey; phase?: number };
+
+export type TrustedPerson = {
+  id: string;
+  name: string;
+  rel: string;
+  scope: string;
+  hue: "accent" | "accent2" | "warn";
+};
+
+export type TillyProfile =
+  | { ready: false; reason?: string }
+  | {
+      ready: true;
+      name: string;
+      school: string | null;
+      studentRole: string | null;
+      daysWithTilly: number;
+      tone: BTToneKey;
+      trusted: TrustedPerson[];
+    };

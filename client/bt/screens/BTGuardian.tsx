@@ -18,12 +18,13 @@ import {
   View,
 } from "react-native";
 
-import { BT_CHAT_SEED, BT_SUGGESTED_PROMPTS } from "../data";
+import { BT_SUGGESTED_PROMPTS } from "../data";
 import { useBT } from "../BTContext";
 import { Tilly } from "../Tilly";
 import { BTCard, BTLabel, BTRule, BTSerif } from "../atoms";
 import { BTFonts } from "../theme";
 import { useTilly as useTillyChat } from "../hooks/useTilly";
+import { useUser } from "../hooks/useUser";
 import { MemoryInspector } from "../MemoryInspector";
 import type { TillyMessage } from "../api/types";
 
@@ -58,18 +59,32 @@ function toLocal(m: TillyMessage): Msg {
 }
 
 export function BTGuardian() {
-  const { t } = useBT();
+  const { t, tone } = useBT();
+  const { user } = useUser();
   const tilly = useTillyChat();
   const [draft, setDraft] = useState("");
   const [memoryOpen, setMemoryOpen] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
-  // Server messages take priority; fall back to BT_CHAT_SEED for the design
-  // demo experience when the conversation is empty (first-time users).
+  // First-time UX: when the conversation is empty, render Tilly's actual
+  // tone-appropriate greeting instead of a fake pre-baked exchange. The
+  // BT_CHAT_SEED constant stays available as a demo fallback if the live
+  // user has no name resolved yet (very first render before /api/auth/session
+  // returns), but normally the greeting comes from `tone.greeting(name) +
+  // tone.sample`.
+  const userName = user?.name?.split(" ")[0] || "there";
+  const firstTimeMessages: Msg[] = [
+    {
+      id: "tilly-greeting",
+      role: "tilly",
+      kind: "text",
+      body: `${tone.greeting(userName)} ${tone.sample}`,
+    },
+  ];
   const messages: Msg[] =
     tilly.messages.length > 0
       ? tilly.messages.map(toLocal)
-      : (BT_CHAT_SEED as unknown as Msg[]);
+      : firstTimeMessages;
 
   const thinking = tilly.isThinking;
 
@@ -112,14 +127,16 @@ export function BTGuardian() {
               marginTop: 2,
             }}
           >
-            calm, wise, plainspoken
+            {tone.voice}
           </Text>
         </View>
         <Pressable
           onPress={() => setMemoryOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel="Open memory inspector"
           style={{
             paddingHorizontal: 12,
-            paddingVertical: 6,
+            paddingVertical: 10,
             borderRadius: 999,
             borderWidth: 1,
             borderColor: t.rule,
@@ -380,8 +397,7 @@ function RichTillyText({ body, color }: { body: string; color: string }) {
                   <Text
                     key={segIdx}
                     style={{
-                      fontFamily: BTFonts.serif,
-                      fontStyle: "italic",
+                      fontFamily: BTFonts.serifItalic,
                       color: t.accent,
                       fontSize: 15,
                     }}

@@ -18,7 +18,6 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
-import { BT_DATA, type BTDream } from "../data";
 import { useBT } from "../BTContext";
 import { Tilly } from "../Tilly";
 import { BTCard, BTChip, BTLabel, BTSerif } from "../atoms";
@@ -28,6 +27,7 @@ import {
   useCreateDream,
   useContributeDream,
 } from "../hooks/useDreams";
+import type { Dream as BTDream } from "../api/types";
 
 const MILESTONES = [0, 25, 50, 75, 100];
 
@@ -37,12 +37,11 @@ export function BTDreams() {
   const [newOpen, setNewOpen] = useState(false);
   const [contributeFor, setContributeFor] = useState<BTDream | null>(null);
 
-  // Live data takes priority; BT_DATA is the design-time fallback when
-  // the user hasn't created any dreams yet.
   const live = dreams.data && dreams.data.ready === true ? dreams.data : null;
-  const dreamsList: BTDream[] = live && live.dreams.length > 0 ? live.dreams : BT_DATA.dreams;
-  const yearSaved = live && live.yearSaved > 0 ? live.yearSaved : BT_DATA.yearSaved;
-  const perDay = live && live.perDay > 0 ? live.perDay : BT_DATA.perDay;
+  const dreamsList: BTDream[] = live ? live.dreams : [];
+  const yearSaved = live?.yearSaved ?? 0;
+  const perDay = live?.perDay ?? 0;
+  const hasAnyContributions = yearSaved > 0;
 
   return (
     <ScrollView
@@ -52,12 +51,34 @@ export function BTDreams() {
     >
       <View style={{ gap: 8 }}>
         <BTLabel color={t.inkMute}>What you're building</BTLabel>
-        <BTSerif size={28} color={t.ink} weight="500">
-          <Text style={{ color: t.accent, fontStyle: "italic", fontFamily: BTFonts.serif }}>
-            ${yearSaved.toLocaleString()}
-          </Text>{" "}
-          set aside this year. About ${perDay.toFixed(2)} a day.
-        </BTSerif>
+        {hasAnyContributions ? (
+          <BTSerif size={28} color={t.ink} weight="500">
+            <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
+              ${yearSaved.toLocaleString()}
+            </Text>{" "}
+            set aside this year. About ${perDay.toFixed(2)} a day.
+          </BTSerif>
+        ) : (
+          <BTSerif size={26} color={t.ink} weight="500">
+            {dreamsList.length === 0 ? (
+              <>
+                Nothing{" "}
+                <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
+                  named
+                </Text>{" "}
+                yet — name something below.
+              </>
+            ) : (
+              <>
+                Just{" "}
+                <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
+                  starting
+                </Text>
+                . First contribution lights up the year-total.
+              </>
+            )}
+          </BTSerif>
+        )}
         <Text
           style={{
             color: t.inkSoft,
@@ -93,7 +114,7 @@ export function BTDreams() {
         }}
       >
         <Text style={{ color: t.inkMute, fontSize: 22 }}>+</Text>
-        <Text style={{ color: t.inkSoft, fontFamily: BTFonts.serif, fontSize: 16, fontStyle: "italic" }}>
+        <Text style={{ color: t.inkSoft, fontFamily: BTFonts.serifItalic, fontSize: 16 }}>
           Name a new dream
         </Text>
       </Pressable>
@@ -248,7 +269,7 @@ function ContributeModal({
               <BTLabel color={t.inkMute}>Add to {dream.name}</BTLabel>
               <BTSerif size={26} color={t.ink} weight="500">
                 How much can you{" "}
-                <Text style={{ color: t.accent, fontStyle: "italic", fontFamily: BTFonts.serif }}>
+                <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
                   set aside
                 </Text>
                 ?
@@ -292,26 +313,34 @@ function SimpleField({
   placeholder?: string;
   keyboardType?: "default" | "numeric";
 }) {
+  const [focused, setFocused] = useState(false);
   return (
     <View style={{ gap: 6 }}>
-      <BTLabel color={t.inkMute} size={10}>
+      <BTLabel color={focused ? t.accent : t.inkMute} size={10}>
         {label}
       </BTLabel>
       <TextInput
         value={value}
         onChangeText={onChangeText}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         placeholder={placeholder}
         placeholderTextColor={t.inkMute}
         keyboardType={keyboardType}
-        style={{
-          paddingHorizontal: 14,
-          paddingVertical: 10,
-          borderRadius: 12,
-          backgroundColor: t.surfaceAlt,
-          color: t.ink,
-          fontFamily: BTFonts.sans,
-          fontSize: 15,
-        }}
+        style={
+          {
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+            borderRadius: 12,
+            backgroundColor: t.surfaceAlt,
+            borderWidth: 1.5,
+            borderColor: focused ? t.accent : "transparent",
+            color: t.ink,
+            fontFamily: BTFonts.sans,
+            fontSize: 15,
+            outlineStyle: "none",
+          } as any
+        }
       />
     </View>
   );
@@ -441,10 +470,22 @@ function DreamPortrait({
       {/* Body */}
       <View style={{ padding: 18, gap: 14 }}>
         <View style={{ flexDirection: "row", alignItems: "baseline", justifyContent: "space-between" }}>
-          <Text style={{ color: t.ink, fontFamily: BTFonts.serif, fontSize: 22 }}>
-            ${d.saved.toLocaleString()}
-            <Text style={{ color: t.inkMute, fontSize: 16 }}> of ${d.target.toLocaleString()}</Text>
-          </Text>
+          {d.saved === 0 && d.target > 0 ? (
+            // Just-started empty state — shouldn't read "$0 of $X" because that
+            // looks like a bug. Spec §8 calls for a pre-first-dream empty
+            // moment; this is the per-dream version of that.
+            <Text style={{ color: t.ink, fontFamily: BTFonts.serifItalic, fontSize: 18 }}>
+              Just started.{" "}
+              <Text style={{ color: t.inkMute, fontFamily: BTFonts.sans, fontSize: 14, fontStyle: "normal" }}>
+                Goal ${d.target.toLocaleString()}
+              </Text>
+            </Text>
+          ) : (
+            <Text style={{ color: t.ink, fontFamily: BTFonts.serif, fontSize: 22 }}>
+              ${d.saved.toLocaleString()}
+              <Text style={{ color: t.inkMute, fontSize: 16 }}> of ${d.target.toLocaleString()}</Text>
+            </Text>
+          )}
           <BTChip
             bg={justCrossed ? t.accent : t.chip}
             fg={justCrossed ? "#fff" : t.inkSoft}
@@ -547,10 +588,9 @@ function DreamPortrait({
             style={{
               flex: 1,
               color: t.ink,
-              fontFamily: BTFonts.serif,
+              fontFamily: BTFonts.serifItalic,
               fontSize: 14,
               lineHeight: 20,
-              fontStyle: "italic",
             }}
           >
             {d.nudge}
@@ -576,7 +616,7 @@ function DreamPortrait({
                 fontSize: 13,
               }}
             >
-              + Move money to {d.name.split(" ")[0]}
+              + Move money to {d.name.length > 18 ? d.name.slice(0, 18) + "…" : d.name}
             </Text>
           </Pressable>
         ) : null}

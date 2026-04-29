@@ -8,7 +8,6 @@ import React from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
-import { BT_DATA } from "../data";
 import { useBT } from "../BTContext";
 import { Tilly } from "../Tilly";
 import { BTCard, BTLabel, BTNum, BTSerif, BTStripes } from "../atoms";
@@ -20,12 +19,61 @@ export function BTCredit() {
   const { t } = useBT();
   const credit = useCredit();
   const live = credit.data && credit.data.ready === true ? credit.data : null;
-  // BT_DATA falls through when no Plaid card is connected.
-  const c = live ?? BT_DATA.credit;
+
+  if (!live) {
+    return (
+      <ScrollView
+        style={{ flex: 1, backgroundColor: t.bg }}
+        contentContainerStyle={{ padding: 22, paddingTop: 36, gap: 22 }}
+      >
+        <View style={{ gap: 8 }}>
+          <BTLabel color={t.inkMute}>The one number</BTLabel>
+          <BTSerif size={28} color={t.ink} weight="500">
+            No credit card{" "}
+            <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
+              connected
+            </Text>{" "}
+            yet.
+          </BTSerif>
+        </View>
+        <BTCard t={t} padding={22} style={{ gap: 14 }}>
+          <View style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>
+            <Tilly t={t} size={48} breathing />
+            <View style={{ flex: 1, gap: 8 }}>
+              <Text
+                style={{
+                  color: t.ink,
+                  fontFamily: BTFonts.serifItalic,
+                  fontSize: 17,
+                  lineHeight: 24,
+                }}
+              >
+                Connect a credit card through Plaid and I'll watch your
+                utilization daily — the credit-score lever lenders care about
+                most.
+              </Text>
+              <Text
+                style={{
+                  color: t.inkMute,
+                  fontFamily: BTFonts.sans,
+                  fontSize: 13,
+                  marginTop: 4,
+                }}
+              >
+                If you don't have a card yet, that's fine. We'll get there.
+              </Text>
+            </View>
+          </View>
+        </BTCard>
+      </ScrollView>
+    );
+  }
+
+  const c = live;
   const payNow =
-    live && "payNow" in live && live.payNow
-      ? (live.payNow as { amount: number; resultsIn: number })
-      : { amount: 50, resultsIn: 28 };
+    "payNow" in c && (c as any).payNow
+      ? ((c as any).payNow as { amount: number; resultsIn: number })
+      : { amount: Math.max(10, Math.round(c.used - (c.target / 100) * c.limit)), resultsIn: c.target };
   const payNowAmount = payNow.amount;
   const payNowResult = payNow.resultsIn;
 
@@ -45,7 +93,7 @@ export function BTCredit() {
           <Tilly t={t} size={56} />
           <BTSerif size={22} color={t.ink} style={{ flex: 1, lineHeight: 28 }}>
             You're at 38% of your limit. Lenders want under 30. Pay{" "}
-            <Text style={{ color: t.accent, fontStyle: "italic", fontFamily: BTFonts.serif }}>$50</Text>{" "}
+            <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>$50</Text>{" "}
             today and you're there.
           </BTSerif>
         </View>
@@ -140,67 +188,63 @@ export function BTCredit() {
         </Pressable>
       </BTCard>
 
-      {/* Score card — ink bg with stripes */}
-      <BTCard t={t} inverted padding={18}>
-        <BTStripes color="#fff" opacity={0.07} />
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-          <View>
-            <Text
+      {/* Score card — only render when Plaid surfaced an actual VantageScore */}
+      {c.score ? (
+        <BTCard t={t} inverted padding={18}>
+          <BTStripes color="#fff" opacity={0.07} />
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <View>
+              <Text
+                style={{
+                  color: "rgba(255,252,246,0.6)",
+                  fontFamily: BTFonts.mono,
+                  fontSize: 9,
+                  letterSpacing: 1.2,
+                  textTransform: "uppercase",
+                }}
+              >
+                VantageScore
+              </Text>
+              <BTNum size={44} color="#FFFCF6">
+                {c.score}
+              </BTNum>
+              {c.delta && c.since ? (
+                <Text
+                  style={{
+                    color: "rgba(255,252,246,0.55)",
+                    fontFamily: BTFonts.sans,
+                    fontSize: 12,
+                    marginTop: 4,
+                  }}
+                >
+                  +{c.delta} since {c.since}
+                </Text>
+              ) : null}
+            </View>
+            <View
               style={{
-                color: "rgba(255,252,246,0.6)",
-                fontFamily: BTFonts.mono,
-                fontSize: 9,
-                letterSpacing: 1.2,
-                textTransform: "uppercase",
+                backgroundColor: t.accent,
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderRadius: 999,
               }}
             >
-              VantageScore
-            </Text>
-            <Text
-              style={{
-                color: "#FFFCF6",
-                fontFamily: BTFonts.serif,
-                fontSize: 44,
-                fontWeight: "500",
-                marginTop: 4,
-              }}
-            >
-              {c.score}
-            </Text>
-            <Text
-              style={{
-                color: "rgba(255,252,246,0.55)",
-                fontFamily: BTFonts.sans,
-                fontSize: 12,
-                marginTop: 4,
-              }}
-            >
-              +{c.delta} since {c.since}
-            </Text>
+              <Text
+                style={{
+                  color: "#fff",
+                  fontFamily: BTFonts.mono,
+                  fontSize: 10,
+                  letterSpacing: 1.2,
+                  textTransform: "uppercase",
+                  fontWeight: "700",
+                }}
+              >
+                good
+              </Text>
+            </View>
           </View>
-          <View
-            style={{
-              backgroundColor: t.accent,
-              paddingHorizontal: 12,
-              paddingVertical: 6,
-              borderRadius: 999,
-            }}
-          >
-            <Text
-              style={{
-                color: "#fff",
-                fontFamily: BTFonts.mono,
-                fontSize: 10,
-                letterSpacing: 1.2,
-                textTransform: "uppercase",
-                fontWeight: "700",
-              }}
-            >
-              good
-            </Text>
-          </View>
-        </View>
-      </BTCard>
+        </BTCard>
+      ) : null}
 
       {/* Levers */}
       <View style={{ gap: 8 }}>
@@ -259,21 +303,23 @@ export function BTCredit() {
         ))}
       </View>
 
-      {/* Tilly protected you */}
-      <BTCard t={t} padding={16} style={{ backgroundColor: t.accentSoft, borderColor: "transparent", gap: 10 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          <Tilly t={t} size={28} breathing={false} />
-          <BTLabel color={t.accent}>Tilly protected you · 24h</BTLabel>
-        </View>
-        {c.protected.map((p, i) => (
-          <Text
-            key={i}
-            style={{ color: t.ink, fontFamily: BTFonts.serif, fontSize: 15, lineHeight: 21 }}
-          >
-            {p}
-          </Text>
-        ))}
-      </BTCard>
+      {/* Tilly protected you — only when there's something to show */}
+      {c.protected.length > 0 ? (
+        <BTCard t={t} padding={16} style={{ backgroundColor: t.accentSoft, borderColor: "transparent", gap: 10 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text style={{ color: t.accent, fontSize: 14 }}>✦</Text>
+            <BTLabel color={t.accent}>Tilly protected you · 24h</BTLabel>
+          </View>
+          {c.protected.map((p, i) => (
+            <Text
+              key={i}
+              style={{ color: t.ink, fontFamily: BTFonts.serif, fontSize: 15, lineHeight: 21 }}
+            >
+              {p}
+            </Text>
+          ))}
+        </BTCard>
+      ) : null}
     </ScrollView>
   );
 }

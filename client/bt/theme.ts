@@ -92,7 +92,10 @@ export const BT_THEMES: Record<BTThemeKey, BTTheme> = {
     surfaceAlt: "#EFD6D2",
     ink: "#2A1A1C",
     inkSoft: "#6B4A4D",
-    inkMute: "#A1838A",
+    // Darkened from #A1838A to hit WCAG AA on the Bloom paper backgrounds —
+    // BTLabel mono caps + day-bar dollar amounts were failing contrast at
+    // 2.7:1. New value scores ~4.6:1 on `bg`, ~5.0:1 on `surface`.
+    inkMute: "#6B5058",
     rule: "rgba(42,26,28,0.10)",
     accent: "#C3416B",
     accent2: "#D89180",

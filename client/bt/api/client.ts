@@ -21,6 +21,7 @@ import type {
   ProtectionsList,
   TonePref,
   TillyMessage,
+  TillyProfile,
 } from "./types";
 import type { BTToneKey } from "../tones";
 
@@ -42,7 +43,7 @@ export const btApi = {
   today: () => getJson<TodayBrief>("/api/tilly/today"),
   spendPattern: () => getJson<SpendPattern>("/api/tilly/spend-pattern"),
   creditSnapshot: () => getJson<CreditSnapshot>("/api/tilly/credit-snapshot"),
-  profile: () => getJson<unknown>("/api/tilly/profile"),
+  profile: () => getJson<TillyProfile>("/api/tilly/profile"),
 
   // ── Tilly chat ───────────────────────────────────────────────────────────
   chatHistory: () => getJson<ChatHistory>("/api/tilly/chat/history"),

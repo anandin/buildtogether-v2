@@ -39,6 +39,7 @@ import {
 import { useCreateDream } from "../hooks/useDreams";
 
 type Step = "welcome" | "name" | "bank" | "dream" | "commit";
+const STEPS: Step[] = ["welcome", "name", "bank", "dream", "commit"];
 
 export function Onboarding() {
   const { t } = useBT();
@@ -51,6 +52,7 @@ export function Onboarding() {
   const completeOnboarding = useCompleteOnboarding();
 
   const advance = (next: Step) => setStep(next);
+  const stepIdx = STEPS.indexOf(step);
 
   return (
     <KeyboardAvoidingView
@@ -68,6 +70,21 @@ export function Onboarding() {
         }}
         keyboardShouldPersistTaps="handled"
       >
+        {/* 5-dot step indicator — centered, no counter text. Active = accent,
+            past = accentSoft, future = rule (low-contrast). */}
+        <View style={{ flexDirection: "row", justifyContent: "center", gap: 6 }}>
+          {STEPS.map((_, i) => {
+            const fill =
+              i === stepIdx ? t.accent : i < stepIdx ? t.accentSoft : t.rule;
+            return (
+              <View
+                key={i}
+                style={{ width: 5, height: 5, borderRadius: 2.5, backgroundColor: fill }}
+              />
+            );
+          })}
+        </View>
+
         {step === "welcome" && (
           <WelcomeCard onNext={() => advance("name")} />
         )}
@@ -118,7 +135,7 @@ function WelcomeCard({ onNext }: { onNext: () => void }) {
       <BTLabel color={t.inkMute}>Hi.</BTLabel>
       <BTSerif size={36} color={t.ink} weight="500" style={{ textAlign: "center" }}>
         I'm{" "}
-        <Text style={{ color: t.accent, fontStyle: "italic", fontFamily: BTFonts.serif }}>
+        <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
           Tilly
         </Text>
         .
@@ -126,12 +143,11 @@ function WelcomeCard({ onNext }: { onNext: () => void }) {
       <Text
         style={{
           color: t.inkSoft,
-          fontFamily: BTFonts.serif,
+          fontFamily: BTFonts.serifItalic,
           fontSize: 17,
           lineHeight: 25,
           textAlign: "center",
           maxWidth: 320,
-          fontStyle: "italic",
         }}
       >
         Your money's already complicated. I'll do the watching so you don't
@@ -189,7 +205,7 @@ function BankCard({ connected, onNext }: { connected: boolean; onNext: () => voi
       <BTLabel color={t.inkMute}>The hard part — done in one minute</BTLabel>
       <BTSerif size={28} color={t.ink} weight="500">
         Connect your bank so I can{" "}
-        <Text style={{ color: t.accent, fontStyle: "italic", fontFamily: BTFonts.serif }}>
+        <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
           watch
         </Text>
         .
@@ -197,10 +213,9 @@ function BankCard({ connected, onNext }: { connected: boolean; onNext: () => voi
       <Text
         style={{
           color: t.inkSoft,
-          fontFamily: BTFonts.serif,
+          fontFamily: BTFonts.serifItalic,
           fontSize: 16,
           lineHeight: 23,
-          fontStyle: "italic",
         }}
       >
         I never see your password. I never share your data. I'll only flag
@@ -246,7 +261,7 @@ function DreamCard({
       <BTLabel color={t.inkMute}>What are you saving toward?</BTLabel>
       <BTSerif size={28} color={t.ink} weight="500">
         Name something you{" "}
-        <Text style={{ color: t.accent, fontStyle: "italic", fontFamily: BTFonts.serif }}>
+        <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
           dream
         </Text>{" "}
         about.
@@ -291,7 +306,7 @@ function CommitCard({ onNext, isPending }: { onNext: () => void; isPending: bool
       <BTLabel color={t.inkMute}>One rule we'll keep together</BTLabel>
       <BTSerif size={28} color={t.ink} weight="500">
         Utilization stays{" "}
-        <Text style={{ color: t.accent, fontStyle: "italic", fontFamily: BTFonts.serif }}>
+        <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
           under 30%
         </Text>
         .
@@ -299,10 +314,9 @@ function CommitCard({ onNext, isPending }: { onNext: () => void; isPending: bool
       <Text
         style={{
           color: t.inkSoft,
-          fontFamily: BTFonts.serif,
+          fontFamily: BTFonts.serifItalic,
           fontSize: 16,
           lineHeight: 23,
-          fontStyle: "italic",
         }}
       >
         It's the credit-score lever lenders care about most. I'll watch it.
@@ -372,29 +386,37 @@ function Field({
   placeholder?: string;
   keyboardType?: "default" | "numeric";
 }) {
+  const [focused, setFocused] = useState(false);
   return (
     <View style={{ gap: 8 }}>
-      <BTLabel color={t.inkMute} size={10}>
+      <BTLabel color={focused ? t.accent : t.inkMute} size={10}>
         {label}
       </BTLabel>
       <TextInput
         value={value}
         onChangeText={onChangeText}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         placeholder={placeholder}
         placeholderTextColor={t.inkMute}
         keyboardType={keyboardType}
         autoCapitalize={keyboardType === "numeric" ? "none" : "words"}
-        style={{
-          paddingHorizontal: 16,
-          paddingVertical: 12,
-          borderRadius: 14,
-          backgroundColor: t.surface,
-          borderWidth: 1,
-          borderColor: t.rule,
-          color: t.ink,
-          fontFamily: BTFonts.sans,
-          fontSize: 15,
-        }}
+        style={
+          {
+            paddingHorizontal: 16,
+            paddingVertical: 12,
+            borderRadius: 14,
+            backgroundColor: t.surface,
+            borderWidth: 1,
+            borderColor: focused ? t.accent : t.rule,
+            color: t.ink,
+            fontFamily: BTFonts.sans,
+            fontSize: 15,
+            // Suppresses the browser's default focus ring so our borderColor
+            // swap is the single focus signal. Web-only RN-web prop.
+            outlineStyle: "none",
+          } as any
+        }
       />
     </View>
   );

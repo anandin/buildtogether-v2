@@ -66,7 +66,7 @@ export function MemoryInspector({ visible, onClose }: Props) {
             <BTLabel color={t.inkMute}>What Tilly remembers</BTLabel>
             <BTSerif size={26} color={t.ink} weight="500" style={{ marginTop: 6 }}>
               In her{" "}
-              <Text style={{ color: t.accent, fontStyle: "italic", fontFamily: BTFonts.serif }}>
+              <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
                 own words
               </Text>
               .
@@ -100,14 +100,13 @@ export function MemoryInspector({ visible, onClose }: Props) {
             <Text
               style={{
                 color: t.inkSoft,
-                fontFamily: BTFonts.serif,
-                fontStyle: "italic",
+                fontFamily: BTFonts.serifItalic,
                 fontSize: 16,
                 lineHeight: 24,
               }}
             >
-              Tilly hasn't written anything yet. As you talk, she'll start
-              keeping notes — only what's worth remembering.
+              Nothing here yet. Once we've talked a bit, I'll start writing
+              down what matters — only the real things.
             </Text>
           ) : (
             <Timeline
@@ -119,12 +118,15 @@ export function MemoryInspector({ visible, onClose }: Props) {
             />
           )}
 
-          <BTRule color={t.rule} />
+          {/* Export — only render once Tilly has actually written something. */}
+          {list.length > 0 ? <BTRule color={t.rule} /> : null}
 
-          {/* Export */}
+          {list.length > 0 ? (
           <Pressable
             onPress={handleExport}
             disabled={exportMem.isPending}
+            accessibilityRole="button"
+            accessibilityLabel="Export memories as markdown"
             style={{
               padding: 14,
               borderRadius: 14,
@@ -149,6 +151,7 @@ export function MemoryInspector({ visible, onClose }: Props) {
                 : "Export as markdown"}
             </Text>
           </Pressable>
+          ) : null}
 
           {/* Trust contract footer */}
           <View
@@ -162,10 +165,9 @@ export function MemoryInspector({ visible, onClose }: Props) {
             <Text
               style={{
                 color: t.ink,
-                fontFamily: BTFonts.serif,
+                fontFamily: BTFonts.serifItalic,
                 fontSize: 14,
                 lineHeight: 22,
-                fontStyle: "italic",
                 marginTop: 8,
               }}
             >
@@ -283,10 +285,9 @@ function Timeline({
               <Text
                 style={{
                   color: t.ink,
-                  fontFamily: BTFonts.serif,
+                  fontFamily: BTFonts.serifItalic,
                   fontSize: 16,
                   lineHeight: 22,
-                  fontStyle: "italic",
                 }}
               >
                 "{m.body}"
