@@ -290,18 +290,13 @@ function VoiceEntry({ onSaved }: { onSaved: () => void }) {
     voice.mutate(trimmed, {
       onSuccess: (resp: any) => {
         // Server returns needsAmount when STT didn't include a clear $.
-        // Keep the modal open so the user can switch to the text tab and
-        // type the corrected amount instead of silently saving $0.
+        // Show a persistent message so the user knows the row landed but
+        // needs an amount; user closes via the × when ready.
         if (resp?.needsAmount) {
           setErrorMsg(
-            "I logged it but couldn't tell the amount. Tap the row in Spend to set it.",
+            "I logged it but couldn't tell the amount. Tap the row in Spend to set it, or close to dismiss.",
           );
-          // Still close after 2s so a stuck user isn't trapped.
-          setTimeout(() => {
-            setTranscript("");
-            setErrorMsg(null);
-            onSaved();
-          }, 2200);
+          setTranscript("");
           return;
         }
         setTranscript("");
@@ -566,13 +561,9 @@ function PhotoEntry({ onSaved }: { onSaved: () => void }) {
       onSuccess: (resp: any) => {
         if (resp?.needsAmount) {
           setErrorMsg(
-            "I logged the receipt but couldn't read the total. Tap the row in Spend to set it.",
+            "I logged the receipt but couldn't read the total. Tap the row in Spend to set it, or close to dismiss.",
           );
-          setTimeout(() => {
-            setPreview(null);
-            setErrorMsg(null);
-            onSaved();
-          }, 2400);
+          setPreview(null);
           return;
         }
         setPreview(null);
