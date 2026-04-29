@@ -26,8 +26,9 @@ import { randomBytes } from "crypto";
 
 import { requireAuth } from "../middleware/auth";
 import { db } from "../db";
-import { expenses, subscriptions } from "../../shared/schema";
+import { expenses, plaidItems, plaidTransactions, subscriptions } from "../../shared/schema";
 import { runProtectionsForHousehold } from "../tilly/protections-engine";
+import { getPlaidClient, isPlaidConfigured, mapPlaidCategory, shouldImportPlaidTransaction } from "../plaid";
 
 type SeedExpense = {
   daysAgo: number;
@@ -227,6 +228,145 @@ export function mountDemoRoutes(app: Express): void {
       subscriptionsSeeded: 2,
     });
   });
+
+  /**
+   * Sandbox Plaid connect — bypasses the Link UI entirely. Calls Plaid's
+   * /sandbox/public_token/create with a known institution + transactions
+   * product, exchanges for an access_token, persists a plaid_items row,
+   * then runs the initial /transactions/sync. After this, the user's
+   * Today/Spend/Credit screens flip to the real Plaid path because
+   * `plaidConnected` becomes true.
+   *
+   * Idempotent: re-running replaces the prior demo plaid_item.
+   */
+  app.post(
+    "/api/demo/connect-plaid-sandbox",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const householdId = req.user.coupleId;
+      if (!householdId) return res.status(400).json({ error: "no_household" });
+
+      if (!isPlaidConfigured()) {
+        return res
+          .status(503)
+          .json({ error: "plaid_not_configured", detail: "Set PLAID_CLIENT_ID + PLAID_SECRET" });
+      }
+      const plaid = getPlaidClient();
+      if (!plaid) return res.status(503).json({ error: "plaid_client_unavailable" });
+
+      try {
+        // 1. Sandbox public_token create — Wells Fargo (ins_127991) + transactions.
+        // Plaid's sandbox seed includes ~3 months of synthetic transactions for
+        // this institution, which is exactly what we need.
+        const create: any = await (plaid as any).sandboxPublicTokenCreate({
+          institution_id: "ins_127991",
+          initial_products: ["transactions"],
+          options: {
+            override_username: "user_good",
+            override_password: "pass_good",
+          },
+        });
+        const publicToken = create.data.public_token;
+
+        // 2. Exchange for access_token.
+        const exchange: any = await (plaid as any).itemPublicTokenExchange({
+          public_token: publicToken,
+        });
+        const accessToken = exchange.data.access_token;
+        const itemId = exchange.data.item_id;
+
+        // 3. Replace any prior demo plaid_item.
+        await db
+          .delete(plaidItems)
+          .where(and(eq(plaidItems.coupleId, householdId), eq(plaidItems.institutionName, "Wells Fargo (sandbox)")));
+        const [item] = await db
+          .insert(plaidItems)
+          .values({
+            coupleId: householdId,
+            userId: req.user.id,
+            plaidItemId: itemId,
+            accessToken,
+            institutionId: "ins_127991",
+            institutionName: "Wells Fargo (sandbox)",
+            status: "active",
+          })
+          .returning();
+
+        // 4. Initial sync. Plaid sandbox sometimes needs a moment after
+        // public_token_create before transactions are queryable; we retry.
+        let added = 0;
+        let cursor: string | undefined = undefined;
+        let hasMore = true;
+        let attempts = 0;
+        while (hasMore && attempts < 6) {
+          attempts++;
+          try {
+            const resp: any = await (plaid as any).transactionsSync({
+              access_token: accessToken,
+              cursor,
+            });
+            const data = resp.data;
+            for (const tx of data.added || []) {
+              if (!shouldImportPlaidTransaction(tx)) continue;
+              try {
+                await db.insert(plaidTransactions).values({
+                  coupleId: householdId,
+                  plaidItemId: item.id,
+                  plaidTransactionId: tx.transaction_id,
+                  accountId: tx.account_id,
+                  amount: tx.amount,
+                  date: tx.date,
+                  merchantName: tx.merchant_name ?? null,
+                  name: tx.name ?? "Unknown",
+                  plaidCategory: tx.category ?? null,
+                  ourCategory: mapPlaidCategory(tx.category, tx.personal_finance_category),
+                  pending: tx.pending ?? false,
+                  status: "pending_review",
+                });
+                added++;
+              } catch (e: any) {
+                if (!String(e.message ?? "").includes("duplicate")) {
+                  console.warn("plaid tx insert:", e.message);
+                }
+              }
+            }
+            cursor = data.next_cursor;
+            hasMore = data.has_more;
+          } catch (err: any) {
+            const code = err?.response?.data?.error_code;
+            if (code === "PRODUCT_NOT_READY") {
+              await new Promise((r) => setTimeout(r, 2000));
+              continue;
+            }
+            throw err;
+          }
+        }
+        await db
+          .update(plaidItems)
+          .set({ cursor: cursor ?? null, lastSyncAt: new Date() })
+          .where(eq(plaidItems.id, item.id));
+
+        // 5. Refresh protections (free trials, unused subs, etc).
+        try {
+          await runProtectionsForHousehold(householdId);
+        } catch {}
+
+        res.json({
+          ok: true,
+          itemId: item.id,
+          institution: "Wells Fargo (sandbox)",
+          transactionsAdded: added,
+        });
+      } catch (err: any) {
+        console.error("plaid sandbox connect:", err?.response?.data ?? err);
+        res.status(500).json({
+          error: "sandbox_connect_failed",
+          detail: err?.response?.data?.error_message ?? err?.message ?? String(err),
+        });
+      }
+    },
+  );
 
   app.post("/api/demo/clear", requireAuth, async (req: Request, res: Response) => {
     if (!req.user) return res.status(401).json({ error: "auth required" });

@@ -123,6 +123,10 @@ export const btApi = {
   // ── Demo seeder (sandbox / no-Plaid play mode) ───────────────────────
   seedDemo: () => postJson<{ ok: true; expensesSeeded: number }>("/api/demo/seed"),
   clearDemo: () => postJson<{ ok: true }>("/api/demo/clear"),
+  connectPlaidSandbox: () =>
+    postJson<{ ok: true; institution: string; transactionsAdded: number }>(
+      "/api/demo/connect-plaid-sandbox",
+    ),
 
   // ── Splits (Venmo for US, Interac for CA) ────────────────────────────
   draftSplit: (body: {
