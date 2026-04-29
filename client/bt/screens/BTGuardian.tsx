@@ -362,11 +362,16 @@ function Bubble({ m }: { m: Msg }) {
 
 /**
  * Render Tilly's reply with the small slice of markdown the persona uses:
- *   - `*phrase*` → italic span
+ *   - `**bold**` → accent serif italic span (acts as a heading-of-sorts)
+ *   - `*phrase*` → accent serif italic span
  *   - triple-backtick fences are stripped (we discourage them in the
  *     persona prompt but the model occasionally uses them anyway)
  *   - `---` standalone lines render as a hairline divider
  *   - paragraph breaks come from \n\n
+ *
+ * Both `**bold**` and `*italic*` collapse to the same accent-italic style
+ * because the spec only has one emphasis register; we just want neither
+ * pair of asterisks to leak through as literals.
  */
 function RichTillyText({ body, color }: { body: string; color: string }) {
   const { t } = useBT();
@@ -384,7 +389,9 @@ function RichTillyText({ body, color }: { body: string; color: string }) {
             />
           );
         }
-        const segments = block.split(/(\*[^*\n]+\*)/g).filter(Boolean);
+        // Match **bold** first, then *italic*. Both collapse to the same
+        // accent-italic span so we don't leak literal asterisks either way.
+        const segments = block.split(/(\*\*[^*\n]+\*\*|\*[^*\n]+\*)/g).filter(Boolean);
         return (
           <Text
             key={blockIdx}
@@ -396,7 +403,10 @@ function RichTillyText({ body, color }: { body: string; color: string }) {
             }}
           >
             {segments.map((seg, segIdx) => {
-              if (seg.startsWith("*") && seg.endsWith("*") && seg.length > 2) {
+              const isBold = seg.startsWith("**") && seg.endsWith("**") && seg.length > 4;
+              const isItalic = !isBold && seg.startsWith("*") && seg.endsWith("*") && seg.length > 2;
+              if (isBold || isItalic) {
+                const inner = isBold ? seg.slice(2, -2) : seg.slice(1, -1);
                 return (
                   <Text
                     key={segIdx}
@@ -406,7 +416,7 @@ function RichTillyText({ body, color }: { body: string; color: string }) {
                       fontSize: 15,
                     }}
                   >
-                    {seg.slice(1, -1)}
+                    {inner}
                   </Text>
                 );
               }
