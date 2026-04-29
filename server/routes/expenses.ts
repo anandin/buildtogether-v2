@@ -82,13 +82,21 @@ const NUMBER_WORDS: Record<string, number> = {
 
 function categorize(text: string): ParsedExpense["category"] {
   const lc = text.toLowerCase();
-  if (/coffee|latte|espresso|cafe|stumptown|starbucks|joe/.test(lc)) return "coffee";
-  if (/grocer|trader joe|whole foods|safeway|aldi/.test(lc)) return "groceries";
-  if (/doordash|grubhub|uber eats|takeout|halal|pizza|burger|lunch|dinner|breakfast|cafeteria|sushi|chipotle/.test(lc))
+  if (/coffee|latte|espresso|cafe|stumptown|starbucks|tim ?hortons|tims|joe/.test(lc))
+    return "coffee";
+  if (/grocer|trader joe|whole foods|safeway|aldi|loblaws|metro |sobeys|no frills|costco/.test(lc))
+    return "groceries";
+  if (
+    /doordash|grubhub|uber ?eats|skip ?the ?dishes|takeout|halal|pizza|burger|lunch|dinner|breakfast|cafeteria|sushi|chipotle|popeyes|kfc|mcdonald|wendy|chicken|kitchen|bento|subway sandwich|sandwich|wings|taco|burrito|noodle|ramen|thai|indian|chinese/.test(
+      lc,
+    )
+  )
     return "eatout";
-  if (/uber|lyft|subway|metro|bus|gas|citibike|train/.test(lc)) return "transit";
-  if (/textbook|pearson|tuition|school|class|exam/.test(lc)) return "school";
-  if (/spotify|netflix|hulu|apple tv|sub /.test(lc)) return "subs";
+  if (/uber(?! ?eats)|lyft|subway|metro|bus|gas|citibike|train|presto|gotrain|via rail/.test(lc))
+    return "transit";
+  if (/textbook|pearson|tuition|school|class|exam|university|college/.test(lc))
+    return "school";
+  if (/spotify|netflix|hulu|apple ?tv|disney|youtube|sub /.test(lc)) return "subs";
   return "other";
 }
 

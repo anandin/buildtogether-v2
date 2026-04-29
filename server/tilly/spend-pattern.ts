@@ -25,6 +25,7 @@ type UnifiedTx = {
   category: string;
   source: "plaid" | "manual_text" | "manual_voice" | "manual_photo";
   who?: string;
+  createdAt?: number;
 };
 
 async function readAllTransactions(
@@ -61,6 +62,9 @@ async function readAllTransactions(
       category: (t.ourCategory || "Uncategorized").trim(),
       source: "plaid",
       who: t.merchantName ?? t.name ?? undefined,
+      createdAt: (t as any).createdAt
+        ? new Date((t as any).createdAt as any).getTime()
+        : 0,
     });
   }
   for (const e of manualRows) {
@@ -71,8 +75,15 @@ async function readAllTransactions(
       category: (e.category || "other").trim(),
       source: (e.source as UnifiedTx["source"]) ?? "manual_text",
       who: e.merchant ?? e.description,
+      createdAt: (e as any).createdAt
+        ? new Date((e as any).createdAt as any).getTime()
+        : 0,
     });
   }
+  // Newest first — the Today mini-ledger slice picks the top N, and
+  // students expect "what I just logged" to be on top, not "the same
+  // Plaid sandbox row repeated three times".
+  out.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
   return out;
 }
 
@@ -263,9 +274,19 @@ export async function buildWeeklyPattern(
   }
 
   // ─── Today mini-ledger: top 3 today ────────────────────────────────────
+  // Dedupe by (merchant, amount) so a Plaid sandbox dataset that
+  // repeats "United Airlines $500" three times shows once, leaving room
+  // for the student's own manual logs (Popeyes, coffee, etc.).
   const todayIso = now.toISOString().slice(0, 10);
+  const seen = new Set<string>();
   const todayTx = txRows
     .filter((t) => t.date === todayIso)
+    .filter((t) => {
+      const key = `${(t.who || t.category).toLowerCase()}::${t.amount}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
     .slice(0, 3)
     .map((t, i) => ({
       id: `today-${i}`,
