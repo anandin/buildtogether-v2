@@ -22,6 +22,7 @@ import {
   guardianConversations,
   tillyTonePref,
   tillyMemory,
+  tillyReminders,
 } from "../../../shared/schema";
 import {
   callTilly,
@@ -140,6 +141,59 @@ function rowToWire(row: typeof guardianConversations.$inferSelect): WireMessage 
     body: row.content,
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+// ─── Reminder extraction ───────────────────────────────────────────────────
+//
+// Tilly's prompt instructs her to emit `<reminder kind="..." fireAt="ISO"
+// label="..."></reminder>` tags whenever she promises a follow-up. This
+// function pulls them out of the raw reply, returns the cleaned visible
+// text plus a parsed draft list ready for `insert`.
+//
+// Defensive: if Tilly returns malformed tags or unparseable dates, those
+// drafts are silently dropped so the user-visible reply stays clean.
+function extractReminderTags(raw: string): {
+  cleaned: string;
+  reminders: Array<{
+    kind: string;
+    fireAt: Date;
+    label: string;
+    metadata?: string;
+  }>;
+} {
+  const reminders: Array<{
+    kind: string;
+    fireAt: Date;
+    label: string;
+    metadata?: string;
+  }> = [];
+  const cleaned = raw
+    .replace(
+      /<reminder\b([^>]*)>([\s\S]*?)<\/reminder>/gi,
+      (_match, attrs: string) => {
+        const get = (name: string) => {
+          const m = attrs.match(
+            new RegExp(`${name}\\s*=\\s*"([^"]*)"`, "i"),
+          );
+          return m ? m[1] : "";
+        };
+        const kind = get("kind") || "generic";
+        const fireAtStr = get("fireAt");
+        const label = get("label").trim();
+        const fireAt = fireAtStr ? new Date(fireAtStr) : null;
+        if (label && fireAt && !isNaN(fireAt.getTime())) {
+          // Only future-dated reminders make sense. Drop anything in the past.
+          if (fireAt.getTime() > Date.now() - 60_000) {
+            reminders.push({ kind, fireAt, label });
+          }
+        }
+        return "";
+      },
+    )
+    // Collapse the whitespace gap left where the tag was.
+    .replace(/[ \t]*\n\n+\s*$/g, "")
+    .trim();
+  return { cleaned, reminders };
 }
 
 // ─── Routes ────────────────────────────────────────────────────────────────
@@ -278,7 +332,30 @@ export function mountTillyChatRoutes(app: Express): void {
           messages: history,
           extraSystem,
         });
-        const text = response.text;
+        const rawText = response.text;
+        // Extract any reminder tags Tilly emitted, persist them, and strip
+        // the tag markup from the visible reply.
+        const { cleaned: text, reminders: drafts } =
+          extractReminderTags(rawText);
+        if (drafts.length) {
+          try {
+            await db.insert(tillyReminders).values(
+              drafts.map((d) => ({
+                userId,
+                householdId,
+                kind: d.kind,
+                label: d.label,
+                fireAt: d.fireAt,
+                metadata: d.metadata ?? null,
+              })),
+            );
+          } catch (err) {
+            console.warn(
+              "[chat] failed to persist Tilly reminders, dropping:",
+              err,
+            );
+          }
+        }
 
         const [tillyRow] = await db
           .insert(guardianConversations)
@@ -532,6 +609,58 @@ export function mountTillyChatRoutes(app: Express): void {
         const msg = err instanceof Error ? err.message : String(err);
         res.status(500).json({ error: "remind failed", debug: msg });
       }
+    },
+  );
+
+  // GET /api/tilly/reminders — every reminder Tilly has promised this user
+  // that's still scheduled (or fired in the last 7d, for context).
+  app.get(
+    "/api/tilly/reminders",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const userId = req.user.id;
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const rows = await db
+        .select()
+        .from(tillyReminders)
+        .where(
+          and(
+            eq(tillyReminders.userId, userId),
+            sql`(${tillyReminders.status} = 'scheduled' OR ${tillyReminders.firedAt} > ${sevenDaysAgo.toISOString()})`,
+          ),
+        )
+        .orderBy(asc(tillyReminders.fireAt))
+        .limit(20);
+      res.json({
+        reminders: rows.map((r) => ({
+          id: r.id,
+          label: r.label,
+          kind: r.kind,
+          fireAt: r.fireAt.toISOString(),
+          status: r.status,
+          firedAt: r.firedAt ? r.firedAt.toISOString() : null,
+        })),
+      });
+    },
+  );
+
+  // POST /api/tilly/reminders/:id/cancel — student cancels a scheduled
+  // reminder. Idempotent — already-cancelled rows return ok:true.
+  app.post(
+    "/api/tilly/reminders/:id/cancel",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const userId = req.user.id;
+      const id = String(req.params.id);
+      await db
+        .update(tillyReminders)
+        .set({ status: "cancelled", cancelledAt: new Date() })
+        .where(
+          and(eq(tillyReminders.id, id), eq(tillyReminders.userId, userId)),
+        );
+      res.json({ ok: true });
     },
   );
 }

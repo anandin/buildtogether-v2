@@ -139,6 +139,21 @@ export const btApi = {
     memoryRetention: string;
   }>) => putJson<{ ok: true }>("/api/tilly/quiet", body),
 
+  // ── Reminders Tilly has set (real, not hallucinated) ─────────────────
+  reminders: () =>
+    getJson<{
+      reminders: Array<{
+        id: string;
+        label: string;
+        kind: string;
+        fireAt: string;
+        status: "scheduled" | "fired" | "cancelled";
+        firedAt: string | null;
+      }>;
+    }>("/api/tilly/reminders"),
+  cancelReminder: (id: string) =>
+    postJson<{ ok: true }>(`/api/tilly/reminders/${id}/cancel`),
+
   // ── Trusted-people invites (Twilio SMS) ───────────────────────────────
   invitePerson: (body: { phone?: string; email?: string; name: string; scope: string }) =>
     postJson<{ ok: true; inviteId: string }>("/api/invites", body),

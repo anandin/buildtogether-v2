@@ -145,11 +145,31 @@ const CRITICAL_STATEMENTS: string[] = [
     "created_at" timestamp DEFAULT now() NOT NULL
   )`,
 
+  // Tilly reminders — what Tilly promised the user (e.g. "I'll ping you
+  // before ticket day"). Without this table the promise was a lie.
+  `CREATE TABLE IF NOT EXISTS "tilly_reminders" (
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "user_id" varchar NOT NULL,
+    "household_id" varchar NOT NULL,
+    "label" text NOT NULL,
+    "kind" text NOT NULL DEFAULT 'generic',
+    "fire_at" timestamp NOT NULL,
+    "status" text NOT NULL DEFAULT 'scheduled',
+    "metadata" text,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "fired_at" timestamp,
+    "cancelled_at" timestamp
+  )`,
+  // Tag indulgence-classified expenses for the Spend list ✦ marker.
+  `ALTER TABLE "expenses" ADD COLUMN IF NOT EXISTS "intent" text`,
+  `ALTER TABLE "expenses" ADD COLUMN IF NOT EXISTS "nudge" text`,
+
   // Indexes (idempotent)
   `CREATE INDEX IF NOT EXISTS "tilly_memory_user_active_idx" ON "tilly_memory" ("user_id", "archived_at")`,
   `CREATE INDEX IF NOT EXISTS "subscriptions_household_status_idx" ON "subscriptions" ("household_id", "status")`,
   `CREATE INDEX IF NOT EXISTS "protections_user_status_idx" ON "protections" ("user_id", "status")`,
   `CREATE INDEX IF NOT EXISTS "push_tokens_user_active_idx" ON "push_tokens" ("user_id", "disabled_at")`,
+  `CREATE INDEX IF NOT EXISTS "tilly_reminders_due_idx" ON "tilly_reminders" ("status", "fire_at")`,
 ];
 
 export async function applyBootMigrations(): Promise<{

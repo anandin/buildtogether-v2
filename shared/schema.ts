@@ -91,6 +91,14 @@ export const expenses = pgTable("expenses", {
   recurringFrequency: text("recurring_frequency"),
   receiptImage: text("receipt_image"),
   isSettled: boolean("is_settled").default(false),
+  // Need vs indulgence classification — populated by parseToExpense /
+  // parsePhotoToExpense. "need" = essential (groceries, transit, school),
+  // "indulgence" = discretionary that the student might want to redirect.
+  // Null = not yet classified (older rows, or LLM call skipped).
+  intent: text("intent"),
+  // Optional gentle nudge tied to indulgences only. Shown after save and
+  // on the Spend row tap-out. Never shown for needs.
+  nudge: text("nudge"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -823,6 +831,39 @@ export const tillyTonePref = pgTable("tilly_tone_pref", {
 });
 
 export type TillyTonePref = typeof tillyTonePref.$inferSelect;
+
+/**
+ * Reminders Tilly sets on the user's behalf. Whenever Tilly says "I'll
+ * ping you" or "I'll track this" in chat, the chat handler extracts the
+ * intent into a row here. Without this table the promise was a lie —
+ * the LLM would emit "Already on it. I'll ping you" but no scheduled
+ * job ever ran. Now there's a real row + a cron that fires on `fireAt`.
+ *
+ * The user can see + cancel any reminder from the Tilly tab so they're
+ * not surprised by a future ping.
+ */
+export const tillyReminders = pgTable("tilly_reminders", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  householdId: varchar("household_id").notNull(),
+  // Plain-language label — exactly what Tilly will say in the push body.
+  label: text("label").notNull(),
+  // What triggered it: "ticket-day-check", "rent-due", "soft-spot-eve", etc.
+  // Lets the cron pick the right context query when firing.
+  kind: text("kind").notNull().default("generic"),
+  // ISO timestamp when to fire. Cron polls every 15 min for due rows.
+  fireAt: timestamp("fire_at").notNull(),
+  // Status lifecycle: scheduled → fired (cron sent push) → cancelled (user)
+  status: text("status").notNull().default("scheduled"),
+  // Optional structured payload the cron can use to build the message:
+  // { topic: "concert ticket", amount: 350, dreamId: "..." } — JSON.
+  metadata: text("metadata"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  firedAt: timestamp("fired_at"),
+  cancelledAt: timestamp("cancelled_at"),
+});
+
+export type TillyReminder = typeof tillyReminders.$inferSelect;
 
 /**
  * Subscription detection table (spec §4.1 Home tile, §4.4 Credit "protected"

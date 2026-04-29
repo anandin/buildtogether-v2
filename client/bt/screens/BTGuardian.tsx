@@ -29,6 +29,8 @@ import { useTilly as useTillyChat } from "../hooks/useTilly";
 import { useUser } from "../hooks/useUser";
 import { MemoryInspector } from "../MemoryInspector";
 import type { TillyMessage } from "../api/types";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { btApi } from "../api/client";
 
 type Msg =
   | { id: string; role: "user"; kind: "text"; body: string }
@@ -154,6 +156,8 @@ export function BTGuardian() {
         </Pressable>
       </View>
       <MemoryInspector visible={memoryOpen} onClose={() => setMemoryOpen(false)} />
+
+      <RemindersStrip />
 
       <BTRule color={t.rule} />
 
@@ -489,6 +493,96 @@ function TypingBubble() {
               opacity: d.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }),
             }}
           />
+        ))}
+      </View>
+    </View>
+  );
+}
+
+/**
+ * RemindersStrip — surfaces reminders Tilly has actually scheduled, so
+ * the "I'll ping you" promise is visible + cancellable. Hides itself
+ * when there are no scheduled reminders so it doesn't add noise to the
+ * empty-state chat.
+ */
+function RemindersStrip() {
+  const { t } = useBT();
+  const qc = useQueryClient();
+  const list = useQuery({
+    queryKey: ["/api/tilly/reminders"],
+    queryFn: btApi.reminders,
+    staleTime: 30_000,
+  });
+  const cancel = useMutation({
+    mutationFn: btApi.cancelReminder,
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: ["/api/tilly/reminders"] }),
+  });
+  const scheduled = (list.data?.reminders ?? []).filter(
+    (r) => r.status === "scheduled",
+  );
+  if (scheduled.length === 0) return null;
+  const fmt = (iso: string) => {
+    const d = new Date(iso);
+    const now = Date.now();
+    const diffH = (d.getTime() - now) / (1000 * 60 * 60);
+    if (diffH < 24)
+      return `today ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+    if (diffH < 48) return "tomorrow";
+    return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+  };
+  return (
+    <View style={{ paddingHorizontal: 18, paddingBottom: 6 }}>
+      <BTLabel color={t.inkMute} size={9}>
+        Tilly will ping you
+      </BTLabel>
+      <View style={{ marginTop: 8, gap: 6 }}>
+        {scheduled.slice(0, 3).map((r) => (
+          <View
+            key={r.id}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 10,
+              padding: 10,
+              borderRadius: 10,
+              backgroundColor: t.surfaceAlt,
+            }}
+          >
+            <Text
+              style={{
+                color: t.inkMute,
+                fontFamily: BTFonts.mono,
+                fontSize: 10,
+                letterSpacing: 0.6,
+                textTransform: "uppercase",
+                width: 78,
+              }}
+            >
+              {fmt(r.fireAt)}
+            </Text>
+            <Text
+              style={{
+                color: t.ink,
+                fontFamily: BTFonts.serifItalic,
+                fontSize: 13,
+                lineHeight: 17,
+                flex: 1,
+              }}
+              numberOfLines={2}
+            >
+              {r.label}
+            </Text>
+            <Pressable
+              onPress={() => cancel.mutate(r.id)}
+              disabled={cancel.isPending}
+              accessibilityRole="button"
+              accessibilityLabel={`Cancel reminder ${r.label}`}
+              style={{ padding: 4 }}
+            >
+              <Text style={{ color: t.inkMute, fontSize: 16 }}>×</Text>
+            </Pressable>
+          </View>
         ))}
       </View>
     </View>

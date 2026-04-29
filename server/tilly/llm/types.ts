@@ -68,11 +68,15 @@ export interface LLMClient {
  */
 export const DEFAULT_MODELS = {
   openrouter: {
-    chat: "anthropic/claude-opus-4",
+    // Sonnet 4.6 is ~3x faster than Opus on chat + vision and Tilly's
+    // tone holds up well. Receipt OCR + the "is this affordable" math
+    // blocks both fit comfortably inside Sonnet. Swap back to Opus only
+    // if a specific user reports tone regression.
+    chat: "anthropic/claude-sonnet-4-6",
     embedding: "openai/text-embedding-3-small",
   },
   anthropic: {
-    chat: "claude-opus-4-7",
+    chat: "claude-sonnet-4-6",
     // Anthropic doesn't host embeddings — fall back to OpenRouter for embeds
     // even on anthropic-direct provider, or use Voyage AI separately.
     embedding: "openai/text-embedding-3-small",
