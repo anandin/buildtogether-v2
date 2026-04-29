@@ -462,7 +462,6 @@ export function mountTillyChatRoutes(app: Express): void {
       if (!req.user) return res.status(401).json({ error: "auth required" });
       const userId = req.user.id;
       try {
-        const { tillyMemory } = await import("../../../shared/schema");
         const recent = await db
           .select()
           .from(tillyMemory)
@@ -484,7 +483,8 @@ export function mountTillyChatRoutes(app: Express): void {
         res.json({ ok: true });
       } catch (err) {
         console.error("/api/tilly/learned/dismiss error:", err);
-        res.status(500).json({ error: "dismiss failed" });
+        const msg = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error: "dismiss failed", debug: msg });
       }
     },
   );
@@ -502,7 +502,6 @@ export function mountTillyChatRoutes(app: Express): void {
       const householdId = req.user.coupleId;
       if (!householdId) return res.status(400).json({ error: "no_household" });
       try {
-        const { tillyMemory } = await import("../../../shared/schema");
         // Find the most recent observation to anchor the preference to.
         const recent = await db
           .select()
@@ -530,7 +529,8 @@ export function mountTillyChatRoutes(app: Express): void {
         res.json({ ok: true });
       } catch (err) {
         console.error("/api/tilly/learned/remind error:", err);
-        res.status(500).json({ error: "remind failed" });
+        const msg = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error: "remind failed", debug: msg });
       }
     },
   );
