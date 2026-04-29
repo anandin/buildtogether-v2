@@ -18,6 +18,7 @@ import { BTCard, BTChip, BTLabel, BTNum, BTSerif } from "../atoms";
 import { useSpend } from "../hooks/useSpend";
 import { useExpenses } from "../hooks/useExpenses";
 import { AddExpenseModal } from "../AddExpenseModal";
+import { SplitModal } from "../SplitModal";
 import type { DayBar } from "../api/types";
 
 export function BTSpend() {
@@ -25,8 +26,18 @@ export function BTSpend() {
   const spend = useSpend();
   const expenses = useExpenses();
   const [addOpen, setAddOpen] = useState(false);
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitPrefill, setSplitPrefill] = useState<{ amount?: number; label?: string }>({});
   const live = spend.data && spend.data.ready === true ? spend.data : null;
   const recent = expenses.data?.expenses ?? [];
+
+  const openSplit = (e?: { amount?: number; merchant?: string | null; description?: string }) => {
+    setSplitPrefill({
+      amount: e?.amount,
+      label: e?.merchant || e?.description || "Split",
+    });
+    setSplitOpen(true);
+  };
 
   if (!live) {
     // No spend pattern computed yet — but the user may still have logged
@@ -115,8 +126,14 @@ export function BTSpend() {
             </View>
           ) : null}
         </ScrollView>
-        <FAB onPress={() => setAddOpen(true)} t={t} />
+        <FAB onPress={() => setAddOpen(true)} t={t} onSplit={() => openSplit()} />
         <AddExpenseModal visible={addOpen} onClose={() => setAddOpen(false)} />
+        <SplitModal
+          visible={splitOpen}
+          onClose={() => setSplitOpen(false)}
+          prefillAmount={splitPrefill.amount}
+          prefillLabel={splitPrefill.label}
+        />
       </View>
     );
   }
@@ -254,44 +271,96 @@ export function BTSpend() {
           </View>
         ) : null}
       </ScrollView>
-      <FAB onPress={() => setAddOpen(true)} t={t} />
+      <FAB onPress={() => setAddOpen(true)} t={t} onSplit={() => openSplit()} />
       <AddExpenseModal visible={addOpen} onClose={() => setAddOpen(false)} />
+      <SplitModal
+        visible={splitOpen}
+        onClose={() => setSplitOpen(false)}
+        prefillAmount={splitPrefill.amount}
+        prefillLabel={splitPrefill.label}
+      />
     </View>
   );
 }
 
-function FAB({ onPress, t }: { onPress: () => void; t: BTTheme }) {
+function FAB({
+  onPress,
+  onSplit,
+  t,
+}: {
+  onPress: () => void;
+  onSplit?: () => void;
+  t: BTTheme;
+}) {
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel="Log a purchase"
-      style={[
-        {
-          position: "absolute",
-          bottom: 18,
-          right: 22,
-          width: 56,
-          height: 56,
-          borderRadius: 28,
-          backgroundColor: t.accent,
-          alignItems: "center",
-          justifyContent: "center",
-          elevation: 6,
-        },
-        Platform.select({
-          web: { boxShadow: `0 4px 12px ${t.accent}66` } as any,
-          default: {
-            shadowColor: t.accent,
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.4,
-            shadowRadius: 12,
-          },
-        }) as any,
-      ]}
+    <View
+      style={{
+        position: "absolute",
+        bottom: 18,
+        right: 22,
+        flexDirection: "row",
+        gap: 10,
+        alignItems: "center",
+      }}
     >
-      <Text style={{ color: "#fff", fontSize: 28, lineHeight: 28, fontWeight: "300" }}>+</Text>
-    </Pressable>
+      {onSplit ? (
+        <Pressable
+          onPress={onSplit}
+          accessibilityRole="button"
+          accessibilityLabel="Split a purchase"
+          style={[
+            {
+              width: 48,
+              height: 48,
+              borderRadius: 24,
+              backgroundColor: t.surface,
+              borderWidth: 1,
+              borderColor: t.rule,
+              alignItems: "center",
+              justifyContent: "center",
+            },
+            Platform.select({
+              web: { boxShadow: `0 4px 12px ${t.ink}22` } as any,
+              default: {
+                shadowColor: t.ink,
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.18,
+                shadowRadius: 8,
+              },
+            }) as any,
+          ]}
+        >
+          <Text style={{ color: t.ink, fontFamily: BTFonts.serif, fontSize: 18 }}>÷</Text>
+        </Pressable>
+      ) : null}
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel="Log a purchase"
+        style={[
+          {
+            width: 56,
+            height: 56,
+            borderRadius: 28,
+            backgroundColor: t.accent,
+            alignItems: "center",
+            justifyContent: "center",
+            elevation: 6,
+          },
+          Platform.select({
+            web: { boxShadow: `0 4px 12px ${t.accent}66` } as any,
+            default: {
+              shadowColor: t.accent,
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.4,
+              shadowRadius: 12,
+            },
+          }) as any,
+        ]}
+      >
+        <Text style={{ color: "#fff", fontSize: 28, lineHeight: 28, fontWeight: "300" }}>+</Text>
+      </Pressable>
+    </View>
   );
 }
 

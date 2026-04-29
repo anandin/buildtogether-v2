@@ -20,7 +20,11 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "app.replit.buildtogether"
+      "package": "app.replit.buildtogether",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "output": "single",
@@ -56,6 +60,12 @@
     ],
     "experiments": {
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "f0f43ec6-20c9-4821-9111-a3d72ff4277b"
+      }
+    },
+    "owner": "anandin"
   }
 }

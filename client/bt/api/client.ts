@@ -120,6 +120,37 @@ export const btApi = {
   invitePerson: (body: { phone?: string; email?: string; name: string; scope: string }) =>
     postJson<{ ok: true; inviteId: string }>("/api/invites", body),
 
+  // ── Splits (Venmo for US, Interac for CA) ────────────────────────────
+  draftSplit: (body: {
+    region?: "CA" | "US";
+    direction: "owed_to_me" | "i_owe";
+    recipient:
+      | string
+      | { name: string; handle?: string; email?: string; phone?: string };
+    amount: number;
+    label: string;
+  }) =>
+    postJson<{
+      id: string;
+      flow: "venmo" | "interac";
+      message: string;
+      // Venmo
+      venmoUrl?: string;
+      deeplinks?: { ios: string; android: string };
+      webFallback?: string;
+      // Interac
+      smsHref?: string;
+      smsBody?: string;
+      smsTo?: string;
+      bankInstructions?: { to: string; amount: string; message: string };
+    }>("/api/splits/draft", body),
+  splits: () =>
+    getJson<{ splits: Array<{ id: string; summary: string; metadata: any; createdAt: string }> }>(
+      "/api/splits",
+    ),
+  settleSplit: (id: string) =>
+    postJson<{ ok: true }>(`/api/splits/${id}/settle`),
+
   // ── Household / onboarding ─────────────────────────────────────────────
   onboardingStatus: () =>
     getJson<{
