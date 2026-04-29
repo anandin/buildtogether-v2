@@ -263,7 +263,7 @@ function Bubble({ m }: { m: Msg }) {
 
   if (m.role === "user") {
     return (
-      <View style={{ alignSelf: "flex-end", maxWidth: "82%" }}>
+      <View style={{ alignSelf: "flex-end", maxWidth: "72%" }}>
         <View
           style={{
             backgroundColor: t.ink,
@@ -342,6 +342,10 @@ function Bubble({ m }: { m: Msg }) {
       <Tilly t={t} size={28} breathing={false} />
       <View
         style={{
+          // flexShrink: 1 lets the bubble shrink within the 82% parent so the
+          // inner Text wraps. Without this, RN-web treats the bubble as
+          // natural-width and longer messages overflow the viewport.
+          flexShrink: 1,
           backgroundColor: t.surface,
           borderRadius: 18,
           paddingHorizontal: 14,

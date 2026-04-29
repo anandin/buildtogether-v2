@@ -74,13 +74,16 @@ function BTShell() {
   return (
     <View style={[styles.root, { backgroundColor: t.bg }]}>
       <View style={[styles.body, { paddingTop: insets.top }]}>
-        <TweaksToggle />
         {tab === "home" && <BTHome onNav={(r) => setTab(r)} />}
         {tab === "guardian" && <BTGuardian />}
         {tab === "spend" && <BTSpend />}
         {tab === "credit" && <BTCredit />}
         {tab === "dreams" && <BTDreams />}
         {tab === "profile" && <BTProfile />}
+        {/* Render LAST so the absolute-positioned Tweaks panel overlay sits
+            above the screen content. RN-web has no z-index without extra
+            ceremony — DOM order is the simple, reliable lever. */}
+        <TweaksToggle />
       </View>
 
       {/* Custom bottom tab bar — 6 slots, Tilly in the middle */}

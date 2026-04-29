@@ -22,7 +22,7 @@ export const BT_TONES: Record<BTToneKey, BTTone> = {
     voice: "calm, wise, plainspoken",
     greeting: (name) => `Hey ${name}.`,
     sample:
-      "Hey. Rent's covered. You've got $312 of breathing room — doable, just tight if takeout twice this week.",
+      "Glad you're here. Connect a bank when you're ready and I'll start showing you the patterns — until then, ask me anything.",
   },
   coach: {
     key: "coach",
@@ -30,7 +30,7 @@ export const BT_TONES: Record<BTToneKey, BTTone> = {
     voice: "warm, direct, future-focused",
     greeting: (name) => `Morning, ${name}.`,
     sample:
-      "Two no-spend days down. Let's make it three. Coffee at home tomorrow puts you back in the green.",
+      "Good first move. Once your bank's connected I'll spot the small wins; for now, tell me one money thing on your mind.",
   },
   quiet: {
     key: "quiet",
@@ -38,7 +38,7 @@ export const BT_TONES: Record<BTToneKey, BTTone> = {
     voice: "minimal, observational, no nudging",
     greeting: (name) => `${name},`,
     sample:
-      "Three subscriptions you haven't touched in 60 days. Nothing urgent. Just want you to know.",
+      "I'm here. I'll watch quietly once your bank's connected. No nudges unless you ask.",
   },
 };
 

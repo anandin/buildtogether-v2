@@ -28,6 +28,42 @@ import { buildDailyBrief } from "../../tilly/daily-brief";
 import { isValidTone, DEFAULT_TONE, type BTToneKey } from "../../tilly/tone";
 
 /**
+ * Deterministic fallback brief when the LLM is unavailable. Mirrors the
+ * client's tone greeter so the user gets a coherent home even when
+ * OpenRouter is down or unconfigured.
+ */
+function deterministicBrief(
+  name: string,
+  tone: BTToneKey,
+  numbers: { breathing: number; afterRent: number; paycheckCopy: string },
+  dreamTile?: { name: string; autoSaveCopy: string; saved: number; target: number },
+) {
+  const first = name.split(" ")[0] || "there";
+  const greetByTone: Record<BTToneKey, string> = {
+    sibling: `Hey ${first}.`,
+    coach: `Morning, ${first}.`,
+    quiet: `${first},`,
+  };
+  const inviteByTone: Record<BTToneKey, string> = {
+    sibling: "Anything you want to think through?",
+    coach: "What's the one thing you want to move today?",
+    quiet: "Tell me what's on your mind.",
+  };
+  const now = new Date();
+  const dayLabel = now.toLocaleDateString("en-US", { weekday: "long" }) +
+    (now.getHours() < 12 ? " morning" : ` · ${now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true }).toLowerCase()}`);
+  return {
+    greeting: greetByTone[tone],
+    dayLabel,
+    breathing: numbers.breathing,
+    afterRent: numbers.afterRent,
+    paycheckCopy: numbers.paycheckCopy,
+    dreamTile,
+    tillyInvite: inviteByTone[tone],
+  };
+}
+
+/**
  * Resolve the user's effective tone — tilly_tone_pref row if present, else default.
  * Phase 2: reads from DB; safe to call before pref is set (returns sibling).
  */
@@ -127,16 +163,26 @@ export function mountTillyInsightsRoutes(app: Express): void {
           : "Connect a bank to see your weekly room",
       };
 
-      const brief = await buildDailyBrief({
-        userId,
-        householdId,
-        name,
-        tone,
-        now: new Date().toISOString(),
-        numbers,
-        dreamTile,
-        recentMemorySnippets: snippets,
-      });
+      // Try LLM-generated copy. When it fails (no key, rate-limit, transient
+      // upstream error) we degrade to a deterministic greeting+invite so the
+      // user always sees a coherent home, never a 500. The screen treats
+      // ready:true with afterRent=0 as the connect-bank empty state already.
+      let brief: Awaited<ReturnType<typeof buildDailyBrief>>;
+      try {
+        brief = await buildDailyBrief({
+          userId,
+          householdId,
+          name,
+          tone,
+          now: new Date().toISOString(),
+          numbers,
+          dreamTile,
+          recentMemorySnippets: snippets,
+        });
+      } catch (llmErr) {
+        console.warn("/api/tilly/today llm fallback:", llmErr);
+        brief = deterministicBrief(name, tone, numbers, dreamTile);
+      }
 
       res.json({
         ready: true,
@@ -144,7 +190,9 @@ export function mountTillyInsightsRoutes(app: Express): void {
       });
     } catch (err) {
       console.error("/api/tilly/today error:", err);
-      res.status(500).json({ error: "today brief failed", phase: 2 });
+      // Even the fall-through DB read failed — give the client a structured
+      // ready:false so the screen renders its empty state instead of a 500.
+      res.json({ phase: 2, ready: false, reason: "transient" });
     }
   });
 
@@ -159,8 +207,11 @@ export function mountTillyInsightsRoutes(app: Express): void {
       if (!pattern) return res.json({ phase: 4, ready: false });
       res.json(pattern);
     } catch (err) {
-      console.error("/api/tilly/spend-pattern error:", err);
-      res.status(500).json({ error: "spend-pattern failed", phase: 4 });
+      // Plaid not connected, no transactions, or transient DB read — same UX
+      // either way: the screen renders its connect-bank empty state. We
+      // return ready:false instead of 500 so the browser console stays clean.
+      console.warn("/api/tilly/spend-pattern soft-fail:", err);
+      res.json({ phase: 4, ready: false, reason: "transient" });
     }
   });
 
@@ -174,8 +225,9 @@ export function mountTillyInsightsRoutes(app: Express): void {
       const snap = await buildCreditSnapshot(householdId);
       res.json(snap);
     } catch (err) {
-      console.error("/api/tilly/credit-snapshot error:", err);
-      res.status(500).json({ error: "credit-snapshot failed", phase: 4 });
+      // Same soft-fail pattern as spend-pattern.
+      console.warn("/api/tilly/credit-snapshot soft-fail:", err);
+      res.json({ phase: 4, ready: false, reason: "transient" });
     }
   });
 
