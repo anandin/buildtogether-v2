@@ -293,13 +293,17 @@ export function mountDemoRoutes(app: Express): void {
           })
           .returning();
 
-        // 4. Initial sync. Plaid sandbox sometimes needs a moment after
-        // public_token_create before transactions are queryable; we retry.
+        // 4. Initial sync. Plaid sandbox seeding can take 20-40s on first
+        // call; we retry with a longer cap. Also tracks what got filtered
+        // out so the response is debuggable.
         let added = 0;
+        let returnedByPlaid = 0;
+        let filteredOut = 0;
         let cursor: string | undefined = undefined;
         let hasMore = true;
         let attempts = 0;
-        while (hasMore && attempts < 6) {
+        let lastErrorCode: string | undefined;
+        while (hasMore && attempts < 20) {
           attempts++;
           try {
             const resp: any = await (plaid as any).transactionsSync({
@@ -307,8 +311,12 @@ export function mountDemoRoutes(app: Express): void {
               cursor,
             });
             const data = resp.data;
+            returnedByPlaid += (data.added || []).length;
             for (const tx of data.added || []) {
-              if (!shouldImportPlaidTransaction(tx)) continue;
+              if (!shouldImportPlaidTransaction(tx)) {
+                filteredOut++;
+                continue;
+              }
               try {
                 await db.insert(plaidTransactions).values({
                   coupleId: householdId,
@@ -335,8 +343,9 @@ export function mountDemoRoutes(app: Express): void {
             hasMore = data.has_more;
           } catch (err: any) {
             const code = err?.response?.data?.error_code;
+            lastErrorCode = code ?? err?.message ?? "unknown";
             if (code === "PRODUCT_NOT_READY") {
-              await new Promise((r) => setTimeout(r, 2000));
+              await new Promise((r) => setTimeout(r, 3000));
               continue;
             }
             throw err;
@@ -357,6 +366,12 @@ export function mountDemoRoutes(app: Express): void {
           itemId: item.id,
           institution: "Wells Fargo (sandbox)",
           transactionsAdded: added,
+          debug: {
+            attempts,
+            returnedByPlaid,
+            filteredOut,
+            lastErrorCode,
+          },
         });
       } catch (err: any) {
         console.error("plaid sandbox connect:", err?.response?.data ?? err);
