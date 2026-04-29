@@ -366,7 +366,7 @@ export function mountDemoRoutes(app: Express): void {
         }
         await db
           .update(plaidItems)
-          .set({ cursor: cursor ?? null, lastSyncAt: new Date() })
+          .set({ lastSyncAt: new Date() })
           .where(eq(plaidItems.id, item.id));
 
         // 5. Refresh protections (free trials, unused subs, etc).
