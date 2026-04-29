@@ -318,8 +318,9 @@ export function mountDemoRoutes(app: Express): void {
               options: { count: 250 },
             });
             allTransactions = resp.data.transactions ?? [];
-            // total_transactions is only > 0 once the initial pull lands.
-            if (allTransactions.length > 0 || resp.data.total_transactions > 0) {
+            // Capture the response shape for debug.
+            (lastErrorCode as any) = `total=${resp.data.total_transactions} txs=${allTransactions.length} accounts=${(resp.data.accounts ?? []).length}`;
+            if (allTransactions.length > 0) {
               break;
             }
             // Empty pull — still seeding. Wait + retry.
