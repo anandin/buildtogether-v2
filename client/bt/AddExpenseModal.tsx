@@ -485,10 +485,51 @@ function PhotoEntry({ onSaved }: { onSaved: () => void }) {
   const cameraInputRef = useRef<any>(null);
   const libraryInputRef = useRef<any>(null);
 
+  // Resize a File / Blob to a max 1500px JPEG before encoding to base64.
+  // iPhone photos are 3-5MB; Anthropic's vision API rejects images that
+  // are too large or oddly encoded with "Could not process image", so we
+  // normalise to a sane size + format on the client. Preserves aspect.
+  const resizeToDataUrl = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1500;
+        const ratio = Math.min(1, MAX / Math.max(img.width, img.height));
+        const w = Math.round(img.width * ratio);
+        const h = Math.round(img.height * ratio);
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) {
+          URL.revokeObjectURL(url);
+          return reject(new Error("no canvas ctx"));
+        }
+        // White background avoids PNG-with-alpha gotchas when re-encoding
+        // to JPEG (transparent pixels become black otherwise).
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        try {
+          // 0.85 keeps receipts legible at ~150-300KB final payload.
+          resolve(canvas.toDataURL("image/jpeg", 0.85));
+        } catch (err) {
+          reject(err);
+        }
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("image load failed"));
+      };
+      img.src = url;
+    });
+
   // Web file picker. `capture="environment"` on the camera input asks
   // mobile browsers to open the camera; the library input omits capture
-  // so it opens the photo roll. Both share the same FileReader → dataURL
-  // path so `submit()` doesn't care which was used.
+  // so it opens the photo roll. Both share the same path: read → resize
+  // → preview. submit() always sends the resized JPEG dataURL.
   const ensureWebInput = (mode: "camera" | "library") => {
     const ref = mode === "camera" ? cameraInputRef : libraryInputRef;
     if (!ref.current) {
@@ -496,18 +537,49 @@ function PhotoEntry({ onSaved }: { onSaved: () => void }) {
       el.type = "file";
       el.accept = "image/*";
       if (mode === "camera") (el as any).capture = "environment";
-      el.onchange = () => {
+      el.onchange = async () => {
         const f = el.files?.[0];
         if (!f) return;
-        const r = new FileReader();
-        r.onload = () => setPreview(r.result as string);
-        r.readAsDataURL(f);
+        try {
+          const dataUrl = await resizeToDataUrl(f);
+          setPreview(dataUrl);
+        } catch (err) {
+          // Fall back to raw read if the resize path fails for any reason
+          // (e.g. canvas tainted by CORS, exotic format).
+          console.warn("resize failed, sending raw:", err);
+          const r = new FileReader();
+          r.onload = () => setPreview(r.result as string);
+          r.readAsDataURL(f);
+        }
         // reset so picking the same file twice still fires onchange
         el.value = "";
       };
       ref.current = el;
     }
     return ref.current;
+  };
+
+  // Native side: ImagePicker doesn't resize, only quality-compresses.
+  // Run the result through expo-image-manipulator to cap dimensions at
+  // 1500px on the long edge. Same goal as the web canvas resize — keeps
+  // request body under Anthropic's image limits.
+  const compressNativeAsset = async (
+    asset: { uri: string; base64?: string | null },
+  ): Promise<string> => {
+    try {
+      const Manip = await import("expo-image-manipulator");
+      const out = await Manip.manipulateAsync(
+        asset.uri,
+        [{ resize: { width: 1500 } }],
+        { compress: 0.85, format: Manip.SaveFormat.JPEG, base64: true },
+      );
+      if (out.base64) return `data:image/jpeg;base64,${out.base64}`;
+    } catch (err) {
+      console.warn("native resize failed, sending raw:", err);
+    }
+    // Fallback: whatever ImagePicker gave us.
+    if (asset.base64) return `data:image/jpeg;base64,${asset.base64}`;
+    return asset.uri;
   };
 
   const pickFromCamera = async () => {
@@ -524,8 +596,8 @@ function PhotoEntry({ onSaved }: { onSaved: () => void }) {
         quality: 0.6,
         allowsEditing: false,
       });
-      if (!result.canceled && result.assets?.[0]?.base64) {
-        setPreview(`data:image/jpeg;base64,${result.assets[0].base64}`);
+      if (!result.canceled && result.assets?.[0]) {
+        setPreview(await compressNativeAsset(result.assets[0]));
       }
     } catch (err) {
       console.warn("camera error:", err);
@@ -546,8 +618,8 @@ function PhotoEntry({ onSaved }: { onSaved: () => void }) {
         quality: 0.6,
         allowsEditing: false,
       });
-      if (!result.canceled && result.assets?.[0]?.base64) {
-        setPreview(`data:image/jpeg;base64,${result.assets[0].base64}`);
+      if (!result.canceled && result.assets?.[0]) {
+        setPreview(await compressNativeAsset(result.assets[0]));
       }
     } catch (err) {
       console.warn("library error:", err);
