@@ -49,11 +49,15 @@ export function BTHome({ onNav }: Props) {
   const spend = useSpend();
 
   const today_ = today.data && today.data.ready === true ? today.data : null;
-  // Show real numbers if the API returned any breathing/afterRent or a
-  // paycheckCopy that's not the default empty-state string. The previous
-  // strict afterRent > 0 check meant a tight week ($0 breathing) flipped
-  // the screen back to "I'm getting ready", which is wrong — the user
-  // has data, it's just bleak data.
+  // Three states matter on Home:
+  //   - loading  : queries haven't resolved yet → show skeleton, never empty
+  //   - hasMoneyData : real numbers landed → show hero numbers
+  //   - else     : queries resolved but no data → show connect-bank empty
+  // Conflating "loading" with "empty" caused a 6-10s flash where the user
+  // saw "I'm getting ready" before their real numbers came in. Now any
+  // query in flight on first mount blocks the empty branch.
+  const isFirstLoad =
+    today.isLoading || dreams.isLoading || spend.isLoading || expenses.isLoading;
   const hasMoneyData =
     !!today_ &&
     ((today_.afterRent ?? 0) > 0 ||
@@ -97,7 +101,9 @@ export function BTHome({ onNav }: Props) {
           <BTLabel color={t.accent}>Tilly says</BTLabel>
           <BTSerif size={32} color={t.ink} weight="500" style={{ lineHeight: 38 }}>
             {greeting}{" "}
-            {hasMoneyData ? (
+            {isFirstLoad ? (
+              <Text style={{ color: t.inkMute }}>One sec — pulling your numbers…</Text>
+            ) : hasMoneyData ? (
               <>
                 This week is shaping up{" "}
                 <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
@@ -115,22 +121,26 @@ export function BTHome({ onNav }: Props) {
               </>
             )}
           </BTSerif>
-          <Text
-            style={{
-              color: t.inkSoft,
-              fontFamily: BTFonts.sans,
-              fontSize: 14,
-              lineHeight: 21,
-              marginTop: 4,
-            }}
-          >
-            {hasMoneyData
-              ? `$${today_!.breathing} of breathing room. ${today_!.paycheckCopy}`
-              : "Connect your bank when you're ready and your real numbers light up here. Until then, ask me anything."}
-          </Text>
+          {!isFirstLoad ? (
+            <Text
+              style={{
+                color: t.inkSoft,
+                fontFamily: BTFonts.sans,
+                fontSize: 14,
+                lineHeight: 21,
+                marginTop: 4,
+              }}
+            >
+              {hasMoneyData
+                ? `$${today_!.breathing} of breathing room. ${today_!.paycheckCopy}`
+                : "Connect your bank when you're ready and your real numbers light up here. Until then, ask me anything."}
+            </Text>
+          ) : null}
         </View>
 
-        {hasMoneyData ? (
+        {isFirstLoad ? (
+          <SkeletonHeroCard t={t} />
+        ) : hasMoneyData ? (
           <BTCard t={t} inverted padding={22} radius={18}>
             <BTStripes color="#fff" opacity={0.07} />
             <BTLabel color="rgba(255,255,255,0.55)">Available now</BTLabel>
@@ -214,9 +224,9 @@ export function BTHome({ onNav }: Props) {
         </View>
 
         {/* Tilly Learned card — surfaces the strongest soft-spot pattern
-            once we have spend pattern data. Hidden when there's nothing
-            to say (rather than padding with a fake observation). */}
-        {spendLive && spendLive.italicSpan ? (
+            once we have spend pattern data. Hidden during loading + when
+            there's nothing to say. */}
+        {!isFirstLoad && spendLive && spendLive.italicSpan ? (
           <BTCard t={t} padding={18} style={{ gap: 12 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
               <View
@@ -292,7 +302,7 @@ export function BTHome({ onNav }: Props) {
           </BTCard>
         ) : null}
 
-        {firstDream ? (
+        {!isFirstLoad && firstDream ? (
           <Pressable onPress={() => onNav?.("dreams")}>
             <BTCard t={t} alt padding={16}>
               <BTLabel color={t.inkMute} size={10}>
@@ -366,6 +376,70 @@ export function BTHome({ onNav }: Props) {
         </Pressable>
       </View>
     </ScrollView>
+  );
+}
+
+/**
+ * SkeletonHeroCard — same shape as the real hero card, but with
+ * shimmering placeholders instead of real numbers. Renders during the
+ * first paint after sign-in / mount until queries settle, so the user
+ * never sees a confident "Connect your bank" empty state when their
+ * data is actually about to arrive.
+ */
+function SkeletonHeroCard({ t }: { t: BTTheme }) {
+  const shimmer = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(shimmer, {
+          toValue: 1,
+          duration: 1100,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: false,
+        }),
+        Animated.timing(shimmer, {
+          toValue: 0,
+          duration: 1100,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: false,
+        }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [shimmer]);
+  const opacity = shimmer.interpolate({ inputRange: [0, 1], outputRange: [0.35, 0.7] });
+  const Bar = ({ w, h = 14 }: { w: number | string; h?: number }) => (
+    <Animated.View
+      style={{
+        width: w as any,
+        height: h,
+        borderRadius: h / 2,
+        backgroundColor: "rgba(255,252,246,0.18)",
+        opacity,
+      }}
+    />
+  );
+  return (
+    <BTCard t={t} inverted padding={22} radius={18}>
+      <BTStripes color="#fff" opacity={0.07} />
+      <View style={{ gap: 14 }}>
+        <Bar w={90} h={11} />
+        <Bar w={"55%"} h={42} />
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <Bar w={"60%"} h={12} />
+          <Animated.View
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: 21,
+              backgroundColor: "rgba(255,252,246,0.2)",
+              opacity,
+            }}
+          />
+        </View>
+      </View>
+    </BTCard>
   );
 }
 
