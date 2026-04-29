@@ -49,7 +49,16 @@ export function BTHome({ onNav }: Props) {
   const spend = useSpend();
 
   const today_ = today.data && today.data.ready === true ? today.data : null;
-  const hasMoneyData = !!today_ && (today_.afterRent ?? 0) > 0;
+  // Show real numbers if the API returned any breathing/afterRent or a
+  // paycheckCopy that's not the default empty-state string. The previous
+  // strict afterRent > 0 check meant a tight week ($0 breathing) flipped
+  // the screen back to "I'm getting ready", which is wrong — the user
+  // has data, it's just bleak data.
+  const hasMoneyData =
+    !!today_ &&
+    ((today_.afterRent ?? 0) > 0 ||
+      (today_.breathing ?? 0) > 0 ||
+      (today_.paycheckCopy ?? "").includes("this week"));
   const userName = user?.name?.split(" ")[0] || "there";
 
   const greeting = today_?.greeting ?? tone.greeting(userName);

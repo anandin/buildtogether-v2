@@ -62,7 +62,14 @@ async function estimateFromTransactions(
   const weekSpent = Math.round(
     manual.reduce((s, r) => s + r.amount, 0) + plaid.reduce((s, r) => s + r.amount, 0),
   );
-  const weeklyAllowance = 320;
+  // Auto-scale the heuristic allowance to the user's actual spend pattern.
+  // For a student with $320/wk in expenses we land near design's $312
+  // breathing-room number; for Plaid sandbox accounts that have larger
+  // synthetic transactions the allowance scales up so we don't constantly
+  // report 0 breathing (which is technically correct but useless UX). Real
+  // Plaid path will replace this with paycheck cadence + bills math once
+  // production access lands.
+  const weeklyAllowance = Math.max(320, Math.round(weekSpent * 1.25));
   const breathing = Math.max(0, weeklyAllowance - weekSpent);
   const source =
     plaid.length > 0 && manual.length > 0
