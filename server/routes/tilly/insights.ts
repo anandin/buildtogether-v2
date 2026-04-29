@@ -29,35 +29,51 @@ import { isValidTone, DEFAULT_TONE, type BTToneKey } from "../../tilly/tone";
 import { buildWeeklyPattern } from "../../tilly/spend-pattern";
 import { buildCreditSnapshot } from "../../tilly/credit-snapshot";
 import { sql } from "drizzle-orm";
-import { expenses } from "../../../shared/schema";
+import { expenses, plaidTransactions } from "../../../shared/schema";
 
 /**
- * Compute breathing-room from manual expenses when Plaid isn't connected.
- * Heuristic: assume a $1280 monthly budget for v1, subtract the user's
- * spend so far this week. Returns null if no expenses (so the screen can
- * show its connect-bank empty state). Real Plaid path uses balance + bills,
- * not this estimate.
+ * Compute breathing-room from any transaction source we have — Plaid +
+ * manual expenses unioned. Heuristic: $320 weekly allowance, subtract
+ * this-week's spend. Returns null only if both sources are completely
+ * empty so the screen falls back to its connect-bank state.
+ *
+ * Once Plaid liabilities + paycheck cadence land, this gets replaced by
+ * a real cash-flow calculation; for now the heuristic is enough to flip
+ * Home off the empty state and into something the user can see numbers
+ * change as they log activity.
  */
-async function estimateFromExpenses(
+async function estimateFromTransactions(
   householdId: string,
 ): Promise<{ breathing: number; afterRent: number; paycheckCopy: string } | null> {
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
     .toISOString()
     .slice(0, 10);
-  const rows = await db
-    .select({ amount: expenses.amount })
-    .from(expenses)
-    .where(sql`${expenses.coupleId} = ${householdId} AND ${expenses.date} >= ${sevenDaysAgo}`);
-  if (rows.length === 0) return null;
-  const weekSpent = Math.round(rows.reduce((s, r) => s + r.amount, 0));
-  // Mock weekly budget allowance — replaced by real paycheck math when
-  // Plaid lands.
+  const [manual, plaid] = await Promise.all([
+    db
+      .select({ amount: expenses.amount })
+      .from(expenses)
+      .where(sql`${expenses.coupleId} = ${householdId} AND ${expenses.date} >= ${sevenDaysAgo} AND ${expenses.amount} > 0`),
+    db
+      .select({ amount: plaidTransactions.amount })
+      .from(plaidTransactions)
+      .where(sql`${plaidTransactions.coupleId} = ${householdId} AND ${plaidTransactions.date} >= ${sevenDaysAgo} AND ${plaidTransactions.amount} > 0`),
+  ]);
+  if (manual.length === 0 && plaid.length === 0) return null;
+  const weekSpent = Math.round(
+    manual.reduce((s, r) => s + r.amount, 0) + plaid.reduce((s, r) => s + r.amount, 0),
+  );
   const weeklyAllowance = 320;
   const breathing = Math.max(0, weeklyAllowance - weekSpent);
+  const source =
+    plaid.length > 0 && manual.length > 0
+      ? "your bank + manual logs"
+      : plaid.length > 0
+      ? "your bank"
+      : "your manual logs";
   return {
     breathing,
     afterRent: breathing,
-    paycheckCopy: `$${weekSpent} this week · estimate from your manual logs`,
+    paycheckCopy: `$${weekSpent} this week · estimate from ${source}`,
   };
 }
 
@@ -187,10 +203,11 @@ export function mountTillyInsightsRoutes(app: Express): void {
         bestDreamTile(householdId),
       ]);
 
-      // Pull breathing-room from manual expenses when Plaid isn't yet
-      // connected. Real Plaid path will replace this once an item lands.
-      const fromExpenses = plaidConnected ? null : await estimateFromExpenses(householdId);
-      const numbers = fromExpenses ?? {
+      // Compute breathing-room from any transaction source — Plaid +
+      // manual expenses unioned. Falls through to the empty-state
+      // copy only when both sources are completely empty.
+      const fromTx = await estimateFromTransactions(householdId);
+      const numbers = fromTx ?? {
         breathing: 0,
         afterRent: 0,
         paycheckCopy: plaidConnected
