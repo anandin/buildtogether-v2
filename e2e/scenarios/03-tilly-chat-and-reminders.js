@@ -54,11 +54,22 @@ async function scenario({ page, ss, gotoTab, apiCall, sendChat, log }) {
   }
 
   // ── Q2: reminder commitment ──
+  // Randomize the reminder topic each run — Tilly's dossier remembers
+  // recently-set reminders ("you already asked me to do this") and won't
+  // re-promise. A fresh topic forces a fresh classifier fire.
   log("Q2: reminder commitment");
+  const topics = [
+    "to call my landlord about the lease",
+    "to email my advisor about course registration",
+    "to pick up my prescription",
+    "to swap out my winter tires",
+    "to send the rent etransfer",
+    "to grab the package from the front desk",
+    "to renew my SPC card",
+  ];
+  const topic = topics[Math.floor(Math.random() * topics.length)];
   const remindersBefore = (await apiCall("/api/tilly/reminders")).body?.reminders ?? [];
-  const q2 = await sendChat(
-    "Yes please remind me Friday morning to grab cash for the show",
-  );
+  const q2 = await sendChat(`Yes please remind me Friday morning ${topic}`);
   log(`Q2 reply in ${q2.latencyMs}ms`);
   // Classifier runs after the reply ships; give it a moment.
   await page.waitForTimeout(3500);
