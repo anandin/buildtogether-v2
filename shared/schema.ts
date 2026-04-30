@@ -892,6 +892,46 @@ export const tillyEvents = pgTable("tilly_events", {
 export type TillyEvent = typeof tillyEvents.$inferSelect;
 
 /**
+ * Typed memory layer (S2 nightly distiller output).
+ *
+ * Sits alongside the legacy `tilly_memory` table — that one is still
+ * written by the per-chat-turn extractor (memory-writer.ts) for
+ * preference/observation kinds, while this one is written nightly by the
+ * distiller for richer behavioral kinds with structured metadata and
+ * full event lineage.
+ *
+ * `kind` values:
+ *   decision     — money decision the user made (spent or didn't)
+ *   regret       — expressed or behavioral regret signal
+ *   nudge_outcome— a nudge Tilly sent landed (or didn't)
+ *   bias_observed— user responded to a specific behavioral econ frame
+ *   preference   — stable preference, useful in future chat
+ *   tradeoff     — explicit "X over Y" trade
+ *   life_context — identity / situation shaping decisions
+ *
+ * `metadata` shape is per-kind, validated at write time by the Zod
+ * schemas in server/tilly/nightly-distiller.ts.
+ *
+ * `sourceEventIds` is an array of `tilly_events.id` values so we can
+ * always trace a memory back to the raw events it was distilled from.
+ */
+export const tillyMemoryV2 = pgTable("tilly_memory_v2", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  householdId: varchar("household_id").notNull(),
+  kind: text("kind").notNull(),
+  body: text("body").notNull(),
+  metadata: jsonb("metadata").notNull().default({}),
+  sourceEventIds: jsonb("source_event_ids").notNull().default([]),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  // Bi-temporal hints (used in M4 graph layer; populated optimistically now)
+  validFrom: timestamp("valid_from").defaultNow().notNull(),
+  validTo: timestamp("valid_to"), // null = currently valid
+});
+
+export type TillyMemoryV2 = typeof tillyMemoryV2.$inferSelect;
+
+/**
  * Subscription detection table (spec §4.1 Home tile, §4.4 Credit "protected"
  * card, §5.7 protective surface).
  *

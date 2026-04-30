@@ -20,6 +20,7 @@ import { goals, goalContributions } from "../../shared/schema";
 import { runProtectionsAll } from "../tilly/protections-engine";
 import { runNotify } from "../tilly/notify-cron";
 import { runPatternDetectionAll } from "../tilly/pattern-cron";
+import { distillAllActiveUsers } from "../tilly/nightly-distiller";
 
 function requireCron(req: Request, res: Response, next: NextFunction) {
   const expected = process.env.CRON_SECRET;
@@ -162,6 +163,26 @@ export function mountCronRoutes(app: Express): void {
         console.error("/api/cron/patterns error:", err);
         const msg = err instanceof Error ? err.message : String(err);
         res.status(500).json({ error: "pattern cron failed", debug: msg });
+      }
+    },
+  );
+
+  // S2 — nightly memory distiller. Reads last-24h of tilly_events for
+  // every active user and produces typed L2 memories in tilly_memory_v2.
+  // Schedules nightly at 03:00 UTC (~10pm Eastern, 7pm Pacific) — after
+  // the day's chat traffic but before any morning push nudges.
+  app.post(
+    "/api/cron/distill-memories",
+    requireCron,
+    async (_req: Request, res: Response) => {
+      try {
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const r = await distillAllActiveUsers(since);
+        res.json({ ok: true, ...r });
+      } catch (err) {
+        console.error("/api/cron/distill-memories error:", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error: "distiller cron failed", debug: msg });
       }
     },
   );

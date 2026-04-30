@@ -24,7 +24,9 @@ import {
   tillyMemory,
   tillyReminders,
   tillyEvents,
+  tillyMemoryV2,
 } from "../../../shared/schema";
+import { distillUser } from "../../tilly/nightly-distiller";
 import {
   callTilly,
 } from "../../tilly/persona";
@@ -767,6 +769,52 @@ export function mountTillyChatRoutes(app: Express): void {
         .from(tillyEvents)
         .where(eq(tillyEvents.userId, userId));
       res.json({ count: rows[0]?.count ?? 0 });
+    },
+  );
+
+  // S2 — manually trigger the nightly distiller for the authed user, over
+  // a configurable lookback window. Used by e2e scenario 08 to verify
+  // memories actually land. Body: { hours?: number } (default 168 = 7d).
+  app.post(
+    "/api/tilly/_debug/distill-now",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const userId = req.user.id;
+      const householdId = req.user.coupleId;
+      if (!householdId) return res.status(400).json({ error: "no_household" });
+      const hours = Number(req.body?.hours ?? 168);
+      const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+      const r = await distillUser({ userId, householdId, since });
+      res.json(r);
+    },
+  );
+
+  // S2 — list the latest typed memories for the authed user. e2e and
+  // (later) the dossier rewrite read this.
+  app.get(
+    "/api/tilly/_debug/typed-memory",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const userId = req.user.id;
+      const limit = Math.min(Number(req.query?.limit ?? 20), 100);
+      const rows = await db
+        .select()
+        .from(tillyMemoryV2)
+        .where(eq(tillyMemoryV2.userId, userId))
+        .orderBy(desc(tillyMemoryV2.createdAt))
+        .limit(limit);
+      res.json({
+        memories: rows.map((r) => ({
+          id: r.id,
+          kind: r.kind,
+          body: r.body,
+          metadata: r.metadata,
+          sourceEventIds: r.sourceEventIds,
+          createdAt: r.createdAt.toISOString(),
+        })),
+      });
     },
   );
 }

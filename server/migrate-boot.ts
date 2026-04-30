@@ -178,6 +178,22 @@ const CRITICAL_STATEMENTS: string[] = [
     "source_id" varchar
   )`,
 
+  // S2 typed memory — output of the nightly distiller. New kinds
+  // (decision/regret/nudge_outcome/bias_observed/tradeoff/life_context)
+  // with structured metadata + lineage back to the events that fed them.
+  `CREATE TABLE IF NOT EXISTS "tilly_memory_v2" (
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "user_id" varchar NOT NULL,
+    "household_id" varchar NOT NULL,
+    "kind" text NOT NULL,
+    "body" text NOT NULL,
+    "metadata" jsonb NOT NULL DEFAULT '{}'::jsonb,
+    "source_event_ids" jsonb NOT NULL DEFAULT '[]'::jsonb,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "valid_from" timestamp DEFAULT now() NOT NULL,
+    "valid_to" timestamp
+  )`,
+
   // Indexes (idempotent)
   `CREATE INDEX IF NOT EXISTS "tilly_memory_user_active_idx" ON "tilly_memory" ("user_id", "archived_at")`,
   `CREATE INDEX IF NOT EXISTS "subscriptions_household_status_idx" ON "subscriptions" ("household_id", "status")`,
@@ -187,6 +203,10 @@ const CRITICAL_STATEMENTS: string[] = [
   // Distiller scans by (user_id, ts) every night to pull last-24h events.
   `CREATE INDEX IF NOT EXISTS "tilly_events_user_ts_idx" ON "tilly_events" ("user_id", "ts" DESC)`,
   `CREATE INDEX IF NOT EXISTS "tilly_events_kind_ts_idx" ON "tilly_events" ("kind", "ts" DESC)`,
+  // Dossier reader pulls latest-N memories per user; bi-temporal queries
+  // filter by valid_to IS NULL.
+  `CREATE INDEX IF NOT EXISTS "tilly_memory_v2_user_created_idx" ON "tilly_memory_v2" ("user_id", "created_at" DESC)`,
+  `CREATE INDEX IF NOT EXISTS "tilly_memory_v2_user_kind_idx" ON "tilly_memory_v2" ("user_id", "kind")`,
 ];
 
 export async function applyBootMigrations(): Promise<{
