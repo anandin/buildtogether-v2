@@ -23,7 +23,9 @@
     "lint:fix": "npx expo lint --fix",
     "check:types": "tsc --noEmit",
     "check:format": "prettier --check \"**/*.{js,ts,tsx,css,json}\"",
-    "format": "prettier --write \"**/*.{js,ts,tsx,css,json}\""
+    "format": "prettier --write \"**/*.{js,ts,tsx,css,json}\"",
+    "e2e": "node e2e/run-all.js",
+    "e2e:one": "node"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",

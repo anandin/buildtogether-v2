@@ -37,6 +37,7 @@ yarn-error.*
 server_dist/
 static-build/
 e2e-screenshots/
+test-results/e2e/
 
 # typescript
 *.tsbuildinfo
