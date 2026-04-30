@@ -23,6 +23,7 @@ import {
   tillyTonePref,
   tillyMemory,
   tillyReminders,
+  tillyEvents,
 } from "../../../shared/schema";
 import {
   callTilly,
@@ -749,6 +750,23 @@ export function mountTillyChatRoutes(app: Express): void {
         });
       }
       res.json({ ok: true });
+    },
+  );
+
+  // Tiny debug endpoint used by the e2e scenario 07. Returns the count of
+  // event-log rows for the authenticated user. Not security-sensitive
+  // (a count, scoped to the caller) but limited to non-prod auditing.
+  app.get(
+    "/api/tilly/_debug/event-count",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const userId = req.user.id;
+      const rows = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(tillyEvents)
+        .where(eq(tillyEvents.userId, userId));
+      res.json({ count: rows[0]?.count ?? 0 });
     },
   );
 }
