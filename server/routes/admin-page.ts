@@ -14,18 +14,23 @@ import type { Express, Request, Response } from "express";
 import * as fs from "fs";
 import * as path from "path";
 
-let _cachedHtml: string | null = null;
-function loadHtml(): string {
-  if (_cachedHtml) return _cachedHtml;
-  const p = path.resolve(process.cwd(), "server", "templates", "admin-tilly.html");
-  _cachedHtml = fs.readFileSync(p, "utf-8");
-  return _cachedHtml;
+const _cache: Record<string, string> = {};
+function loadHtml(filename: string): string {
+  if (_cache[filename]) return _cache[filename];
+  const p = path.resolve(process.cwd(), "server", "templates", filename);
+  _cache[filename] = fs.readFileSync(p, "utf-8");
+  return _cache[filename];
 }
 
 export function mountAdminPage(app: Express): void {
   app.get("/admin/tilly", (_req: Request, res: Response) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.status(200).send(loadHtml());
+    res.status(200).send(loadHtml("admin-tilly.html"));
+  });
+
+  app.get("/admin/memory", (_req: Request, res: Response) => {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.status(200).send(loadHtml("admin-memory.html"));
   });
 
   // Convenience landing redirect.
