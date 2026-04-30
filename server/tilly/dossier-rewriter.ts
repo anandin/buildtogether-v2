@@ -174,7 +174,7 @@ Return the updated dossier JSON per the schema.`;
       userId: input.userId,
       memoriesConsidered: memories.length,
       skipped: true,
-      reason: `LLM failed: ${msg.slice(0, 100)}`,
+      reason: `LLM failed: ${msg.slice(0, 1500)}`,
     };
   }
 
