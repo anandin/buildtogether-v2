@@ -81,17 +81,54 @@ function zodToJsonSchemaSafe(schema: ZodType, name: string): {
 /**
  * JSON Schema features OpenRouter / upstream providers commonly reject
  * (or that pull in unsupported keywords). We strip them defensively.
+ *
+ * Anthropic in particular rejects: `minItems`, `maxItems`, `minimum`,
+ * `maximum`, `minLength`, `maxLength`, `multipleOf`, `format`, `pattern`,
+ * `additionalProperties` (unless boolean), `$schema`, `default`. We
+ * delete these recursively so a Zod `.max(5)` or `.min(0)` doesn't 400
+ * the request — range constraints belong in the prompt anyway.
  */
+const UNSUPPORTED_KEYS = [
+  "$schema",
+  "default",
+  "minItems",
+  "maxItems",
+  "minimum",
+  "maximum",
+  "exclusiveMinimum",
+  "exclusiveMaximum",
+  "minLength",
+  "maxLength",
+  "multipleOf",
+  "format",
+  "pattern",
+];
+
 function stripUnsupported(s: Record<string, unknown>) {
   if (!s || typeof s !== "object") return;
-  delete (s as any).$schema;
-  delete (s as any).default;
+  for (const k of UNSUPPORTED_KEYS) {
+    delete (s as any)[k];
+  }
+  // additionalProperties: <schema> is rejected; boolean is fine.
+  if (
+    (s as any).additionalProperties &&
+    typeof (s as any).additionalProperties !== "boolean"
+  ) {
+    delete (s as any).additionalProperties;
+  }
   if ((s as any).properties) {
     for (const k of Object.keys((s as any).properties)) {
       stripUnsupported((s as any).properties[k]);
     }
   }
   if ((s as any).items) stripUnsupported((s as any).items);
+  // anyOf/oneOf/allOf nested schemas
+  for (const variant of ["anyOf", "oneOf", "allOf"]) {
+    const arr = (s as any)[variant];
+    if (Array.isArray(arr)) {
+      for (const sub of arr) stripUnsupported(sub);
+    }
+  }
 }
 
 type ChatRequestBody = {

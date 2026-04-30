@@ -26,10 +26,15 @@ import { OpenRouterLLM } from "./llm/openrouter";
 // because OpenRouter's json_schema mode rejects `additionalProperties:
 // <schema>` against Anthropic providers. We convert to a keyed map at
 // read time in formatDossierForPrompt() / consumers.
+// Note: no .min/.max on numbers — Anthropic's structured-output rejects
+// `minimum`/`maximum` on numeric types. Range constraints live in the
+// prompt instead.
 const FrameEntrySchema = z.object({
   frame: z.string().describe("Behavioral-econ frame name."),
-  accept_rate: z.number().min(0).max(1),
-  n: z.number().int().min(0),
+  accept_rate: z
+    .number()
+    .describe("Float between 0 and 1 (accepted/total)."),
+  n: z.number().describe("Integer count of observations (>=0)."),
   best_form: z.string(),
 });
 export type FrameEntry = z.infer<typeof FrameEntrySchema>;
@@ -43,7 +48,6 @@ export const DossierContentSchema = z.object({
     .describe("2-4 sentences. Income cadence, recurring patterns, current arc."),
   soft_spots: z
     .array(z.string())
-    .max(5)
     .describe("0-5 short strings. Recurring spend patterns they regret."),
   nudge_response_profile: z
     .array(FrameEntrySchema)
@@ -52,15 +56,12 @@ export const DossierContentSchema = z.object({
     ),
   recent_decisions: z
     .array(z.string())
-    .max(5)
     .describe("0-5 short strings. Last week's notable decisions, newest first."),
   trust_signals: z
     .array(z.string())
-    .max(5)
     .describe("0-5 short strings. Cues about how much the user trusts Tilly."),
   open_loops: z
     .array(z.string())
-    .max(3)
     .describe("0-3 short strings. Promises Tilly made that aren't resolved."),
 });
 
