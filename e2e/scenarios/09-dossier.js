@@ -64,7 +64,10 @@ async function scenario({ page, apiCall, gotoTab, sendChat, log }) {
   log(`identity: ${content.identity.slice(0, 100)}`);
   log(`money_arc: ${content.money_arc.slice(0, 100)}`);
   log(`soft_spots: ${JSON.stringify(content.soft_spots)}`);
-  log(`nudge_response_profile keys: ${Object.keys(content.nudge_response_profile).join(", ")}`);
+  const frames = Array.isArray(content.nudge_response_profile)
+    ? content.nudge_response_profile.map((p) => p.frame)
+    : Object.keys(content.nudge_response_profile);
+  log(`nudge frames observed: ${frames.join(", ") || "(none yet)"}`);
   log(`memories considered: ${read.body.dossier.memoriesConsidered}`);
 
   // Now confirm Tilly *uses* the dossier in chat. Ask a referential

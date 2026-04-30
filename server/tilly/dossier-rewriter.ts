@@ -22,11 +22,17 @@ import { OpenRouterLLM } from "./llm/openrouter";
 
 // ─── Schema ────────────────────────────────────────────────────────────────
 
-const FrameProfileSchema = z.object({
+// nudge_response_profile is an array of frame entries (not a keyed map)
+// because OpenRouter's json_schema mode rejects `additionalProperties:
+// <schema>` against Anthropic providers. We convert to a keyed map at
+// read time in formatDossierForPrompt() / consumers.
+const FrameEntrySchema = z.object({
+  frame: z.string().describe("Behavioral-econ frame name."),
   accept_rate: z.number().min(0).max(1),
   n: z.number().int().min(0),
   best_form: z.string(),
 });
+export type FrameEntry = z.infer<typeof FrameEntrySchema>;
 
 export const DossierContentSchema = z.object({
   identity: z
@@ -40,9 +46,9 @@ export const DossierContentSchema = z.object({
     .max(5)
     .describe("0-5 short strings. Recurring spend patterns they regret."),
   nudge_response_profile: z
-    .record(z.string(), FrameProfileSchema)
+    .array(FrameEntrySchema)
     .describe(
-      "Object keyed by behavioral econ frame. Each frame has accept_rate (0-1), n (int), best_form (1 sentence). Skip frames with n<2.",
+      "Array of frame entries. Each entry: {frame, accept_rate (0-1), n (int), best_form (1 sentence)}. Skip frames with n<2 — empty array is fine.",
     ),
   recent_decisions: z
     .array(z.string())
@@ -68,7 +74,7 @@ Sections:
 - identity: 1-3 sentences. Role/situation/age range/place. Update only when life_context evidence is fresh; otherwise keep prior value.
 - money_arc: 2-4 sentences. Income cadence, recurring patterns, current arc. Driven by decision/regret memories.
 - soft_spots: array of 0-5 short strings. Recurring spend patterns they regret or are working on. From regret + bias_observed.
-- nudge_response_profile: object keyed by behavioral econ frame name. Frames: loss_aversion, social_proof, default_taken, anchor, present_bias, mental_accounting, goal_gradient, implementation_intention, fresh_start, endowment, sdt_autonomy, sdt_competence, habit_loop, streak, pre_commitment. For each frame, give accept_rate (0-1), n (count of observations), best_form (1 sentence: when this frame works for THIS user). Skip frames with n<2 — empty object is fine if not enough evidence.
+- nudge_response_profile: array of {frame, accept_rate, n, best_form}. Frames: loss_aversion, social_proof, default_taken, anchor, present_bias, mental_accounting, goal_gradient, implementation_intention, fresh_start, endowment, sdt_autonomy, sdt_competence, habit_loop, streak, pre_commitment. accept_rate (0-1), n (count of observations), best_form (1 sentence: when this frame works for THIS user). Skip frames with n<2 — empty array is fine if not enough evidence.
 - recent_decisions: array of 0-5 short strings. Last week's notable decisions, newest first. From decision + tradeoff.
 - trust_signals: array of 0-5 short strings. How much the user trusts Tilly. Examples: "asked Tilly to set a real reminder", "ignored 3 push nudges in a row".
 - open_loops: array of 0-3 short strings. Promises Tilly made that aren't resolved (active reminders, "I'll check back" follow-ups).
@@ -215,14 +221,12 @@ export function formatDossierForPrompt(content: DossierContent): string {
     lines.push(`Trust signals: ${content.trust_signals.join(" | ")}`);
   if (content.open_loops.length)
     lines.push(`Open loops you owe them: ${content.open_loops.join(" | ")}`);
-  const frames = Object.entries(content.nudge_response_profile).filter(
-    ([, p]) => p.n >= 2,
-  );
+  const frames = content.nudge_response_profile.filter((p) => p.n >= 2);
   if (frames.length) {
     const formatted = frames
       .map(
-        ([f, p]) =>
-          `${f} (n=${p.n}, accept=${(p.accept_rate * 100).toFixed(0)}%): ${p.best_form}`,
+        (p) =>
+          `${p.frame} (n=${p.n}, accept=${(p.accept_rate * 100).toFixed(0)}%): ${p.best_form}`,
       )
       .join(" | ");
     lines.push(`Frames that work for them: ${formatted}`);
