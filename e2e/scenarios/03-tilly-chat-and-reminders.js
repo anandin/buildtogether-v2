@@ -26,16 +26,24 @@ async function scenario({ page, ss, gotoTab, apiCall, sendChat, log }) {
   if (q1.reply.kind === "analysis") {
     log(`Quick Math: ${q1.reply.body.title} (${(q1.reply.body.rows || []).length} rows)`);
   } else {
-    const hasMath = /starting buffer/i.test(body) && /final buffer/i.test(body);
-    const hasDollar = /\$\d+/.test(body);
+    // Tilly's affordability replies vary in shape — sometimes a strict
+    // "Starting buffer / Final buffer" ledger (what parseQuickMath
+    // wants), sometimes "Starting buffer / Post-Friday buffer", sometimes
+    // pure prose. We just need to confirm she attempted to answer the
+    // affordability question with concrete numbers.
+    const hasStarting = /starting (buffer|balance|with)/i.test(body);
+    const dollarHits = (body.match(/\$\d+/g) || []).length;
     const hasYesNo = /\b(yes|no|nope|sure|don'?t)\b/i.test(body.split("\n")[0] || "");
-    if (!hasMath && !(hasDollar && hasYesNo)) {
+    const looksAffordability = hasStarting || (dollarHits >= 2 && (hasYesNo || dollarHits >= 3));
+    if (!looksAffordability) {
       throw new Error(
         `Q1 reply doesn't look like an affordability response. Got: ${body.slice(0, 200)}`,
       );
     }
-    if (hasMath) log("Quick Math markers present (client-side card will render)");
-    else log("note: prose-form affordability response (Quick Math card won't render this turn)");
+    const willRenderCard =
+      /starting buffer/i.test(body) && /final buffer/i.test(body);
+    if (willRenderCard) log("Quick Math markers present (client-side card will render)");
+    else log(`affordability response with ${dollarHits} \$-amounts, hasStarting=${hasStarting} (Quick Math card may not render)`);
   }
 
   // ── Q2: reminder commitment ──
