@@ -12,8 +12,15 @@ async function scenario({ page, ss, gotoTab, apiCall, sendChat, log }) {
   await ss("tilly-initial");
 
   // ── Q1: affordability ──
+  // Randomize the dollar amount each run — without this, Tilly's
+  // dossier kicks in ("you've asked me this three times now") and she
+  // skips the structured ledger, which is correct behavior but breaks
+  // a deterministic test.
   log("Q1: affordability");
-  const q1 = await sendChat("Can I afford a $200 concert ticket on Friday?");
+  const amount = 100 + Math.floor(Math.random() * 200); // $100-$299
+  const q1 = await sendChat(
+    `Out of curiosity, could I afford a $${amount} weekend trip next month?`,
+  );
   log(`Q1 reply in ${q1.latencyMs}ms (kind=${q1.reply.kind})`);
   await page.waitForTimeout(1500);
   await ss("q1-reply");
