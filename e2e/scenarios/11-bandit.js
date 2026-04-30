@@ -32,11 +32,14 @@ async function scenario({ apiCall, gotoTab, page, log }) {
       .join(", ")}`,
   );
 
-  // Sanity: prior values plausible (between 0.3 and 0.7 with no data)
+  // Sanity: every frame returns a valid probability. (We don't pin the
+  // range to the cold-start prior because the test account accumulates
+  // real outcomes across runs, legitimately moving the posterior past
+  // the prior interval — which is the bandit *learning*.)
   for (const f of frames) {
-    if (f.expectedAccept < 0.2 || f.expectedAccept > 0.8) {
+    if (f.expectedAccept < 0 || f.expectedAccept > 1 || !Number.isFinite(f.expectedAccept)) {
       throw new Error(
-        `prior expectedAccept out of plausible range for ${f.frame}: ${f.expectedAccept}`,
+        `expectedAccept not a valid probability for ${f.frame}: ${f.expectedAccept}`,
       );
     }
   }
