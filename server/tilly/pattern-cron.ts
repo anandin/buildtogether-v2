@@ -11,6 +11,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import { households, members, tillyMemory, users } from "../../shared/schema";
 import { buildWeeklyPattern } from "./spend-pattern";
+import { recordNudgeSent } from "./nudge-log";
 
 /**
  * Resolve the "owner user" for a household. Tries members.role='owner'
@@ -76,16 +77,37 @@ export async function runPatternDetectionAll(): Promise<{
         .limit(1);
       if (dupe.length > 0) continue;
 
-      await db.insert(tillyMemory).values({
+      const [memRow] = await db
+        .insert(tillyMemory)
+        .values({
+          userId,
+          householdId: h.id,
+          kind: "observation",
+          body,
+          source: "inferred",
+          dateLabel: "This week",
+          isMostRecent: true,
+        })
+        .returning();
+      observations++;
+
+      // S4 — A pattern observation IS a nudge: it's what the Tilly
+      // Learned card surfaces. Frame: loss_aversion, since the card
+      // leads with "Wednesdays are still your soft spot" (the loss
+      // they keep taking) before offering the remind/dismiss choice.
+      await recordNudgeSent({
         userId,
         householdId: h.id,
-        kind: "observation",
+        frame: "loss_aversion",
+        channel: "in_app_card",
         body,
-        source: "inferred",
-        dateLabel: "This week",
-        isMostRecent: true,
+        context: {
+          source: "pattern_detection",
+          weeklySpent: pattern.spent ?? null,
+        },
+        sourceTable: "tilly_memory",
+        sourceId: memRow.id,
       });
-      observations++;
     } catch (err) {
       console.warn("[pattern-cron] household failed:", h.id, err);
     }

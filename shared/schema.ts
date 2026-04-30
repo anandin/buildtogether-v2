@@ -958,6 +958,45 @@ export const tillyDossiers = pgTable("tilly_dossiers", {
 export type TillyDossier = typeof tillyDossiers.$inferSelect;
 
 /**
+ * S4 nudge log — every nudge Tilly sends + its outcome.
+ *
+ * "Nudge" = any proactive thing Tilly surfaces with the intent to
+ * change behavior: a Tilly Learned card observation, a push from the
+ * notify cron, a reminder firing, a chat-inline tradeoff suggestion.
+ *
+ * `frame` is one of the 15 behavioral-econ frames the bandit picks
+ * from. `context` captures the features at send time (day-of-week,
+ * days-to-paycheck, recent regret score, etc.) — the bandit reads
+ * these retrospectively when updating weights.
+ *
+ * Outcome lifecycle:
+ *   - sent_at populated immediately
+ *   - outcome=null while pending
+ *   - outcome='accepted' if user acted (clicked Yes, kept the reminder,
+ *     opened the app within X hours of push)
+ *   - outcome='dismissed' if user explicitly said no
+ *   - outcome='ignored' if no response within the window (set by a
+ *     sweeper)
+ */
+export const tillyNudges = pgTable("tilly_nudges", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  householdId: varchar("household_id").notNull(),
+  frame: text("frame").notNull(),
+  channel: text("channel").notNull(), // push | in_app_card | chat_inline | reminder_fire
+  body: text("body").notNull(),
+  context: jsonb("context").notNull().default({}),
+  sourceTable: text("source_table"),
+  sourceId: varchar("source_id"),
+  sentAt: timestamp("sent_at").defaultNow().notNull(),
+  outcome: text("outcome"), // accepted | dismissed | ignored | null
+  outcomeAt: timestamp("outcome_at"),
+  outcomeEventId: varchar("outcome_event_id"),
+});
+
+export type TillyNudge = typeof tillyNudges.$inferSelect;
+
+/**
  * Subscription detection table (spec §4.1 Home tile, §4.4 Credit "protected"
  * card, §5.7 protective surface).
  *

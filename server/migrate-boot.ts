@@ -204,6 +204,24 @@ const CRITICAL_STATEMENTS: string[] = [
     "generated_at" timestamp DEFAULT now() NOT NULL
   )`,
 
+  // S4 nudge log — every proactive Tilly action + its outcome. Powers
+  // S5 bandit's reward signal.
+  `CREATE TABLE IF NOT EXISTS "tilly_nudges" (
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "user_id" varchar NOT NULL,
+    "household_id" varchar NOT NULL,
+    "frame" text NOT NULL,
+    "channel" text NOT NULL,
+    "body" text NOT NULL,
+    "context" jsonb NOT NULL DEFAULT '{}'::jsonb,
+    "source_table" text,
+    "source_id" varchar,
+    "sent_at" timestamp DEFAULT now() NOT NULL,
+    "outcome" text,
+    "outcome_at" timestamp,
+    "outcome_event_id" varchar
+  )`,
+
   // Indexes (idempotent)
   `CREATE INDEX IF NOT EXISTS "tilly_memory_user_active_idx" ON "tilly_memory" ("user_id", "archived_at")`,
   `CREATE INDEX IF NOT EXISTS "subscriptions_household_status_idx" ON "subscriptions" ("household_id", "status")`,
@@ -219,6 +237,10 @@ const CRITICAL_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS "tilly_memory_v2_user_kind_idx" ON "tilly_memory_v2" ("user_id", "kind")`,
   // Dossier read on every chat turn: latest-per-user.
   `CREATE INDEX IF NOT EXISTS "tilly_dossiers_user_generated_idx" ON "tilly_dossiers" ("user_id", "generated_at" DESC)`,
+  // Bandit reads pending nudges (outcome IS NULL) per user; ignore-sweeper
+  // queries by sent_at.
+  `CREATE INDEX IF NOT EXISTS "tilly_nudges_user_sent_idx" ON "tilly_nudges" ("user_id", "sent_at" DESC)`,
+  `CREATE INDEX IF NOT EXISTS "tilly_nudges_pending_idx" ON "tilly_nudges" ("user_id", "outcome") WHERE "outcome" IS NULL`,
 ];
 
 export async function applyBootMigrations(): Promise<{

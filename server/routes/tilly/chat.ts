@@ -25,6 +25,7 @@ import {
   tillyReminders,
   tillyEvents,
   tillyMemoryV2,
+  tillyNudges,
 } from "../../../shared/schema";
 import { distillUser } from "../../tilly/nightly-distiller";
 import {
@@ -33,6 +34,11 @@ import {
   formatDossierForPrompt,
   DossierContentSchema,
 } from "../../tilly/dossier-rewriter";
+import {
+  recordNudgeSent,
+  resolveNudge,
+  findLatestPendingNudge,
+} from "../../tilly/nudge-log";
 import {
   callTilly,
 } from "../../tilly/persona";
@@ -415,6 +421,25 @@ export function mountTillyChatRoutes(app: Express): void {
               sourceTable: "tilly_reminders",
               sourceId: remRow.id,
             });
+            // S4 — A Tilly-promised reminder is an
+            // implementation_intention nudge ("when X happens, do Y").
+            // Outcome resolves either by user cancel (dismissed), by
+            // reminder fire + user action (accepted), or by sweeper
+            // after the fire window passes (ignored).
+            await recordNudgeSent({
+              userId,
+              householdId,
+              frame: "implementation_intention",
+              channel: "chat_inline",
+              body: draft.label,
+              context: {
+                kind: draft.kind,
+                fireAt: draft.fireAt.toISOString(),
+                triggeredByMessage: message.slice(0, 200),
+              },
+              sourceTable: "tilly_reminders",
+              sourceId: remRow.id,
+            });
           }
         } catch (err) {
           console.warn("[chat] reminder persist failed:", err);
@@ -642,6 +667,13 @@ export function mountTillyChatRoutes(app: Express): void {
             sourceTable: "tilly_memory",
             sourceId: recent[0]?.id,
           });
+          // S4 — close the in-app-card nudge that surfaced this
+          // observation. The pattern-cron recorded it with
+          // sourceTable=tilly_memory; we look it up by latest pending.
+          const nudge = await findLatestPendingNudge(userId, {
+            channel: "in_app_card",
+          });
+          if (nudge) await resolveNudge(nudge.id, "dismissed");
         }
         res.json({ ok: true });
       } catch (err) {
@@ -700,6 +732,11 @@ export function mountTillyChatRoutes(app: Express): void {
           sourceTable: "tilly_memory",
           sourceId: memRow.id,
         });
+        // S4 — close the in-app-card nudge as accepted.
+        const pendingNudge = await findLatestPendingNudge(userId, {
+          channel: "in_app_card",
+        });
+        if (pendingNudge) await resolveNudge(pendingNudge.id, "accepted");
         res.json({ ok: true });
       } catch (err) {
         console.error("/api/tilly/learned/remind error:", err);
@@ -767,6 +804,22 @@ export function mountTillyChatRoutes(app: Express): void {
           sourceTable: "tilly_reminders",
           sourceId: id,
         });
+        // S4 — if a reminder_fire nudge for this reminder is pending,
+        // cancellation counts as dismissed. Reminders set proactively
+        // via Tilly's chat are themselves nudges (channel=chat_inline),
+        // mark those dismissed too.
+        const pendingFire = await findLatestPendingNudge(userId, {
+          channel: "reminder_fire",
+        });
+        if (pendingFire && pendingFire.sourceId === id) {
+          await resolveNudge(pendingFire.id, "dismissed");
+        }
+        const pendingChat = await findLatestPendingNudge(userId, {
+          channel: "chat_inline",
+        });
+        if (pendingChat && pendingChat.sourceId === id) {
+          await resolveNudge(pendingChat.id, "dismissed");
+        }
       }
       res.json({ ok: true });
     },
@@ -863,6 +916,76 @@ export function mountTillyChatRoutes(app: Express): void {
             }
           : null,
       });
+    },
+  );
+
+  // S4 — list the recent nudge log for the authed user.
+  app.get(
+    "/api/tilly/_debug/nudges",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const userId = req.user.id;
+      const limit = Math.min(Number(req.query?.limit ?? 20), 100);
+      const rows = await db
+        .select()
+        .from(tillyNudges)
+        .where(eq(tillyNudges.userId, userId))
+        .orderBy(desc(tillyNudges.sentAt))
+        .limit(limit);
+      res.json({
+        nudges: rows.map((r) => ({
+          id: r.id,
+          frame: r.frame,
+          channel: r.channel,
+          body: r.body,
+          context: r.context,
+          outcome: r.outcome,
+          sentAt: r.sentAt.toISOString(),
+          outcomeAt: r.outcomeAt ? r.outcomeAt.toISOString() : null,
+        })),
+      });
+    },
+  );
+
+  // S4 — synthesize an in-app-card nudge + observation memory pair, the
+  // way the weekly pattern-cron would. Lets the e2e test the
+  // remind/dismiss → resolveNudge round-trip without waiting for cron.
+  app.post(
+    "/api/tilly/_debug/seed-pattern",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const userId = req.user.id;
+      const householdId = req.user.coupleId;
+      if (!householdId) return res.status(400).json({ error: "no_household" });
+      const body =
+        typeof req.body?.body === "string" && req.body.body.trim()
+          ? req.body.body.trim()
+          : "$131 spent. Wednesdays are still your soft spot.";
+      const [memRow] = await db
+        .insert(tillyMemory)
+        .values({
+          userId,
+          householdId,
+          kind: "observation",
+          body,
+          source: "inferred",
+          dateLabel: "This week",
+          isMostRecent: true,
+        })
+        .returning();
+      const nudgeId = await recordNudgeSent({
+        userId,
+        householdId,
+        frame: "loss_aversion",
+        channel: "in_app_card",
+        body,
+        context: { source: "debug_seed" },
+        sourceTable: "tilly_memory",
+        sourceId: memRow.id,
+      });
+      res.json({ ok: true, observationId: memRow.id, nudgeId });
     },
   );
 }
