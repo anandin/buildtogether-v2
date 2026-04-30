@@ -153,7 +153,11 @@ ${memoriesBlock}
 
 Return the updated dossier JSON per the schema.`;
 
-  const llm = new OpenRouterLLM(input.modelId ?? "anthropic/claude-sonnet-4.6");
+  // Default to Haiku 4.5 — cheap, fast, and we've verified it accepts
+  // OpenRouter's response_format=json_schema for object-with-arrays
+  // schemas. Sonnet 4.6 currently 400s on the same schema shape; pass
+  // a modelId override if you want to opt back in later.
+  const llm = new OpenRouterLLM(input.modelId ?? "anthropic/claude-haiku-4.5");
   let dossier: DossierContent;
   try {
     dossier = await llm.structuredOutput<DossierContent>({
