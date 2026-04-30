@@ -39,6 +39,7 @@ import {
   resolveNudge,
   findLatestPendingNudge,
 } from "../../tilly/nudge-log";
+import { pickFrame, getFrameStats } from "../../tilly/frame-bandit";
 import {
   callTilly,
 } from "../../tilly/persona";
@@ -975,17 +976,74 @@ export function mountTillyChatRoutes(app: Express): void {
           isMostRecent: true,
         })
         .returning();
+      const pick = await pickFrame(userId, {
+        candidates: [
+          "loss_aversion",
+          "social_proof",
+          "goal_gradient",
+          "fresh_start",
+          "implementation_intention",
+          "habit_loop",
+          "sdt_competence",
+        ],
+      });
       const nudgeId = await recordNudgeSent({
         userId,
         householdId,
-        frame: "loss_aversion",
+        frame: pick.frame,
         channel: "in_app_card",
         body,
-        context: { source: "debug_seed" },
+        context: {
+          source: "debug_seed",
+          banditExpected: pick.expectedAccept,
+        },
         sourceTable: "tilly_memory",
         sourceId: memRow.id,
       });
-      res.json({ ok: true, observationId: memRow.id, nudgeId });
+      res.json({
+        ok: true,
+        observationId: memRow.id,
+        nudgeId,
+        frame: pick.frame,
+        banditExpected: pick.expectedAccept,
+      });
+    },
+  );
+
+  // S5 — return the per-frame stats for the authed user.
+  app.get(
+    "/api/tilly/_debug/bandit",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const stats = await getFrameStats(req.user.id);
+      res.json({
+        frames: stats
+          .map((s) => ({
+            frame: s.frame,
+            accepted: s.accepted,
+            notAccepted: s.notAccepted,
+            pending: s.pending,
+            alpha: Number(s.alpha.toFixed(2)),
+            beta: Number(s.beta.toFixed(2)),
+            expectedAccept: Number(s.expectedAccept.toFixed(3)),
+          }))
+          .sort((a, b) => b.expectedAccept - a.expectedAccept),
+      });
+    },
+  );
+
+  // S5 — pick a frame right now (used by admin/test). Body: { candidates? }.
+  app.post(
+    "/api/tilly/_debug/pick-frame",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const candidates = Array.isArray(req.body?.candidates)
+        ? req.body.candidates
+        : undefined;
+      const pick = await pickFrame(req.user.id, { candidates });
+      res.json(pick);
     },
   );
 }

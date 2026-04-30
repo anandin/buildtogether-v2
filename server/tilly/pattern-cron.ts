@@ -12,6 +12,7 @@ import { db } from "../db";
 import { households, members, tillyMemory, users } from "../../shared/schema";
 import { buildWeeklyPattern } from "./spend-pattern";
 import { recordNudgeSent } from "./nudge-log";
+import { pickFrame } from "./frame-bandit";
 
 /**
  * Resolve the "owner user" for a household. Tries members.role='owner'
@@ -91,19 +92,34 @@ export async function runPatternDetectionAll(): Promise<{
         .returning();
       observations++;
 
-      // S4 — A pattern observation IS a nudge: it's what the Tilly
-      // Learned card surfaces. Frame: loss_aversion, since the card
-      // leads with "Wednesdays are still your soft spot" (the loss
-      // they keep taking) before offering the remind/dismiss choice.
+      // S5 — Bandit picks the frame. Candidate set is the "describing
+      // a recurring spend" subset; bias_observed/preference frames
+      // don't make sense for this surface. Cold-start prior gives
+      // loss_aversion the head start the literature supports.
+      const pick = await pickFrame(userId, {
+        candidates: [
+          "loss_aversion",
+          "social_proof",
+          "goal_gradient",
+          "fresh_start",
+          "implementation_intention",
+          "habit_loop",
+          "sdt_competence",
+        ],
+      });
+
+      // S4 — record the in-app-card nudge with the bandit-picked frame.
       await recordNudgeSent({
         userId,
         householdId: h.id,
-        frame: "loss_aversion",
+        frame: pick.frame,
         channel: "in_app_card",
         body,
         context: {
           source: "pattern_detection",
           weeklySpent: pattern.spent ?? null,
+          banditExpected: pick.expectedAccept,
+          banditSamples: pick.samples ?? null,
         },
         sourceTable: "tilly_memory",
         sourceId: memRow.id,
