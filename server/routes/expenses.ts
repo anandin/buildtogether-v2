@@ -21,6 +21,33 @@ import { db } from "../db";
 import { expenses } from "../../shared/schema";
 import { getLLM } from "../tilly/llm/factory";
 import { runProtectionsForHousehold } from "../tilly/protections-engine";
+import { emitEventAsync } from "../tilly/event-emitter";
+
+function emitExpenseLogged(
+  row: typeof expenses.$inferSelect,
+  source: "text" | "voice" | "photo",
+): void {
+  // Manual entries always have a user (from req.user.id); skip emit on the
+  // edge case of a Plaid-imported row landing here (which shouldn't happen
+  // through these routes, but the column is nullable in the schema).
+  if (!row.userId) return;
+  emitEventAsync({
+    userId: row.userId,
+    householdId: row.coupleId,
+    kind: "expense_logged",
+    payload: {
+      amount: row.amount,
+      merchant: row.merchant,
+      category: row.category,
+      description: row.description,
+      source,
+      isRecurring: row.isRecurring,
+      intent: row.intent ?? null,
+    },
+    sourceTable: "expenses",
+    sourceId: row.id,
+  });
+}
 
 const ParsedExpenseSchema = z.object({
   amount: z.number().describe("Dollar amount as a positive number, no $."),
@@ -319,6 +346,8 @@ export function mountExpensesRoutes(app: Express): void {
       })
       .returning();
 
+    emitExpenseLogged(row, body.source === "manual_voice" ? "voice" : "text");
+
     // Inline protections sweep — fast (rule-based, no LLM) so it's safe
     // to block the response on. If it errors we still return the saved
     // expense.
@@ -359,6 +388,7 @@ export function mountExpensesRoutes(app: Express): void {
             isRecurring: parsed.isRecurring,
           })
           .returning();
+        emitExpenseLogged(row, "voice");
         // needsAmount lets the client surface a "Tilly couldn't tell — tap
         // to set the amount" prompt instead of silently saving a $0 row.
         res.json({
@@ -408,6 +438,7 @@ export function mountExpensesRoutes(app: Express): void {
             receiptImage: "captured",
           })
           .returning();
+        emitExpenseLogged(row, "photo");
         res.json({
           ok: true,
           expense: row,

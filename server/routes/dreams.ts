@@ -12,6 +12,7 @@ import { eq, and, sql } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { db } from "../db";
 import { goals, goalContributions } from "../../shared/schema";
+import { emitEventAsync } from "../tilly/event-emitter";
 
 type WireDream = {
   id: string;
@@ -217,6 +218,19 @@ export function mountDreamsRoutes(app: Express): void {
         return updated;
       });
       if (!dream) return res.status(404).json({ error: "dream not found" });
+      emitEventAsync({
+        userId: req.user.id,
+        householdId,
+        kind: "dream_contributed",
+        payload: {
+          amount,
+          dreamName: dream.name,
+          newSaved: dream.savedAmount,
+          target: dream.targetAmount,
+        },
+        sourceTable: "goals",
+        sourceId: dream.id,
+      });
       res.json({ dream: rowToWire(dream) });
     } catch (err) {
       console.error("/api/dreams/:id/contribute error:", err);

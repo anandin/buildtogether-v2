@@ -164,12 +164,29 @@ const CRITICAL_STATEMENTS: string[] = [
   `ALTER TABLE "expenses" ADD COLUMN IF NOT EXISTS "intent" text`,
   `ALTER TABLE "expenses" ADD COLUMN IF NOT EXISTS "nudge" text`,
 
+  // Tilly event log — append-only truth tape feeding the memory pipeline
+  // (S2 distiller, S3 dossier, S5 bandit). Every meaningful agent/user
+  // action lands here so upper layers can be rebuilt from L1.
+  `CREATE TABLE IF NOT EXISTS "tilly_events" (
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "user_id" varchar NOT NULL,
+    "household_id" varchar NOT NULL,
+    "kind" text NOT NULL,
+    "ts" timestamp DEFAULT now() NOT NULL,
+    "payload" jsonb NOT NULL DEFAULT '{}'::jsonb,
+    "source_table" text,
+    "source_id" varchar
+  )`,
+
   // Indexes (idempotent)
   `CREATE INDEX IF NOT EXISTS "tilly_memory_user_active_idx" ON "tilly_memory" ("user_id", "archived_at")`,
   `CREATE INDEX IF NOT EXISTS "subscriptions_household_status_idx" ON "subscriptions" ("household_id", "status")`,
   `CREATE INDEX IF NOT EXISTS "protections_user_status_idx" ON "protections" ("user_id", "status")`,
   `CREATE INDEX IF NOT EXISTS "push_tokens_user_active_idx" ON "push_tokens" ("user_id", "disabled_at")`,
   `CREATE INDEX IF NOT EXISTS "tilly_reminders_due_idx" ON "tilly_reminders" ("status", "fire_at")`,
+  // Distiller scans by (user_id, ts) every night to pull last-24h events.
+  `CREATE INDEX IF NOT EXISTS "tilly_events_user_ts_idx" ON "tilly_events" ("user_id", "ts" DESC)`,
+  `CREATE INDEX IF NOT EXISTS "tilly_events_kind_ts_idx" ON "tilly_events" ("kind", "ts" DESC)`,
 ];
 
 export async function applyBootMigrations(): Promise<{

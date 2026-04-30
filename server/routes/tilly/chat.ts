@@ -37,6 +37,7 @@ import { retrieveContextSnippets } from "../../tilly/retriever";
 import { assertUnderCap } from "../../tilly/usage";
 import { buildFinancialStateSummary } from "../../tilly/state-summary";
 import { extractReminderFromReply } from "../../tilly/reminder-classifier";
+import { emitEventAsync } from "../../tilly/event-emitter";
 import {
   isValidTone,
   DEFAULT_TONE,
@@ -244,6 +245,14 @@ export function mountTillyChatRoutes(app: Express): void {
           intent: isAffordabilityQuestion(message) ? "affordability" : "chat",
         })
         .returning();
+      emitEventAsync({
+        userId,
+        householdId,
+        kind: "chat_user_msg",
+        payload: { content: message, intent: userRow.intent ?? "chat" },
+        sourceTable: "guardian_conversations",
+        sourceId: userRow.id,
+      });
 
       // 2. Generate reply
       let reply: WireMessage;
@@ -305,6 +314,20 @@ export function mountTillyChatRoutes(app: Express): void {
           note: analysisPayload.note,
           createdAt: tillyRow.createdAt.toISOString(),
         };
+        emitEventAsync({
+          userId,
+          householdId,
+          kind: "chat_tilly_reply",
+          payload: {
+            kind: "analysis",
+            title: analysisPayload.title,
+            rows: analysisPayload.rows,
+            note: analysisPayload.note,
+            inReplyTo: userRow.id,
+          },
+          sourceTable: "guardian_conversations",
+          sourceId: tillyRow.id,
+        });
       } else {
         // Plain-text Tilly reply with the recent conversation as context.
         const recent = await db
@@ -349,12 +372,28 @@ export function mountTillyChatRoutes(app: Express): void {
         try {
           const draft = await extractReminderFromReply(text, message);
           if (draft) {
-            await db.insert(tillyReminders).values({
+            const [remRow] = await db
+              .insert(tillyReminders)
+              .values({
+                userId,
+                householdId,
+                kind: draft.kind,
+                label: draft.label,
+                fireAt: draft.fireAt,
+              })
+              .returning();
+            emitEventAsync({
               userId,
               householdId,
-              kind: draft.kind,
-              label: draft.label,
-              fireAt: draft.fireAt,
+              kind: "reminder_created",
+              payload: {
+                label: draft.label,
+                kind: draft.kind,
+                fireAt: draft.fireAt.toISOString(),
+                triggeredByMessage: message,
+              },
+              sourceTable: "tilly_reminders",
+              sourceId: remRow.id,
             });
           }
         } catch (err) {
@@ -378,6 +417,18 @@ export function mountTillyChatRoutes(app: Express): void {
           body: text,
           createdAt: tillyRow.createdAt.toISOString(),
         };
+        emitEventAsync({
+          userId,
+          householdId,
+          kind: "chat_tilly_reply",
+          payload: {
+            kind: "text",
+            body: text,
+            inReplyTo: userRow.id,
+          },
+          sourceTable: "guardian_conversations",
+          sourceId: tillyRow.id,
+        });
       }
 
       // 3. Memory extraction — fire & forget. Do NOT await. Failures are logged
@@ -542,6 +593,7 @@ export function mountTillyChatRoutes(app: Express): void {
     async (req: Request, res: Response) => {
       if (!req.user) return res.status(401).json({ error: "auth required" });
       const userId = req.user.id;
+      const householdId = req.user.coupleId;
       try {
         const recent = await db
           .select()
@@ -560,6 +612,16 @@ export function mountTillyChatRoutes(app: Express): void {
             .update(tillyMemory)
             .set({ archivedAt: new Date() })
             .where(eq(tillyMemory.id, recent[0].id));
+        }
+        if (householdId) {
+          emitEventAsync({
+            userId,
+            householdId,
+            kind: "learned_dismissed",
+            payload: { observationBody: recent[0]?.body ?? null },
+            sourceTable: "tilly_memory",
+            sourceId: recent[0]?.id,
+          });
         }
         res.json({ ok: true });
       } catch (err) {
@@ -598,14 +660,25 @@ export function mountTillyChatRoutes(app: Express): void {
           .limit(1);
         const obsBody = recent[0]?.body ?? "this week's pattern";
 
-        await db.insert(tillyMemory).values({
+        const [memRow] = await db
+          .insert(tillyMemory)
+          .values({
+            userId,
+            householdId,
+            kind: "preference",
+            body: `They asked me to nudge them the night before — re: ${obsBody}`,
+            source: "action",
+            dateLabel: "Today",
+            isMostRecent: true,
+          })
+          .returning();
+        emitEventAsync({
           userId,
           householdId,
-          kind: "preference",
-          body: `They asked me to nudge them the night before — re: ${obsBody}`,
-          source: "action",
-          dateLabel: "Today",
-          isMostRecent: true,
+          kind: "learned_remind_accepted",
+          payload: { observationBody: obsBody },
+          sourceTable: "tilly_memory",
+          sourceId: memRow.id,
         });
         res.json({ ok: true });
       } catch (err) {
@@ -664,6 +737,17 @@ export function mountTillyChatRoutes(app: Express): void {
         .where(
           and(eq(tillyReminders.id, id), eq(tillyReminders.userId, userId)),
         );
+      const householdId = req.user.coupleId;
+      if (householdId) {
+        emitEventAsync({
+          userId,
+          householdId,
+          kind: "reminder_cancelled",
+          payload: { reminderId: id },
+          sourceTable: "tilly_reminders",
+          sourceId: id,
+        });
+      }
       res.json({ ok: true });
     },
   );

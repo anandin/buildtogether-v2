@@ -866,6 +866,32 @@ export const tillyReminders = pgTable("tilly_reminders", {
 export type TillyReminder = typeof tillyReminders.$inferSelect;
 
 /**
+ * Tilly event log — append-only truth tape that everything else (typed
+ * memories, dossier, bandit) is derived from. Every meaningful user/agent
+ * action lands here so we can rebuild upper-tier memory if we change the
+ * schema. Never edit a row; never delete (cold-archive after 180d).
+ *
+ * `kind` is an open string — each emit site picks a name; the distiller
+ * reads them. `payload` is the unstructured truth (typed at emit time
+ * via the EventPayload union in server/tilly/event-emitter.ts).
+ */
+export const tillyEvents = pgTable("tilly_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  householdId: varchar("household_id").notNull(),
+  kind: text("kind").notNull(),
+  ts: timestamp("ts").defaultNow().notNull(),
+  payload: jsonb("payload").notNull().default({}),
+  // Optional pointer to the row this event is *about* — e.g. expense.id,
+  // tilly_reminders.id, guardian_conversations.id. Useful for joins when
+  // distilling memories without re-parsing the payload.
+  sourceTable: text("source_table"),
+  sourceId: varchar("source_id"),
+});
+
+export type TillyEvent = typeof tillyEvents.$inferSelect;
+
+/**
  * Subscription detection table (spec §4.1 Home tile, §4.4 Credit "protected"
  * card, §5.7 protective surface).
  *
