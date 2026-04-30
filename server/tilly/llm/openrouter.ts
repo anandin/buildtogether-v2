@@ -123,7 +123,7 @@ async function callOpenRouter(body: ChatRequestBody): Promise<{
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 500)}`);
+    throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 2000)}`);
   }
   const json = (await res.json()) as any;
   const text = json?.choices?.[0]?.message?.content ?? "";
