@@ -194,6 +194,16 @@ const CRITICAL_STATEMENTS: string[] = [
     "valid_to" timestamp
   )`,
 
+  // S3 dossier — the "what I believe about this user" doc Tilly reads
+  // on every chat turn. One row per (user, generation); latest wins.
+  `CREATE TABLE IF NOT EXISTS "tilly_dossiers" (
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "user_id" varchar NOT NULL,
+    "content" jsonb NOT NULL,
+    "memories_considered" integer NOT NULL DEFAULT 0,
+    "generated_at" timestamp DEFAULT now() NOT NULL
+  )`,
+
   // Indexes (idempotent)
   `CREATE INDEX IF NOT EXISTS "tilly_memory_user_active_idx" ON "tilly_memory" ("user_id", "archived_at")`,
   `CREATE INDEX IF NOT EXISTS "subscriptions_household_status_idx" ON "subscriptions" ("household_id", "status")`,
@@ -207,6 +217,8 @@ const CRITICAL_STATEMENTS: string[] = [
   // filter by valid_to IS NULL.
   `CREATE INDEX IF NOT EXISTS "tilly_memory_v2_user_created_idx" ON "tilly_memory_v2" ("user_id", "created_at" DESC)`,
   `CREATE INDEX IF NOT EXISTS "tilly_memory_v2_user_kind_idx" ON "tilly_memory_v2" ("user_id", "kind")`,
+  // Dossier read on every chat turn: latest-per-user.
+  `CREATE INDEX IF NOT EXISTS "tilly_dossiers_user_generated_idx" ON "tilly_dossiers" ("user_id", "generated_at" DESC)`,
 ];
 
 export async function applyBootMigrations(): Promise<{

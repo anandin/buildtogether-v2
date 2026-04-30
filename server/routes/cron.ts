@@ -21,6 +21,7 @@ import { runProtectionsAll } from "../tilly/protections-engine";
 import { runNotify } from "../tilly/notify-cron";
 import { runPatternDetectionAll } from "../tilly/pattern-cron";
 import { distillAllActiveUsers } from "../tilly/nightly-distiller";
+import { rewriteDossiersForActiveUsers } from "../tilly/dossier-rewriter";
 
 function requireCron(req: Request, res: Response, next: NextFunction) {
   const expected = process.env.CRON_SECRET;
@@ -183,6 +184,24 @@ export function mountCronRoutes(app: Express): void {
         console.error("/api/cron/distill-memories error:", err);
         const msg = err instanceof Error ? err.message : String(err);
         res.status(500).json({ error: "distiller cron failed", debug: msg });
+      }
+    },
+  );
+
+  // S3 — nightly dossier rewriter. Runs after the distiller (at 03:30
+  // UTC) so it sees today's freshly-distilled typed memories.
+  app.post(
+    "/api/cron/rewrite-dossiers",
+    requireCron,
+    async (_req: Request, res: Response) => {
+      try {
+        const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const r = await rewriteDossiersForActiveUsers(since);
+        res.json({ ok: true, ...r });
+      } catch (err) {
+        console.error("/api/cron/rewrite-dossiers error:", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error: "dossier cron failed", debug: msg });
       }
     },
   );

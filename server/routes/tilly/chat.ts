@@ -28,6 +28,12 @@ import {
 } from "../../../shared/schema";
 import { distillUser } from "../../tilly/nightly-distiller";
 import {
+  rewriteDossier,
+  getLatestDossier,
+  formatDossierForPrompt,
+  DossierContentSchema,
+} from "../../tilly/dossier-rewriter";
+import {
   callTilly,
 } from "../../tilly/persona";
 import {
@@ -346,11 +352,22 @@ export function mountTillyChatRoutes(app: Express): void {
             content: r.content,
           }));
 
-        const [memSnippets, state] = await Promise.all([
+        const [memSnippets, state, dossierRow] = await Promise.all([
           retrieveContextSnippets(userId, message),
           buildFinancialStateSummary(householdId),
+          getLatestDossier(userId),
         ]);
         const sections: string[] = [];
+        // S3 dossier — what Tilly believes about this student. Comes
+        // FIRST so the persona has the user model before situational
+        // context. Validated through the Zod schema before formatting
+        // so a corrupt jsonb row can't poison the prompt.
+        if (dossierRow) {
+          const parsed = DossierContentSchema.safeParse(dossierRow.content);
+          if (parsed.success) {
+            sections.push(formatDossierForPrompt(parsed.data));
+          }
+        }
         if (state.hasData) {
           sections.push(
             `Their current state — use this when they ask about money:\n${state.text}\n\nDO NOT say you can't see their balance or that you need them to connect; the data above is your access. If a specific thing isn't listed (e.g. credit utilization), say you don't see THAT specific thing yet.`,
@@ -814,6 +831,37 @@ export function mountTillyChatRoutes(app: Express): void {
           sourceEventIds: r.sourceEventIds,
           createdAt: r.createdAt.toISOString(),
         })),
+      });
+    },
+  );
+
+  // S3 — manually trigger a dossier rewrite for the authed user.
+  app.post(
+    "/api/tilly/_debug/rewrite-dossier",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const userId = req.user.id;
+      const r = await rewriteDossier({ userId });
+      res.json(r);
+    },
+  );
+
+  // S3 — read the latest dossier for the authed user.
+  app.get(
+    "/api/tilly/_debug/dossier",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const dossier = await getLatestDossier(req.user.id);
+      res.json({
+        dossier: dossier
+          ? {
+              content: dossier.content,
+              memoriesConsidered: dossier.memoriesConsidered,
+              generatedAt: dossier.generatedAt.toISOString(),
+            }
+          : null,
       });
     },
   );

@@ -932,6 +932,32 @@ export const tillyMemoryV2 = pgTable("tilly_memory_v2", {
 export type TillyMemoryV2 = typeof tillyMemoryV2.$inferSelect;
 
 /**
+ * S3 user dossier — Tilly's "what I believe about Riley" file. Rebuilt
+ * nightly by the dossier rewriter from the typed memory layer
+ * (tilly_memory_v2). Read on every chat turn and injected into the
+ * system prompt before the persona block.
+ *
+ * One row per (user, generation). Read pattern is "latest row per user"
+ * — cheap with the (user_id, generated_at desc) index. Keeping history
+ * lets us A/B prompt-injection effects and roll back bad rewrites.
+ *
+ * Content shape (validated by Zod in dossier-rewriter.ts):
+ *   identity, money_arc, soft_spots[], nudge_response_profile{},
+ *   recent_decisions[], trust_signals[], open_loops[]
+ */
+export const tillyDossiers = pgTable("tilly_dossiers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  content: jsonb("content").notNull(),
+  // How many memories fed this rewrite — for telemetry and skipping
+  // identical rebuilds.
+  memoriesConsidered: integer("memories_considered").notNull().default(0),
+  generatedAt: timestamp("generated_at").defaultNow().notNull(),
+});
+
+export type TillyDossier = typeof tillyDossiers.$inferSelect;
+
+/**
  * Subscription detection table (spec §4.1 Home tile, §4.4 Credit "protected"
  * card, §5.7 protective surface).
  *
