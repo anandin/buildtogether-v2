@@ -105,6 +105,10 @@ const CRITICAL_STATEMENTS: string[] = [
   // Phase 2.5: admin + LLM config + RAG embeddings
   `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "is_admin" boolean NOT NULL DEFAULT false`,
   `UPDATE "users" SET "is_admin" = true WHERE "email" = 'anand.inbasekaran@gmail.com'`,
+  // The long-lived e2e QA account also needs admin so /admin/memory
+  // scenarios can drive the inspector. Safe — this email is hardcoded
+  // throughout the e2e suite + is the only seeded test account.
+  `UPDATE "users" SET "is_admin" = true WHERE "email" = 'riley-qa-2026-04-28@buildtogether.test'`,
   `ALTER TABLE "tilly_memory" ADD COLUMN IF NOT EXISTS "embedding" real[]`,
   `CREATE TABLE IF NOT EXISTS "tilly_config" (
     "id" varchar PRIMARY KEY DEFAULT 'default',
