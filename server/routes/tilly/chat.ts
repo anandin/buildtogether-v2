@@ -280,6 +280,54 @@ function rowToWire(
   };
 }
 
+/**
+ * Decide whether two reminder labels describe the same chore. Used to
+ * dedup before insert so Tilly doesn't pile up "Call landlord", "Call
+ * your landlord", "Call your landlord about the lease" as 3 separate
+ * reminders for the same intent.
+ *
+ * Strategy:
+ *   1. Normalize both — lowercase, strip punctuation, collapse whitespace.
+ *   2. If either normalized form is a substring of the other, they match.
+ *   3. Otherwise compute Jaccard similarity over word tokens (set
+ *      intersection / set union, weighted toward content words). Match
+ *      if >= 0.6.
+ *
+ * Conservative: false positives are worse than false negatives because
+ * a false positive silently swallows a real reminder. Substring + 0.6
+ * Jaccard is loose enough to catch the obvious dupes, tight enough that
+ * "Call your landlord" and "Call your bank" don't collide.
+ */
+function isReminderDuplicate(a: string, b: string): boolean {
+  const norm = (s: string) =>
+    s
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  const na = norm(a);
+  const nb = norm(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (na.includes(nb) || nb.includes(na)) return true;
+
+  const STOPWORDS = new Set([
+    "the", "a", "an", "to", "for", "of", "in", "on", "at", "and", "or",
+    "your", "my", "this", "that", "it", "i", "me", "you", "is", "are",
+    "be", "by", "with", "about",
+  ]);
+  const tokens = (s: string) =>
+    new Set(s.split(" ").filter((t) => t.length > 1 && !STOPWORDS.has(t)));
+  const ta = tokens(na);
+  const tb = tokens(nb);
+  if (ta.size === 0 || tb.size === 0) return false;
+  let intersect = 0;
+  for (const t of ta) if (tb.has(t)) intersect += 1;
+  const union = ta.size + tb.size - intersect;
+  const jaccard = intersect / union;
+  return jaccard >= 0.6;
+}
+
 // ─── Reminder extraction ───────────────────────────────────────────────────
 //
 // Tilly's prompt instructs her to emit `<reminder kind="..." fireAt="ISO"
@@ -522,48 +570,76 @@ export function mountTillyChatRoutes(app: Express): void {
         try {
           const draft = await extractReminderFromReply(text, message);
           if (draft) {
-            const [remRow] = await db
-              .insert(tillyReminders)
-              .values({
+            // Dedup before insert. The classifier was caught firing on
+            // the same intent across multiple turns ("Call your landlord
+            // about the lease" + "Call your landlord." minutes apart),
+            // resulting in 2-3 visible reminders for the same chore. Look
+            // up existing scheduled reminders within ±1h of the new
+            // fireAt and skip if any has a fuzzy-matching label.
+            const winStart = new Date(draft.fireAt.getTime() - 60 * 60 * 1000);
+            const winEnd = new Date(draft.fireAt.getTime() + 60 * 60 * 1000);
+            const existing = await db
+              .select()
+              .from(tillyReminders)
+              .where(
+                and(
+                  eq(tillyReminders.userId, userId),
+                  eq(tillyReminders.status, "scheduled"),
+                  sql`${tillyReminders.fireAt} BETWEEN ${winStart.toISOString()} AND ${winEnd.toISOString()}`,
+                ),
+              )
+              .limit(20);
+            const fuzzyMatch = existing.find((r) =>
+              isReminderDuplicate(r.label, draft.label),
+            );
+            if (fuzzyMatch) {
+              console.log(
+                `[reminder] dedup hit — skipping insert. New="${draft.label}", existing="${fuzzyMatch.label}" (id=${fuzzyMatch.id})`,
+              );
+            } else {
+              const [remRow] = await db
+                .insert(tillyReminders)
+                .values({
+                  userId,
+                  householdId,
+                  kind: draft.kind,
+                  label: draft.label,
+                  fireAt: draft.fireAt,
+                })
+                .returning();
+              emitEventAsync({
                 userId,
                 householdId,
-                kind: draft.kind,
-                label: draft.label,
-                fireAt: draft.fireAt,
-              })
-              .returning();
-            emitEventAsync({
-              userId,
-              householdId,
-              kind: "reminder_created",
-              payload: {
-                label: draft.label,
-                kind: draft.kind,
-                fireAt: draft.fireAt.toISOString(),
-                triggeredByMessage: message,
-              },
-              sourceTable: "tilly_reminders",
-              sourceId: remRow.id,
-            });
-            // S4 — A Tilly-promised reminder is an
-            // implementation_intention nudge ("when X happens, do Y").
-            // Outcome resolves either by user cancel (dismissed), by
-            // reminder fire + user action (accepted), or by sweeper
-            // after the fire window passes (ignored).
-            await recordNudgeSent({
-              userId,
-              householdId,
-              frame: "implementation_intention",
-              channel: "chat_inline",
-              body: draft.label,
-              context: {
-                kind: draft.kind,
-                fireAt: draft.fireAt.toISOString(),
-                triggeredByMessage: message.slice(0, 200),
-              },
-              sourceTable: "tilly_reminders",
-              sourceId: remRow.id,
-            });
+                kind: "reminder_created",
+                payload: {
+                  label: draft.label,
+                  kind: draft.kind,
+                  fireAt: draft.fireAt.toISOString(),
+                  triggeredByMessage: message,
+                },
+                sourceTable: "tilly_reminders",
+                sourceId: remRow.id,
+              });
+              // S4 — A Tilly-promised reminder is an
+              // implementation_intention nudge ("when X happens, do Y").
+              // Outcome resolves either by user cancel (dismissed), by
+              // reminder fire + user action (accepted), or by sweeper
+              // after the fire window passes (ignored).
+              await recordNudgeSent({
+                userId,
+                householdId,
+                frame: "implementation_intention",
+                channel: "chat_inline",
+                body: draft.label,
+                context: {
+                  kind: draft.kind,
+                  fireAt: draft.fireAt.toISOString(),
+                  triggeredByMessage: message.slice(0, 200),
+                },
+                sourceTable: "tilly_reminders",
+                sourceId: remRow.id,
+              });
+            }
           }
         } catch (err) {
           console.warn("[chat] reminder persist failed:", err);
