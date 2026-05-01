@@ -14,6 +14,7 @@ import { requireAuth } from "../../middleware/auth";
 import { db } from "../../db";
 import { tillyScoutJobs } from "../../../shared/schema";
 import { enqueueScout } from "../../tilly/scout/orchestrator";
+import { tavilySearch } from "../../tilly/scout/tavily";
 
 export function mountScoutRoutes(app: Express): void {
   app.post(
@@ -68,6 +69,27 @@ export function mountScoutRoutes(app: Express): void {
               ? (r.result as { summary?: string }).summary
               : null,
         })),
+      });
+    },
+  );
+
+  // Debug: hit Tavily directly through the same client the orchestrator
+  // uses, so we can see exactly what the function-side fetch returns.
+  app.post(
+    "/api/tilly/_debug/tavily",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const query = String(req.body?.query ?? "Levis 501 jeans Toronto");
+      const hasKey = !!process.env.TAVILY_API_KEY;
+      const keyPrefix = (process.env.TAVILY_API_KEY ?? "").slice(0, 10);
+      const r = await tavilySearch({ query, maxResults: 3 });
+      res.json({
+        env: { hasKey, keyPrefix },
+        query,
+        resultCount: r.results.length,
+        responseTimeMs: r.responseTimeMs,
+        firstResult: r.results[0] ?? null,
       });
     },
   );
