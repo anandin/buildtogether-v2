@@ -1,18 +1,21 @@
 /**
  * 14 — S9 chat scout flow.
  *
- * Plan:
- *   - go to Tilly tab
- *   - send an affordability question for a buyable item: "can I afford a
- *     pair of $90 Levi's 501 jeans?"
- *   - expect a Tilly analysis reply that includes scoutProposal in
- *     metadata (chat/history exposes it)
- *   - click the "Find me cheaper options" button on that card
- *   - poll chat/history every 2-3s; expect a new scout-kind message
- *     to appear (status: queued/running, then done)
- *   - when status=done, validate options length, source/url/why fields
- *   - screenshots: tilly-empty, after-affordability, scouting,
- *     scout-done
+ * Two things this verifies:
+ *   1. POST /api/tilly/chat/scout writes a scout-kind message into the
+ *      conversation thread, and chat/history serializes it with live
+ *      job status (queued -> running -> done) joined from the scout
+ *      jobs table.
+ *   2. The Tilly chat UI renders the "Tilly is scouting…" bubble while
+ *      the job is in-flight, then transitions to a result card with
+ *      options the moment the history poll picks up status=done.
+ *
+ * The affordability path (LLM populates scoutProposal on the analysis
+ * card → student taps "Find me cheaper options") is exercised
+ * opportunistically — when the LLM honors the structured output. When
+ * it doesn't (Sonnet's structured output is occasionally flaky and the
+ * server falls back to plain text), we still enqueue via the API so
+ * the scout-bubble path itself is always covered.
  */
 const { runScenario } = require("../lib/helpers");
 
@@ -20,82 +23,95 @@ async function scenario({ page, ss, gotoTab, apiCall, sendChat, log }) {
   await gotoTab("Tilly");
   await ss("01-tilly-pre");
 
-  // Quick math affordability question for a clearly buyable item.
-  // The LLM should populate scoutProposal with a concrete query.
   log("sending affordability question for a buyable item");
-  const r = await sendChat("can I afford a pair of $90 Levi's 501 jeans?", {
-    timeoutMs: 60_000,
-  });
-  log(`reply latency ${r.latencyMs}ms, kind=${r.reply?.kind}`);
+  const affordReply = await sendChat(
+    "can I afford a pair of $90 Levi's 501 jeans?",
+    { timeoutMs: 60_000 },
+  );
+  log(
+    `reply latency ${affordReply.latencyMs}ms, kind=${affordReply.reply?.kind}`,
+  );
   await page.waitForTimeout(800);
   await ss("02-after-affordability");
 
-  // Pull chat history to find the analysis message + scoutProposal.
+  // If the LLM returned an analysis card with scoutProposal, exercise
+  // the UI click path. Otherwise we'll hit the API directly below.
   let history = await apiCall("/api/tilly/chat/history");
-  if (history.status !== 200)
-    throw new Error(`history ${history.status}`);
+  if (history.status !== 200) throw new Error(`history ${history.status}`);
   const msgs = history.body?.messages ?? [];
-  const analysis = [...msgs]
+  const analysisWithProposal = [...msgs]
     .reverse()
-    .find((m) => m.role === "tilly" && m.kind === "analysis");
-  if (!analysis) {
-    log(
-      "Tilly didn't return an analysis card for that turn — skipping (LLM occasionally falls through to plain text). " +
-        "Last reply kind: " +
-        (r.reply?.kind ?? "?"),
+    .find(
+      (m) =>
+        m.role === "tilly" && m.kind === "analysis" && m.scoutProposal,
     );
-    return;
-  }
-  if (!analysis.scoutProposal) {
-    log(
-      `analysis card had no scoutProposal — skipping. note: ${String(
-        analysis.note,
-      ).slice(0, 80)}`,
-    );
-    return;
-  }
-  log(`scoutProposal query: "${analysis.scoutProposal.query}"`);
 
-  // Click the "Find me cheaper options" button rendered on the analysis card.
-  const clicked = await page.evaluate(() => {
-    const btn = Array.from(document.querySelectorAll("*")).find(
-      (el) =>
-        el.children.length === 0 &&
-        (el.textContent || "").trim().toLowerCase() ===
-          "find me cheaper options",
-    );
-    if (!btn) return false;
-    let target = btn;
-    // RN Web wraps Pressable in a div; click the nearest pressable parent.
-    for (let i = 0; i < 5 && target; i++) {
-      const role = target.getAttribute && target.getAttribute("role");
-      if (role === "button" || target.tagName === "BUTTON") break;
-      target = target.parentElement;
+  let scoutQuery;
+  let sourceMessageId;
+  let usedUiPath = false;
+  if (analysisWithProposal) {
+    log(`analysis has scoutProposal: "${analysisWithProposal.scoutProposal.query}"`);
+    scoutQuery = analysisWithProposal.scoutProposal.query;
+    sourceMessageId = analysisWithProposal.id;
+    const clicked = await page.evaluate(() => {
+      const btn = Array.from(document.querySelectorAll("*")).find(
+        (el) =>
+          el.children.length === 0 &&
+          (el.textContent || "").trim().toLowerCase() ===
+            "find me cheaper options",
+      );
+      if (!btn) return false;
+      let target = btn;
+      for (let i = 0; i < 5 && target; i++) {
+        const role = target.getAttribute && target.getAttribute("role");
+        if (role === "button" || target.tagName === "BUTTON") break;
+        target = target.parentElement;
+      }
+      if (!target) return false;
+      target.click();
+      return true;
+    });
+    if (clicked) {
+      log("CTA clicked — scout enqueued via UI");
+      usedUiPath = true;
+    } else {
+      log("CTA not directly clickable — falling back to API");
     }
-    if (!target) return false;
-    target.click();
-    return true;
-  });
-  if (!clicked) {
-    // Fall back: the button may have been hidden behind keyboard / rendered
-    // off-screen on the small viewport. Use the API directly so the rest
-    // of the scenario can verify the scout bubble update path.
-    log("CTA element not directly clickable in DOM — falling back to API enqueue");
+  } else {
+    log(
+      "no scoutProposal on this turn (LLM flake or item not classified as buyable) — using API path",
+    );
+    scoutQuery = "Levi's 501 jeans size 32";
+    sourceMessageId =
+      affordReply.reply && affordReply.reply.id ? affordReply.reply.id : null;
+  }
+
+  if (!usedUiPath) {
     const enq = await apiCall("/api/tilly/chat/scout", {
       method: "POST",
       body: JSON.stringify({
-        query: analysis.scoutProposal.query,
+        query: scoutQuery,
         location: "Toronto, ON",
-        sourceMessageId: analysis.id,
+        sourceMessageId,
       }),
     });
     if (enq.status !== 200)
-      throw new Error(`scout enqueue ${enq.status} ${JSON.stringify(enq.body)}`);
+      throw new Error(
+        `scout enqueue ${enq.status} ${JSON.stringify(enq.body)}`,
+      );
     log(`scout enqueued via API: jobId=${enq.body.jobId}`);
-  } else {
-    log("CTA clicked — scout enqueued via UI");
   }
 
+  // If we went through the UI mutation, useTilly already invalidated
+  // the chat history query and the refetchInterval will pulse while
+  // the scout is in-flight. If we went through the API directly the
+  // client hasn't been told anything changed, so reload the page to
+  // force a fresh fetch and let the in-flight pulsing kick in.
+  if (!usedUiPath) {
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(2500);
+    await gotoTab("Tilly");
+  }
   await page.waitForTimeout(2500);
   await ss("03-scouting");
 
@@ -123,11 +139,19 @@ async function scenario({ page, ss, gotoTab, apiCall, sendChat, log }) {
     return;
   }
 
-  // Trigger UI refetch by toggling tab so the bubble renders the done state.
-  await gotoTab("Today");
-  await page.waitForTimeout(800);
-  await gotoTab("Tilly");
-  await page.waitForTimeout(2000);
+  // The bubble should refetch automatically because useTilly() polls
+  // every 2.5s while a scout is queued/running. Give it one full poll
+  // cycle plus a buffer, then scroll to the bottom of the chat so the
+  // result card is in the screenshot frame.
+  await page.waitForTimeout(4000);
+  await page.evaluate(() => {
+    const scrollers = Array.from(document.querySelectorAll("*")).filter(
+      (el) => el.scrollHeight > el.clientHeight + 20,
+    );
+    for (const s of scrollers) s.scrollTop = s.scrollHeight;
+    window.scrollTo(0, document.body.scrollHeight);
+  });
+  await page.waitForTimeout(500);
   await ss("04-scout-done");
 
   if (!Array.isArray(final.options) || final.options.length === 0) {
@@ -143,6 +167,20 @@ async function scenario({ page, ss, gotoTab, apiCall, sendChat, log }) {
   for (const opt of final.options) {
     log(`  [${opt.source}] ${opt.title} — ${opt.price ?? "?"}`);
   }
+
+  // UI-level assertion: the rendered chat must include the source chip
+  // text from at least one option (e.g. "FACEBOOK MARKETPLACE", "THE
+  // BAY"). This proves the scout bubble actually rendered, not just
+  // that the API has the data.
+  const bodyText = await page.evaluate(() => document.body.innerText);
+  const sources = final.options.map((o) => o.source.toUpperCase());
+  const sourceVisible = sources.some((s) => bodyText.toUpperCase().includes(s));
+  if (!sourceVisible) {
+    log(`expected one of ${sources.join(", ")} on screen — scout bubble may not have rendered`);
+    log(`body excerpt: ${bodyText.slice(0, 400)}`);
+    throw new Error("scout bubble did not render in the chat UI");
+  }
+  log(`✓ scout bubble rendered with source chip on screen`);
 }
 
 if (require.main === module) {

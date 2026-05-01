@@ -32,7 +32,25 @@ export interface EnqueueScoutInput {
   location?: string | null;
 }
 
-export async function enqueueScout(input: EnqueueScoutInput): Promise<string> {
+export interface EnqueueScoutOptions {
+  /**
+   * When true (default), the function awaits processScoutJob and only
+   * returns after the scout reaches a terminal state. Vercel's serverless
+   * runtime does NOT reliably keep orphan promises alive after the
+   * response is sent, so the previous void-kickoff pattern stranded jobs
+   * in "running" forever in production. Scout completes in 6-12s — well
+   * inside the 60s function budget — so blocking is safe and dependable.
+   *
+   * Set false ONLY when the caller can prove it has its own out-of-band
+   * mechanism keeping the promise alive (e.g. an Inngest worker).
+   */
+  awaitCompletion?: boolean;
+}
+
+export async function enqueueScout(
+  input: EnqueueScoutInput,
+  opts: EnqueueScoutOptions = {},
+): Promise<string> {
   const [row] = await db
     .insert(tillyScoutJobs)
     .values({
@@ -44,10 +62,17 @@ export async function enqueueScout(input: EnqueueScoutInput): Promise<string> {
     })
     .returning();
 
-  // Kick off the orchestrator without awaiting. Errors get caught and
-  // written back to the job row by processScoutJob itself, so we don't
-  // need a top-level handler here.
-  void processScoutJob(row.id);
+  if (opts.awaitCompletion === false) {
+    // Caller takes ownership of keeping the promise alive (e.g. Inngest).
+    // processScoutJob writes its own success/failure state, so no
+    // top-level handler is needed.
+    void processScoutJob(row.id);
+  } else {
+    // Default: block until terminal. Errors are already caught inside
+    // processScoutJob and written to the job row, so we deliberately
+    // don't await-throw here either.
+    await processScoutJob(row.id);
+  }
 
   return row.id;
 }
