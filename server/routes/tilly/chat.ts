@@ -677,13 +677,15 @@ export function mountTillyChatRoutes(app: Express): void {
         .orderBy(asc(guardianConversations.createdAt))
         .limit(200);
 
-      // Pull every scout job referenced by a scout-intent row in one query
+      // Pull every scout/wait job referenced by an intent row in one query
       // so the wire shape always reflects the live job status (queued ->
-      // running -> done/failed) without N+1 round trips.
+      // running -> done/failed) without N+1 round trips. Both 'scout' and
+      // 'wait' intents share the same tilly_scout_jobs table — the row's
+      // intent + the job's mode determine the rendered card shape.
       const scoutJobIds = rows
         .filter(
           (r) =>
-            r.intent === "scout" &&
+            (r.intent === "scout" || r.intent === "wait") &&
             r.metadata &&
             typeof r.metadata === "object" &&
             "jobId" in r.metadata,
