@@ -33,7 +33,13 @@ const CACHE_TTL_MS = 30_000; // 30s — admin changes propagate within 30s
 const DEFAULTS = {
   id: "default",
   provider: "openrouter" as const,
-  model: "anthropic/claude-opus-4",
+  // Sonnet for chat — Opus 4 was the original default but it took
+  // 18-32s per turn, blowing the e2e suite's 45s timeouts and feeling
+  // sluggish in real use. Sonnet 4.6 handles affordability + plain
+  // chat in 4-10s with the same persona quality. Opus is still
+  // available via /admin if a future change needs the extra
+  // reasoning headroom.
+  model: "anthropic/claude-sonnet-4.5",
   embeddingModel: "openai/text-embedding-3-small",
   retrievalTopK: 5,
   similarityThreshold: 0.65,

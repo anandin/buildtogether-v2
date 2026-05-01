@@ -64,8 +64,9 @@ export const AffordabilityAnalysisSchema = z.object({
         ),
     })
     .nullable()
+    .optional()
     .describe(
-      "ONLY populate when the student is asking about a specific buyable physical item (clothes, electronics, gear, gifts) where a sale or secondhand alternative might exist. Set to null for rent, tuition, food/groceries, services, intangibles, or anything where there isn't a meaningful market for substitutes.",
+      "Populate ONLY when the student is asking about a specific buyable physical item (clothes, electronics, gear, gifts) where a sale or secondhand alternative might exist. Set to null otherwise. Field is optional — omitting is equivalent to null.",
     ),
   waitProposal: z
     .object({
@@ -81,8 +82,9 @@ export const AffordabilityAnalysisSchema = z.object({
         ),
     })
     .nullable()
+    .optional()
     .describe(
-      "ONLY populate when (a) the item has a meaningful seasonal-sale cycle (clothes, electronics, gifts, big-ticket consumer goods) AND (b) the student isn't time-pressured (no event deadline mentioned). Otherwise null. The student will see a 'Should I wait?' button alongside the analysis — only offer it when waiting could plausibly save real money.",
+      "Populate ONLY when (a) the item has a meaningful seasonal-sale cycle AND (b) the student isn't time-pressured. Set to null otherwise. Field is optional — omitting is equivalent to null.",
     ),
 });
 
