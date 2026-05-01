@@ -15,6 +15,7 @@ import type { Express } from "express";
 import { mountTillyChatRoutes } from "./tilly/chat";
 import { mountTillyMemoryRoutes } from "./tilly/memory";
 import { mountTillyInsightsRoutes } from "./tilly/insights";
+import { mountScoutRoutes } from "./tilly/scout";
 import { mountDreamsRoutes } from "./dreams";
 import { mountSubscriptionsRoutes } from "./subscriptions";
 import { mountProtectionsRoutes } from "./protections";
@@ -34,6 +35,7 @@ export function registerTillyRoutes(app: Express): void {
   mountTillyChatRoutes(app);
   mountTillyMemoryRoutes(app);
   mountTillyInsightsRoutes(app);
+  mountScoutRoutes(app);
   mountDreamsRoutes(app);
   mountSubscriptionsRoutes(app);
   mountProtectionsRoutes(app);

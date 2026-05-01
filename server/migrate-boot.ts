@@ -208,6 +208,23 @@ const CRITICAL_STATEMENTS: string[] = [
     "generated_at" timestamp DEFAULT now() NOT NULL
   )`,
 
+  // S8 scout jobs — live substitute / wait-and-save lookups.
+  // Async — Tilly enqueues from chat, orchestrator runs in background,
+  // result writes back here, push notification delivers.
+  `CREATE TABLE IF NOT EXISTS "tilly_scout_jobs" (
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "user_id" varchar NOT NULL,
+    "household_id" varchar NOT NULL,
+    "query" text NOT NULL,
+    "location" text,
+    "status" text NOT NULL DEFAULT 'queued',
+    "result" jsonb,
+    "error_text" text,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "started_at" timestamp,
+    "completed_at" timestamp
+  )`,
+
   // S4 nudge log — every proactive Tilly action + its outcome. Powers
   // S5 bandit's reward signal.
   `CREATE TABLE IF NOT EXISTS "tilly_nudges" (
@@ -245,6 +262,9 @@ const CRITICAL_STATEMENTS: string[] = [
   // queries by sent_at.
   `CREATE INDEX IF NOT EXISTS "tilly_nudges_user_sent_idx" ON "tilly_nudges" ("user_id", "sent_at" DESC)`,
   `CREATE INDEX IF NOT EXISTS "tilly_nudges_pending_idx" ON "tilly_nudges" ("user_id", "outcome") WHERE "outcome" IS NULL`,
+  // Scout jobs: client polls latest by user; recovery scans queued/running.
+  `CREATE INDEX IF NOT EXISTS "tilly_scout_jobs_user_created_idx" ON "tilly_scout_jobs" ("user_id", "created_at" DESC)`,
+  `CREATE INDEX IF NOT EXISTS "tilly_scout_jobs_status_idx" ON "tilly_scout_jobs" ("status", "created_at")`,
 ];
 
 export async function applyBootMigrations(): Promise<{

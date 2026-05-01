@@ -997,6 +997,43 @@ export const tillyNudges = pgTable("tilly_nudges", {
 export type TillyNudge = typeof tillyNudges.$inferSelect;
 
 /**
+ * S8 scout jobs — live "find me cheaper / find me used" lookups.
+ *
+ * Tilly enqueues a job from chat ("can I afford these jeans?" → "want me
+ * to scout?"). The orchestrator runs Tavily + Kijiji + Karrot in
+ * parallel, a cheap LLM picks 3 ranked options, and the result lands
+ * here.
+ *
+ * status lifecycle:
+ *   queued → running → done | failed
+ *
+ * `result` shape (when status='done'):
+ *   { options: [{ source, title, price, location, distanceKm?, url,
+ *                 condition, why }], summary: string }
+ */
+export const tillyScoutJobs = pgTable("tilly_scout_jobs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  householdId: varchar("household_id").notNull(),
+  // What the user is trying to buy. e.g. "Levi's 501 jeans size 32"
+  query: text("query").notNull(),
+  // Optional location hint passed in so Kijiji/Karrot results are local.
+  // City string ("Toronto, ON") for now; later can attach lat/lng.
+  location: text("location"),
+  // Status for client polling.
+  status: text("status").notNull().default("queued"), // queued | running | done | failed
+  // Final synthesized result (null until status='done').
+  result: jsonb("result"),
+  // Free-form error if status='failed'.
+  errorText: text("error_text"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+});
+
+export type TillyScoutJob = typeof tillyScoutJobs.$inferSelect;
+
+/**
  * Subscription detection table (spec §4.1 Home tile, §4.4 Credit "protected"
  * card, §5.7 protective surface).
  *
