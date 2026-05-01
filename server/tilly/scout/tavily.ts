@@ -68,8 +68,11 @@ export async function tavilySearch(
 ): Promise<TavilySearchResponse> {
   const t0 = Date.now();
   try {
+    // Tavily migrated `tvly-prod-*` keys to Bearer-header auth; the
+    // legacy api_key-in-body form returns 200 with an Unauthorized
+    // message in the JSON, which is silent failure mode for callers
+    // that only check status. Always use the header.
     const body = {
-      api_key: getApiKey(),
       query: opts.query,
       search_depth: opts.searchDepth ?? "basic",
       max_results: opts.maxResults ?? 5,
@@ -79,7 +82,10 @@ export async function tavilySearch(
     };
     const res = await fetch(TAVILY_BASE + "/search", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getApiKey()}`,
+      },
       body: JSON.stringify(body),
     });
     const text = await res.text();
