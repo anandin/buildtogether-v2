@@ -223,8 +223,6 @@ export function BTGuardian() {
       </View>
       <MemoryInspector visible={memoryOpen} onClose={() => setMemoryOpen(false)} />
 
-      <RemindersStrip />
-
       <BTRule color={t.rule} />
 
       {/* Chat scroll */}
@@ -241,6 +239,7 @@ export function BTGuardian() {
             onAskWait={(query) => tilly.askWait({ query, sourceMessageId: m.id })}
             scouting={tilly.isScouting}
             askingWait={tilly.isAskingWait}
+            confirmedReminder={tilly.confirmedReminders[m.id] ?? null}
           />
         ))}
         {thinking ? <TypingBubble /> : null}
@@ -338,12 +337,14 @@ function Bubble({
   onAskWait,
   scouting,
   askingWait,
+  confirmedReminder,
 }: {
   m: Msg;
   onScout: (query: string) => void;
   onAskWait: (query: string) => void;
   scouting: boolean;
   askingWait: boolean;
+  confirmedReminder: { label: string; fireAt: string } | null;
 }) {
   const { t } = useBT();
 
@@ -510,23 +511,27 @@ function Bubble({
   return (
     <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end", maxWidth: "82%" }}>
       <Tilly t={t} size={26} breathing={false} />
-      <View
-        style={{
-          flexShrink: 1,
-          backgroundColor: t.surface,
-          // Asymmetric: round except bottom-left, mirroring the user bubble's
-          // bottom-right tail. Anchors the bubble to its avatar.
-          borderTopLeftRadius: 14,
-          borderTopRightRadius: 14,
-          borderBottomLeftRadius: 4,
-          borderBottomRightRadius: 14,
-          paddingHorizontal: 14,
-          paddingVertical: 10,
-          borderWidth: 1,
-          borderColor: t.rule,
-        }}
-      >
-        <RichTillyText body={body} color={t.ink} />
+      <View style={{ flexShrink: 1 }}>
+        <View
+          style={{
+            backgroundColor: t.surface,
+            // Asymmetric: round except bottom-left, mirroring the user
+            // bubble's bottom-right tail. Anchors the bubble to its avatar.
+            borderTopLeftRadius: 14,
+            borderTopRightRadius: 14,
+            borderBottomLeftRadius: 4,
+            borderBottomRightRadius: 14,
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+            borderWidth: 1,
+            borderColor: t.rule,
+          }}
+        >
+          <RichTillyText body={body} color={t.ink} />
+        </View>
+        {confirmedReminder ? (
+          <ReminderConfirmationChip reminder={confirmedReminder} />
+        ) : null}
       </View>
     </View>
   );
@@ -1195,91 +1200,67 @@ function WaitBubble({ m }: { m: Extract<Msg, { kind: "wait" }> }) {
 }
 
 /**
- * RemindersStrip — surfaces reminders Tilly has actually scheduled, so
- * the "I'll ping you" promise is visible + cancellable. Hides itself
- * when there are no scheduled reminders so it doesn't add noise to the
- * empty-state chat.
+ * ReminderConfirmationChip — small "✓ Saved for Friday 9 AM" line under
+ * the Tilly bubble that just earned a reminder. Bound to the specific
+ * message id via useTilly's confirmedReminders map. Renders nothing on
+ * history reload — the source of truth for "what's pending" is the
+ * Today tab Up Next card and the You tab Your Reminders screen.
  */
-function RemindersStrip() {
+function ReminderConfirmationChip({
+  reminder,
+}: {
+  reminder: { label: string; fireAt: string };
+}) {
   const { t } = useBT();
-  const qc = useQueryClient();
-  const list = useQuery({
-    queryKey: ["/api/tilly/reminders"],
-    queryFn: btApi.reminders,
-    staleTime: 30_000,
-  });
-  const cancel = useMutation({
-    mutationFn: btApi.cancelReminder,
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: ["/api/tilly/reminders"] }),
-  });
-  const scheduled = (list.data?.reminders ?? []).filter(
-    (r) => r.status === "scheduled",
-  );
-  if (scheduled.length === 0) return null;
   const fmt = (iso: string) => {
     const d = new Date(iso);
     const now = Date.now();
     const diffH = (d.getTime() - now) / (1000 * 60 * 60);
-    if (diffH < 24)
-      return `today ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
-    if (diffH < 48) return "tomorrow";
-    return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+    const time = d.toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    if (diffH < 24) return `today ${time}`;
+    if (diffH < 48) return `tomorrow ${time}`;
+    return `${d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })} ${time}`;
   };
   return (
-    <View style={{ paddingHorizontal: 18, paddingBottom: 6 }}>
-      <BTLabel color={t.inkMute} size={9}>
-        Tilly will ping you
-      </BTLabel>
-      <View style={{ marginTop: 8, gap: 6 }}>
-        {scheduled.slice(0, 3).map((r) => (
-          <View
-            key={r.id}
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 10,
-              padding: 10,
-              borderRadius: 10,
-              backgroundColor: t.surfaceAlt,
-            }}
-          >
-            <Text
-              style={{
-                color: t.inkMute,
-                fontFamily: BTFonts.mono,
-                fontSize: 10,
-                letterSpacing: 0.6,
-                textTransform: "uppercase",
-                width: 78,
-              }}
-            >
-              {fmt(r.fireAt)}
-            </Text>
-            <Text
-              style={{
-                color: t.ink,
-                fontFamily: BTFonts.serifItalic,
-                fontSize: 13,
-                lineHeight: 17,
-                flex: 1,
-              }}
-              numberOfLines={2}
-            >
-              {r.label}
-            </Text>
-            <Pressable
-              onPress={() => cancel.mutate(r.id)}
-              disabled={cancel.isPending}
-              accessibilityRole="button"
-              accessibilityLabel={`Cancel reminder ${r.label}`}
-              style={{ padding: 4 }}
-            >
-              <Text style={{ color: t.inkMute, fontSize: 16 }}>×</Text>
-            </Pressable>
-          </View>
-        ))}
-      </View>
+    <View
+      style={{
+        marginTop: 6,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        alignSelf: "flex-start",
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 999,
+        backgroundColor: t.accentSoft ?? t.surface,
+        borderWidth: 1,
+        borderColor: t.rule,
+      }}
+    >
+      <Text
+        style={{
+          color: t.good,
+          fontFamily: BTFonts.sans,
+          fontSize: 11,
+          fontWeight: "700",
+        }}
+      >
+        ✓
+      </Text>
+      <Text
+        style={{
+          color: t.ink,
+          fontFamily: BTFonts.serifItalic,
+          fontSize: 12,
+          lineHeight: 16,
+        }}
+        numberOfLines={2}
+      >
+        Saved for {fmt(reminder.fireAt)}
+      </Text>
     </View>
   );
 }

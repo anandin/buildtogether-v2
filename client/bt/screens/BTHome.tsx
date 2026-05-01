@@ -36,7 +36,7 @@ import { useUser } from "../hooks/useUser";
 import { useExpenses } from "../hooks/useExpenses";
 import { useSpend } from "../hooks/useSpend";
 import { btApi } from "../api/client";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Text } from "react-native";
 
 type Props = { onNav?: (route: BTRoute) => void };
@@ -342,6 +342,13 @@ export function BTHome({ onNav }: Props) {
             )}
           </BTCard>
         ) : null}
+
+        {/* Up Next — today's reminders Tilly is holding for the user.
+            Replaces the old chat-thread "TILLY WILL PING YOU" strip
+            (cluttered the conversation, didn't actually ping anyone).
+            Hides when there's nothing scheduled today so it never
+            adds empty-state noise. */}
+        <UpNextCard onNav={onNav} />
 
         {!isFirstLoad && firstDream ? (
           <Pressable onPress={() => onNav?.("dreams")}>
@@ -723,3 +730,163 @@ const StyleSheetAbsoluteFill = {
   right: 0,
   bottom: 0,
 };
+
+/**
+ * UpNextCard — today's reminders, compact. Shows up to 3; if more,
+ * shows "+N more" pill that taps through to the full list on the You
+ * tab. Each row supports tap-to-mark-done and a small × to dismiss
+ * (cancel). Hides itself when there's nothing scheduled today so
+ * Today never has an empty "no reminders" placeholder.
+ *
+ * Replaces the old chat-thread RemindersStrip — that strip lied
+ * about pinging, took huge screen space, and surfaced duplicates.
+ */
+function UpNextCard({ onNav }: { onNav?: (r: BTRoute) => void }) {
+  const { t } = useBT();
+  const qc = useQueryClient();
+  const list = useQuery({
+    queryKey: ["/api/tilly/reminders/today"],
+    queryFn: btApi.remindersToday,
+    staleTime: 60_000,
+  });
+  const done = useMutation({
+    mutationFn: btApi.doneReminder,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/tilly/reminders/today"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/reminders"] });
+    },
+  });
+  const snooze = useMutation({
+    mutationFn: (id: string) => btApi.snoozeReminder(id, 60),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/tilly/reminders/today"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/reminders"] });
+    },
+  });
+  const cancel = useMutation({
+    mutationFn: btApi.cancelReminder,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/tilly/reminders/today"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/reminders"] });
+    },
+  });
+  const reminders = list.data?.reminders ?? [];
+  if (reminders.length === 0) return null;
+  const visible = reminders.slice(0, 3);
+  const overflow = reminders.length - visible.length;
+  const fmt = (iso: string) => {
+    const d = new Date(iso);
+    const now = Date.now();
+    const diffMs = d.getTime() - now;
+    if (diffMs < 0) return "now";
+    if (diffMs < 60 * 60 * 1000)
+      return `in ${Math.max(1, Math.round(diffMs / 60000))} min`;
+    return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  };
+  return (
+    <BTCard t={t} alt padding={16} style={{ gap: 10 }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <BTLabel color={t.inkMute} size={10}>
+          Up next today
+        </BTLabel>
+        <View style={{ flex: 1 }} />
+        {overflow > 0 ? (
+          <Pressable
+            onPress={() => onNav?.("profile")}
+            accessibilityRole="button"
+            accessibilityLabel={`${overflow} more reminders`}
+          >
+            <Text
+              style={{
+                color: t.accent,
+                fontFamily: BTFonts.sans,
+                fontSize: 11,
+                fontWeight: "600",
+              }}
+            >
+              +{overflow} more
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+      <View style={{ gap: 6 }}>
+        {visible.map((r) => (
+          <View
+            key={r.id}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 10,
+              padding: 10,
+              borderRadius: 10,
+              backgroundColor: t.surface,
+            }}
+          >
+            <Pressable
+              onPress={() => done.mutate(r.id)}
+              disabled={done.isPending}
+              accessibilityRole="button"
+              accessibilityLabel={`Mark "${r.label}" done`}
+              style={{
+                width: 22,
+                height: 22,
+                borderRadius: 11,
+                borderWidth: 1.5,
+                borderColor: t.rule,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <View />
+            </Pressable>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={{
+                  color: t.ink,
+                  fontFamily: BTFonts.serifItalic,
+                  fontSize: 14,
+                  lineHeight: 18,
+                }}
+                numberOfLines={2}
+              >
+                {r.label}
+              </Text>
+              <Text
+                style={{
+                  color: t.inkMute,
+                  fontFamily: BTFonts.mono,
+                  fontSize: 9,
+                  letterSpacing: 0.6,
+                  textTransform: "uppercase",
+                  marginTop: 2,
+                }}
+              >
+                {fmt(r.fireAt)}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => snooze.mutate(r.id)}
+              disabled={snooze.isPending}
+              accessibilityRole="button"
+              accessibilityLabel={`Snooze "${r.label}" 1 hour`}
+              style={{ paddingHorizontal: 6, paddingVertical: 4 }}
+            >
+              <Text style={{ color: t.inkMute, fontSize: 11, fontWeight: "600" }}>
+                +1h
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => cancel.mutate(r.id)}
+              disabled={cancel.isPending}
+              accessibilityRole="button"
+              accessibilityLabel={`Dismiss "${r.label}"`}
+              style={{ paddingHorizontal: 4, paddingVertical: 4 }}
+            >
+              <Text style={{ color: t.inkMute, fontSize: 16 }}>×</Text>
+            </Pressable>
+          </View>
+        ))}
+      </View>
+    </BTCard>
+  );
+}

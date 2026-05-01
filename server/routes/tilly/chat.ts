@@ -440,6 +440,16 @@ export function mountTillyChatRoutes(app: Express): void {
       // 2. Generate reply
       let reply: WireMessage;
       let analysisPayload: AffordabilityAnalysis | null = null;
+      // Surfaced on the response so the client can render an inline
+      // confirmation chip on the Tilly turn that promised the
+      // follow-up. Replaces the chat-thread "TILLY WILL PING YOU"
+      // strip — the chip is bound to the specific bubble that earned it.
+      let createdReminder: {
+        id: string;
+        label: string;
+        kind: string;
+        fireAt: string;
+      } | null = null;
 
       if (isAffordabilityQuestion(message)) {
         try {
@@ -607,6 +617,12 @@ export function mountTillyChatRoutes(app: Express): void {
                   fireAt: draft.fireAt,
                 })
                 .returning();
+              createdReminder = {
+                id: remRow.id,
+                label: remRow.label,
+                kind: remRow.kind,
+                fireAt: remRow.fireAt.toISOString(),
+              };
               emitEventAsync({
                 userId,
                 householdId,
@@ -732,7 +748,7 @@ export function mountTillyChatRoutes(app: Express): void {
         }
       })();
 
-      res.json({ reply });
+      res.json({ reply, createdReminder });
     } catch (err: any) {
       console.error("/api/tilly/chat error:", err);
       res.status(500).json({ error: "chat failed" });
@@ -1115,6 +1131,112 @@ export function mountTillyChatRoutes(app: Express): void {
           firedAt: r.firedAt ? r.firedAt.toISOString() : null,
         })),
       });
+    },
+  );
+
+  // GET /api/tilly/reminders/today — reminders firing today (00:00–23:59
+  // local server time) plus any that fired earlier today and are still
+  // unactioned. Used by the Today tab "Up next" card. Tighter than the
+  // generic /reminders endpoint so the card doesn't have to filter
+  // client-side.
+  app.get(
+    "/api/tilly/reminders/today",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const userId = req.user.id;
+      const now = new Date();
+      const startOfDay = new Date(now);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(now);
+      endOfDay.setHours(23, 59, 59, 999);
+      const rows = await db
+        .select()
+        .from(tillyReminders)
+        .where(
+          and(
+            eq(tillyReminders.userId, userId),
+            sql`${tillyReminders.status} = 'scheduled'`,
+            sql`${tillyReminders.fireAt} BETWEEN ${startOfDay.toISOString()} AND ${endOfDay.toISOString()}`,
+          ),
+        )
+        .orderBy(asc(tillyReminders.fireAt))
+        .limit(10);
+      res.json({
+        reminders: rows.map((r) => ({
+          id: r.id,
+          label: r.label,
+          kind: r.kind,
+          fireAt: r.fireAt.toISOString(),
+          status: r.status,
+        })),
+      });
+    },
+  );
+
+  // POST /api/tilly/reminders/:id/done — mark a reminder complete. Used
+  // by the Today "Up next" tap-to-mark-done. Idempotent.
+  app.post(
+    "/api/tilly/reminders/:id/done",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const userId = req.user.id;
+      const id = String(req.params.id);
+      await db
+        .update(tillyReminders)
+        .set({ status: "fired", firedAt: new Date() })
+        .where(
+          and(eq(tillyReminders.id, id), eq(tillyReminders.userId, userId)),
+        );
+      const householdId = req.user.coupleId;
+      if (householdId) {
+        emitEventAsync({
+          userId,
+          householdId,
+          kind: "reminder_fired",
+          payload: { reminderId: id, manualComplete: true },
+          sourceTable: "tilly_reminders",
+          sourceId: id,
+        });
+        // S4 — chat-inline reminder marked done counts as accepted.
+        const pendingChat = await findLatestPendingNudge(userId, {
+          channel: "chat_inline",
+        });
+        if (pendingChat && pendingChat.sourceId === id) {
+          await resolveNudge(pendingChat.id, "accepted");
+        }
+      }
+      res.json({ ok: true });
+    },
+  );
+
+  // POST /api/tilly/reminders/:id/snooze — push fireAt by N minutes
+  // (default 60). Returns the new fireAt so the client updates without
+  // a refetch.
+  app.post(
+    "/api/tilly/reminders/:id/snooze",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const userId = req.user.id;
+      const id = String(req.params.id);
+      const minutes = Math.min(
+        Math.max(Number(req.body?.minutes ?? 60), 5),
+        60 * 24 * 7,
+      );
+      const existing = await db.query.tillyReminders.findFirst({
+        where: and(eq(tillyReminders.id, id), eq(tillyReminders.userId, userId)),
+      });
+      if (!existing) return res.status(404).json({ error: "not_found" });
+      const newFireAt = new Date(
+        Math.max(existing.fireAt.getTime(), Date.now()) + minutes * 60 * 1000,
+      );
+      await db
+        .update(tillyReminders)
+        .set({ fireAt: newFireAt })
+        .where(eq(tillyReminders.id, id));
+      res.json({ ok: true, fireAt: newFireAt.toISOString() });
     },
   );
 

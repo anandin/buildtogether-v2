@@ -10,11 +10,23 @@
  * "scouting…" to the result card without the user touching anything.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { btApi } from "../api/client";
 import type { TillyMessage } from "../api/types";
 
+/** Minimal client-side shape used for the inline chip. */
+type ConfirmedReminder = { label: string; fireAt: string };
+
 export function useTilly() {
   const qc = useQueryClient();
+  // When the chat endpoint creates a reminder via the Haiku classifier,
+  // it returns the reminder info in the response. We keep that bound to
+  // the Tilly reply's id so BTGuardian can render an inline chip on
+  // exactly that bubble. Transient — survives until the next send or
+  // a hard reload (the source of truth is the Today/You tabs).
+  const [confirmedReminders, setConfirmedReminders] = useState<
+    Record<string, ConfirmedReminder>
+  >({});
 
   const history = useQuery({
     queryKey: ["/api/tilly/chat/history"],
@@ -57,9 +69,21 @@ export function useTilly() {
         (prev) => ({ messages: [...(prev?.messages ?? []), data.reply] }),
       );
       // The server may have classified Tilly's reply as a follow-up
-      // promise and inserted a tilly_reminders row. Refetch so the
-      // RemindersStrip picks it up immediately.
+      // promise and inserted a tilly_reminders row. Refetch the lists
+      // that surface them — Today's Up Next card + Reminders screens
+      // — so the new reminder appears without a manual reload.
       qc.invalidateQueries({ queryKey: ["/api/tilly/reminders"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/reminders/today"] });
+      // Bind the inline confirmation chip to this specific reply.
+      if (data.createdReminder && data.reply?.id) {
+        setConfirmedReminders((prev) => ({
+          ...prev,
+          [data.reply.id]: {
+            label: data.createdReminder!.label,
+            fireAt: data.createdReminder!.fireAt,
+          },
+        }));
+      }
     },
   });
 
@@ -91,5 +115,6 @@ export function useTilly() {
     askWait: (body: { query: string; location?: string | null; sourceMessageId?: string }) =>
       wait.mutate(body),
     isAskingWait: wait.isPending,
+    confirmedReminders,
   };
 }

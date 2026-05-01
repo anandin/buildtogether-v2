@@ -48,7 +48,15 @@ export const btApi = {
   // ── Tilly chat ───────────────────────────────────────────────────────────
   chatHistory: () => getJson<ChatHistory>("/api/tilly/chat/history"),
   sendChat: (message: string) =>
-    postJson<{ reply: TillyMessage }>("/api/tilly/chat", { message }),
+    postJson<{
+      reply: TillyMessage;
+      createdReminder?: {
+        id: string;
+        label: string;
+        kind: string;
+        fireAt: string;
+      } | null;
+    }>("/api/tilly/chat", { message }),
   chatScout: (body: { query: string; location?: string | null; sourceMessageId?: string }) =>
     postJson<{ jobId: string; messageId: string }>("/api/tilly/chat/scout", body),
   chatWait: (body: { query: string; location?: string | null; sourceMessageId?: string }) =>
@@ -159,6 +167,23 @@ export const btApi = {
         firedAt: string | null;
       }>;
     }>("/api/tilly/reminders"),
+  remindersToday: () =>
+    getJson<{
+      reminders: Array<{
+        id: string;
+        label: string;
+        kind: string;
+        fireAt: string;
+        status: "scheduled";
+      }>;
+    }>("/api/tilly/reminders/today"),
+  doneReminder: (id: string) =>
+    postJson<{ ok: true }>(`/api/tilly/reminders/${id}/done`),
+  snoozeReminder: (id: string, minutes: number = 60) =>
+    postJson<{ ok: true; fireAt: string }>(
+      `/api/tilly/reminders/${id}/snooze`,
+      { minutes },
+    ),
   cancelReminder: (id: string) =>
     postJson<{ ok: true }>(`/api/tilly/reminders/${id}/cancel`),
 

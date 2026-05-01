@@ -26,7 +26,7 @@ import { InvitePersonModal } from "../InvitePersonModal";
 import { QuietSettingsEditor, type QuietSettingKey } from "../QuietSettingsEditor";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { btApi } from "../api/client";
 
 type QuietRow = { id: QuietSettingKey | "memory_legacy"; label: string };
@@ -275,6 +275,12 @@ export function BTProfile() {
           </Text>
         )}
       </View>
+
+      {/* Your reminders — full management surface for Tilly's promised
+          follow-ups. Today's compact view lives on Home; this is the
+          full inbox: today / upcoming / recently fired. Hidden when
+          empty so the screen doesn't grow with unused chrome. */}
+      <YourReminders />
 
       {/* Trusted people */}
       <View style={{ gap: 10 }}>
@@ -586,6 +592,244 @@ function Timeline({ t, items }: { t: BTTheme; items: TimelineItem[] }) {
           </View>
         );
       })}
+    </View>
+  );
+}
+
+/**
+ * YourReminders — the full reminder management surface, grouped into
+ * today / upcoming / recently fired. Each row offers done, snooze 1h,
+ * and dismiss. Hides itself when there's nothing pending so the
+ * Profile screen doesn't grow unused chrome.
+ *
+ * Pairs with the Today tab "Up next" card (compact today-only view).
+ */
+function YourReminders() {
+  const { t } = useBT();
+  const qc = useQueryClient();
+  const list = useQuery({
+    queryKey: ["/api/tilly/reminders"],
+    queryFn: btApi.reminders,
+    staleTime: 30_000,
+  });
+  const done = useMutation({
+    mutationFn: btApi.doneReminder,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/tilly/reminders"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/reminders/today"] });
+    },
+  });
+  const snooze = useMutation({
+    mutationFn: (id: string) => btApi.snoozeReminder(id, 60),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/tilly/reminders"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/reminders/today"] });
+    },
+  });
+  const cancel = useMutation({
+    mutationFn: btApi.cancelReminder,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/tilly/reminders"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/reminders/today"] });
+    },
+  });
+  const all = list.data?.reminders ?? [];
+  const now = Date.now();
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const endOfToday = new Date();
+  endOfToday.setHours(23, 59, 59, 999);
+  const today = all.filter(
+    (r) =>
+      r.status === "scheduled" &&
+      new Date(r.fireAt) >= startOfToday &&
+      new Date(r.fireAt) <= endOfToday,
+  );
+  const upcoming = all.filter(
+    (r) => r.status === "scheduled" && new Date(r.fireAt) > endOfToday,
+  );
+  const fired = all
+    .filter((r) => r.status === "fired" && r.firedAt)
+    .sort(
+      (a, b) =>
+        new Date(b.firedAt as string).getTime() -
+        new Date(a.firedAt as string).getTime(),
+    )
+    .slice(0, 10);
+
+  if (today.length + upcoming.length + fired.length === 0) return null;
+
+  const fmt = (iso: string) => {
+    const d = new Date(iso);
+    const diffH = (d.getTime() - now) / (1000 * 60 * 60);
+    if (diffH < -24)
+      return d.toLocaleDateString([], {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+      });
+    if (diffH < 0) return "earlier";
+    if (diffH < 1) return `in ${Math.max(1, Math.round(diffH * 60))} min`;
+    if (diffH < 24)
+      return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    if (diffH < 48)
+      return `tomorrow ${d.toLocaleTimeString([], {
+        hour: "numeric",
+        minute: "2-digit",
+      })}`;
+    return `${d.toLocaleDateString([], {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    })} ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+  };
+
+  const renderRow = (
+    r: (typeof all)[number],
+    opts: { canMark: boolean; muted?: boolean },
+  ) => (
+    <View
+      key={r.id}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 10,
+        padding: 10,
+        borderRadius: 10,
+        backgroundColor: opts.muted ? t.surface : t.surfaceAlt,
+      }}
+    >
+      {opts.canMark ? (
+        <Pressable
+          onPress={() => done.mutate(r.id)}
+          disabled={done.isPending}
+          accessibilityRole="button"
+          accessibilityLabel={`Mark "${r.label}" done`}
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 11,
+            borderWidth: 1.5,
+            borderColor: t.rule,
+          }}
+        />
+      ) : (
+        <View
+          style={{
+            width: 22,
+            height: 22,
+            borderRadius: 11,
+            backgroundColor: t.good,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Text style={{ color: "#fff", fontWeight: "700", fontSize: 11 }}>✓</Text>
+        </View>
+      )}
+      <View style={{ flex: 1 }}>
+        <Text
+          style={{
+            color: opts.muted ? t.inkMute : t.ink,
+            fontFamily: BTFonts.serifItalic,
+            fontSize: 14,
+            lineHeight: 18,
+          }}
+          numberOfLines={2}
+        >
+          {r.label}
+        </Text>
+        <Text
+          style={{
+            color: t.inkMute,
+            fontFamily: BTFonts.mono,
+            fontSize: 9,
+            letterSpacing: 0.6,
+            textTransform: "uppercase",
+            marginTop: 2,
+          }}
+        >
+          {fmt(r.firedAt ?? r.fireAt)}
+        </Text>
+      </View>
+      {opts.canMark ? (
+        <>
+          <Pressable
+            onPress={() => snooze.mutate(r.id)}
+            disabled={snooze.isPending}
+            accessibilityRole="button"
+            accessibilityLabel={`Snooze "${r.label}" 1 hour`}
+            style={{ paddingHorizontal: 6, paddingVertical: 4 }}
+          >
+            <Text style={{ color: t.inkMute, fontSize: 11, fontWeight: "600" }}>
+              +1h
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => cancel.mutate(r.id)}
+            disabled={cancel.isPending}
+            accessibilityRole="button"
+            accessibilityLabel={`Dismiss "${r.label}"`}
+            style={{ paddingHorizontal: 4, paddingVertical: 4 }}
+          >
+            <Text style={{ color: t.inkMute, fontSize: 16 }}>×</Text>
+          </Pressable>
+        </>
+      ) : null}
+    </View>
+  );
+
+  return (
+    <View style={{ gap: 14 }}>
+      <BTLabel color={t.inkMute}>Your reminders</BTLabel>
+      {today.length ? (
+        <View style={{ gap: 6 }}>
+          <Text
+            style={{
+              color: t.inkSoft,
+              fontFamily: BTFonts.mono,
+              fontSize: 9,
+              letterSpacing: 0.6,
+              textTransform: "uppercase",
+            }}
+          >
+            Today
+          </Text>
+          {today.map((r) => renderRow(r, { canMark: true }))}
+        </View>
+      ) : null}
+      {upcoming.length ? (
+        <View style={{ gap: 6 }}>
+          <Text
+            style={{
+              color: t.inkSoft,
+              fontFamily: BTFonts.mono,
+              fontSize: 9,
+              letterSpacing: 0.6,
+              textTransform: "uppercase",
+            }}
+          >
+            Upcoming
+          </Text>
+          {upcoming.map((r) => renderRow(r, { canMark: true }))}
+        </View>
+      ) : null}
+      {fired.length ? (
+        <View style={{ gap: 6 }}>
+          <Text
+            style={{
+              color: t.inkSoft,
+              fontFamily: BTFonts.mono,
+              fontSize: 9,
+              letterSpacing: 0.6,
+              textTransform: "uppercase",
+            }}
+          >
+            Recently done
+          </Text>
+          {fired.map((r) => renderRow(r, { canMark: false, muted: true }))}
+        </View>
+      ) : null}
     </View>
   );
 }
