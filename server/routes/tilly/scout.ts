@@ -90,6 +90,7 @@ export function mountScoutRoutes(app: Express): void {
         resultCount: r.results.length,
         responseTimeMs: r.responseTimeMs,
         firstResult: r.results[0] ?? null,
+        debugRaw: r.debugRaw ?? null,
       });
     },
   );

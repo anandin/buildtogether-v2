@@ -45,6 +45,8 @@ export interface TavilySearchResponse {
   answer?: string;
   results: TavilyResult[];
   responseTimeMs: number;
+  /** Set when 0 results / non-200 — first 500 chars of raw response. */
+  debugRaw?: string;
 }
 
 function getApiKey(): string {
@@ -80,23 +82,32 @@ export async function tavilySearch(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+    const text = await res.text();
     if (!res.ok) {
-      const text = await res.text();
       console.warn(
-        `[tavily] ${res.status} ${text.slice(0, 200)} for query="${opts.query}"`,
+        `[tavily] ${res.status} ${text.slice(0, 300)} for query="${opts.query}"`,
       );
-      return { query: opts.query, results: [], responseTimeMs: Date.now() - t0 };
+      return { query: opts.query, results: [], responseTimeMs: Date.now() - t0, debugRaw: text.slice(0, 500) };
     }
-    const json = (await res.json()) as {
-      query: string;
-      answer?: string;
-      results: TavilyResult[];
-    };
+    let json: { query: string; answer?: string; results: TavilyResult[] };
+    try {
+      json = JSON.parse(text);
+    } catch (e) {
+      console.warn(`[tavily] non-json body: ${text.slice(0, 300)}`);
+      return { query: opts.query, results: [], responseTimeMs: Date.now() - t0, debugRaw: text.slice(0, 500) };
+    }
+    const results = json.results ?? [];
+    if (results.length === 0) {
+      console.warn(
+        `[tavily] 200 but 0 results. body keys=${Object.keys(json).join(",")} sample=${text.slice(0, 300)}`,
+      );
+    }
     return {
       query: opts.query,
       answer: json.answer,
-      results: json.results ?? [],
+      results,
       responseTimeMs: Date.now() - t0,
+      debugRaw: results.length === 0 ? text.slice(0, 500) : undefined,
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
