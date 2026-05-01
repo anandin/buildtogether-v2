@@ -14,7 +14,7 @@
  * reconstructed in the BT message shape.
  */
 import type { Express, Request, Response } from "express";
-import { eq, and, desc, asc, sql } from "drizzle-orm";
+import { eq, and, desc, asc, sql, inArray } from "drizzle-orm";
 
 import { requireAuth } from "../../middleware/auth";
 import { db } from "../../db";
@@ -26,7 +26,9 @@ import {
   tillyEvents,
   tillyMemoryV2,
   tillyNudges,
+  tillyScoutJobs,
 } from "../../../shared/schema";
+import { enqueueScout } from "../../tilly/scout/orchestrator";
 import { distillUser } from "../../tilly/nightly-distiller";
 import {
   rewriteDossier,
@@ -104,6 +106,17 @@ function isAffordabilityQuestion(text: string): boolean {
 
 // ─── Persisted-message → wire shape ────────────────────────────────────────
 
+type ScoutProposal = { query: string; reason: string };
+type ScoutWireOption = {
+  source: string;
+  title: string;
+  price?: string;
+  location?: string;
+  url: string;
+  condition?: string;
+  why: string;
+};
+
 type WireMessage =
   | { id: string; role: "user"; kind: "text"; body: string; createdAt: string }
   | { id: string; role: "tilly"; kind: "text"; body: string; createdAt: string }
@@ -114,13 +127,30 @@ type WireMessage =
       title: string;
       rows: { label: string; amt: number; sign: "+" | "-" | "=" }[];
       note: string;
+      scoutProposal?: ScoutProposal | null;
+      createdAt: string;
+    }
+  | {
+      id: string;
+      role: "tilly";
+      kind: "scout";
+      jobId: string;
+      query: string;
+      location: string | null;
+      status: "queued" | "running" | "done" | "failed";
+      summary: string | null;
+      options: ScoutWireOption[];
+      errorText: string | null;
       createdAt: string;
     };
 
-function rowToWire(row: typeof guardianConversations.$inferSelect): WireMessage {
+function rowToWire(
+  row: typeof guardianConversations.$inferSelect,
+  scoutById?: Map<string, typeof tillyScoutJobs.$inferSelect>,
+): WireMessage {
   const role = row.role === "user" ? "user" : "tilly";
-  // We store analysis cards as role="guardian" with intent="analysis" + the
-  // structured payload in metadata. Plain text uses content directly.
+  // Analysis cards: stored as role="guardian", intent="analysis", with the
+  // structured payload (rows, note, scoutProposal) in metadata jsonb.
   if (
     role === "tilly" &&
     row.intent === "analysis" &&
@@ -132,6 +162,7 @@ function rowToWire(row: typeof guardianConversations.$inferSelect): WireMessage 
       title: string;
       rows: { label: string; amt: number; sign: "+" | "-" | "=" }[];
       note: string;
+      scoutProposal?: ScoutProposal | null;
     };
     return {
       id: row.id,
@@ -140,6 +171,40 @@ function rowToWire(row: typeof guardianConversations.$inferSelect): WireMessage 
       title: m.title,
       rows: m.rows,
       note: m.note,
+      scoutProposal: m.scoutProposal ?? null,
+      createdAt: row.createdAt.toISOString(),
+    };
+  }
+  // Scout messages: role=guardian, intent=scout, metadata={jobId,query,location}.
+  // The current scout state comes from the joined tilly_scout_jobs row so the
+  // bubble updates as the job progresses.
+  if (
+    role === "tilly" &&
+    row.intent === "scout" &&
+    row.metadata &&
+    typeof row.metadata === "object" &&
+    "jobId" in row.metadata
+  ) {
+    const m = row.metadata as {
+      jobId: string;
+      query: string;
+      location: string | null;
+    };
+    const job = scoutById?.get(m.jobId);
+    const result = (job?.result ?? null) as
+      | { options?: ScoutWireOption[]; summary?: string }
+      | null;
+    return {
+      id: row.id,
+      role: "tilly",
+      kind: "scout",
+      jobId: m.jobId,
+      query: m.query,
+      location: m.location ?? null,
+      status: (job?.status as "queued" | "running" | "done" | "failed") ?? "queued",
+      summary: result?.summary ?? null,
+      options: result?.options ?? [],
+      errorText: job?.errorText ?? null,
       createdAt: row.createdAt.toISOString(),
     };
   }
@@ -318,6 +383,7 @@ export function mountTillyChatRoutes(app: Express): void {
               rows: analysisPayload.rows,
               note: analysisPayload.note,
               followUp: analysisPayload.followUp,
+              scoutProposal: analysisPayload.scoutProposal ?? null,
             },
           })
           .returning();
@@ -328,6 +394,7 @@ export function mountTillyChatRoutes(app: Express): void {
           title: analysisPayload.title,
           rows: analysisPayload.rows,
           note: analysisPayload.note,
+          scoutProposal: analysisPayload.scoutProposal ?? null,
           createdAt: tillyRow.createdAt.toISOString(),
         };
         emitEventAsync({
@@ -553,12 +620,101 @@ export function mountTillyChatRoutes(app: Express): void {
         .where(eq(guardianConversations.coupleId, householdId))
         .orderBy(asc(guardianConversations.createdAt))
         .limit(200);
-      res.json({ messages: rows.map(rowToWire) });
+
+      // Pull every scout job referenced by a scout-intent row in one query
+      // so the wire shape always reflects the live job status (queued ->
+      // running -> done/failed) without N+1 round trips.
+      const scoutJobIds = rows
+        .filter(
+          (r) =>
+            r.intent === "scout" &&
+            r.metadata &&
+            typeof r.metadata === "object" &&
+            "jobId" in r.metadata,
+        )
+        .map((r) => (r.metadata as { jobId: string }).jobId);
+      const scoutById = new Map<
+        string,
+        typeof tillyScoutJobs.$inferSelect
+      >();
+      if (scoutJobIds.length) {
+        const jobs = await db
+          .select()
+          .from(tillyScoutJobs)
+          .where(inArray(tillyScoutJobs.id, scoutJobIds));
+        for (const j of jobs) scoutById.set(j.id, j);
+      }
+      res.json({ messages: rows.map((r) => rowToWire(r, scoutById)) });
     } catch (err) {
       console.error("/api/tilly/chat/history error:", err);
       res.status(500).json({ error: "history failed" });
     }
   });
+
+  // POST /api/tilly/chat/scout — student tapped "Find me cheaper options"
+  // on an affordability analysis. Enqueues a scout job and writes a
+  // guardian_conversations row of intent=scout so the chat thread shows
+  // the scouting state inline (and updates as the job progresses, since
+  // the history serializer joins the live tilly_scout_jobs row).
+  app.post(
+    "/api/tilly/chat/scout",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const userId = req.user.id;
+      const householdId = req.user.coupleId;
+      if (!householdId) return res.status(400).json({ error: "no_household" });
+
+      const query = String(req.body?.query ?? "").trim();
+      if (!query) return res.status(400).json({ error: "query required" });
+      if (query.length > 200)
+        return res.status(400).json({ error: "query too long" });
+      const location =
+        typeof req.body?.location === "string" && req.body.location.trim()
+          ? req.body.location.trim().slice(0, 100)
+          : null;
+      const sourceMessageId =
+        typeof req.body?.sourceMessageId === "string"
+          ? req.body.sourceMessageId
+          : null;
+
+      const jobId = await enqueueScout({
+        userId,
+        householdId,
+        query,
+        location,
+      });
+
+      // Tilly's "on it, I'll ping you" message — written as a scout-kind
+      // row so the bubble can render the running spinner, then transition
+      // to options when the orchestrator finishes.
+      const [convRow] = await db
+        .insert(guardianConversations)
+        .values({
+          coupleId: householdId,
+          userId,
+          role: "guardian",
+          content: `On it — I'll check ${query}. Give me a minute.`,
+          intent: "scout",
+          metadata: { jobId, query, location, sourceMessageId },
+        })
+        .returning();
+
+      emitEventAsync({
+        userId,
+        householdId,
+        kind: "chat_tilly_reply",
+        payload: { kind: "scout", jobId, query, location, inReplyTo: sourceMessageId },
+        sourceTable: "guardian_conversations",
+        sourceId: convRow.id,
+      });
+
+      res.json({
+        jobId,
+        messageId: convRow.id,
+      });
+    },
+  );
 
   // GET /api/tilly/tone — read current tone preference.
   app.get("/api/tilly/tone", requireAuth, async (req: Request, res: Response) => {

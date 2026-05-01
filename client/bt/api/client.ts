@@ -49,6 +49,8 @@ export const btApi = {
   chatHistory: () => getJson<ChatHistory>("/api/tilly/chat/history"),
   sendChat: (message: string) =>
     postJson<{ reply: TillyMessage }>("/api/tilly/chat", { message }),
+  chatScout: (body: { query: string; location?: string | null; sourceMessageId?: string }) =>
+    postJson<{ jobId: string; messageId: string }>("/api/tilly/chat/scout", body),
   getTone: () => getJson<TonePref>("/api/tilly/tone"),
   setTone: (tone: BTToneKey) => putJson<TonePref>("/api/tilly/tone", { tone }),
 

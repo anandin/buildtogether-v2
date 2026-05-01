@@ -8,9 +8,11 @@
  */
 import React, { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Animated,
   Easing,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -43,6 +45,19 @@ type Msg =
       title: string;
       rows: { label: string; amt: number; sign: "+" | "-" | "=" }[];
       note: string;
+      scoutProposal?: import("../api/types").ScoutProposal | null;
+    }
+  | {
+      id: string;
+      role: "tilly";
+      kind: "scout";
+      jobId: string;
+      query: string;
+      location: string | null;
+      status: import("../api/types").ScoutStatus;
+      summary: string | null;
+      options: import("../api/types").ScoutOption[];
+      errorText: string | null;
     };
 
 /** Adapts a server TillyMessage to the local Msg shape used by the bubbles. */
@@ -57,6 +72,21 @@ function toLocal(m: TillyMessage): Msg {
       title: m.title,
       rows: m.rows,
       note: m.note,
+      scoutProposal: m.scoutProposal ?? null,
+    };
+  }
+  if (m.kind === "scout") {
+    return {
+      id: m.id,
+      role: "tilly",
+      kind: "scout",
+      jobId: m.jobId,
+      query: m.query,
+      location: m.location,
+      status: m.status,
+      summary: m.summary,
+      options: m.options,
+      errorText: m.errorText,
     };
   }
   return { id: m.id, role: "tilly", kind: "text", body: m.body };
@@ -168,7 +198,12 @@ export function BTGuardian() {
         contentContainerStyle={{ padding: 18, gap: 12, paddingBottom: 24 }}
       >
         {messages.map((m) => (
-          <Bubble key={m.id} m={m} />
+          <Bubble
+            key={m.id}
+            m={m}
+            onScout={(query) => tilly.scout({ query, sourceMessageId: m.id })}
+            scouting={tilly.isScouting}
+          />
         ))}
         {thinking ? <TypingBubble /> : null}
       </ScrollView>
@@ -259,7 +294,15 @@ export function BTGuardian() {
   );
 }
 
-function Bubble({ m }: { m: Msg }) {
+function Bubble({
+  m,
+  onScout,
+  scouting,
+}: {
+  m: Msg;
+  onScout: (query: string) => void;
+  scouting: boolean;
+}) {
   const { t } = useBT();
 
   if (m.role === "user") {
@@ -337,7 +380,23 @@ function Bubble({ m }: { m: Msg }) {
           >
             {m.note}
           </Text>
+          {m.scoutProposal ? (
+            <ScoutProposalCTA
+              proposal={m.scoutProposal}
+              onScout={() => onScout(m.scoutProposal!.query)}
+              busy={scouting}
+            />
+          ) : null}
         </BTCard>
+      </View>
+    );
+  }
+
+  if (m.kind === "scout") {
+    return (
+      <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end", maxWidth: "92%" }}>
+        <Tilly t={t} size={28} breathing={m.status !== "running" && m.status !== "queued"} state={m.status === "running" || m.status === "queued" ? "think" : "idle"} />
+        <ScoutBubble m={m} />
       </View>
     );
   }
@@ -600,6 +659,252 @@ function TypingBubble() {
         ))}
       </View>
     </View>
+  );
+}
+
+/**
+ * Scout proposal CTA — appears under an affordability analysis when the
+ * LLM thinks the item is buyable enough to scout for sales / secondhand.
+ * "Find me cheaper options" enqueues a scout job; "Not now" hides this
+ * card locally so the user isn't pestered. The dismiss is non-persistent
+ * (intentional — it's just a visual nudge per render, not a preference).
+ */
+function ScoutProposalCTA({
+  proposal,
+  onScout,
+  busy,
+}: {
+  proposal: import("../api/types").ScoutProposal;
+  onScout: () => void;
+  busy: boolean;
+}) {
+  const { t } = useBT();
+  const [dismissed, setDismissed] = useState(false);
+  const [tapped, setTapped] = useState(false);
+  if (dismissed || tapped) return null;
+  return (
+    <View
+      style={{
+        marginTop: 4,
+        gap: 8,
+        padding: 10,
+        borderRadius: 10,
+        backgroundColor: t.surface,
+        borderWidth: 1,
+        borderColor: t.rule,
+      }}
+    >
+      <Text
+        style={{
+          fontFamily: BTFonts.serifItalic,
+          color: t.accent,
+          fontSize: 13,
+          lineHeight: 18,
+        }}
+      >
+        {proposal.reason}
+      </Text>
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Find me cheaper options"
+          disabled={busy}
+          onPress={() => {
+            setTapped(true);
+            onScout();
+          }}
+          style={{
+            flex: 1,
+            paddingVertical: 10,
+            borderRadius: 999,
+            backgroundColor: t.accent,
+            alignItems: "center",
+            opacity: busy ? 0.6 : 1,
+          }}
+        >
+          <Text
+            style={{
+              color: "#fff",
+              fontFamily: BTFonts.sans,
+              fontSize: 13,
+              fontWeight: "700",
+            }}
+          >
+            Find me cheaper options
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Not now"
+          onPress={() => setDismissed(true)}
+          style={{
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+            borderRadius: 999,
+            borderWidth: 1,
+            borderColor: t.rule,
+            alignItems: "center",
+          }}
+        >
+          <Text
+            style={{
+              color: t.inkMute,
+              fontFamily: BTFonts.sans,
+              fontSize: 13,
+            }}
+          >
+            Not now
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+/**
+ * Scout result bubble — shows three states:
+ *   - queued / running: "Scouting…" with a spinner and the query echoed
+ *   - done: 1-3 option rows with source chip, title, price, "open" link,
+ *     plus the LLM-written summary line at the top
+ *   - failed: short apologetic note with the errorText
+ *
+ * This is purely a renderer; the bubble updates automatically because
+ * useTilly() refetches /api/tilly/chat/history every 2.5s while a
+ * scout is mid-flight.
+ */
+function ScoutBubble({
+  m,
+}: {
+  m: Extract<Msg, { kind: "scout" }>;
+}) {
+  const { t } = useBT();
+  if (m.status === "queued" || m.status === "running") {
+    return (
+      <BTCard t={t} alt padding={14} style={{ flex: 1, gap: 8 }}>
+        <BTLabel color={t.inkMute} size={10}>
+          Tilly is scouting
+        </BTLabel>
+        <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+          <ActivityIndicator size="small" color={t.accent} />
+          <Text
+            style={{
+              flex: 1,
+              fontFamily: BTFonts.serifItalic,
+              fontSize: 14,
+              color: t.ink,
+            }}
+            numberOfLines={2}
+          >
+            Looking for "{m.query}"
+            {m.location ? ` near ${m.location}` : ""}…
+          </Text>
+        </View>
+      </BTCard>
+    );
+  }
+  if (m.status === "failed") {
+    return (
+      <BTCard t={t} alt padding={14} style={{ flex: 1, gap: 6 }}>
+        <BTLabel color={t.inkMute} size={10}>
+          No live results
+        </BTLabel>
+        <Text
+          style={{
+            fontFamily: BTFonts.serif,
+            fontSize: 14,
+            color: t.ink,
+          }}
+        >
+          I couldn't find anything live for "{m.query}" right now. Want me to try again later?
+        </Text>
+      </BTCard>
+    );
+  }
+  // status === "done"
+  return (
+    <BTCard t={t} alt padding={14} style={{ flex: 1, gap: 10 }}>
+      <BTLabel color={t.inkMute} size={10}>
+        Found {m.options.length} option{m.options.length === 1 ? "" : "s"}
+      </BTLabel>
+      {m.summary ? (
+        <Text
+          style={{
+            fontFamily: BTFonts.serif,
+            fontSize: 15,
+            lineHeight: 21,
+            color: t.ink,
+          }}
+        >
+          {m.summary}
+        </Text>
+      ) : null}
+      <View style={{ gap: 8 }}>
+        {m.options.map((opt, i) => (
+          <Pressable
+            key={i}
+            accessibilityRole="link"
+            accessibilityLabel={`Open ${opt.title}`}
+            onPress={() => Linking.openURL(opt.url).catch(() => {})}
+            style={{
+              padding: 10,
+              borderRadius: 10,
+              backgroundColor: t.surface,
+              borderWidth: 1,
+              borderColor: t.rule,
+              gap: 4,
+            }}
+          >
+            <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
+              <Text
+                style={{
+                  fontFamily: BTFonts.mono,
+                  fontSize: 9,
+                  letterSpacing: 0.6,
+                  textTransform: "uppercase",
+                  color: t.accent,
+                }}
+                numberOfLines={1}
+              >
+                {opt.source}
+                {opt.condition ? ` · ${opt.condition}` : ""}
+              </Text>
+              {opt.price ? (
+                <Text
+                  style={{
+                    fontFamily: BTFonts.mono,
+                    fontSize: 11,
+                    fontWeight: "700",
+                    color: t.good,
+                  }}
+                >
+                  {opt.price}
+                </Text>
+              ) : null}
+            </View>
+            <Text
+              style={{
+                fontFamily: BTFonts.sans,
+                fontSize: 13,
+                color: t.ink,
+              }}
+              numberOfLines={2}
+            >
+              {opt.title}
+            </Text>
+            <Text
+              style={{
+                fontFamily: BTFonts.serifItalic,
+                fontSize: 12,
+                color: t.inkSoft,
+              }}
+              numberOfLines={2}
+            >
+              {opt.why}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    </BTCard>
   );
 }
 

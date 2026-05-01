@@ -50,6 +50,23 @@ export const AffordabilityAnalysisSchema = z.object({
     .describe(
       "Optional one-line concrete action the student can take. null if no follow-up needed.",
     ),
+  scoutProposal: z
+    .object({
+      query: z
+        .string()
+        .describe(
+          "A short search query for the specific buyable item, e.g. 'Levi's 501 jeans size 32' or 'Sony WH-1000XM5 headphones'. Make it concrete enough to find the same kind of thing on Kijiji / Facebook Marketplace / RedFlagDeals.",
+        ),
+      reason: z
+        .string()
+        .describe(
+          "One short sentence in Tilly's voice explaining what she'll go look for, e.g. 'I can check if any are on sale or secondhand near you.'",
+        ),
+    })
+    .nullable()
+    .describe(
+      "ONLY populate when the student is asking about a specific buyable physical item (clothes, electronics, gear, gifts) where a sale or secondhand alternative might exist. Set to null for rent, tuition, food/groceries, services, intangibles, or anything where there isn't a meaningful market for substitutes.",
+    ),
 });
 
 export type AffordabilityRow = z.infer<typeof AnalysisRowSchema>;

@@ -36,6 +36,18 @@ export type TodayBrief =
       tillyInvite: string;
     };
 
+export type ScoutProposal = { query: string; reason: string };
+export type ScoutOption = {
+  source: string;
+  title: string;
+  price?: string;
+  location?: string;
+  url: string;
+  condition?: string;
+  why: string;
+};
+export type ScoutStatus = "queued" | "running" | "done" | "failed";
+
 export type TillyMessage =
   | { id: string; role: "user"; kind: "text"; body: string; createdAt: string }
   | { id: string; role: "tilly"; kind: "text"; body: string; createdAt: string }
@@ -47,6 +59,20 @@ export type TillyMessage =
       title: string;
       rows: { label: string; amt: number; sign: "+" | "-" | "=" }[];
       note: string;
+      scoutProposal?: ScoutProposal | null;
+      createdAt: string;
+    }
+  | {
+      id: string;
+      role: "tilly";
+      kind: "scout";
+      jobId: string;
+      query: string;
+      location: string | null;
+      status: ScoutStatus;
+      summary: string | null;
+      options: ScoutOption[];
+      errorText: string | null;
       createdAt: string;
     };
 

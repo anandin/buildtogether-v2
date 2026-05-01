@@ -1,16 +1,24 @@
 /**
  * 13 — S8 live substitute scout.
  *
- * Plan:
- *   - POST /api/tilly/scout with a real Canadian-friendly query
- *   - Poll GET /api/tilly/scout/:id until status != queued/running
- *     (cap at 90s)
- *   - Assert status='done' (or skip with a note if no live results)
- *   - Validate result shape: 0-3 options each with source + url + why
+ * UI today: scout has no first-class card on screen yet (S9 will add the
+ * chat trigger + result card). So this scenario:
+ *   - lands on the Tilly tab and snapshots the screen so a future S9
+ *     change is visually obvious in the diff
+ *   - enqueues a scout via POST /api/tilly/scout from inside the page
+ *     context (so it uses the live bearer token)
+ *   - polls GET /api/tilly/scout/:id until done (cap 90s)
+ *   - validates option shape: source + url + why required
+ *   - validates the job appears in GET /api/tilly/scout/recent
+ *   - snapshots Tilly + Today screens at the end so we can see whether
+ *     anything has surfaced in the UI yet
  */
 const { runScenario } = require("../lib/helpers");
 
-async function scenario({ apiCall, log }) {
+async function scenario({ apiCall, page, ss, gotoTab, log }) {
+  await gotoTab("Tilly");
+  await ss("tilly-before-scout");
+
   log("enqueueing a scout for 'Levi's 501 jeans size 32'");
   const enq = await apiCall("/api/tilly/scout", {
     method: "POST",
@@ -32,10 +40,15 @@ async function scenario({ apiCall, log }) {
 
   const t0 = Date.now();
   let final = null;
+  let polledOnce = false;
   for (let i = 0; i < 30; i++) {
     await new Promise((r) => setTimeout(r, 3000));
     const r = await apiCall(`/api/tilly/scout/${jobId}`);
     if (r.status !== 200) throw new Error(`scout poll ${r.status}`);
+    if (!polledOnce) {
+      await ss("tilly-during-scout");
+      polledOnce = true;
+    }
     if (r.body.status === "done" || r.body.status === "failed") {
       final = r.body;
       log(`job done in ${Date.now() - t0}ms — status=${r.body.status}`);
@@ -47,6 +60,7 @@ async function scenario({ apiCall, log }) {
   if (final.status === "failed") {
     log(`scout failed gracefully: ${final.errorText}`);
     log("note: this is a non-blocking failure (no live results from any source)");
+    await ss("tilly-after-scout-failed");
     return;
   }
 
@@ -63,6 +77,25 @@ async function scenario({ apiCall, log }) {
       throw new Error(`option missing required field: ${JSON.stringify(opt)}`);
     }
   }
+
+  // Recent-scouts endpoint should now show this job at the top.
+  const recent = await apiCall("/api/tilly/scout/recent");
+  if (recent.status !== 200) {
+    throw new Error(`recent endpoint ${recent.status}`);
+  }
+  const jobs = recent.body?.jobs ?? [];
+  const found = jobs.find((j) => j.id === jobId);
+  if (!found) {
+    throw new Error(`new scout job ${jobId} not in recent list (got ${jobs.length} jobs)`);
+  }
+  if (found.status !== "done") {
+    throw new Error(`recent shows job status=${found.status}, expected done`);
+  }
+  log(`recent endpoint: ${jobs.length} jobs total, our job at position ${jobs.indexOf(found)}`);
+
+  await ss("tilly-after-scout");
+  await gotoTab("Today");
+  await ss("today-after-scout");
 }
 
 if (require.main === module) {

@@ -4,6 +4,10 @@
  * Pairs `chatHistory` (loaded once) with a `send` mutation that appends a
  * user turn and the Tilly reply. Phase 2 streams typing state from the
  * backend; Phase 1 returns 501 stubs.
+ *
+ * S9 — when there's a scout-kind message in flight (status queued/running),
+ * the history query refetches every 2.5s so the bubble transitions from
+ * "scouting…" to the result card without the user touching anything.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { btApi } from "../api/client";
@@ -16,6 +20,19 @@ export function useTilly() {
     queryKey: ["/api/tilly/chat/history"],
     queryFn: btApi.chatHistory,
     staleTime: Infinity,
+    // Pulse every 2.5s ONLY while a scout is mid-flight; otherwise the
+    // chat is silent (matches old behavior). React Query passes the
+    // current data; we look for any scout still queued/running.
+    refetchInterval: (q) => {
+      const data = q.state.data as { messages?: TillyMessage[] } | undefined;
+      const inFlight = (data?.messages ?? []).some(
+        (m) =>
+          m.role === "tilly" &&
+          m.kind === "scout" &&
+          (m.status === "queued" || m.status === "running"),
+      );
+      return inFlight ? 2500 : false;
+    },
   });
 
   const send = useMutation({
@@ -46,10 +63,22 @@ export function useTilly() {
     },
   });
 
+  const scout = useMutation({
+    mutationFn: (body: { query: string; location?: string | null; sourceMessageId?: string }) =>
+      btApi.chatScout(body),
+    onSuccess: () => {
+      // Refresh chat history so the new scout-kind bubble appears.
+      qc.invalidateQueries({ queryKey: ["/api/tilly/chat/history"] });
+    },
+  });
+
   return {
     messages: history.data?.messages ?? [],
     isLoading: history.isLoading,
     isThinking: send.isPending,
     send: (message: string) => send.mutate(message),
+    scout: (body: { query: string; location?: string | null; sourceMessageId?: string }) =>
+      scout.mutate(body),
+    isScouting: scout.isPending,
   };
 }
