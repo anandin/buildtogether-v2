@@ -78,31 +78,58 @@ export async function enqueueScout(
 }
 
 /**
+ * Retailers we should NEVER suggest because they don't exist anymore in
+ * Canada. Tavily's index still serves their old listing pages, which
+ * surfaces sale prices from years ago — Tilly was caught recommending a
+ * 2014 Hudson's Bay deal in mid-2026, after Hudson's Bay had liquidated
+ * every Canadian store. Block at the search level so the synthesizer
+ * never sees them in the first place.
+ */
+const DEFUNCT_CANADIAN_RETAILERS = [
+  "thebay.com", // Hudson's Bay — closed all Canadian stores in 2025
+  "hbc.com",
+  "sears.ca", // Sears Canada — closed 2018
+  "target.ca", // Target Canada — closed 2015
+  "futureshop.ca", // Future Shop — closed 2015
+  "zellers.com", // Zellers original — closed 2013 (modern relaunch is small)
+];
+
+/**
  * Build 3 query strategies from one user query. Returns the queries
  * scoped + tagged for the LLM.
  */
 function buildQueryStrategies(query: string, location?: string | null): {
   query: string;
   domains?: string[];
+  excludeDomains?: string[];
   includeAnswer?: boolean;
+  timeRange?: "day" | "week" | "month" | "year";
 }[] {
   const loc = (location ?? "Canada").trim();
   return [
-    // (1) Secondhand inventory — Kijiji + Karrot scoped.
+    // (1) Secondhand inventory — Kijiji + Karrot scoped, recent posts only.
     {
       query: `${query} secondhand ${loc}`,
       domains: ["kijiji.ca", "karrot.ca", "facebook.com", "marketplace.facebook.com"],
+      timeRange: "month",
     },
-    // (2) Current sales / deals — RFD + open web.
+    // (2) Current sales / deals — RFD + open web. Time-bound to the
+    // last month so we don't surface a 2014 Hudson's Bay deal.
     {
       query: `${query} sale Canada deal`,
       domains: ["redflagdeals.com", "smartcanucks.ca"],
+      excludeDomains: DEFUNCT_CANADIAN_RETAILERS,
       includeAnswer: true,
+      timeRange: "month",
     },
-    // (3) Off-brand or refurb alternatives — open web search, no domain restriction.
+    // (3) Off-brand or refurb alternatives — open web, but recency-bounded
+    // and with the defunct-retailer blocklist so we don't link to stores
+    // that don't exist anymore.
     {
       query: `${query} cheaper alternative refurbished`,
+      excludeDomains: DEFUNCT_CANADIAN_RETAILERS,
       includeAnswer: true,
+      timeRange: "year",
     },
   ];
 }
@@ -129,7 +156,9 @@ export async function processScoutJob(jobId: string): Promise<void> {
           searchDepth: "basic",
           maxResults: 6,
           includeDomains: s.domains,
+          excludeDomains: s.excludeDomains,
           includeAnswer: s.includeAnswer,
+          timeRange: s.timeRange,
         }),
       ),
     );

@@ -37,6 +37,13 @@ export interface TavilySearchOptions {
   excludeDomains?: string[];
   /** Include AI-generated 1-line answer summary. */
   includeAnswer?: boolean;
+  /**
+   * Restrict results to ones Tavily has crawled recently. Critical for
+   * sales/deals/secondhand queries — without it Tavily happily returns
+   * a 2014 deal page from a now-defunct retailer. Maps to Tavily's
+   * `time_range` parameter ("day" | "week" | "month" | "year").
+   */
+  timeRange?: "day" | "week" | "month" | "year";
 }
 
 export interface TavilySearchResponse {
@@ -79,6 +86,7 @@ export async function tavilySearch(
       include_domains: opts.includeDomains ?? undefined,
       exclude_domains: opts.excludeDomains ?? undefined,
       include_answer: opts.includeAnswer ?? false,
+      time_range: opts.timeRange ?? undefined,
     };
     const res = await fetch(TAVILY_BASE + "/search", {
       method: "POST",

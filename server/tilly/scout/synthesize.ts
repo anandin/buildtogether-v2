@@ -59,7 +59,9 @@ Rules:
 - Order most-recommended first.
 - "why" sentence must be specific to the listing — not generic ("good price", "convenient"). e.g. "Same wash + size, ~70% off retail, picked up locally."
 - ASCII only — no em-dashes, smart quotes, or unicode currency.
-- summary is one sentence that makes Tilly sound like she scouted, not generated.`;
+- summary is one sentence that makes Tilly sound like she scouted, not generated.
+- NEVER recommend a Canadian retailer that doesn't exist anymore. Drop the option entirely if you see any of these in the URL or source: Hudson's Bay / The Bay / thebay.com / hbc.com (closed all Canadian stores in 2025), Sears Canada / sears.ca (closed 2018), Target Canada / target.ca (closed 2015), Future Shop / futureshop.ca (closed 2015). It is much better to return 2 options than 3 if one would point to a defunct store.
+- If a snippet's listing date is older than ~3 months for sales/deals, drop it — pricing has changed since.`;
 
 export async function synthesizeScout(opts: {
   query: string;
