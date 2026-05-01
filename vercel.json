@@ -17,6 +17,10 @@
   ],
   "crons": [
     {
+      "path": "/api/cron/fire-reminders",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/auto-save",
       "schedule": "0 14 * * 5"
     },

@@ -16,12 +16,14 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { eq, and, gt, sql } from "drizzle-orm";
 
 import { db } from "../db";
-import { goals, goalContributions } from "../../shared/schema";
+import { goals, goalContributions, tillyReminders, users } from "../../shared/schema";
 import { runProtectionsAll } from "../tilly/protections-engine";
 import { runNotify } from "../tilly/notify-cron";
 import { runPatternDetectionAll } from "../tilly/pattern-cron";
 import { distillAllActiveUsers } from "../tilly/nightly-distiller";
 import { rewriteDossiersForActiveUsers } from "../tilly/dossier-rewriter";
+import { sendExpoPush } from "../tilly/expo-push";
+import { emitEventAsync } from "../tilly/event-emitter";
 
 function requireCron(req: Request, res: Response, next: NextFunction) {
   const expected = process.env.CRON_SECRET;
@@ -38,6 +40,95 @@ function requireCron(req: Request, res: Response, next: NextFunction) {
 }
 
 export function mountCronRoutes(app: Express): void {
+  /**
+   * Reminder UX S6 — fire scheduled reminders that have passed their
+   * fireAt. For each due reminder:
+   *   - Look up the user's expoPushToken
+   *   - Send a Tilly-voice push notification (no-op if no token)
+   *   - Mark the reminder fired (regardless of push outcome — we don't
+   *     want a dead token to keep the reminder pending forever)
+   *   - Emit reminder_fired event
+   *
+   * Tight cap (50 reminders per tick) so a backlog doesn't blow the
+   * function timeout. Vercel cron at every-minute granularity will
+   * drain a queue quickly enough; if it ever exceeds 50/min we have
+   * other problems.
+   */
+  app.post(
+    "/api/cron/fire-reminders",
+    requireCron,
+    async (_req: Request, res: Response) => {
+      const startedAt = Date.now();
+      try {
+        const now = new Date();
+        const due = await db
+          .select()
+          .from(tillyReminders)
+          .where(
+            and(
+              eq(tillyReminders.status, "scheduled"),
+              sql`${tillyReminders.fireAt} <= ${now.toISOString()}`,
+            ),
+          )
+          .limit(50);
+        if (due.length === 0) {
+          return res.json({ ok: true, fired: 0, durationMs: Date.now() - startedAt });
+        }
+        // Pull push tokens for the involved users in one query.
+        const userIds = Array.from(new Set(due.map((r) => r.userId)));
+        const userRows = await db
+          .select({ id: users.id, expoPushToken: users.expoPushToken })
+          .from(users)
+          .where(sql`${users.id} = ANY(${userIds})`);
+        const tokenById = new Map(userRows.map((u) => [u.id, u.expoPushToken]));
+        let pushed = 0;
+        let pushSkipped = 0;
+        for (const r of due) {
+          const token = tokenById.get(r.userId);
+          if (token) {
+            const ticket = await sendExpoPush({
+              to: token,
+              title: "Tilly",
+              body: r.label,
+              data: { reminderId: r.id, kind: r.kind },
+            });
+            if (ticket?.status === "ok") pushed += 1;
+            else pushSkipped += 1;
+          } else {
+            pushSkipped += 1;
+          }
+          await db
+            .update(tillyReminders)
+            .set({ status: "fired", firedAt: new Date() })
+            .where(eq(tillyReminders.id, r.id));
+          emitEventAsync({
+            userId: r.userId,
+            householdId: r.householdId,
+            kind: "reminder_fired",
+            payload: {
+              reminderId: r.id,
+              hadPushToken: !!token,
+              label: r.label,
+            },
+            sourceTable: "tilly_reminders",
+            sourceId: r.id,
+          });
+        }
+        res.json({
+          ok: true,
+          fired: due.length,
+          pushed,
+          pushSkipped,
+          durationMs: Date.now() - startedAt,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[cron] fire-reminders failed:", msg);
+        res.status(500).json({ error: "fire-reminders failed", debug: msg });
+      }
+    },
+  );
+
   /**
    * Process weekly dream auto-saves. Spec D4: "+$40 moves Friday" should
    * actually move on Friday.

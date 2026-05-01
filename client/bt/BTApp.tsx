@@ -9,7 +9,7 @@
  * Self-contained: doesn't depend on the V1 navigation stack so the design
  * system stays clean.
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Path } from "react-native-svg";
@@ -26,6 +26,7 @@ import { BTDreams } from "./screens/BTDreams";
 import { BTProfile } from "./screens/BTProfile";
 import { Onboarding } from "./onboarding/Onboarding";
 import { useOnboardingStatus } from "./hooks/useOnboarding";
+import { registerForExpoPushToken } from "@/lib/notifications";
 
 type Tab = "home" | "spend" | "guardian" | "credit" | "dreams" | "profile";
 
@@ -70,6 +71,30 @@ function BTShell() {
   const { t } = useBT();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>("home");
+
+  // Reminder UX S6 — register for an Expo push token + sync to server
+  // once after onboarding. Idempotent; AsyncStorage caches the last
+  // synced token so re-runs are no-ops. Failures are logged inside
+  // registerForExpoPushToken and never block the UI — push is a nice
+  // to have, not a precondition for using the app.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await registerForExpoPushToken();
+        if (!cancelled && token) {
+          // eslint-disable-next-line no-console
+          console.log("[push] registered token", token.slice(0, 30));
+        }
+      } catch (err) {
+        if (!cancelled)
+          console.warn("[push] registration failed (non-fatal):", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <View style={[styles.root, { backgroundColor: t.bg }]}>

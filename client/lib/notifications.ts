@@ -1,10 +1,13 @@
 import * as Notifications from "expo-notifications";
+import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import type { NotificationPreferences } from "@/types/notifications";
 import { DEFAULT_NOTIFICATION_PREFERENCES } from "@/types/notifications";
+import { apiRequest } from "@/lib/query-client";
 
 const NOTIFICATION_PREFS_KEY = "@notification_preferences";
+const EXPO_PUSH_TOKEN_KEY = "@expo_push_token_synced";
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -34,6 +37,74 @@ export async function requestNotificationPermissions(): Promise<boolean> {
   }
 
   return true;
+}
+
+/**
+ * Register for an Expo Push Token and sync it to the server. Idempotent
+ * — only POSTs to the server when the token actually changes since the
+ * last sync (cached in AsyncStorage).
+ *
+ * Tilly's fire-reminders cron uses this token to deliver push pings at
+ * each reminder's fireAt time. Returns the token on success, null when
+ * push is unavailable (web, simulator, denied permission, missing
+ * project id).
+ */
+export async function registerForExpoPushToken(): Promise<string | null> {
+  if (Platform.OS === "web") return null;
+  // Simulators / emulators can't receive real push tokens — Expo's
+  // getExpoPushTokenAsync throws there, which we swallow below. We
+  // don't gate explicitly on isDevice (would need expo-device dep)
+  // because the try/catch handles it cleanly.
+  const granted = await requestNotificationPermissions();
+  if (!granted) return null;
+
+  // Android needs an explicit channel before we can show foreground
+  // notifications. Idempotent — re-creating with the same id is a no-op.
+  if (Platform.OS === "android") {
+    await Notifications.setNotificationChannelAsync("default", {
+      name: "default",
+      importance: Notifications.AndroidImportance.DEFAULT,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: "#7C3AED",
+    });
+  }
+
+  // Expo's push service requires the EAS project id so it knows which
+  // project to route to. Pulled from app.json -> expo.extra.eas.projectId
+  // (which Constants exposes at runtime).
+  const projectId =
+    (Constants?.expoConfig as any)?.extra?.eas?.projectId ??
+    (Constants as any)?.easConfig?.projectId ??
+    undefined;
+
+  let token: string;
+  try {
+    const result = await Notifications.getExpoPushTokenAsync(
+      projectId ? { projectId } : undefined,
+    );
+    token = result.data;
+  } catch (err) {
+    console.warn("[push] getExpoPushTokenAsync failed:", err);
+    return null;
+  }
+  if (!token) return null;
+
+  // Skip the network round trip if the token hasn't changed.
+  try {
+    const cached = await AsyncStorage.getItem(EXPO_PUSH_TOKEN_KEY);
+    if (cached === token) return token;
+  } catch {
+    // ignore cache errors — we'll just send.
+  }
+
+  try {
+    await apiRequest("PUT", "/api/tilly/me/push-token", { token });
+    await AsyncStorage.setItem(EXPO_PUSH_TOKEN_KEY, token);
+  } catch (err) {
+    console.warn("[push] failed to sync token to server:", err);
+    return null;
+  }
+  return token;
 }
 
 export async function getNotificationPreferences(): Promise<NotificationPreferences> {

@@ -270,6 +270,8 @@ const CRITICAL_STATEMENTS: string[] = [
   // S12 — persistent location signal on the user, used as the default
   // for scouts when no per-job location is provided.
   `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "city" text`,
+  // Reminder UX S6 — Expo Push Token for the fire-reminders cron.
+  `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "expo_push_token" text`,
 ];
 
 export async function applyBootMigrations(): Promise<{

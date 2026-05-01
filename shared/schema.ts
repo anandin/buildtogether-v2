@@ -24,6 +24,15 @@ export const users = pgTable("users", {
    * to attach lat/lng for radius-bounded searches.
    */
   city: text("city"),
+  /**
+   * Reminder UX S6 — Expo Push Token, populated by the client on first
+   * permission grant and on token refresh. The fire-reminders cron POSTs
+   * to https://exp.host/--/api/v2/push/send using this token. Null
+   * means push is unavailable (web-only user, denied permission, or not
+   * yet registered) — cron skips delivery silently in that case so the
+   * reminder still flips to fired but nothing pings.
+   */
+  expoPushToken: text("expo_push_token"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastLoginAt: timestamp("last_login_at"),
 });

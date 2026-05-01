@@ -878,6 +878,37 @@ export function mountTillyChatRoutes(app: Express): void {
   mountChatScoutLike("/api/tilly/chat/scout", "find");
   mountChatScoutLike("/api/tilly/chat/wait", "wait");
 
+  // Reminder UX S6 — PUT /api/tilly/me/push-token. Client registers an
+  // Expo Push Token after the user grants notification permission.
+  // Empty body / null clears the token (used when permission is revoked
+  // or the user signs out on a shared device).
+  app.put(
+    "/api/tilly/me/push-token",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const raw = req.body?.token;
+      if (raw === null || raw === "") {
+        await db
+          .update(users)
+          .set({ expoPushToken: null })
+          .where(eq(users.id, req.user.id));
+        return res.json({ ok: true, cleared: true });
+      }
+      if (typeof raw !== "string" || !raw.startsWith("ExponentPushToken")) {
+        return res.status(400).json({
+          error: "token must be an ExponentPushToken[…] string or null",
+        });
+      }
+      const token = raw.slice(0, 200);
+      await db
+        .update(users)
+        .set({ expoPushToken: token })
+        .where(eq(users.id, req.user.id));
+      res.json({ ok: true });
+    },
+  );
+
   // S12 — POST /api/tilly/me/city. Persist the user's city so scouts
   // automatically default to local secondhand inventory. The
   // affordability/scout flow already passes location through when set; this
