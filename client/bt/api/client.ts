@@ -51,6 +51,12 @@ export const btApi = {
     postJson<{ reply: TillyMessage }>("/api/tilly/chat", { message }),
   chatScout: (body: { query: string; location?: string | null; sourceMessageId?: string }) =>
     postJson<{ jobId: string; messageId: string }>("/api/tilly/chat/scout", body),
+  chatWait: (body: { query: string; location?: string | null; sourceMessageId?: string }) =>
+    postJson<{ jobId: string; messageId: string }>("/api/tilly/chat/wait", body),
+  // S12 — read/write the user's persistent city for default scout location.
+  getCity: () => getJson<{ city: string | null }>("/api/tilly/me/city"),
+  setCity: (city: string | null) =>
+    putJson<{ city: string | null }>("/api/tilly/me/city", { city }),
   getTone: () => getJson<TonePref>("/api/tilly/tone"),
   setTone: (tone: BTToneKey) => putJson<TonePref>("/api/tilly/tone", { tone }),
 

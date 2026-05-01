@@ -530,6 +530,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           name: user.name,
           coupleId: user.coupleId,
           partnerRole: user.partnerRole,
+          city: user.city ?? null,
         },
       });
     } catch (error: any) {

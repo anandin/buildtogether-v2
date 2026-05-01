@@ -46,6 +46,7 @@ type Msg =
       rows: { label: string; amt: number; sign: "+" | "-" | "=" }[];
       note: string;
       scoutProposal?: import("../api/types").ScoutProposal | null;
+      waitProposal?: import("../api/types").WaitProposal | null;
     }
   | {
       id: string;
@@ -57,6 +58,22 @@ type Msg =
       status: import("../api/types").ScoutStatus;
       summary: string | null;
       options: import("../api/types").ScoutOption[];
+      errorText: string | null;
+    }
+  | {
+      id: string;
+      role: "tilly";
+      kind: "wait";
+      jobId: string;
+      query: string;
+      location: string | null;
+      status: import("../api/types").ScoutStatus;
+      summary: string | null;
+      shouldWait: boolean | null;
+      waitUntil: string | null;
+      expectedSaving: string | null;
+      confidence: import("../api/types").WaitConfidence | null;
+      sources: import("../api/types").WaitSource[];
       errorText: string | null;
     };
 
@@ -73,6 +90,7 @@ function toLocal(m: TillyMessage): Msg {
       rows: m.rows,
       note: m.note,
       scoutProposal: m.scoutProposal ?? null,
+      waitProposal: m.waitProposal ?? null,
     };
   }
   if (m.kind === "scout") {
@@ -86,6 +104,24 @@ function toLocal(m: TillyMessage): Msg {
       status: m.status,
       summary: m.summary,
       options: m.options,
+      errorText: m.errorText,
+    };
+  }
+  if (m.kind === "wait") {
+    return {
+      id: m.id,
+      role: "tilly",
+      kind: "wait",
+      jobId: m.jobId,
+      query: m.query,
+      location: m.location,
+      status: m.status,
+      summary: m.summary,
+      shouldWait: m.shouldWait,
+      waitUntil: m.waitUntil,
+      expectedSaving: m.expectedSaving,
+      confidence: m.confidence,
+      sources: m.sources,
       errorText: m.errorText,
     };
   }
@@ -202,7 +238,9 @@ export function BTGuardian() {
             key={m.id}
             m={m}
             onScout={(query) => tilly.scout({ query, sourceMessageId: m.id })}
+            onAskWait={(query) => tilly.askWait({ query, sourceMessageId: m.id })}
             scouting={tilly.isScouting}
+            askingWait={tilly.isAskingWait}
           />
         ))}
         {thinking ? <TypingBubble /> : null}
@@ -297,11 +335,15 @@ export function BTGuardian() {
 function Bubble({
   m,
   onScout,
+  onAskWait,
   scouting,
+  askingWait,
 }: {
   m: Msg;
   onScout: (query: string) => void;
+  onAskWait: (query: string) => void;
   scouting: boolean;
+  askingWait: boolean;
 }) {
   const { t } = useBT();
 
@@ -380,11 +422,14 @@ function Bubble({
           >
             {m.note}
           </Text>
-          {m.scoutProposal ? (
-            <ScoutProposalCTA
-              proposal={m.scoutProposal}
-              onScout={() => onScout(m.scoutProposal!.query)}
-              busy={scouting}
+          {m.scoutProposal || m.waitProposal ? (
+            <ProposalCTAs
+              scoutProposal={m.scoutProposal ?? null}
+              waitProposal={m.waitProposal ?? null}
+              onScout={() => m.scoutProposal && onScout(m.scoutProposal.query)}
+              onAskWait={() => m.waitProposal && onAskWait(m.waitProposal.query)}
+              scouting={scouting}
+              askingWait={askingWait}
             />
           ) : null}
         </BTCard>
@@ -397,6 +442,15 @@ function Bubble({
       <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end", maxWidth: "92%" }}>
         <Tilly t={t} size={28} breathing={m.status !== "running" && m.status !== "queued"} state={m.status === "running" || m.status === "queued" ? "think" : "idle"} />
         <ScoutBubble m={m} />
+      </View>
+    );
+  }
+
+  if (m.kind === "wait") {
+    return (
+      <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end", maxWidth: "92%" }}>
+        <Tilly t={t} size={28} breathing={m.status !== "running" && m.status !== "queued"} state={m.status === "running" || m.status === "queued" ? "think" : "idle"} />
+        <WaitBubble m={m} />
       </View>
     );
   }
@@ -663,25 +717,38 @@ function TypingBubble() {
 }
 
 /**
- * Scout proposal CTA — appears under an affordability analysis when the
- * LLM thinks the item is buyable enough to scout for sales / secondhand.
- * "Find me cheaper options" enqueues a scout job; "Not now" hides this
- * card locally so the user isn't pestered. The dismiss is non-persistent
- * (intentional — it's just a visual nudge per render, not a preference).
+ * Affordability-card CTAs — Tilly may have populated up to two proposals
+ * on the analysis (S9 scoutProposal + S11 waitProposal). Show whichever
+ * are set. Tapping one calls back to the parent which kicks off the
+ * matching mutation and locally hides the strip so the user isn't
+ * pestered. The dismiss is non-persistent (per render, not a saved
+ * preference).
  */
-function ScoutProposalCTA({
-  proposal,
+function ProposalCTAs({
+  scoutProposal,
+  waitProposal,
   onScout,
-  busy,
+  onAskWait,
+  scouting,
+  askingWait,
 }: {
-  proposal: import("../api/types").ScoutProposal;
+  scoutProposal: import("../api/types").ScoutProposal | null;
+  waitProposal: import("../api/types").WaitProposal | null;
   onScout: () => void;
-  busy: boolean;
+  onAskWait: () => void;
+  scouting: boolean;
+  askingWait: boolean;
 }) {
   const { t } = useBT();
   const [dismissed, setDismissed] = useState(false);
   const [tapped, setTapped] = useState(false);
   if (dismissed || tapped) return null;
+  if (!scoutProposal && !waitProposal) return null;
+  // Reason text: prefer waitProposal's because it's more actionable
+  // ("Levi's go on sale every Black Friday, want me to check?").
+  // If both are present, show the wait reason — they share a query
+  // shape so the scout reason would feel redundant.
+  const reason = waitProposal?.reason ?? scoutProposal?.reason ?? "";
   return (
     <View
       style={{
@@ -694,45 +761,83 @@ function ScoutProposalCTA({
         borderColor: t.rule,
       }}
     >
-      <Text
-        style={{
-          fontFamily: BTFonts.serifItalic,
-          color: t.accent,
-          fontSize: 13,
-          lineHeight: 18,
-        }}
-      >
-        {proposal.reason}
-      </Text>
-      <View style={{ flexDirection: "row", gap: 8 }}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Find me cheaper options"
-          disabled={busy}
-          onPress={() => {
-            setTapped(true);
-            onScout();
-          }}
+      {reason ? (
+        <Text
           style={{
-            flex: 1,
-            paddingVertical: 10,
-            borderRadius: 999,
-            backgroundColor: t.accent,
-            alignItems: "center",
-            opacity: busy ? 0.6 : 1,
+            fontFamily: BTFonts.serifItalic,
+            color: t.accent,
+            fontSize: 13,
+            lineHeight: 18,
           }}
         >
-          <Text
+          {reason}
+        </Text>
+      ) : null}
+      <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+        {scoutProposal ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Find me cheaper options"
+            disabled={scouting || askingWait}
+            onPress={() => {
+              setTapped(true);
+              onScout();
+            }}
             style={{
-              color: "#fff",
-              fontFamily: BTFonts.sans,
-              fontSize: 13,
-              fontWeight: "700",
+              flex: 1,
+              minWidth: 140,
+              paddingVertical: 10,
+              borderRadius: 999,
+              backgroundColor: t.accent,
+              alignItems: "center",
+              opacity: scouting || askingWait ? 0.6 : 1,
             }}
           >
-            Find me cheaper options
-          </Text>
-        </Pressable>
+            <Text
+              style={{
+                color: "#fff",
+                fontFamily: BTFonts.sans,
+                fontSize: 13,
+                fontWeight: "700",
+              }}
+            >
+              Find cheaper options
+            </Text>
+          </Pressable>
+        ) : null}
+        {waitProposal ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Should I wait for a sale?"
+            disabled={scouting || askingWait}
+            onPress={() => {
+              setTapped(true);
+              onAskWait();
+            }}
+            style={{
+              flex: 1,
+              minWidth: 120,
+              paddingVertical: 10,
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: t.accent,
+              alignItems: "center",
+              opacity: scouting || askingWait ? 0.6 : 1,
+              backgroundColor: scoutProposal ? "transparent" : t.accent,
+            }}
+          >
+            <Text
+              style={{
+                color: scoutProposal ? t.accent : "#fff",
+                fontFamily: BTFonts.sans,
+                fontSize: 13,
+                fontWeight: "700",
+              }}
+            >
+              Should I wait?
+            </Text>
+          </Pressable>
+        ) : null}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="Not now"
@@ -741,18 +846,10 @@ function ScoutProposalCTA({
             paddingHorizontal: 14,
             paddingVertical: 10,
             borderRadius: 999,
-            borderWidth: 1,
-            borderColor: t.rule,
             alignItems: "center",
           }}
         >
-          <Text
-            style={{
-              color: t.inkMute,
-              fontFamily: BTFonts.sans,
-              fontSize: 13,
-            }}
-          >
+          <Text style={{ color: t.inkMute, fontFamily: BTFonts.sans, fontSize: 13 }}>
             Not now
           </Text>
         </Pressable>
@@ -904,6 +1001,195 @@ function ScoutBubble({
           </Pressable>
         ))}
       </View>
+    </BTCard>
+  );
+}
+
+/**
+ * Wait/seasonal advice bubble — S11. Shows three states:
+ *   - queued / running: "Looking up sale history…"
+ *   - done: verdict (wait or buy), date, expected saving, 1-3 sources
+ *   - failed: graceful note
+ *
+ * The bubble updates automatically because useTilly() refetches the
+ * chat history every 2.5s while the underlying job is queued/running.
+ */
+function WaitBubble({ m }: { m: Extract<Msg, { kind: "wait" }> }) {
+  const { t } = useBT();
+  if (m.status === "queued" || m.status === "running") {
+    return (
+      <BTCard t={t} alt padding={14} style={{ flex: 1, gap: 8 }}>
+        <BTLabel color={t.inkMute} size={10}>
+          Should you wait?
+        </BTLabel>
+        <View style={{ flexDirection: "row", gap: 8, alignItems: "center" }}>
+          <ActivityIndicator size="small" color={t.accent} />
+          <Text
+            style={{
+              flex: 1,
+              fontFamily: BTFonts.serifItalic,
+              fontSize: 14,
+              color: t.ink,
+            }}
+            numberOfLines={2}
+          >
+            Looking at sale history for "{m.query}"…
+          </Text>
+        </View>
+      </BTCard>
+    );
+  }
+  if (m.status === "failed") {
+    return (
+      <BTCard t={t} alt padding={14} style={{ flex: 1, gap: 6 }}>
+        <BTLabel color={t.inkMute} size={10}>
+          Couldn't tell
+        </BTLabel>
+        <Text style={{ fontFamily: BTFonts.serif, fontSize: 14, color: t.ink }}>
+          I couldn't find a clear sale pattern for "{m.query}" right now.
+        </Text>
+      </BTCard>
+    );
+  }
+  // status === "done"
+  const verdictColor = m.shouldWait ? t.good : t.inkMute;
+  const verdictLabel = m.shouldWait
+    ? "Wait — likely cheaper soon"
+    : "Buy now — no clear sale window";
+  return (
+    <BTCard t={t} alt padding={14} style={{ flex: 1, gap: 10 }}>
+      <BTLabel color={verdictColor} size={10}>
+        {verdictLabel}
+      </BTLabel>
+      {m.summary ? (
+        <Text
+          style={{
+            fontFamily: BTFonts.serif,
+            fontSize: 15,
+            lineHeight: 21,
+            color: t.ink,
+          }}
+        >
+          {m.summary}
+        </Text>
+      ) : null}
+      {m.shouldWait ? (
+        <View style={{ flexDirection: "row", gap: 16, flexWrap: "wrap" }}>
+          {m.waitUntil ? (
+            <View>
+              <Text
+                style={{
+                  fontFamily: BTFonts.mono,
+                  fontSize: 9,
+                  letterSpacing: 0.6,
+                  textTransform: "uppercase",
+                  color: t.inkSoft,
+                }}
+              >
+                Until
+              </Text>
+              <Text
+                style={{
+                  fontFamily: BTFonts.serif,
+                  fontSize: 14,
+                  color: t.ink,
+                }}
+              >
+                {m.waitUntil}
+              </Text>
+            </View>
+          ) : null}
+          {m.expectedSaving ? (
+            <View>
+              <Text
+                style={{
+                  fontFamily: BTFonts.mono,
+                  fontSize: 9,
+                  letterSpacing: 0.6,
+                  textTransform: "uppercase",
+                  color: t.inkSoft,
+                }}
+              >
+                Likely save
+              </Text>
+              <Text
+                style={{
+                  fontFamily: BTFonts.serif,
+                  fontSize: 14,
+                  fontWeight: "700",
+                  color: t.good,
+                }}
+              >
+                {m.expectedSaving}
+              </Text>
+            </View>
+          ) : null}
+          {m.confidence ? (
+            <View>
+              <Text
+                style={{
+                  fontFamily: BTFonts.mono,
+                  fontSize: 9,
+                  letterSpacing: 0.6,
+                  textTransform: "uppercase",
+                  color: t.inkSoft,
+                }}
+              >
+                Confidence
+              </Text>
+              <Text style={{ fontFamily: BTFonts.serif, fontSize: 14, color: t.ink }}>
+                {m.confidence}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+      {m.sources.length ? (
+        <View style={{ gap: 6 }}>
+          <BTLabel color={t.inkMute} size={9}>
+            Why
+          </BTLabel>
+          {m.sources.slice(0, 3).map((s, i) => (
+            <Pressable
+              key={i}
+              onPress={() => Linking.openURL(s.url).catch(() => {})}
+              accessibilityRole="link"
+              accessibilityLabel={`Open ${s.source}`}
+              style={{
+                padding: 8,
+                borderRadius: 8,
+                backgroundColor: t.surface,
+                borderWidth: 1,
+                borderColor: t.rule,
+                gap: 2,
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: BTFonts.mono,
+                  fontSize: 9,
+                  letterSpacing: 0.6,
+                  textTransform: "uppercase",
+                  color: t.accent,
+                }}
+                numberOfLines={1}
+              >
+                {s.source}
+              </Text>
+              <Text
+                style={{
+                  fontFamily: BTFonts.serifItalic,
+                  fontSize: 12,
+                  color: t.inkSoft,
+                }}
+                numberOfLines={3}
+              >
+                {s.evidence}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
     </BTCard>
   );
 }

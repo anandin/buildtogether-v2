@@ -265,6 +265,11 @@ const CRITICAL_STATEMENTS: string[] = [
   // Scout jobs: client polls latest by user; recovery scans queued/running.
   `CREATE INDEX IF NOT EXISTS "tilly_scout_jobs_user_created_idx" ON "tilly_scout_jobs" ("user_id", "created_at" DESC)`,
   `CREATE INDEX IF NOT EXISTS "tilly_scout_jobs_status_idx" ON "tilly_scout_jobs" ("status", "created_at")`,
+  // S11 — wait/seasonal advice mode for scout jobs.
+  `ALTER TABLE "tilly_scout_jobs" ADD COLUMN IF NOT EXISTS "mode" text NOT NULL DEFAULT 'find'`,
+  // S12 — persistent location signal on the user, used as the default
+  // for scouts when no per-job location is provided.
+  `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "city" text`,
 ];
 
 export async function applyBootMigrations(): Promise<{

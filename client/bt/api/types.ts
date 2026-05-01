@@ -37,6 +37,7 @@ export type TodayBrief =
     };
 
 export type ScoutProposal = { query: string; reason: string };
+export type WaitProposal = { query: string; reason: string };
 export type ScoutOption = {
   source: string;
   title: string;
@@ -46,7 +47,9 @@ export type ScoutOption = {
   condition?: string;
   why: string;
 };
+export type WaitSource = { source: string; url: string; evidence: string };
 export type ScoutStatus = "queued" | "running" | "done" | "failed";
+export type WaitConfidence = "low" | "medium" | "high";
 
 export type TillyMessage =
   | { id: string; role: "user"; kind: "text"; body: string; createdAt: string }
@@ -60,6 +63,7 @@ export type TillyMessage =
       rows: { label: string; amt: number; sign: "+" | "-" | "=" }[];
       note: string;
       scoutProposal?: ScoutProposal | null;
+      waitProposal?: WaitProposal | null;
       createdAt: string;
     }
   | {
@@ -72,6 +76,23 @@ export type TillyMessage =
       status: ScoutStatus;
       summary: string | null;
       options: ScoutOption[];
+      errorText: string | null;
+      createdAt: string;
+    }
+  | {
+      id: string;
+      role: "tilly";
+      kind: "wait";
+      jobId: string;
+      query: string;
+      location: string | null;
+      status: ScoutStatus;
+      summary: string | null;
+      shouldWait: boolean | null;
+      waitUntil: string | null;
+      expectedSaving: string | null;
+      confidence: WaitConfidence | null;
+      sources: WaitSource[];
       errorText: string | null;
       createdAt: string;
     };

@@ -20,16 +20,21 @@
  */
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
-import { tillyScoutJobs } from "../../../shared/schema";
+import { tillyScoutJobs, users } from "../../../shared/schema";
 import { tavilySearch } from "./tavily";
 import { synthesizeScout } from "./synthesize";
+import { synthesizeWaitAdvice } from "./synthesize-wait";
 import { emitEventAsync } from "../event-emitter";
+
+export type ScoutMode = "find" | "wait";
 
 export interface EnqueueScoutInput {
   userId: string;
   householdId: string;
   query: string;
   location?: string | null;
+  /** S11 — 'find' (default) finds substitutes; 'wait' produces seasonal advice. */
+  mode?: ScoutMode;
 }
 
 export interface EnqueueScoutOptions {
@@ -51,13 +56,26 @@ export async function enqueueScout(
   input: EnqueueScoutInput,
   opts: EnqueueScoutOptions = {},
 ): Promise<string> {
+  // S12 — fall back to the user's persistent city when no per-job location
+  // is provided. This way once the user fills in their city in the profile,
+  // every scout is automatically scoped to local secondhand inventory.
+  let resolvedLocation = input.location;
+  if (resolvedLocation == null) {
+    const u = await db.query.users.findFirst({
+      where: eq(users.id, input.userId),
+      columns: { city: true },
+    });
+    resolvedLocation = u?.city ?? null;
+  }
+
   const [row] = await db
     .insert(tillyScoutJobs)
     .values({
       userId: input.userId,
       householdId: input.householdId,
       query: input.query,
-      location: input.location ?? null,
+      location: resolvedLocation,
+      mode: input.mode ?? "find",
       status: "queued",
     })
     .returning();
@@ -94,17 +112,20 @@ const DEFUNCT_CANADIAN_RETAILERS = [
   "zellers.com", // Zellers original — closed 2013 (modern relaunch is small)
 ];
 
-/**
- * Build 3 query strategies from one user query. Returns the queries
- * scoped + tagged for the LLM.
- */
-function buildQueryStrategies(query: string, location?: string | null): {
+type StrategyDef = {
   query: string;
   domains?: string[];
   excludeDomains?: string[];
   includeAnswer?: boolean;
   timeRange?: "day" | "week" | "month" | "year";
-}[] {
+};
+
+/**
+ * Build query strategies for a 'find' scout — 3 parallel searches that
+ * cover live secondhand inventory, current sales, and off-brand/refurb
+ * alternatives.
+ */
+function buildFindStrategies(query: string, location?: string | null): StrategyDef[] {
   const loc = (location ?? "Canada").trim();
   return [
     // (1) Secondhand inventory — Kijiji + Karrot scoped, recent posts only.
@@ -134,6 +155,44 @@ function buildQueryStrategies(query: string, location?: string | null): {
   ];
 }
 
+/**
+ * Build query strategies for a 'wait' / seasonal-advice scout — 3
+ * parallel searches that gather sale-history evidence so the synthesizer
+ * can decide whether there's a credible upcoming discount window.
+ *
+ * - (1) RFD/SmartCanucks recent threads: real shoppers reporting deal
+ *   patterns. Time-bound to the last year so the pattern reflects the
+ *   current retailer landscape (Hudson's Bay isn't around anymore).
+ * - (2) Black Friday / Boxing Day / seasonal-sale calendar — open-web
+ *   year-bounded to find blogger-curated sale-windowed advice.
+ * - (3) Brand-specific seasonal cycle ("when does Gap go on sale" /
+ *   "Levi's sale calendar") — useful for staple items.
+ */
+function buildWaitStrategies(query: string, location?: string | null): StrategyDef[] {
+  const loc = (location ?? "Canada").trim();
+  return [
+    {
+      query: `${query} sale history when on sale ${loc}`,
+      domains: ["redflagdeals.com", "smartcanucks.ca"],
+      excludeDomains: DEFUNCT_CANADIAN_RETAILERS,
+      includeAnswer: true,
+      timeRange: "year",
+    },
+    {
+      query: `${query} Black Friday Boxing Day seasonal sale Canada`,
+      excludeDomains: DEFUNCT_CANADIAN_RETAILERS,
+      includeAnswer: true,
+      timeRange: "year",
+    },
+    {
+      query: `when does ${query} go on sale best time to buy`,
+      excludeDomains: DEFUNCT_CANADIAN_RETAILERS,
+      includeAnswer: true,
+      timeRange: "year",
+    },
+  ];
+}
+
 export async function processScoutJob(jobId: string): Promise<void> {
   // Mark running
   await db
@@ -147,8 +206,11 @@ export async function processScoutJob(jobId: string): Promise<void> {
     });
     if (!job) throw new Error("job row vanished mid-flight");
 
-    // Run the 3 search strategies in parallel.
-    const strategies = buildQueryStrategies(job.query, job.location);
+    const mode: ScoutMode = (job.mode as ScoutMode) ?? "find";
+    const strategies =
+      mode === "wait"
+        ? buildWaitStrategies(job.query, job.location)
+        : buildFindStrategies(job.query, job.location);
     const searches = await Promise.all(
       strategies.map((s) =>
         tavilySearch({
@@ -178,18 +240,35 @@ export async function processScoutJob(jobId: string): Promise<void> {
       return;
     }
 
-    // Synthesize via cheap LLM.
-    const result = await synthesizeScout({
-      query: job.query,
-      location: job.location,
-      searches,
-    });
+    // Synthesize via cheap LLM. Wait-mode produces a different shape
+    // (shouldWait/waitUntil/expectedSaving/sources) but the persistence
+    // path is the same — store the structured result blob, the chat-history
+    // serializer renders the right card based on job.mode.
+    let resultBlob: Record<string, unknown>;
+    let summary: string;
+    if (mode === "wait") {
+      const advice = await synthesizeWaitAdvice({
+        query: job.query,
+        location: job.location,
+        searches,
+      });
+      resultBlob = advice as unknown as Record<string, unknown>;
+      summary = advice.summary;
+    } else {
+      const result = await synthesizeScout({
+        query: job.query,
+        location: job.location,
+        searches,
+      });
+      resultBlob = result as unknown as Record<string, unknown>;
+      summary = result.summary;
+    }
 
     await db
       .update(tillyScoutJobs)
       .set({
         status: "done",
-        result: result as unknown as Record<string, unknown>,
+        result: resultBlob,
         completedAt: new Date(),
       })
       .where(eq(tillyScoutJobs.id, jobId));
@@ -203,8 +282,8 @@ export async function processScoutJob(jobId: string): Promise<void> {
       kind: "nudge_sent",
       payload: {
         scoutJobId: jobId,
-        optionCount: result.options.length,
-        summary: result.summary,
+        scoutMode: mode,
+        summary,
       },
       sourceTable: "tilly_scout_jobs",
       sourceId: jobId,

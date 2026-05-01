@@ -28,7 +28,7 @@ export function useTilly() {
       const inFlight = (data?.messages ?? []).some(
         (m) =>
           m.role === "tilly" &&
-          m.kind === "scout" &&
+          (m.kind === "scout" || m.kind === "wait") &&
           (m.status === "queued" || m.status === "running"),
       );
       return inFlight ? 2500 : false;
@@ -72,6 +72,14 @@ export function useTilly() {
     },
   });
 
+  const wait = useMutation({
+    mutationFn: (body: { query: string; location?: string | null; sourceMessageId?: string }) =>
+      btApi.chatWait(body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/tilly/chat/history"] });
+    },
+  });
+
   return {
     messages: history.data?.messages ?? [],
     isLoading: history.isLoading,
@@ -80,5 +88,8 @@ export function useTilly() {
     scout: (body: { query: string; location?: string | null; sourceMessageId?: string }) =>
       scout.mutate(body),
     isScouting: scout.isPending,
+    askWait: (body: { query: string; location?: string | null; sourceMessageId?: string }) =>
+      wait.mutate(body),
+    isAskingWait: wait.isPending,
   };
 }

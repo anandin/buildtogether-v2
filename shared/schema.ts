@@ -17,6 +17,13 @@ export const users = pgTable("users", {
   avatarUrl: text("avatar_url"),
   /** Admin flag — gates access to /api/admin/* + /admin/* routes (spec D8). */
   isAdmin: boolean("is_admin").default(false).notNull(),
+  /**
+   * S12 — persistent location signal used as the default location for
+   * Tilly scouts when no per-job location is provided. Free-form city
+   * string (e.g. "Toronto, ON"), max ~100 chars; later upgrade path is
+   * to attach lat/lng for radius-bounded searches.
+   */
+  city: text("city"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastLoginAt: timestamp("last_login_at"),
 });
@@ -1020,6 +1027,11 @@ export const tillyScoutJobs = pgTable("tilly_scout_jobs", {
   // Optional location hint passed in so Kijiji/Karrot results are local.
   // City string ("Toronto, ON") for now; later can attach lat/lng.
   location: text("location"),
+  // S11 — what kind of advice the user asked for:
+  //   'find' (default)  → live substitute scout: 3 cheaper options now
+  //   'wait'            → seasonal/timing advisor: should I wait, save how much?
+  // The orchestrator branches on this to pick query strategies + synthesis prompt.
+  mode: text("mode").notNull().default("find"), // find | wait
   // Status for client polling.
   status: text("status").notNull().default("queued"), // queued | running | done | failed
   // Final synthesized result (null until status='done').

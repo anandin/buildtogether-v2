@@ -27,6 +27,7 @@ import {
   tillyMemoryV2,
   tillyNudges,
   tillyScoutJobs,
+  users,
 } from "../../../shared/schema";
 import { enqueueScout } from "../../tilly/scout/orchestrator";
 import { distillUser } from "../../tilly/nightly-distiller";
@@ -107,6 +108,7 @@ function isAffordabilityQuestion(text: string): boolean {
 // ─── Persisted-message → wire shape ────────────────────────────────────────
 
 type ScoutProposal = { query: string; reason: string };
+type WaitProposal = { query: string; reason: string };
 type ScoutWireOption = {
   source: string;
   title: string;
@@ -116,6 +118,7 @@ type ScoutWireOption = {
   condition?: string;
   why: string;
 };
+type WaitWireSource = { source: string; url: string; evidence: string };
 
 type WireMessage =
   | { id: string; role: "user"; kind: "text"; body: string; createdAt: string }
@@ -128,6 +131,7 @@ type WireMessage =
       rows: { label: string; amt: number; sign: "+" | "-" | "=" }[];
       note: string;
       scoutProposal?: ScoutProposal | null;
+      waitProposal?: WaitProposal | null;
       createdAt: string;
     }
   | {
@@ -140,6 +144,23 @@ type WireMessage =
       status: "queued" | "running" | "done" | "failed";
       summary: string | null;
       options: ScoutWireOption[];
+      errorText: string | null;
+      createdAt: string;
+    }
+  | {
+      id: string;
+      role: "tilly";
+      kind: "wait";
+      jobId: string;
+      query: string;
+      location: string | null;
+      status: "queued" | "running" | "done" | "failed";
+      summary: string | null;
+      shouldWait: boolean | null;
+      waitUntil: string | null;
+      expectedSaving: string | null;
+      confidence: "low" | "medium" | "high" | null;
+      sources: WaitWireSource[];
       errorText: string | null;
       createdAt: string;
     };
@@ -163,6 +184,7 @@ function rowToWire(
       rows: { label: string; amt: number; sign: "+" | "-" | "=" }[];
       note: string;
       scoutProposal?: ScoutProposal | null;
+      waitProposal?: WaitProposal | null;
     };
     return {
       id: row.id,
@@ -172,15 +194,17 @@ function rowToWire(
       rows: m.rows,
       note: m.note,
       scoutProposal: m.scoutProposal ?? null,
+      waitProposal: m.waitProposal ?? null,
       createdAt: row.createdAt.toISOString(),
     };
   }
-  // Scout messages: role=guardian, intent=scout, metadata={jobId,query,location}.
-  // The current scout state comes from the joined tilly_scout_jobs row so the
-  // bubble updates as the job progresses.
+  // Scout / wait messages: role=guardian, intent in {scout, wait}, metadata
+  // points at a tilly_scout_jobs row. The current state comes from the
+  // joined job so the bubble updates as the job progresses. Wait jobs share
+  // the same table but carry a different result shape.
   if (
     role === "tilly" &&
-    row.intent === "scout" &&
+    (row.intent === "scout" || row.intent === "wait") &&
     row.metadata &&
     typeof row.metadata === "object" &&
     "jobId" in row.metadata
@@ -191,6 +215,36 @@ function rowToWire(
       location: string | null;
     };
     const job = scoutById?.get(m.jobId);
+    const status = (job?.status as "queued" | "running" | "done" | "failed") ?? "queued";
+    if (row.intent === "wait") {
+      const advice = (job?.result ?? null) as
+        | {
+            shouldWait?: boolean;
+            waitUntil?: string | null;
+            expectedSaving?: string | null;
+            confidence?: "low" | "medium" | "high";
+            sources?: WaitWireSource[];
+            summary?: string;
+          }
+        | null;
+      return {
+        id: row.id,
+        role: "tilly",
+        kind: "wait",
+        jobId: m.jobId,
+        query: m.query,
+        location: m.location ?? null,
+        status,
+        summary: advice?.summary ?? null,
+        shouldWait: typeof advice?.shouldWait === "boolean" ? advice.shouldWait : null,
+        waitUntil: advice?.waitUntil ?? null,
+        expectedSaving: advice?.expectedSaving ?? null,
+        confidence: advice?.confidence ?? null,
+        sources: advice?.sources ?? [],
+        errorText: job?.errorText ?? null,
+        createdAt: row.createdAt.toISOString(),
+      };
+    }
     const result = (job?.result ?? null) as
       | { options?: ScoutWireOption[]; summary?: string }
       | null;
@@ -201,7 +255,7 @@ function rowToWire(
       jobId: m.jobId,
       query: m.query,
       location: m.location ?? null,
-      status: (job?.status as "queued" | "running" | "done" | "failed") ?? "queued",
+      status,
       summary: result?.summary ?? null,
       options: result?.options ?? [],
       errorText: job?.errorText ?? null,
@@ -384,6 +438,7 @@ export function mountTillyChatRoutes(app: Express): void {
               note: analysisPayload.note,
               followUp: analysisPayload.followUp,
               scoutProposal: analysisPayload.scoutProposal ?? null,
+              waitProposal: analysisPayload.waitProposal ?? null,
             },
           })
           .returning();
@@ -395,6 +450,7 @@ export function mountTillyChatRoutes(app: Express): void {
           rows: analysisPayload.rows,
           note: analysisPayload.note,
           scoutProposal: analysisPayload.scoutProposal ?? null,
+          waitProposal: analysisPayload.waitProposal ?? null,
           createdAt: tillyRow.createdAt.toISOString(),
         };
         emitEventAsync({
@@ -652,14 +708,17 @@ export function mountTillyChatRoutes(app: Express): void {
   });
 
   // POST /api/tilly/chat/scout — student tapped "Find me cheaper options"
-  // on an affordability analysis. Enqueues a scout job and writes a
-  // guardian_conversations row of intent=scout so the chat thread shows
-  // the scouting state inline (and updates as the job progresses, since
-  // the history serializer joins the live tilly_scout_jobs row).
-  app.post(
-    "/api/tilly/chat/scout",
-    requireAuth,
-    async (req: Request, res: Response) => {
+  // on an affordability analysis. Enqueues a scout job (mode='find') and
+  // writes a guardian_conversations row of intent=scout so the chat
+  // thread shows the scouting state inline.
+  //
+  // S11 — POST /api/tilly/chat/wait does the same plumbing but enqueues a
+  // wait-mode job (mode='wait') and writes intent='wait', so the chat
+  // history serializer renders a wait-advice card instead of an options
+  // grid. Both endpoints use the same orchestrator; only the synthesis
+  // head differs.
+  const mountChatScoutLike = (path: string, mode: "find" | "wait") => {
+    app.post(path, requireAuth, async (req: Request, res: Response) => {
       if (!req.user) return res.status(401).json({ error: "auth required" });
       const userId = req.user.id;
       const householdId = req.user.coupleId;
@@ -683,19 +742,24 @@ export function mountTillyChatRoutes(app: Express): void {
         householdId,
         query,
         location,
+        mode,
       });
 
-      // Tilly's "on it, I'll ping you" message — written as a scout-kind
-      // row so the bubble can render the running spinner, then transition
-      // to options when the orchestrator finishes.
+      // The conversation row's `intent` mirrors the job's mode, which is
+      // what the history serializer reads to pick the right card shape.
+      const intent = mode === "wait" ? "wait" : "scout";
+      const placeholder =
+        mode === "wait"
+          ? `Looking up sale history for ${query}. One sec.`
+          : `On it — I'll check ${query}. Give me a minute.`;
       const [convRow] = await db
         .insert(guardianConversations)
         .values({
           coupleId: householdId,
           userId,
           role: "guardian",
-          content: `On it — I'll check ${query}. Give me a minute.`,
-          intent: "scout",
+          content: placeholder,
+          intent,
           metadata: { jobId, query, location, sourceMessageId },
         })
         .returning();
@@ -704,15 +768,50 @@ export function mountTillyChatRoutes(app: Express): void {
         userId,
         householdId,
         kind: "chat_tilly_reply",
-        payload: { kind: "scout", jobId, query, location, inReplyTo: sourceMessageId },
+        payload: { kind: intent, jobId, query, location, inReplyTo: sourceMessageId },
         sourceTable: "guardian_conversations",
         sourceId: convRow.id,
       });
 
-      res.json({
-        jobId,
-        messageId: convRow.id,
+      res.json({ jobId, messageId: convRow.id });
+    });
+  };
+  mountChatScoutLike("/api/tilly/chat/scout", "find");
+  mountChatScoutLike("/api/tilly/chat/wait", "wait");
+
+  // S12 — POST /api/tilly/me/city. Persist the user's city so scouts
+  // automatically default to local secondhand inventory. The
+  // affordability/scout flow already passes location through when set; this
+  // endpoint just lets the client write it once. GET is exposed for the
+  // profile screen to render the current value.
+  app.get(
+    "/api/tilly/me/city",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const u = await db.query.users.findFirst({
+        where: eq(users.id, req.user.id),
+        columns: { city: true },
       });
+      res.json({ city: u?.city ?? null });
+    },
+  );
+  app.put(
+    "/api/tilly/me/city",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const raw = req.body?.city;
+      if (raw === null || raw === "") {
+        await db.update(users).set({ city: null }).where(eq(users.id, req.user.id));
+        return res.json({ city: null });
+      }
+      if (typeof raw !== "string" || !raw.trim()) {
+        return res.status(400).json({ error: "city must be a non-empty string or null" });
+      }
+      const city = raw.trim().slice(0, 100);
+      await db.update(users).set({ city }).where(eq(users.id, req.user.id));
+      res.json({ city });
     },
   );
 

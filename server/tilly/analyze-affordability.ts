@@ -67,6 +67,23 @@ export const AffordabilityAnalysisSchema = z.object({
     .describe(
       "ONLY populate when the student is asking about a specific buyable physical item (clothes, electronics, gear, gifts) where a sale or secondhand alternative might exist. Set to null for rent, tuition, food/groceries, services, intangibles, or anything where there isn't a meaningful market for substitutes.",
     ),
+  waitProposal: z
+    .object({
+      query: z
+        .string()
+        .describe(
+          "Search query Tilly will use to look up sale-history evidence for this item. e.g. 'Levi's 501 jeans' or 'AirPods Pro'.",
+        ),
+      reason: z
+        .string()
+        .describe(
+          "One short sentence in Tilly's voice on what she's checking, e.g. 'These usually go on sale around Black Friday — let me see if you'd save by waiting.'",
+        ),
+    })
+    .nullable()
+    .describe(
+      "ONLY populate when (a) the item has a meaningful seasonal-sale cycle (clothes, electronics, gifts, big-ticket consumer goods) AND (b) the student isn't time-pressured (no event deadline mentioned). Otherwise null. The student will see a 'Should I wait?' button alongside the analysis — only offer it when waiting could plausibly save real money.",
+    ),
 });
 
 export type AffordabilityRow = z.infer<typeof AnalysisRowSchema>;
