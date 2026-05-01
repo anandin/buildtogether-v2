@@ -124,7 +124,10 @@ async function clickModalTab(page, label) {
  */
 async function sendChat(page, message, { timeoutMs = 45000 } = {}) {
   const before = await apiCall(page, "/api/tilly/chat/history");
-  const lenBefore = before.body?.messages?.length ?? 0;
+  const beforeMsgs = before.body?.messages ?? [];
+  const lastIdBefore = beforeMsgs.length
+    ? beforeMsgs[beforeMsgs.length - 1].id
+    : null;
 
   const chatInput = page.locator("input").last();
   await chatInput.click();
@@ -160,15 +163,21 @@ async function sendChat(page, message, { timeoutMs = 45000 } = {}) {
     await page.keyboard.press("Enter");
   }
 
+  // Detect the new tilly reply by looking for a message id that wasn't
+  // present before AND whose role is "tilly". We can't rely on length
+  // growth — chat/history caps at most-recent 200, so an active user's
+  // count is always 200 even after a new turn lands.
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
     await page.waitForTimeout(500);
     const h = await apiCall(page, "/api/tilly/chat/history");
-    const lenNow = h.body?.messages?.length ?? 0;
-    if (lenNow >= lenBefore + 2) {
+    const msgs = h.body?.messages ?? [];
+    if (!msgs.length) continue;
+    const last = msgs[msgs.length - 1];
+    if (last.id !== lastIdBefore && last.role === "tilly") {
       return {
         latencyMs: Date.now() - start,
-        reply: h.body.messages[h.body.messages.length - 1],
+        reply: last,
       };
     }
   }

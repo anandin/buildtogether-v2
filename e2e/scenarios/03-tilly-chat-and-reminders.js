@@ -31,7 +31,8 @@ async function scenario({ page, ss, gotoTab, apiCall, sendChat, log }) {
   // (some affordability framing landed) rather than exact phrasing.
   const body = q1.reply.kind === "text" ? q1.reply.body : "";
   if (q1.reply.kind === "analysis") {
-    log(`Quick Math: ${q1.reply.body.title} (${(q1.reply.body.rows || []).length} rows)`);
+    // Wire shape has title/rows/note at top level, not under .body.
+    log(`Quick Math: ${q1.reply.title} (${(q1.reply.rows || []).length} rows)`);
   } else {
     // Tilly's affordability replies vary in shape — sometimes a strict
     // "Starting buffer / Final buffer" ledger (what parseQuickMath
@@ -79,8 +80,9 @@ async function scenario({ page, ss, gotoTab, apiCall, sendChat, log }) {
   const newOnes = remindersAfter.filter(
     (r) => !remindersBefore.find((b) => b.id === r.id),
   );
-  if (newOnes.length > 0) {
-    log(`new reminder: "${newOnes[0].label}" fires at ${newOnes[0].fireAt}`);
+  const newReminder = newOnes[0] ?? null;
+  if (newReminder) {
+    log(`new reminder: "${newReminder.label}" fires at ${newReminder.fireAt}`);
   } else {
     // Two valid outcomes if no new row landed:
     //   1. Tilly's reply acknowledged an existing reminder ("got that
@@ -100,31 +102,34 @@ async function scenario({ page, ss, gotoTab, apiCall, sendChat, log }) {
   }
 
   // ── Cancel via × ──
-  log("cancel via ×");
-  const cancelInfo = await page.evaluate(() => {
-    return Array.from(document.querySelectorAll("*"))
-      .filter((el) => el.children.length === 0)
-      .filter((el) => (el.textContent || "").trim() === "×")
-      .map((el) => {
-        const r = el.getBoundingClientRect();
-        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-      })
-      .sort((a, b) => a.y - b.y);
-  });
-  if (!cancelInfo.length) {
-    throw new Error("no × cancel button visible (RemindersStrip not rendered?)");
-  }
-  await page.mouse.click(cancelInfo[0].x, cancelInfo[0].y);
-  await page.waitForTimeout(2500);
-  await ss("after-cancel");
-
-  const remindersFinal = (await apiCall("/api/tilly/reminders")).body?.reminders ?? [];
-  if (remindersFinal.length >= remindersAfter.length) {
-    throw new Error(
-      `× cancel didn't remove a reminder; before-cancel=${remindersAfter.length} after-cancel=${remindersFinal.length}`,
+  // Reminder UX rebuild moved the × out of the chat thread — now lives
+  // on Today's "Up next today" card (today-only) and the You tab "Your
+  // reminders" screen (full list). Use the API to cancel since the
+  // freshly-created reminder is for next Friday (not today), so the
+  // Today card wouldn't show it. The Today/You × buttons themselves
+  // are exercised by scenario 16.
+  if (newReminder) {
+    log("cancel via API (reminder is for a future day; UI × covered by scenario 16)");
+    const cancelRes = await apiCall(
+      `/api/tilly/reminders/${newReminder.id}/cancel`,
+      { method: "POST" },
     );
+    if (cancelRes.status !== 200) {
+      throw new Error(`cancel ${cancelRes.status} ${JSON.stringify(cancelRes.body)}`);
+    }
+    await page.waitForTimeout(800);
+    await ss("after-cancel");
+    const remindersFinal = (await apiCall("/api/tilly/reminders")).body?.reminders ?? [];
+    const stillScheduled = remindersFinal.find(
+      (r) => r.id === newReminder.id && r.status === "scheduled",
+    );
+    if (stillScheduled) {
+      throw new Error("cancel didn't flip status — still scheduled");
+    }
+    log(`reminders cancelled: ${newReminder.id}`);
+  } else {
+    log("no new reminder to cancel — skipping cancel step");
   }
-  log(`reminders after cancel: ${remindersFinal.length} (was ${remindersAfter.length})`);
 }
 
 if (require.main === module) {
