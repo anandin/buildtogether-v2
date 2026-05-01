@@ -670,12 +670,17 @@ export function mountTillyChatRoutes(app: Express): void {
     if (!householdId) return res.json({ messages: [] });
 
     try {
-      const rows = await db
+      // Most-recent 200 messages, then reverse to chronological. The
+      // previous ASC-LIMIT-200 returned the OLDEST 200 — for an active
+      // user that meant new turns silently disappeared from the chat
+      // once they crossed the 200 threshold.
+      const recent = await db
         .select()
         .from(guardianConversations)
         .where(eq(guardianConversations.coupleId, householdId))
-        .orderBy(asc(guardianConversations.createdAt))
+        .orderBy(desc(guardianConversations.createdAt))
         .limit(200);
+      const rows = recent.slice().reverse();
 
       // Pull every scout/wait job referenced by an intent row in one query
       // so the wire shape always reflects the live job status (queued ->
