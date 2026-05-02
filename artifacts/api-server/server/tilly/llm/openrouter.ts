@@ -273,12 +273,62 @@ export class OpenRouterLLM implements LLMClient {
         `OpenRouterLLM.structuredOutput: model returned non-JSON content: ${text.slice(0, 200)}`,
       );
     }
-    const validated = (opts.schema as ZodType).safeParse(parsed);
+    let validated = (opts.schema as ZodType).safeParse(parsed);
+
+    // Heuristic: some models (Haiku in particular) return a bare array
+    // even when the schema is `{ singleProp: <array> }`. If the schema
+    // wraps a single array property and the model gave us an array,
+    // wrap it before re-validating. Cheap save vs. losing the response.
+    if (!validated.success && Array.isArray(parsed)) {
+      const wrappedKey = singleArrayPropertyName(opts.schema as ZodType);
+      if (wrappedKey) {
+        validated = (opts.schema as ZodType).safeParse({
+          [wrappedKey]: parsed,
+        });
+      }
+    }
+
     if (!validated.success) {
+      // Include a short snapshot of the *parsed* body so future
+      // failures are debuggable from logs alone (the raw text is also
+      // usually fine but parsed makes the shape mismatch obvious).
+      const snapshot = JSON.stringify(parsed).slice(0, 300);
       throw new Error(
-        `OpenRouterLLM.structuredOutput: schema validation failed: ${validated.error.message}`,
+        `OpenRouterLLM.structuredOutput: schema validation failed: ${validated.error.message} | parsed: ${snapshot}`,
       );
     }
     return validated.data as T;
+  }
+}
+
+/**
+ * If a Zod object schema has exactly one property and that property is
+ * an array, return its name. Used to auto-wrap a bare array response
+ * into the expected `{ key: [...] }` shape for tolerant parsing.
+ * Returns null when the schema doesn't match this pattern.
+ */
+function singleArrayPropertyName(schema: ZodType): string | null {
+  try {
+    const def = (schema as any)._def;
+    if (!def || def.typeName !== "ZodObject") return null;
+    const shape =
+      typeof def.shape === "function" ? def.shape() : def.shape;
+    const keys = Object.keys(shape ?? {});
+    if (keys.length !== 1) return null;
+    const inner = shape[keys[0]];
+    // Unwrap optional/default/nullable to find the underlying type.
+    let cur = inner?._def;
+    while (
+      cur &&
+      (cur.typeName === "ZodOptional" ||
+        cur.typeName === "ZodDefault" ||
+        cur.typeName === "ZodNullable")
+    ) {
+      cur = cur.innerType?._def;
+    }
+    if (cur?.typeName === "ZodArray") return keys[0];
+    return null;
+  } catch {
+    return null;
   }
 }

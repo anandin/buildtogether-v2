@@ -15,19 +15,29 @@
 import { z } from "zod";
 import { OpenRouterLLM } from "./llm/openrouter";
 
+// All fields tolerate omission so Haiku's frequent "no-reminder ⇒ {}"
+// or partial replies don't blow up validation. The downstream checks in
+// extractReminderFromReply (`!result.hasReminder || !result.fireAtIso ||
+// !result.label`) treat missing fields as "no reminder", which is the
+// safe default — false negatives are fine, false positives ping the
+// student about something they never asked for.
 const ReminderDraftSchema = z.object({
   hasReminder: z
     .boolean()
+    .optional()
+    .default(false)
     .describe("True only if Tilly explicitly promised to remind/ping/track."),
   fireAtIso: z
     .string()
     .nullable()
+    .optional()
     .describe(
       "ISO-8601 timestamp when the reminder should fire. If Tilly named a specific day/time, use that. If 'tomorrow', use 19:00 local next day. Null if no reminder.",
     ),
   label: z
     .string()
     .nullable()
+    .optional()
     .describe(
       "Short notification body (~12 words). What Tilly will say when the reminder fires. Null if no reminder.",
     ),
@@ -40,6 +50,8 @@ const ReminderDraftSchema = z.object({
       "free-trial-end",
       "generic",
     ])
+    .optional()
+    .default("generic")
     .describe("Best-fit category for the reminder."),
 });
 
