@@ -42,6 +42,3 @@ externalPort = 3001
 [userenv]
 
 [userenv.shared]
-ADMIN_EMAIL = "admin@buildtogether.app"
-ADMIN_PASSWORD_HASH = "$2b$10$1bnmuiWHg3rALpbRWfWHWOGwiv5oyXLBg4UNQHdm3JJPsC0g6W37i"
-TAVILY_API_KEY = "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"
