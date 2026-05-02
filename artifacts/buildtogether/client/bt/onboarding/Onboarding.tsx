@@ -365,6 +365,11 @@ function PrimaryButton({
       onPress={onPress}
       disabled={disabled}
       style={{
+        // alignSelf:stretch forces the button to fill the parent's cross
+        // axis even when the parent uses alignItems:"center" (the welcome
+        // card centers all its content, which would otherwise shrink the
+        // button to just the width of its label text).
+        alignSelf: "stretch",
         backgroundColor: disabled ? t.surfaceAlt : t.ink,
         borderRadius: 14,
         paddingVertical: 16,
