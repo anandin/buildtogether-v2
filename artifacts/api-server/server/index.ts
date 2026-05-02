@@ -2,6 +2,7 @@ import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { registerAdminRoutes } from "./admin-routes";
+import { loadAdminConfig } from "./admin-config";
 import { registerTillyRoutes } from "./routes/index";
 import { requestId } from "./middleware/requestId";
 import { pool } from "./db";
@@ -289,6 +290,10 @@ export async function getApp(): Promise<express.Application> {
   if (appReady) return appReady;
 
   appReady = (async () => {
+    // Fail fast at boot if the admin credentials / session secret aren't
+    // configured. This prevents shipping a default-password admin login.
+    loadAdminConfig();
+
     setupCors(app);
     setupBodyParsing(app);
     app.use(requestId); // attach request id + structured logger early

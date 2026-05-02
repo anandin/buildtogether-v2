@@ -6,11 +6,7 @@ import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import path from "path";
-
-// Hardcoded admin credentials - password is "Intel_328"
-const ADMIN_EMAIL = "admin@buildtogether.app";
-const ADMIN_PASSWORD_HASH = "$2b$10$g/r0j03l7SYsfcGpZTmjc.YuB4RKJVTbUyUd5KjOgRotxk4jr2QEO";
-const JWT_SECRET = process.env.SESSION_SECRET || "build-together-admin-secret-2024";
+import { loadAdminConfig } from "./admin-config";
 
 interface AdminRequest extends Request {
   adminUser?: { id: string; email: string };
@@ -21,10 +17,11 @@ function authenticateAdmin(req: AdminRequest, res: Response, next: NextFunction)
   if (!authHeader?.startsWith("Bearer ")) {
     return res.status(401).json({ error: "Unauthorized" });
   }
-  
+
+  const { sessionSecret } = loadAdminConfig();
   const token = authHeader.substring(7);
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as { id: string; email: string };
+    const decoded = jwt.verify(token, sessionSecret) as { id: string; email: string };
     req.adminUser = decoded;
     next();
   } catch {
@@ -37,25 +34,28 @@ export function registerAdminRoutes(app: Express) {
     res.sendFile(path.resolve(process.cwd(), "server", "templates", "admin-dashboard.html"));
   });
 
-  // Login with hardcoded credentials
+  // Login uses credentials configured via environment variables
+  // (ADMIN_EMAIL, ADMIN_PASSWORD_HASH, SESSION_SECRET). See admin-config.ts.
   app.post("/api/admin/login", async (req, res) => {
     try {
       const { email, password } = req.body;
-      
-      // Verify against hardcoded credentials
-      if (email !== ADMIN_EMAIL) {
+      const { email: adminEmail, passwordHash, sessionSecret } = loadAdminConfig();
+
+      if (typeof email !== "string" || typeof password !== "string") {
         return res.status(401).json({ error: "Invalid credentials" });
       }
-      
-      const validPassword = await bcrypt.compare(password, ADMIN_PASSWORD_HASH);
-      if (!validPassword) {
+
+      // Always run bcrypt.compare to keep response timing roughly constant
+      // regardless of whether the email matched.
+      const passwordOk = await bcrypt.compare(password, passwordHash);
+      const emailOk = email === adminEmail;
+      if (!emailOk || !passwordOk) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
-      
-      // Generate JWT token
-      const token = jwt.sign({ id: "admin", email: ADMIN_EMAIL }, JWT_SECRET, { expiresIn: "7d" });
-      
-      res.json({ token, admin: { id: "admin", email: ADMIN_EMAIL, name: "Admin" } });
+
+      const token = jwt.sign({ id: "admin", email: adminEmail }, sessionSecret, { expiresIn: "7d" });
+
+      res.json({ token, admin: { id: "admin", email: adminEmail, name: "Admin" } });
     } catch (error: any) {
       console.error("Admin login error:", error);
       res.status(500).json({ error: error.message });
