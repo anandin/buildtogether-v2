@@ -29,8 +29,15 @@ import { emitEventAsync } from "../tilly/event-emitter";
 function requireCron(req: Request, res: Response, next: NextFunction) {
   const expected = process.env.CRON_SECRET;
   if (!expected) {
-    // No secret set → allow in dev, but log loudly.
-    console.warn("CRON_SECRET not set — cron endpoint is open. Set it in Vercel env vars.");
+    // Fail-closed in production — an unset CRON_SECRET in prod means the
+    // operator forgot to set it, and leaving the endpoints open would let
+    // anyone trigger LLM-billable cron jobs (distill, dossier, archive).
+    if (process.env.NODE_ENV === "production") {
+      console.error("CRON_SECRET not set in production — refusing cron request");
+      return res.status(503).json({ error: "cron not configured" });
+    }
+    // In dev / staging: allow through but log loudly so it can't go unnoticed.
+    console.warn("CRON_SECRET not set — cron endpoint is open. Set it in env vars.");
     return next();
   }
   const auth = req.header("authorization") ?? "";

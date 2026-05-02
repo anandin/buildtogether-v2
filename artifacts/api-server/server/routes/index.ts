@@ -47,5 +47,13 @@ export function registerTillyRoutes(app: Express): void {
   mountPushRoutes(app);
   mountExpensesRoutes(app);
   mountInvitesRoutes(app);
-  mountDemoRoutes(app);
+  // Demo routes (POST /api/demo/seed, /api/demo/clear, /api/demo/connect-plaid-sandbox)
+  // are auth-gated but let any user wipe + re-seed their own data. Useful for
+  // QA / staging, dangerous in production. Mount only in non-prod environments.
+  if (process.env.NODE_ENV !== "production") {
+    mountDemoRoutes(app);
+    console.log("[routes] demo routes mounted (NODE_ENV != production)");
+  } else {
+    console.log("[routes] demo routes SKIPPED (NODE_ENV == production)");
+  }
 }
