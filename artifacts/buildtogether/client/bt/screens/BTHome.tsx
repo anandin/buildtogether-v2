@@ -100,9 +100,15 @@ export function BTHome({ onNav }: Props) {
     .reduce((s, e) => s + e.amount, 0);
 
   // Days-of-the-week ahead with their meaning. The week-strip shows today
-  // + the next 4 days. Real bills/paychecks would land here; we currently
-  // synthesize from what we know (paycheck day, recurring subs, today).
-  const weekDays = nextFiveDays(today_?.dayLabel);
+  // + the next 4 days. Pulls in scheduled reminders so a "remind me
+  // Wednesday afternoon" turns into a labeled chip on that day's card —
+  // before this, the strip was hardcoded and Wednesday looked empty even
+  // when Tilly had clearly committed to a ping.
+  const remindersAll = useQuery({
+    queryKey: ["/api/tilly/reminders"],
+    queryFn: btApi.reminders,
+  });
+  const weekDays = nextFiveDays(remindersAll.data?.reminders ?? []);
 
   return (
     <ScrollView
@@ -499,21 +505,54 @@ type WeekDay = {
   mood: "today" | "watch" | "good" | "maybe";
 };
 
-function nextFiveDays(_dayLabel: string | undefined): WeekDay[] {
+type ReminderRow = {
+  id: string;
+  label: string;
+  kind: string;
+  fireAt: string;
+  status: "scheduled" | "fired" | "cancelled";
+};
+
+function nextFiveDays(reminders: ReminderRow[]): WeekDay[] {
   const out: WeekDay[] = [];
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const now = new Date();
+  // Bucket scheduled reminders by their local YYYY-MM-DD so we can match
+  // by day without timezone drift. Cancelled / already-fired are skipped.
+  const byDay = new Map<string, ReminderRow[]>();
+  for (const r of reminders) {
+    if (r.status !== "scheduled") continue;
+    const fire = new Date(r.fireAt);
+    if (isNaN(fire.getTime())) continue;
+    const key = `${fire.getFullYear()}-${fire.getMonth()}-${fire.getDate()}`;
+    const list = byDay.get(key) ?? [];
+    list.push(r);
+    byDay.set(key, list);
+  }
   for (let i = 0; i < 5; i++) {
     const d = new Date(now);
     d.setDate(now.getDate() + i);
     const dow = d.getDay();
     const isToday = i === 0;
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const dayReminders = byDay.get(key) ?? [];
     let mood: WeekDay["mood"] = "maybe";
     let label = "";
     let amt = "";
     if (isToday) {
       mood = "today";
-      label = "today";
+      label = dayReminders.length > 0 ? dayReminders[0].label : "today";
+      if (dayReminders.length > 1) {
+        amt = `+${dayReminders.length - 1}`;
+      }
+    } else if (dayReminders.length > 0) {
+      // A real reminder on this day takes priority over generic
+      // "look ahead" / "Paycheck" placeholders.
+      mood = "watch";
+      label = dayReminders[0].label;
+      if (dayReminders.length > 1) {
+        amt = `+${dayReminders.length - 1}`;
+      }
     } else if (dow === 5) {
       mood = "good";
       label = "Paycheck";
