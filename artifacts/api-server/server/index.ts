@@ -26,6 +26,22 @@ function setupCors(app: express.Application) {
 
     if (process.env.REPLIT_DEV_DOMAIN) {
       origins.add(`https://${process.env.REPLIT_DEV_DOMAIN}`);
+      // Expo's dev server lives on a sibling subdomain
+      // (`<repl>.expo.<cluster>.replit.dev`) — different origin from the
+      // API host, so the bundled web app's fetches are CORS-cross-origin
+      // and need this entry explicitly. We derive the expo variant from
+      // REPLIT_DEV_DOMAIN so this works without depending on the api
+      // process having REPLIT_EXPO_DEV_DOMAIN injected.
+      const dev = process.env.REPLIT_DEV_DOMAIN;
+      const dot = dev.indexOf(".");
+      if (dot > 0) {
+        const expoVariant = `${dev.slice(0, dot)}.expo${dev.slice(dot)}`;
+        origins.add(`https://${expoVariant}`);
+      }
+    }
+
+    if (process.env.REPLIT_EXPO_DEV_DOMAIN) {
+      origins.add(`https://${process.env.REPLIT_EXPO_DEV_DOMAIN}`);
     }
 
     if (process.env.REPLIT_DOMAINS) {
