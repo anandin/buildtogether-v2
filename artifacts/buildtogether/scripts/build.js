@@ -228,8 +228,8 @@ async function downloadFile(url, outputPath) {
 }
 
 async function downloadBundle(platform, timestamp) {
-  const entryPath = path.resolve(projectRoot, "node_modules", "expo-router", "entry");
-  const bundlePath = path.relative(workspaceRoot, entryPath);
+  const entryPath = path.resolve(projectRoot, "client", "index.js");
+  const bundlePath = path.relative(workspaceRoot, entryPath).replace(/\.js$/, "");
   const url = new URL(`http://localhost:8081/${bundlePath}.bundle`);
   url.searchParams.set("platform", platform);
   url.searchParams.set("dev", "false");
