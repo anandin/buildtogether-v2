@@ -8,7 +8,15 @@
  * Category mapping: Plaid returns a hierarchy like ["Food and Drink", "Restaurants"].
  * We flatten it to our 13 internal ExpenseCategory values.
  */
-import type { Configuration, PlaidApi } from "plaid";
+// The api-server runs as ESM under tsx, so `require()` is not defined here.
+// Use a static ESM import for the Plaid SDK; tree-shaking isn't a concern
+// for a server module and lazy-loading bought us nothing because the
+// Plaid endpoints are mounted at boot.
+import {
+  Configuration,
+  PlaidApi,
+  PlaidEnvironments,
+} from "plaid";
 
 let _plaidClient: PlaidApi | null = null;
 let _initAttempted = false;
@@ -28,16 +36,12 @@ export function getPlaidClient(): PlaidApi | null {
   if (!isPlaidConfigured()) return null;
 
   try {
-    const {
-      Configuration: ConfigClass,
-      PlaidApi: ApiClass,
-      PlaidEnvironments,
-    } = require("plaid");
-
     const env = (process.env.PLAID_ENV || "sandbox").toLowerCase();
-    const basePath = (PlaidEnvironments as any)[env] || PlaidEnvironments.sandbox;
+    const basePath =
+      (PlaidEnvironments as Record<string, string>)[env] ||
+      PlaidEnvironments.sandbox;
 
-    const config: Configuration = new ConfigClass({
+    const config = new Configuration({
       basePath,
       baseOptions: {
         headers: {
@@ -48,7 +52,7 @@ export function getPlaidClient(): PlaidApi | null {
       },
     });
 
-    _plaidClient = new ApiClass(config);
+    _plaidClient = new PlaidApi(config);
     return _plaidClient;
   } catch (err) {
     console.error("Plaid init failed:", err);
