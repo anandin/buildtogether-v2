@@ -61,3 +61,86 @@ production — it logs full conversation content.
 The Build Together mobile app can be loaded on a real iOS or Android device via
 Expo Go. See `artifacts/buildtogether/CONNECT_EXPO_GO.md` for the QR-code
 scanning steps and end-to-end verification checklist.
+
+## Tilly memory architecture (3 tiers)
+
+**L1 — Raw events (`tilly_events`)**
+Append-only log of every chat turn, expense, reminder, nudge. No in-app cap;
+retention governed by per-user `memoryRetention` pref. Written via
+`emitEvent` / `emitEventAsync` from `server/tilly/event-emitter.ts`.
+
+**L2a — Synchronous memories (`tilly_memory`, RAG-embedded)**
+Written *during* a chat turn by `extractMemories` in `memory-writer.ts`.
+Kinds: observation | anxiety | value | commitment | preference. Each row
+gets a 1536-dim `text-embedding-3-small` vector.
+Recall via `hybridRetrieve` (`retriever.ts`): scans the **last 500 active
+rows**, returns **topK=5** by default. Score = 0.7 × cosine + 0.3 × recency,
+then bumped by kind (commitment 1.25×, value 1.2×). Recency uses a
+**168 h half-life**.
+
+**L2b — Distilled memories (`tilly_memory_v2`)**
+Nightly batch from L1 events via `distillUser` in `nightly-distiller.ts`.
+Typed kinds: decision | regret | nudge_outcome | bias_observed | …
+Each row tracks the source events it was distilled from.
+
+**L3 — Persona dossier (`tilly_dossiers`)**
+Synthesized 7-section JSON (identity, money_arc, soft_spots,
+nudge_response_profile, recent_decisions, trust_signals, open_loops).
+Rewritten by `rewriteDossier` in `dossier-rewriter.ts` from the **most
+recent 50 L2b rows**, target **<3500 chars** (it gets injected into every
+chat system prompt — keep it tight).
+
+### Scheduler + archiver (Replit runtime)
+
+`server/tilly/scheduler.ts` is an in-process daily scheduler that wakes
+once/min and fires each job exactly once per UTC day:
+
+| UTC | Job | Effect |
+|---|---|---|
+| 03:00 | `distillAllActiveUsers` | L1 → L2b |
+| 03:30 | `rewriteDossiersForActiveUsers` | L2b → L3 |
+| 04:00 | `archiveStaleMemories` | sweep stale L2a |
+
+The `since` window is **26 h** so brief downtime around the boundary
+doesn't lose events; downstream functions are idempotent. Auto-disables
+on Vercel (`VERCEL=1`) and via `TILLY_SCHEDULER_DISABLED=1` (tests).
+
+`server/tilly/memory-archiver.ts` soft-archives stale `tilly_memory` rows
+(sets `archived_at`, retriever filters on `isNull(archivedAt)`). Honors
+`memoryRetention` pref (`forever` | `1y` | `90d`) and **never** archives
+`commitment` or `value` kinds (anchor memories).
+
+All three jobs also have manual triggers: `POST /api/cron/distill-memories`,
+`/api/cron/rewrite-dossiers`, `/api/cron/archive-memories`.
+
+**Multi-replica caveat:** scheduler holds state in memory. If api-server
+ever scales beyond a single instance, swap `lastRunDayUtc` for a
+`tilly_job_log` table with a UPSERT-claim pattern, or the daily jobs
+will run N times.
+
+## Production readiness checklist (before public sign-up)
+
+Required env / secrets (server refuses to boot without these):
+- `DATABASE_URL`, `OPENROUTER_API_KEY`, `AI_INTEGRATIONS_OPENAI_API_KEY`,
+  `AI_INTEGRATIONS_OPENAI_BASE_URL`
+- Admin: `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH`, `SESSION_SECRET`
+- Cron auth: `CRON_SECRET` (currently warns + runs open in dev)
+
+Pre-launch hardening (open items):
+- **Demo routes** (`server/routes/demo.ts`, mounted at `routes/index.ts:50`)
+  — `POST /api/demo/seed` and `/api/demo/clear` are auth-gated but let any
+  user wipe/seed their own data. Either remove `mountDemoRoutes` from the
+  prod bundle or gate behind `NODE_ENV !== "production"`.
+- **Plaid env** — defaults to `sandbox` (`server/plaid.ts:39`). Set
+  `PLAID_ENV=production` and swap to production keys before real bank links.
+- **CRON_SECRET** — `routes/cron.ts:33` allows open access in dev when
+  unset. Set the secret in production env vars.
+- **Phase-2 stubs** — several screens (`Today`, `Spend`) return
+  `StubEnvelope { phase: 2, ready: false }` for features not yet wired
+  (real subscription scanner is "Phase 5 TODO" in `BTHome.tsx:11`).
+  Decide which are acceptable for v1.
+- **Push tokens** — Expo push registration runs on boot but is best-effort.
+  Confirm `EXPO_ACCESS_TOKEN` is set if you want delivery receipts.
+- **RevenueCat** — `EXPO_PUBLIC_REVENUECAT_IOS_KEY` /
+  `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` are read but no paywall is wired
+  into the core flows yet. Skippable for v1 if launching free.
