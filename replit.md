@@ -41,3 +41,9 @@ malformed:
 
 There are no fallback / default credentials. Set these via the platform's
 environment-secrets manager before deploying.
+
+## Running on a phone
+
+The Build Together mobile app can be loaded on a real iOS or Android device via
+Expo Go. See `artifacts/buildtogether/CONNECT_EXPO_GO.md` for the QR-code
+scanning steps and end-to-end verification checklist.
