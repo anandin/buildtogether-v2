@@ -4,29 +4,49 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
+    "dev": "export NODE_ENV=development && tsx server/index.ts",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@workspace/api-zod": "workspace:*",
-    "@workspace/db": "workspace:*",
+    "@anthropic-ai/sdk": "^0.91.1",
+    "@neondatabase/serverless": "^0.10.4",
+    "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2",
     "drizzle-orm": "catalog:",
+    "drizzle-zod": "^0.7.1",
     "express": "^5",
+    "http-proxy-middleware": "^3.0.5",
+    "jsonwebtoken": "^9.0.3",
+    "openai": "^6.16.0",
+    "p-limit": "^7.2.0",
+    "p-retry": "^7.1.1",
+    "pg": "^8.16.3",
     "pino": "^9",
-    "pino-http": "^10"
+    "pino-http": "^10",
+    "plaid": "^41.4.0",
+    "uuid": "^13.0.0",
+    "ws": "^8.18.0",
+    "zod": "catalog:",
+    "zod-to-json-schema": "^3.25.2",
+    "zod-validation-error": "^3.5.4"
   },
   "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "catalog:",
+    "@types/pg": "^8.11.10",
+    "@types/uuid": "^10.0.0",
+    "drizzle-kit": "^0.31.10",
     "esbuild": "^0.27.3",
     "esbuild-plugin-pino": "^2.3.3",
     "pino-pretty": "^13",
-    "thread-stream": "3.1.0"
+    "thread-stream": "3.1.0",
+    "tsx": "^4.20.6"
   }
 }
