@@ -824,7 +824,7 @@ function YourReminders() {
     )
     .slice(0, 10);
 
-  if (today.length + upcoming.length + fired.length === 0) return null;
+  const isEmpty = today.length + upcoming.length + fired.length === 0;
 
   const fmt = (iso: string) => {
     const d = new Date(iso);
@@ -949,6 +949,30 @@ function YourReminders() {
   return (
     <View style={{ gap: 14 }}>
       <BTLabel color={t.inkMute}>Your reminders</BTLabel>
+      {isEmpty ? (
+        <View
+          style={{
+            padding: 14,
+            borderRadius: 10,
+            backgroundColor: t.surface,
+            borderWidth: 1,
+            borderColor: t.rule,
+          }}
+        >
+          <Text
+            style={{
+              color: t.inkSoft,
+              fontFamily: BTFonts.serifItalic,
+              fontSize: 14,
+              lineHeight: 20,
+            }}
+          >
+            Nothing to ping you about yet. When Tilly promises a follow-up
+            in chat — "I'll remind you tomorrow about that subscription" —
+            it'll show up here.
+          </Text>
+        </View>
+      ) : null}
       {today.length ? (
         <View style={{ gap: 6 }}>
           <Text

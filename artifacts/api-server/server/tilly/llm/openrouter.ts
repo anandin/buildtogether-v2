@@ -26,6 +26,37 @@ import { DEFAULT_MODELS } from "./types";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
+/**
+ * Pull a JSON-shaped substring out of model output that may be wrapped
+ * in ```json fences or have leading/trailing prose. Used by
+ * structuredOutput so Haiku's "here's the JSON: ```json {...} ```"
+ * style replies parse cleanly. Returns the raw text unchanged when no
+ * obvious payload is found so JSON.parse can still throw a useful error.
+ */
+function extractJsonPayload(raw: string): string {
+  const text = raw.trim();
+  // Strip ```json ... ``` or ``` ... ``` fences first.
+  const fenceMatch = text.match(/```(?:json|JSON)?\s*([\s\S]*?)\s*```/);
+  const candidate = fenceMatch ? fenceMatch[1].trim() : text;
+  // If candidate already starts with { or [, use it as-is.
+  if (candidate.startsWith("{") || candidate.startsWith("[")) return candidate;
+  // Otherwise slice from the first { or [ to the last } or ].
+  const firstObj = candidate.indexOf("{");
+  const firstArr = candidate.indexOf("[");
+  const start =
+    firstObj === -1
+      ? firstArr
+      : firstArr === -1
+        ? firstObj
+        : Math.min(firstObj, firstArr);
+  if (start === -1) return candidate;
+  const lastObj = candidate.lastIndexOf("}");
+  const lastArr = candidate.lastIndexOf("]");
+  const end = Math.max(lastObj, lastArr);
+  if (end <= start) return candidate;
+  return candidate.slice(start, end + 1);
+}
+
 function getApiKey(): string {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) {
@@ -227,9 +258,16 @@ export class OpenRouterLLM implements LLMClient {
         `OpenRouterLLM.structuredOutput: empty response from ${this.modelId}`,
       );
     }
+    // Some OpenRouter-routed models (notably Haiku) wrap structured
+    // output in ```json fences or trail prose around the payload, even
+    // when response_format=json_schema is set. Strip fences and slice
+    // to the outermost {...} / [...] before JSON.parse so reminder/
+    // memory classifiers don't silently fail. Falls through to the
+    // original error if no JSON-shaped substring is found.
+    const cleaned = extractJsonPayload(text);
     let parsed: unknown;
     try {
-      parsed = JSON.parse(text);
+      parsed = JSON.parse(cleaned);
     } catch (err) {
       throw new Error(
         `OpenRouterLLM.structuredOutput: model returned non-JSON content: ${text.slice(0, 200)}`,
