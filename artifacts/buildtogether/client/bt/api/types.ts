@@ -219,3 +219,26 @@ export type TillyProfile =
       tone: BTToneKey;
       trusted: TrustedPerson[];
     };
+
+// ── Plaid ──────────────────────────────────────────────────────────────
+export type PlaidStatus = { configured: boolean; environment: string };
+
+export type PlaidItem = {
+  id: string;
+  institutionName: string;
+  status: "active" | "error" | "disconnected";
+  lastSyncAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+};
+
+export type PlaidPendingTransaction = {
+  id: string;
+  amount: number;
+  date: string;
+  merchantName: string | null;
+  name: string;
+  ourCategory: string | null;
+  pending: boolean;
+  status: "pending_review" | "accepted" | "ignored";
+};

@@ -12,6 +12,7 @@
 import React, { useEffect, useRef } from "react";
 import { Animated, Easing, Pressable, ScrollView, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { Feather } from "@expo/vector-icons";
 
 import { useBT } from "../BTContext";
 import { Tilly } from "../Tilly";
@@ -22,12 +23,47 @@ import { useMemory } from "../hooks/useMemory";
 import { useSetTillyTone } from "../hooks/useTillyTone";
 import { useProfile } from "../hooks/useProfile";
 import { useUser } from "../hooks/useUser";
+import { usePlaidPending } from "../hooks/usePlaid";
 import { InvitePersonModal } from "../InvitePersonModal";
 import { QuietSettingsEditor, type QuietSettingKey } from "../QuietSettingsEditor";
 import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { btApi } from "../api/client";
+import { BankConnectionsScreen } from "./plaid/BankConnectionsScreen";
+import { PendingTransactionsScreen } from "./plaid/PendingTransactionsScreen";
+import { AppSettingsScreen } from "./AppSettingsScreen";
+
+type ProfileRoute = null | "banks" | "pending" | "settings";
+
+/**
+ * Public BTProfile entry — owns sub-route state so the You tab can drill
+ * into Bank connections, Pending transactions review, or App settings
+ * without needing a navigation library. Each sub-screen has its own
+ * back button that pops back here.
+ */
+export function BTProfile() {
+  const [route, setRoute] = useState<ProfileRoute>(null);
+  const back = () => setRoute(null);
+
+  if (route === "banks") return <BankConnectionsScreen onBack={back} />;
+  if (route === "pending") return <PendingTransactionsScreen onBack={back} />;
+  if (route === "settings")
+    return (
+      <AppSettingsScreen
+        onBack={back}
+        onOpenBankConnections={() => setRoute("banks")}
+        onOpenPending={() => setRoute("pending")}
+      />
+    );
+  return (
+    <BTProfileMain
+      onOpenBanks={() => setRoute("banks")}
+      onOpenPending={() => setRoute("pending")}
+      onOpenAppSettings={() => setRoute("settings")}
+    />
+  );
+}
 
 type QuietRow = { id: QuietSettingKey | "memory_legacy"; label: string };
 
@@ -82,12 +118,22 @@ function quietValue(
   return "";
 }
 
-export function BTProfile() {
+function BTProfileMain({
+  onOpenBanks,
+  onOpenPending,
+  onOpenAppSettings,
+}: {
+  onOpenBanks: () => void;
+  onOpenPending: () => void;
+  onOpenAppSettings: () => void;
+}) {
   const { t, tone, setTone } = useBT();
   const memory = useMemory();
   const setServerTone = useSetTillyTone();
   const profile = useProfile();
   const { user } = useUser();
+  const pending = usePlaidPending();
+  const pendingCount = pending.data?.length ?? 0;
   const [inviteOpen, setInviteOpen] = useState(false);
   const [quietOpen, setQuietOpen] = useState<QuietSettingKey | null>(null);
   const { signOut } = useAuth();
@@ -449,7 +495,128 @@ export function BTProfile() {
           })}
         </View>
       </View>
+
+      {/* Settings entries — drill-down rows for the deeper bank- and
+          app-level surfaces. Kept as a small grouped card so it reads
+          like one row "More" rather than three separate sections. */}
+      <View style={{ gap: 8 }}>
+        <BTLabel color={t.inkMute}>More</BTLabel>
+        <View
+          style={{
+            backgroundColor: t.surface,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: t.rule,
+            overflow: "hidden",
+          }}
+        >
+          <SettingsEntry
+            t={t}
+            icon="link-2"
+            label="Bank connections"
+            onPress={onOpenBanks}
+          />
+          <BTRule color={t.rule} />
+          <SettingsEntry
+            t={t}
+            icon="inbox"
+            label="Pending review"
+            badge={pendingCount > 0 ? pendingCount : undefined}
+            onPress={onOpenPending}
+          />
+          <BTRule color={t.rule} />
+          <SettingsEntry
+            t={t}
+            icon="settings"
+            label="App settings"
+            onPress={onOpenAppSettings}
+          />
+        </View>
+      </View>
     </ScrollView>
+  );
+}
+
+/**
+ * Single drill-down row used in the "More" card. Kept here (not in a
+ * shared atom) because BTProfile is the only consumer and it lets the
+ * styling track the rest of the screen exactly.
+ */
+function SettingsEntry({
+  t,
+  icon,
+  label,
+  badge,
+  onPress,
+}: {
+  t: BTTheme;
+  icon: React.ComponentProps<typeof Feather>["name"];
+  label: string;
+  badge?: number;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        padding: 14,
+        backgroundColor: pressed ? t.chip : "transparent",
+      })}
+    >
+      <View
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: t.accentSoft,
+        }}
+      >
+        <Feather name={icon} size={15} color={t.ink} />
+      </View>
+      <Text
+        style={{
+          flex: 1,
+          color: t.ink,
+          fontFamily: BTFonts.sans,
+          fontWeight: "600",
+          fontSize: 13,
+        }}
+      >
+        {label}
+      </Text>
+      {badge ? (
+        <View
+          style={{
+            minWidth: 20,
+            height: 20,
+            paddingHorizontal: 6,
+            borderRadius: 10,
+            backgroundColor: t.accent,
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Text
+            style={{
+              color: t.surface,
+              fontFamily: BTFonts.mono,
+              fontSize: 10,
+              fontWeight: "700",
+            }}
+          >
+            {badge}
+          </Text>
+        </View>
+      ) : null}
+      <Text style={{ color: t.inkMute, fontSize: 14, fontFamily: BTFonts.sans }}>›</Text>
+    </Pressable>
   );
 }
 

@@ -22,6 +22,9 @@ import type {
   TonePref,
   TillyMessage,
   TillyProfile,
+  PlaidStatus,
+  PlaidItem,
+  PlaidPendingTransaction,
 } from "./types";
 import type { BTToneKey } from "../tones";
 
@@ -243,4 +246,21 @@ export const btApi = {
     postJson<{ householdId: string; created: boolean }>("/api/household/create", body),
   completeOnboarding: () =>
     postJson<{ ok: true }>("/api/household/complete-onboarding"),
+
+  // ── Plaid (bank connectivity) ──────────────────────────────────────────
+  plaidStatus: () => getJson<PlaidStatus>("/api/plaid/status"),
+  plaidItems: (coupleId: string) =>
+    getJson<PlaidItem[]>(`/api/plaid/items/${coupleId}`),
+  plaidPending: (coupleId: string) =>
+    getJson<PlaidPendingTransaction[]>(`/api/plaid/pending/${coupleId}`),
+  plaidSync: (coupleId: string) =>
+    postJson<{ ok: true }>(`/api/plaid/sync/${coupleId}`),
+  plaidAccept: (txnId: string) =>
+    postJson<{ expense: any }>(`/api/plaid/pending/${txnId}/accept`),
+  plaidIgnore: (txnId: string) =>
+    postJson<{ ok: true }>(`/api/plaid/pending/${txnId}/ignore`),
+  plaidDisconnect: async (itemId: string) => {
+    const res = await apiRequest("DELETE", `/api/plaid/items/${itemId}`);
+    return (await res.json()) as { ok: true };
+  },
 };
