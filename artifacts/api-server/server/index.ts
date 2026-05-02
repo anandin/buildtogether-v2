@@ -8,6 +8,7 @@ import { requestId } from "./middleware/requestId";
 import { pool } from "./db";
 import { applyBootMigrations } from "./migrate-boot";
 import { validateRequiredEnv, getFeatureFlags } from "./env-validation";
+import { startTillyScheduler } from "./tilly/scheduler";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -342,6 +343,9 @@ export async function getApp(): Promise<express.Application> {
     registerTillyRoutes(app);
     await registerRoutes(app);
     setupErrorHandler(app);
+    // Kick off the in-process daily scheduler for Tilly's memory jobs
+    // (distill → dossier → archive). No-op on Vercel.
+    startTillyScheduler();
     appConfigured = true;
     return app;
   })();

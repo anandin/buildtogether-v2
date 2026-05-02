@@ -22,6 +22,7 @@ import { runNotify } from "../tilly/notify-cron";
 import { runPatternDetectionAll } from "../tilly/pattern-cron";
 import { distillAllActiveUsers } from "../tilly/nightly-distiller";
 import { rewriteDossiersForActiveUsers } from "../tilly/dossier-rewriter";
+import { archiveStaleMemories } from "../tilly/memory-archiver";
 import { sendExpoPush } from "../tilly/expo-push";
 import { emitEventAsync } from "../tilly/event-emitter";
 
@@ -293,6 +294,27 @@ export function mountCronRoutes(app: Express): void {
         console.error("/api/cron/rewrite-dossiers error:", err);
         const msg = err instanceof Error ? err.message : String(err);
         res.status(500).json({ error: "dossier cron failed", debug: msg });
+      }
+    },
+  );
+
+  // Memory archiver — soft-archives stale tilly_memory rows so the
+  // retriever's last-500 window stays focused on recent context. Honors
+  // each user's memoryRetention pref (forever | 1y | 90d) and never
+  // archives commitment / value kinds. Runs daily at 04:00 UTC via the
+  // in-process scheduler; this endpoint exists for manual / external
+  // triggering and parity with the other memory crons.
+  app.post(
+    "/api/cron/archive-memories",
+    requireCron,
+    async (_req: Request, res: Response) => {
+      try {
+        const r = await archiveStaleMemories();
+        res.json({ ok: true, ...r });
+      } catch (err) {
+        console.error("/api/cron/archive-memories error:", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error: "archive cron failed", debug: msg });
       }
     },
   );
