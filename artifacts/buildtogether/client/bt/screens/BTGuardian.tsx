@@ -590,6 +590,126 @@ function parseQuickMath(
   return { rows, note };
 }
 
+type LedgerRow = {
+  label: string;
+  amt: number;
+  isNegative: boolean;
+  isTotal: boolean;
+  hadDollar: boolean;
+};
+
+/**
+ * Detect a contiguous "label   $amount" ledger block. Returns the parsed
+ * rows when *every* non-empty line in the block matches the ledger shape
+ * and there are at least 3 rows. Used by RichTillyText to render an
+ * inline expense breakdown (the "what's killing my budget?" reply) with
+ * the same mono-tabular styling the design backup uses for the Quick
+ * Math card.
+ *
+ * Sign and total are tracked independently so a "total spent  -$201"
+ * row keeps its negative polarity (rendered as −$201.00 in the bad
+ * color) while still getting the bold-ink "this is the total" emphasis.
+ *
+ * To avoid false-positives on plain numeric lists (e.g. "milk 2 / eggs
+ * 12 / bread 4"), we require the block to contain at least one explicit
+ * "$" prefix OR a total-keyword row. This is a precision guard suggested
+ * by code review.
+ */
+function parseLedgerBlock(block: string): LedgerRow[] | null {
+  const lines = block
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length < 3) return null;
+
+  const rows: LedgerRow[] = [];
+  for (const line of lines) {
+    // "label   -$90" / "label   $90.00" / "label   -$90.00"
+    const m = line.match(
+      /^([A-Za-z][A-Za-z0-9'\-/&. ()]*?)\s+(-?)(\$?)\s?(-?)(\d{1,5}(?:\.\d{1,2})?)\s*$/,
+    );
+    if (!m) return null; // any non-row line invalidates the block
+    const label = m[1].trim();
+    const isNegative = !!(m[2] || m[4]);
+    const hadDollar = m[3] === "$";
+    const amt = parseFloat(m[5]);
+    if (!isFinite(amt)) return null;
+    const isTotal = /\b(total|sum|net|spent|final|balance|buffer|left over)\b/i.test(
+      label,
+    );
+    rows.push({ label, amt, isNegative, isTotal, hadDollar });
+  }
+
+  // Precision guard: at least one explicit "$" prefix OR a total-keyword
+  // row. Prevents random 3+ line numeric lists from being mis-detected.
+  const hasDollar = rows.some((r) => r.hadDollar);
+  const hasTotal = rows.some((r) => r.isTotal);
+  if (!hasDollar && !hasTotal) return null;
+
+  return rows;
+}
+
+/**
+ * Inline expense ledger that lives *inside* a regular Tilly text bubble
+ * (e.g. the breakdown in "what's killing my budget?"). Each row gets a
+ * subtle chip-tinted background + tabular-nums right-aligned amount,
+ * matching the design backup's BTLedgerRow / Quick Math styling. The
+ * total row (when present) bolds and uses the ink color.
+ */
+function InlineLedger({ rows }: { rows: LedgerRow[] }) {
+  const { t } = useBT();
+  return (
+    <View style={{ gap: 2, marginVertical: 2 }}>
+      {rows.map((r, i) => {
+        // Color: negatives in t.bad, positives in t.good, the running
+        // total/buffer line in ink. isTotal is style-only emphasis and
+        // does NOT override the row's actual sign.
+        const amtColor = r.isNegative ? t.bad : r.isTotal ? t.ink : t.good;
+        return (
+          <View
+            key={i}
+            style={{
+              flexDirection: "row",
+              justifyContent: "space-between",
+              alignItems: "baseline",
+              backgroundColor: t.chip,
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+              borderRadius: 6,
+            }}
+          >
+            <Text
+              style={{
+                fontFamily: BTFonts.mono,
+                fontSize: 12,
+                color: r.isTotal ? t.ink : t.inkSoft,
+                fontWeight: r.isTotal ? "700" : "400",
+                letterSpacing: 0.4,
+                flexShrink: 1,
+                paddingRight: 12,
+              }}
+              numberOfLines={1}
+            >
+              {r.label}
+            </Text>
+            <Text
+              style={{
+                fontFamily: BTFonts.mono,
+                fontSize: 12,
+                color: amtColor,
+                fontWeight: r.isTotal ? "700" : "600",
+                fontVariant: ["tabular-nums"],
+              }}
+            >
+              {r.isNegative ? "−" : ""}${r.amt.toFixed(2)}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 /**
  * Render Tilly's reply with the small slice of markdown the persona uses:
  *   - `**bold**` → accent serif italic span (acts as a heading-of-sorts)
@@ -598,6 +718,9 @@ function parseQuickMath(
  *     persona prompt but the model occasionally uses them anyway)
  *   - `---` standalone lines render as a hairline divider
  *   - paragraph breaks come from \n\n
+ *   - a paragraph that is entirely "label   $amount" rows (3+) renders
+ *     as an inline expense ledger (mono, tabular, chip background) so
+ *     breakdown replies match the design backup.
  *
  * Both `**bold**` and `*italic*` collapse to the same accent-italic style
  * because the spec only has one emphasis register; we just want neither
@@ -609,7 +732,7 @@ function RichTillyText({ body, color }: { body: string; color: string }) {
   const cleaned = body.replace(/```[a-z]*\n?/gi, "").replace(/\n```/g, "");
   const blocks = cleaned.split(/\n\n+/);
   return (
-    <View style={{ gap: 6 }}>
+    <View style={{ gap: 8 }}>
       {blocks.map((block, blockIdx) => {
         if (block.trim() === "---" || block.trim() === "—") {
           return (
@@ -618,6 +741,10 @@ function RichTillyText({ body, color }: { body: string; color: string }) {
               style={{ height: 1, backgroundColor: t.rule, marginVertical: 4 }}
             />
           );
+        }
+        const ledger = parseLedgerBlock(block);
+        if (ledger) {
+          return <InlineLedger key={blockIdx} rows={ledger} />;
         }
         // Match **bold** first, then *italic*. Both collapse to the same
         // accent-italic span so we don't leak literal asterisks either way.
