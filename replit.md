@@ -42,6 +42,20 @@ malformed:
 There are no fallback / default credentials. Set these via the platform's
 environment-secrets manager before deploying.
 
+## Tilly LLM structured-output gotcha
+
+`server/tilly/llm/openrouter.ts` converts Zod schemas to JSON Schema for
+OpenRouter's `response_format`. **Always import `zod-to-json-schema` at the
+top of the module** (ESM `import`), never `require()`. The api-server runs
+under tsx as ESM, and a runtime `require()` silently fails — the catch
+falls back to an empty `{ type: "object" }` schema, which causes Haiku /
+Opus to return `{}` or invent field names. Symptom: reminders/memories
+silently never persist even though the chat reply looks fine.
+
+If you need to debug structured output, set `DEBUG_LLM=1` to log the raw
+model text and the exact schema sent to OpenRouter. Disable in
+production — it logs full conversation content.
+
 ## Running on a phone
 
 The Build Together mobile app can be loaded on a real iOS or Android device via

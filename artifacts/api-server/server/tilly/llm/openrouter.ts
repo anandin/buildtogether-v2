@@ -14,6 +14,7 @@
  */
 import type { ZodType } from "zod";
 import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 
 import type {
   LLMClient,
@@ -80,33 +81,19 @@ function zodToJsonSchemaSafe(schema: ZodType, name: string): {
   schema: Record<string, unknown>;
   strict: boolean;
 } {
-  // Use the standard library if installed (it ships with Zod ^3.24+).
-  // We avoid a hard import by trying require-style resolution first.
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
-    const mod = require("zod-to-json-schema");
-    const ztjs = mod.zodToJsonSchema || mod.default;
-    if (ztjs) {
-      const json = ztjs(schema, { name, $refStrategy: "none" }) as Record<string, unknown>;
-      // Some versions wrap under definitions[name]; unwrap.
-      let body: Record<string, unknown> = json;
-      if ((json as any).definitions && (json as any).definitions[name]) {
-        body = (json as any).definitions[name] as Record<string, unknown>;
-      } else if ((json as any).$ref) {
-        body = (json as any).definitions?.[name] ?? json;
-      }
-      stripUnsupported(body);
-      return { name, schema: body, strict: false };
-    }
-  } catch {
-    // fall through
+  const json = zodToJsonSchema(schema, { name, $refStrategy: "none" }) as Record<
+    string,
+    unknown
+  >;
+  // Some versions wrap under definitions[name]; unwrap.
+  let body: Record<string, unknown> = json;
+  if ((json as any).definitions && (json as any).definitions[name]) {
+    body = (json as any).definitions[name] as Record<string, unknown>;
+  } else if ((json as any).$ref) {
+    body = (json as any).definitions?.[name] ?? json;
   }
-  // Trivial fallback — Zod has _def we could walk, but the schemas we use
-  // here are simple objects of primitives + enums + arrays, and the model
-  // tolerates an empty schema with just `type: object` (it just won't be
-  // strict). Better than failing.
-  stripUnsupported({});
-  return { name, schema: { type: "object" }, strict: false };
+  stripUnsupported(body);
+  return { name, schema: body, strict: false };
 }
 
 /**
@@ -253,6 +240,16 @@ export class OpenRouterLLM implements LLMClient {
     };
 
     const { text } = await callOpenRouter(body);
+    if (process.env.DEBUG_LLM) {
+      console.log(
+        `[openrouter.structuredOutput] ${this.modelId} raw text:`,
+        text,
+      );
+      console.log(
+        `[openrouter.structuredOutput] schema sent:`,
+        JSON.stringify(body.response_format),
+      );
+    }
     if (!text) {
       throw new Error(
         `OpenRouterLLM.structuredOutput: empty response from ${this.modelId}`,

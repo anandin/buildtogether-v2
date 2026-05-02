@@ -63,24 +63,49 @@ export type ReminderDraft = {
 
 const SYSTEM = `You decide whether a financial agent named Tilly just promised the student a follow-up reminder.
 
-Tilly does NOT have a reminder system unless YOU say so. Be conservative — flag only when she explicitly says she'll ping/track/remind/check-in/follow-up at a specific future time.
+Rule of thumb: if Tilly's reply contains a first-person commitment to act at a future time — "I'll ping you", "I'll nudge you", "I'll remind you", "I'll check in", "I'll track this", "Already set", "Adjusted", "Locked in", "On it" combined with a time reference — then hasReminder=true. Resolve the time even if it's vague (e.g. "Wednesday afternoon" → 15:00 local that day; "Friday morning" → 09:00; "tomorrow evening" → 19:00; "before ticket day" → 24h before).
 
-Examples that ARE reminders:
-- "I'll ping you Friday morning before tickets drop." → fireAt = next Friday 09:00 local
-- "Already on it. I'll track this and ping you before ticket day." → infer ~24h before ticket day
+Examples that ARE reminders (return hasReminder=true):
+- "I'll ping you Friday morning before tickets drop." → next Friday 09:00 local
+- "I'll nudge you Wednesday afternoon." → next Wednesday 15:00 local
+- "Adjusted - I'll ping you Wednesday evening specifically about food delivery." → next Wednesday 19:00 local
+- "Already set. I'll nudge you Wednesday afternoon." → next Wednesday 15:00 local
+- "Already on it. I'll track this and ping you before ticket day." → 24h before
 - "Want me to remind you tomorrow night? Yes" → tomorrow 19:00 local
+- "Locked in - I'll check in tomorrow morning." → tomorrow 09:00 local
 
-Examples that are NOT reminders (don't flag):
+Examples that are NOT reminders (return hasReminder=false):
 - "You can do it." (advice, not a promise)
-- "Want me to track this?" (offer, not a promise — only flag once she confirms or commits)
+- "Want me to track this?" (offer asked but not yet accepted — wait for confirmation)
 - "Let me know if you change your mind." (passive)
 - "Set a $30 ceiling on Friday food" (a setting, not a reminder)
+- "Skip Starbucks today." (in-the-moment instruction, no future commitment)
 
-If unsure: hasReminder=false. False positives are worse than false negatives — students don't want surprise pings they didn't ask for.
+When in doubt about a clear "I'll ping/nudge/remind you [time]" phrase: flag it. Missing a real reminder is worse than capturing an extra one — students explicitly asked for these.
 
 Today is {NOW}. Resolve relative dates (tomorrow, Friday, "before ticket day") to ISO-8601 timestamps in the student's timezone (assume America/Toronto unless told otherwise).
 
-Important: in the label field, use ASCII characters only. No em-dashes, no smart quotes, no curly apostrophes. Use plain "-" and "'" instead. The label is rendered through layers that don't always handle UTF-8 cleanly.`;
+Important: in the label field, use ASCII characters only. No em-dashes, no smart quotes, no curly apostrophes. Use plain "-" and "'" instead. The label is rendered through layers that don't always handle UTF-8 cleanly.
+
+Respond with EXACTLY this JSON shape — no markdown, no prose, no extra fields, no \`\`\`json fences. The field names must match exactly:
+
+{
+  "hasReminder": true,
+  "fireAtIso": "2026-05-06T19:00:00-04:00",
+  "label": "Check spending before dinner",
+  "kind": "soft-spot-eve"
+}
+
+When there is no reminder, return:
+
+{
+  "hasReminder": false,
+  "fireAtIso": null,
+  "label": null,
+  "kind": "generic"
+}
+
+"kind" must be one of: "ticket-day-check", "rent-due", "soft-spot-eve", "subscription-cancel", "free-trial-end", "generic".`;
 
 export async function extractReminderFromReply(
   tillyReply: string,

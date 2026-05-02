@@ -86,7 +86,27 @@ What NOT to save:
 - Things the student didn't say (don't infer feelings they haven't expressed)
 - Anything PII-sensitive that the student would be surprised to find later
 
-Return 0–3 memories. Empty array is the right answer most of the time. Quality over quantity. Each memory is in YOUR voice, first-person, like you're writing it down for yourself to find later.`;
+Return 0–3 memories. Empty array is the right answer most of the time. Quality over quantity. Each memory is in YOUR voice, first-person, like you're writing it down for yourself to find later.
+
+Respond with EXACTLY this JSON shape — no markdown, no prose, no \`\`\`json fences, no extra fields. The field names must match exactly:
+
+{
+  "extract": [
+    {
+      "kind": "commitment",
+      "body": "You asked me to ping you Wednesday evenings about food delivery. I'll hold you to it.",
+      "dateLabel": "Today",
+      "category": null,
+      "goalIdHint": null
+    }
+  ]
+}
+
+When nothing in the exchange is worth saving (the common case), return:
+
+{ "extract": [] }
+
+"kind" must be one of: "observation", "anxiety", "value", "commitment", "preference". Never invent other field names like "memory" or "content" — only "kind", "body", "dateLabel", "category", "goalIdHint".`;
 
 export async function extractMemories(
   input: MemoryExtractInput,
