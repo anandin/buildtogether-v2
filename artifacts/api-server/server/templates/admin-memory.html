@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tilly memory · admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+    />
+    <style>
+      :root {
+        --bg: #f4efe6;
+        --surface: #fbf7ef;
+        --surface-alt: #efe7d7;
+        --ink: #1c1a17;
+        --ink-soft: #4a4640;
+        --ink-mute: #8a8378;
+        --rule: rgba(28, 26, 23, 0.1);
+        --accent: #d8602b;
+        --accent-soft: #f0dac6;
+        --good: #1f7a4a;
+        --bad: #b23a2c;
+        --layer1: #c9b89a;
+        --layer2: #b48fb9;
+        --layer4: #d8602b;
+        --layer5: #4a8aa8;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Inter", system-ui, -apple-system, sans-serif;
+        font-size: 14px;
+        color: var(--ink);
+        background: var(--bg);
+        line-height: 1.5;
+      }
+      .wrap { max-width: 1280px; margin: 0 auto; padding: 32px 24px 80px; }
+      h1 { font-family: "Instrument Serif", Georgia, serif; font-size: 40px; font-weight: 500; margin: 0 0 4px; }
+      .accent { color: var(--accent); font-style: italic; }
+      .nav-link { font-family: "JetBrains Mono", Menlo, monospace; font-size: 11px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--ink-mute); text-decoration: none; margin-right: 18px; }
+      .nav-link:hover { color: var(--accent); }
+      .nav-link.active { color: var(--accent); }
+      .subhead { font-family: "Instrument Serif", Georgia, serif; font-size: 17px; color: var(--ink-soft); margin: 4px 0 24px; font-style: italic; }
+      .auth-row { display: flex; gap: 10px; align-items: center; margin: 16px 0 24px; }
+      .auth-row input { flex: 1; max-width: 520px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: 10px; font-family: "JetBrains Mono", Menlo, monospace; font-size: 12px; background: var(--surface); }
+      .btn { background: var(--ink); color: var(--surface); border: 0; border-radius: 10px; padding: 10px 18px; font-family: "Inter", sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; }
+      .btn:hover { background: var(--accent); }
+      .btn-soft { background: var(--surface-alt); color: var(--ink); }
+      .btn-soft:hover { background: var(--accent-soft); }
+      .user-list { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 14px; margin-bottom: 22px; max-height: 240px; overflow: auto; }
+      .user-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+      .user-row:hover { background: var(--surface-alt); }
+      .user-row.active { background: var(--accent-soft); }
+      .user-row .who { font-weight: 600; }
+      .user-row .meta { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10px; color: var(--ink-mute); }
+      .layer { background: var(--surface); border: 1px solid var(--rule); border-radius: 16px; padding: 22px; margin-bottom: 16px; position: relative; }
+      .layer-header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
+      .layer-tag { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10px; font-weight: 700; letter-spacing: 1.4px; padding: 3px 8px; border-radius: 6px; color: var(--surface); }
+      .l4 .layer-tag { background: var(--layer4); }
+      .l5 .layer-tag { background: var(--layer5); }
+      .l2 .layer-tag { background: var(--layer2); }
+      .l1 .layer-tag { background: var(--layer1); color: var(--ink); }
+      .layer h2 { font-family: "Instrument Serif", Georgia, serif; font-size: 22px; font-weight: 500; margin: 0; }
+      .layer .hint { color: var(--ink-mute); font-size: 12px; margin: 0 0 14px; }
+      .layer .count { font-family: "JetBrains Mono", Menlo, monospace; font-size: 11px; color: var(--ink-mute); margin-left: auto; }
+      .dossier-section { margin-bottom: 14px; }
+      .dossier-section .name { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10px; letter-spacing: 1.4px; font-weight: 700; color: var(--ink-mute); text-transform: uppercase; margin-bottom: 6px; }
+      .dossier-section .body { font-family: "Instrument Serif", Georgia, serif; font-size: 17px; line-height: 1.45; color: var(--ink); }
+      .dossier-section .body.list { font-family: "Inter"; font-size: 14px; }
+      .chip { display: inline-block; background: var(--surface-alt); border-radius: 8px; padding: 4px 10px; margin: 3px 6px 3px 0; font-size: 13px; }
+      .frame-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+      .frame-table th, .frame-table td { text-align: left; padding: 6px 10px; font-size: 12.5px; border-bottom: 1px solid var(--rule); }
+      .frame-table th { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--ink-mute); }
+      .frame-table .pct { font-family: "JetBrains Mono", Menlo, monospace; }
+      .filter-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+      .filter-row .btn-soft { padding: 6px 12px; font-size: 11.5px; }
+      .filter-row .btn-soft.on { background: var(--accent); color: var(--surface); }
+      .mem-row { padding: 10px 12px; border-radius: 8px; cursor: pointer; transition: background 0.15s; border-left: 3px solid transparent; }
+      .mem-row:hover { background: var(--surface-alt); }
+      .mem-row.expanded { background: var(--surface-alt); border-left-color: var(--layer2); }
+      .mem-kind { font-family: "JetBrains Mono", Menlo, monospace; font-size: 9.5px; font-weight: 700; letter-spacing: 1.2px; padding: 2px 7px; border-radius: 5px; background: var(--accent-soft); color: var(--ink); margin-right: 8px; }
+      .mem-body { display: inline; font-size: 13.5px; }
+      .mem-meta { font-family: "JetBrains Mono", Menlo, monospace; font-size: 11px; color: var(--ink-mute); margin-top: 6px; padding: 8px 10px; background: var(--bg); border-radius: 6px; white-space: pre-wrap; }
+      .mem-meta .lineage-link { color: var(--accent); cursor: pointer; text-decoration: underline; }
+      .event-row { padding: 7px 12px; border-radius: 6px; font-family: "JetBrains Mono", Menlo, monospace; font-size: 11.5px; line-height: 1.4; cursor: pointer; }
+      .event-row:hover, .event-row.highlighted { background: var(--surface-alt); }
+      .event-row.highlighted { border-left: 3px solid var(--layer1); padding-left: 9px; }
+      .event-kind { color: var(--accent); font-weight: 700; }
+      .event-ts { color: var(--ink-mute); }
+      .event-payload { color: var(--ink-soft); display: block; padding-left: 18px; word-break: break-all; }
+      .bandit-table { width: 100%; border-collapse: collapse; }
+      .bandit-table th, .bandit-table td { text-align: left; padding: 6px 10px; font-size: 12.5px; border-bottom: 1px solid var(--rule); }
+      .bandit-table th { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--ink-mute); }
+      .bandit-table .pct { font-family: "JetBrains Mono", Menlo, monospace; }
+      .bar { display: inline-block; height: 10px; background: linear-gradient(90deg, var(--layer5), var(--accent)); border-radius: 4px; vertical-align: middle; margin-right: 8px; }
+      .pyramid-summary { display: flex; gap: 14px; margin-bottom: 22px; }
+      .pyramid-summary .stat { flex: 1; padding: 14px 16px; background: var(--surface); border: 1px solid var(--rule); border-radius: 12px; }
+      .pyramid-summary .stat .num { font-family: "Instrument Serif", Georgia, serif; font-size: 30px; line-height: 1.1; }
+      .pyramid-summary .stat .name { font-family: "JetBrains Mono", Menlo, monospace; font-size: 9.5px; letter-spacing: 1.3px; text-transform: uppercase; color: var(--ink-mute); }
+      .empty { color: var(--ink-mute); font-style: italic; padding: 14px; text-align: center; }
+      .nudge-row { padding: 8px 12px; border-radius: 6px; font-size: 12.5px; }
+      .nudge-row + .nudge-row { border-top: 1px solid var(--rule); }
+      .nudge-frame { display: inline-block; padding: 2px 6px; border-radius: 4px; background: var(--accent-soft); font-family: "JetBrains Mono", Menlo, monospace; font-size: 10px; font-weight: 700; margin-right: 6px; }
+      .nudge-outcome { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10px; padding: 2px 6px; border-radius: 4px; margin-left: 6px; font-weight: 700; }
+      .nudge-outcome.accepted { background: rgba(31, 122, 74, 0.15); color: var(--good); }
+      .nudge-outcome.dismissed { background: rgba(178, 58, 44, 0.15); color: var(--bad); }
+      .nudge-outcome.pending { background: rgba(74, 138, 168, 0.15); color: var(--layer5); }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div style="margin-bottom: 8px">
+        <a class="nav-link" href="/admin/tilly">/admin/tilly</a>
+        <a class="nav-link active" href="/admin/memory">/admin/memory</a>
+      </div>
+      <h1>Memory <span class="accent">inspector</span></h1>
+      <p class="subhead">What Tilly believes, why, and where it came from. Five layers, click-through lineage.</p>
+
+      <div class="auth-row" id="auth-row">
+        <input id="token-input" placeholder="paste your bearer token (from /app localStorage)" />
+        <button class="btn" id="auth-btn">Use token</button>
+      </div>
+
+      <div id="content" style="display: none">
+        <div class="user-list" id="user-list"></div>
+        <div id="user-snapshot" style="display: none">
+          <div class="pyramid-summary" id="pyramid-summary"></div>
+
+          <div class="layer l4">
+            <div class="layer-header">
+              <span class="layer-tag">L4 · DOSSIER</span>
+              <h2>What Tilly believes</h2>
+              <span class="count" id="dossier-meta"></span>
+            </div>
+            <p class="hint">Sonnet rewrites this nightly from L2 typed memories. Injected into every chat.</p>
+            <div id="dossier-body"></div>
+          </div>
+
+          <div class="layer l5">
+            <div class="layer-header">
+              <span class="layer-tag">L5 · BANDIT</span>
+              <h2>Frame response profile</h2>
+              <span class="count" id="bandit-meta"></span>
+            </div>
+            <p class="hint">Beta-Bernoulli posterior per behavioral-econ frame. Picks the next nudge. Cold-start prior from Ideas42.</p>
+            <table class="bandit-table" id="bandit-body"></table>
+          </div>
+
+          <div class="layer l2">
+            <div class="layer-header">
+              <span class="layer-tag">L2 · TYPED MEMORIES</span>
+              <h2>What was distilled</h2>
+              <span class="count" id="mem-meta"></span>
+            </div>
+            <p class="hint">Haiku distills events into typed memories nightly. Click a row to see metadata + click an event id to highlight it below.</p>
+            <div class="filter-row" id="mem-filters"></div>
+            <div id="mem-body"></div>
+          </div>
+
+          <div class="layer l5">
+            <div class="layer-header">
+              <span class="layer-tag">S4 · NUDGES</span>
+              <h2>Nudges sent + outcomes</h2>
+              <span class="count" id="nudge-meta"></span>
+            </div>
+            <p class="hint">Every proactive Tilly message + whether the user acted. Reward signal for the L5 bandit.</p>
+            <div id="nudge-body"></div>
+          </div>
+
+          <div class="layer l1">
+            <div class="layer-header">
+              <span class="layer-tag">L1 · EVENTS</span>
+              <h2>Raw truth tape</h2>
+              <span class="count" id="event-meta"></span>
+            </div>
+            <p class="hint">Append-only. Everything else is rebuildable from this.</p>
+            <div id="event-body"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // Tiny safe DOM builder. el(tag, props, children?)
+      // - props.text  -> sets textContent (safe; no markup parsing)
+      // - props.cls   -> className
+      // - props.attrs -> object of attributes
+      // - props.on    -> object of {event: handler}
+      function el(tag, props, children) {
+        const node = document.createElement(tag);
+        if (props) {
+          if (props.text != null) node.textContent = String(props.text);
+          if (props.cls) node.className = props.cls;
+          if (props.style) for (const k in props.style) node.style[k] = props.style[k];
+          if (props.attrs) for (const k in props.attrs) node.setAttribute(k, String(props.attrs[k]));
+          if (props.on) for (const k in props.on) node.addEventListener(k, props.on[k]);
+        }
+        if (children) {
+          for (const c of children) {
+            if (c == null) continue;
+            node.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+          }
+        }
+        return node;
+      }
+      function clearEl(node) { while (node.firstChild) node.removeChild(node.firstChild); }
+      function emptyMessage(parent, text) {
+        clearEl(parent);
+        parent.appendChild(el("div", { cls: "empty", text }));
+      }
+      function shortDate(iso) { return iso ? new Date(iso).toLocaleString() : "—"; }
+
+      const KIND_FILTERS = ["all", "decision", "regret", "nudge_outcome", "bias_observed", "preference", "tradeoff", "life_context"];
+      let token = "";
+      let activeUserId = "";
+
+      function tokenLoaded() { return localStorage.getItem("build_together_auth_token"); }
+      async function api(path) {
+        const res = await fetch(path, { headers: { Authorization: "Bearer " + token } });
+        if (!res.ok) throw new Error(path + " -> " + res.status);
+        return res.json();
+      }
+
+      async function init() {
+        token = tokenLoaded() || "";
+        if (token) {
+          document.getElementById("token-input").value = token;
+          document.getElementById("content").style.display = "block";
+          await loadUsers();
+        }
+        document.getElementById("auth-btn").addEventListener("click", async () => {
+          token = document.getElementById("token-input").value.trim();
+          if (token) {
+            localStorage.setItem("build_together_auth_token", token);
+            document.getElementById("content").style.display = "block";
+            await loadUsers();
+          }
+        });
+      }
+
+      async function loadUsers() {
+        const list = document.getElementById("user-list");
+        clearEl(list);
+        list.appendChild(el("div", { cls: "empty", text: "Loading users…" }));
+        try {
+          const j = await api("/api/admin/memory/users");
+          clearEl(list);
+          if (!j.users || !j.users.length) {
+            list.appendChild(el("div", { cls: "empty", text: "No users." }));
+            return;
+          }
+          for (const u of j.users) {
+            const last = u.lastEventAt ? shortDate(u.lastEventAt) : "no events";
+            const row = el("div", {
+              cls: "user-row",
+              attrs: { "data-id": u.id },
+              on: {
+                click: async () => {
+                  document.querySelectorAll("#user-list .user-row").forEach(r => r.classList.remove("active"));
+                  row.classList.add("active");
+                  await selectUser(u.id);
+                },
+              },
+            }, [
+              el("div", null, [
+                el("div", { cls: "who", text: (u.name || u.email || u.id.slice(0, 8)) + (u.isAdmin ? " · admin" : "") }),
+                el("div", { cls: "meta", text: u.email || u.id.slice(0, 8) }),
+              ]),
+              el("div", { cls: "meta", text: u.totalEvents + " ev · " + last }),
+            ]);
+            list.appendChild(row);
+          }
+        } catch (e) {
+          emptyMessage(list, "Failed to load users (" + e.message + "). Token must belong to an admin.");
+        }
+      }
+
+      async function selectUser(id) {
+        activeUserId = id;
+        document.getElementById("user-snapshot").style.display = "block";
+        await Promise.all([
+          loadSnapshot(id),
+          loadBandit(id),
+          loadMemories(id, "all"),
+          loadEvents(id),
+          loadNudges(id),
+        ]);
+      }
+
+      function statBox(num, name) {
+        return el("div", { cls: "stat" }, [
+          el("div", { cls: "num", text: num }),
+          el("div", { cls: "name", text: name }),
+        ]);
+      }
+
+      async function loadSnapshot(id) {
+        const j = await api("/api/admin/memory/users/" + encodeURIComponent(id));
+        const summary = document.getElementById("pyramid-summary");
+        clearEl(summary);
+        summary.appendChild(statBox(j.counts.events, "L1 events"));
+        summary.appendChild(statBox(j.counts.typedMemories, "L2 typed memories"));
+        summary.appendChild(statBox(j.counts.dossiers, "L4 dossiers"));
+        summary.appendChild(statBox(j.counts.nudges, "Nudges (S4)"));
+
+        const body = document.getElementById("dossier-body");
+        const meta = document.getElementById("dossier-meta");
+        clearEl(body);
+        const d = j.dossier;
+        if (!d) {
+          meta.textContent = "";
+          body.appendChild(el("div", { cls: "empty", text: "No dossier yet for this user." }));
+          return;
+        }
+        meta.textContent = d.memoriesConsidered + " memories · " + shortDate(d.generatedAt);
+        renderDossier(body, d.content);
+      }
+
+      function dossierSection(name, contentEl) {
+        return el("div", { cls: "dossier-section" }, [
+          el("div", { cls: "name", text: name }),
+          contentEl,
+        ]);
+      }
+      function chipsRow(items) {
+        return el("div", { cls: "body list" }, items.map(s => el("span", { cls: "chip", text: s })));
+      }
+      function renderDossier(body, c) {
+        if (!c) {
+          body.appendChild(el("div", { cls: "empty", text: "Empty dossier." }));
+          return;
+        }
+        if (c.identity) body.appendChild(dossierSection("Identity", el("div", { cls: "body", text: c.identity })));
+        if (c.money_arc) body.appendChild(dossierSection("Money arc", el("div", { cls: "body", text: c.money_arc })));
+        if (Array.isArray(c.soft_spots) && c.soft_spots.length) body.appendChild(dossierSection("Soft spots", chipsRow(c.soft_spots)));
+        if (Array.isArray(c.recent_decisions) && c.recent_decisions.length) body.appendChild(dossierSection("Recent decisions", chipsRow(c.recent_decisions)));
+        if (Array.isArray(c.trust_signals) && c.trust_signals.length) body.appendChild(dossierSection("Trust signals", chipsRow(c.trust_signals)));
+        if (Array.isArray(c.open_loops) && c.open_loops.length) body.appendChild(dossierSection("Open loops", chipsRow(c.open_loops)));
+        const frames = Array.isArray(c.nudge_response_profile)
+          ? c.nudge_response_profile
+          : Object.entries(c.nudge_response_profile || {}).map(([k, v]) => Object.assign({ frame: k }, v));
+        const usable = (frames || []).filter(f => f && f.n >= 1).sort((a, b) => (b.accept_rate || 0) - (a.accept_rate || 0));
+        if (usable.length) {
+          const tbl = el("table", { cls: "frame-table" }, [
+            el("thead", null, [el("tr", null, [
+              el("th", { text: "Frame" }),
+              el("th", { text: "Accept" }),
+              el("th", { text: "n" }),
+              el("th", { text: "Best form" }),
+            ])]),
+            el("tbody", null, usable.map(f => el("tr", null, [
+              el("td", null, [el("span", { cls: "chip", text: f.frame })]),
+              el("td", { cls: "pct", text: ((f.accept_rate || 0) * 100).toFixed(0) + "%" }),
+              el("td", { text: String(f.n || 0) }),
+              el("td", null, [el("em", { text: f.best_form || "" })]),
+            ]))),
+          ]);
+          body.appendChild(dossierSection("Frames that work", tbl));
+        }
+      }
+
+      async function loadBandit(id) {
+        const j = await api("/api/admin/memory/users/" + encodeURIComponent(id) + "/bandit");
+        const body = document.getElementById("bandit-body");
+        clearEl(body);
+        const max = j.frames.reduce((m, f) => Math.max(m, f.expectedAccept || 0), 0);
+        body.appendChild(el("thead", null, [el("tr", null, [
+          el("th", { text: "Frame" }),
+          el("th", { text: "Accept" }),
+          el("th", { text: "α" }),
+          el("th", { text: "β" }),
+          el("th", { text: "n acc" }),
+          el("th", { text: "n no" }),
+        ])]));
+        const tbody = el("tbody");
+        for (const f of j.frames) {
+          const w = max > 0 ? (f.expectedAccept / max) * 100 : 0;
+          tbody.appendChild(el("tr", null, [
+            el("td", { text: f.frame }),
+            el("td", null, [
+              el("span", { cls: "bar", style: { width: w.toFixed(0) + "%" } }),
+              el("span", { cls: "pct", text: (f.expectedAccept * 100).toFixed(0) + "%" }),
+            ]),
+            el("td", { cls: "pct", text: String(f.alpha) }),
+            el("td", { cls: "pct", text: String(f.beta) }),
+            el("td", { cls: "pct", text: String(f.accepted) }),
+            el("td", { cls: "pct", text: String(f.notAccepted) }),
+          ]));
+        }
+        body.appendChild(tbody);
+      }
+
+      async function loadMemories(id, kind) {
+        const filters = document.getElementById("mem-filters");
+        clearEl(filters);
+        for (const k of KIND_FILTERS) {
+          filters.appendChild(el("button", {
+            cls: "btn-soft btn" + (kind === k ? " on" : ""),
+            text: k,
+            on: { click: () => loadMemories(id, k) },
+          }));
+        }
+        const url = kind === "all"
+          ? "/api/admin/memory/users/" + encodeURIComponent(id) + "/typed-memory?limit=200"
+          : "/api/admin/memory/users/" + encodeURIComponent(id) + "/typed-memory?limit=200&kind=" + encodeURIComponent(kind);
+        const j = await api(url);
+        const body = document.getElementById("mem-body");
+        const meta = document.getElementById("mem-meta");
+        clearEl(body);
+        meta.textContent = j.memories.length + " shown";
+        if (!j.memories.length) {
+          body.appendChild(el("div", { cls: "empty", text: "No typed memories yet." }));
+          return;
+        }
+        for (const m of j.memories) {
+          const metaEl = el("div", { cls: "mem-meta", style: { display: "none" } });
+          if (m.sourceEventIds && m.sourceEventIds.length) {
+            metaEl.appendChild(document.createTextNode("Lineage → "));
+            for (const eid of m.sourceEventIds) {
+              const link = el("span", {
+                cls: "lineage-link",
+                text: eid.slice(0, 8),
+                attrs: { "data-event": eid },
+                on: { click: (e) => { e.stopPropagation(); highlightEvent(eid); } },
+              });
+              metaEl.appendChild(link);
+              metaEl.appendChild(document.createTextNode(" · "));
+            }
+            metaEl.appendChild(document.createElement("br"));
+          }
+          if (m.metadata && Object.keys(m.metadata).length) {
+            metaEl.appendChild(document.createTextNode("Metadata: " + JSON.stringify(m.metadata, null, 2)));
+            metaEl.appendChild(document.createElement("br"));
+          }
+          metaEl.appendChild(document.createTextNode("Created: " + shortDate(m.createdAt)));
+
+          const row = el("div", { cls: "mem-row", attrs: { "data-id": m.id } }, [
+            el("span", { cls: "mem-kind", text: m.kind }),
+            el("span", { cls: "mem-body", text: m.body }),
+            metaEl,
+          ]);
+          row.addEventListener("click", () => {
+            const open = metaEl.style.display === "block";
+            row.classList.toggle("expanded", !open);
+            metaEl.style.display = open ? "none" : "block";
+          });
+          body.appendChild(row);
+        }
+      }
+
+      async function loadEvents(id) {
+        const j = await api("/api/admin/memory/users/" + encodeURIComponent(id) + "/events?limit=200");
+        const body = document.getElementById("event-body");
+        const meta = document.getElementById("event-meta");
+        clearEl(body);
+        meta.textContent = j.events.length + " most recent";
+        if (!j.events.length) {
+          body.appendChild(el("div", { cls: "empty", text: "No events." }));
+          return;
+        }
+        for (const e of j.events) {
+          const payload = JSON.stringify(e.payload).slice(0, 250);
+          const row = el("div", {
+            cls: "event-row",
+            attrs: { "data-id": e.id, id: "event-" + e.id },
+          }, [
+            el("span", { cls: "event-kind", text: e.kind }),
+            el("span", { cls: "event-ts", text: " · " + shortDate(e.ts) }),
+            el("span", { cls: "event-payload", text: payload }),
+          ]);
+          body.appendChild(row);
+        }
+      }
+
+      async function loadNudges(id) {
+        const j = await api("/api/admin/memory/users/" + encodeURIComponent(id) + "/nudges?limit=80");
+        const body = document.getElementById("nudge-body");
+        const meta = document.getElementById("nudge-meta");
+        clearEl(body);
+        meta.textContent = j.nudges.length + " sent";
+        if (!j.nudges.length) {
+          body.appendChild(el("div", { cls: "empty", text: "No nudges yet." }));
+          return;
+        }
+        for (const n of j.nudges) {
+          const outcome = n.outcome || "pending";
+          const oCls = "nudge-outcome " + (n.outcome === "accepted" ? "accepted" : n.outcome ? "dismissed" : "pending");
+          const row = el("div", { cls: "nudge-row" }, [
+            el("span", { cls: "nudge-frame", text: n.frame }),
+            el("span", { style: { fontSize: "11px", color: "var(--ink-mute)" }, text: n.channel + " · " }),
+            document.createTextNode(n.body.slice(0, 90)),
+            el("span", { cls: oCls, text: outcome }),
+            el("span", { style: { fontSize: "10.5px", color: "var(--ink-mute)", marginLeft: "8px" }, text: shortDate(n.sentAt) }),
+          ]);
+          body.appendChild(row);
+        }
+      }
+
+      function highlightEvent(eid) {
+        document.querySelectorAll(".event-row").forEach(r => r.classList.remove("highlighted"));
+        const target = document.getElementById("event-" + eid);
+        if (target) {
+          target.classList.add("highlighted");
+          target.scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+      }
+
+      init();
+    </script>
+  </body>
+</html>

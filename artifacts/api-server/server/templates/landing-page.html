@@ -1,0 +1,1313 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <title>Build Together - Achieve Dreams Faster, Together</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="The AI-powered couples finance app. Track shared expenses, save toward dreams, and get personalized coaching — no bank linking required." />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      
+      :root {
+        --primary: #7C3AED;
+        --primary-dark: #6D28D9;
+        --primary-light: #EDE9FE;
+        --success: #059669;
+        --success-light: #D1FAE5;
+        --warning: #F59E0B;
+        --warning-light: #FEF3C7;
+        --text-heading: #1E1B4B;
+        --text-body: #374151;
+        --text-light: #6B7280;
+        --navy-trust: #1E3A8A;
+        --bg-white: #FFFFFF;
+        --bg-alt: #F9FAFB;
+        --gradient-hero: linear-gradient(135deg, #F5F3FF 0%, #FDF4FF 50%, #EEF2FF 100%);
+        --shadow-soft: 0 4px 20px rgba(0, 0, 0, 0.08);
+        --shadow-medium: 0 8px 30px rgba(0, 0, 0, 0.12);
+        --shadow-float: 0 20px 60px rgba(0, 0, 0, 0.15);
+        --shadow-card: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+      }
+      
+      body {
+        font-family: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
+        background: var(--bg-white);
+        color: var(--text-body);
+        line-height: 1.6;
+        overflow-x: hidden;
+      }
+
+      /* Navigation */
+      .nav {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 50;
+        background: rgba(255, 255, 255, 0.92);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+        padding: 0 24px;
+      }
+
+      .nav-inner {
+        max-width: 1100px;
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 60px;
+      }
+
+      .nav-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        text-decoration: none;
+        font-weight: 800;
+        font-size: 1.15rem;
+        color: var(--text-heading);
+      }
+
+      .nav-brand img {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 28px;
+        list-style: none;
+      }
+
+      .nav-links a {
+        text-decoration: none;
+        color: var(--text-light);
+        font-weight: 600;
+        font-size: 0.9rem;
+        transition: color 0.2s;
+      }
+
+      .nav-links a:hover {
+        color: var(--primary);
+      }
+
+      .nav-cta {
+        background: var(--primary) !important;
+        color: #FFFFFF !important;
+        padding: 8px 20px;
+        border-radius: 50px;
+        font-size: 0.85rem !important;
+        transition: background 0.2s;
+      }
+
+      .nav-cta:hover {
+        background: var(--primary-dark) !important;
+      }
+
+      @media (max-width: 768px) {
+        .nav-links { display: none; }
+      }
+      
+      /* Hero Section */
+      .hero {
+        min-height: 100vh;
+        background: var(--gradient-hero);
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 100px 24px 80px;
+        text-align: center;
+        overflow: hidden;
+      }
+      
+      .hero::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.3) 0%, transparent 50%),
+                    radial-gradient(circle at 70% 80%, rgba(255,255,255,0.2) 0%, transparent 40%);
+        animation: float 20s ease-in-out infinite;
+      }
+      
+      @keyframes float {
+        0%, 100% { transform: translate(0, 0) rotate(0deg); }
+        50% { transform: translate(-20px, 20px) rotate(5deg); }
+      }
+      
+      .hero-content {
+        position: relative;
+        z-index: 1;
+        max-width: 620px;
+      }
+      
+      .app-icon {
+        width: 90px;
+        height: 90px;
+        border-radius: 22px;
+        box-shadow: var(--shadow-float);
+        display: block;
+        margin: 0 auto 24px auto;
+        animation: bounce-in 0.8s ease-out;
+      }
+      
+      @keyframes bounce-in {
+        0% { transform: scale(0.5); opacity: 0; }
+        60% { transform: scale(1.1); }
+        100% { transform: scale(1); opacity: 1; }
+      }
+      
+      .hero h1 {
+        font-size: 2.5rem;
+        font-weight: 800;
+        color: var(--text-heading);
+        margin-bottom: 16px;
+        line-height: 1.15;
+      }
+      
+      .hero h1 span {
+        display: block;
+        background: linear-gradient(90deg, var(--text-heading) 0%, var(--primary) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      
+      .tagline {
+        font-size: 1.2rem;
+        color: var(--text-body);
+        margin-bottom: 12px;
+        font-weight: 600;
+      }
+      
+      .hero-description {
+        font-size: 1.05rem;
+        color: var(--text-light);
+        max-width: 480px;
+        margin: 0 auto 36px;
+        line-height: 1.7;
+      }
+
+      .hero-badges {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 12px;
+        margin-bottom: 36px;
+      }
+
+      .hero-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: var(--bg-white);
+        border: 1px solid rgba(0,0,0,0.08);
+        padding: 8px 16px;
+        border-radius: 50px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-body);
+        box-shadow: var(--shadow-soft);
+      }
+
+      .hero-badge svg {
+        width: 16px;
+        height: 16px;
+        color: var(--success);
+      }
+      
+      .cta-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        align-items: center;
+      }
+      
+      .btn-primary {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 16px 36px;
+        background: var(--primary);
+        color: #FFFFFF;
+        font-size: 1.1rem;
+        font-weight: 700;
+        border-radius: 50px;
+        text-decoration: none;
+        transition: all 0.3s ease;
+        box-shadow: var(--shadow-medium);
+        border: none;
+        cursor: pointer;
+      }
+      
+      .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-float);
+        background: var(--primary-dark);
+      }
+      
+      .btn-secondary {
+        font-size: 0.95rem;
+        color: var(--text-light);
+        text-decoration: none;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        transition: color 0.2s;
+      }
+      
+      .btn-secondary:hover {
+        color: var(--text-heading);
+      }
+      
+      .scroll-hint {
+        position: absolute;
+        bottom: 30px;
+        left: 50%;
+        transform: translateX(-50%);
+        animation: bounce 2s ease infinite;
+        color: var(--text-light);
+      }
+      
+      @keyframes bounce {
+        0%, 100% { transform: translateX(-50%) translateY(0); }
+        50% { transform: translateX(-50%) translateY(10px); }
+      }
+
+      /* Transparency / Trust Section */
+      .transparency-section {
+        padding: 80px 24px;
+        background: var(--bg-white);
+        text-align: center;
+      }
+
+      .transparency-content {
+        max-width: 700px;
+        margin: 0 auto;
+      }
+
+      .transparency-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 20px;
+        margin-top: 40px;
+      }
+
+      .transparency-card {
+        background: var(--bg-alt);
+        border-radius: 16px;
+        padding: 28px;
+        text-align: left;
+        border: 1px solid rgba(0,0,0,0.04);
+        transition: transform 0.2s;
+      }
+
+      .transparency-card:hover {
+        transform: translateY(-2px);
+      }
+
+      .transparency-card .card-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 16px;
+        font-size: 22px;
+      }
+
+      .transparency-card h3 {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: var(--text-heading);
+        margin-bottom: 8px;
+      }
+
+      .transparency-card p {
+        color: var(--text-light);
+        font-size: 0.95rem;
+        line-height: 1.6;
+      }
+      
+      /* Section shared styles */
+      .section-title {
+        font-size: 2rem;
+        font-weight: 800;
+        color: var(--text-heading);
+        margin-bottom: 16px;
+      }
+      
+      .section-subtitle {
+        font-size: 1.05rem;
+        color: var(--text-light);
+        max-width: 500px;
+        margin: 0 auto 48px;
+        line-height: 1.6;
+        font-weight: 500;
+      }
+
+      /* How It Works Section */
+      .how-it-works {
+        padding: 80px 24px;
+        background: var(--bg-alt);
+      }
+      
+      .steps-container {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        max-width: 700px;
+        margin: 0 auto;
+      }
+      
+      .step {
+        display: flex;
+        align-items: flex-start;
+        gap: 20px;
+        background: var(--bg-white);
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: var(--shadow-card);
+        transition: transform 0.2s ease;
+      }
+      
+      .step:hover {
+        transform: translateX(4px);
+      }
+      
+      .step-number {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        background: var(--primary);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: #FFFFFF;
+      }
+      
+      .step-content h3 {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--text-heading);
+        margin-bottom: 6px;
+      }
+      
+      .step-content p {
+        color: var(--text-light);
+        line-height: 1.6;
+        font-size: 0.95rem;
+      }
+
+      /* Dream Guardian Section */
+      .guardian-section {
+        padding: 80px 24px;
+        background: linear-gradient(135deg, var(--navy-trust) 0%, #1E40AF 100%);
+        color: white;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .guardian-section::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: radial-gradient(circle at 50% 0%, rgba(199, 206, 234, 0.15) 0%, transparent 60%);
+      }
+
+      .guardian-content {
+        position: relative;
+        z-index: 1;
+        max-width: 650px;
+        margin: 0 auto;
+      }
+
+      .guardian-avatar {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        margin: 0 auto 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 0 60px rgba(124, 58, 237, 0.4);
+        animation: pulse 3s ease-in-out infinite;
+        overflow: hidden;
+      }
+
+      .guardian-icon-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: 50%;
+      }
+
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); box-shadow: 0 0 60px rgba(255, 154, 162, 0.3); }
+        50% { transform: scale(1.05); box-shadow: 0 0 80px rgba(255, 154, 162, 0.4); }
+      }
+
+      .guardian-section h2 {
+        font-size: 2rem;
+        font-weight: 800;
+        margin-bottom: 20px;
+      }
+
+      .guardian-section .highlight {
+        color: #A78BFA;
+      }
+
+      .guardian-description {
+        font-size: 1.1rem;
+        color: rgba(255,255,255,0.9);
+        margin-bottom: 16px;
+        line-height: 1.8;
+      }
+
+      .guardian-tagline {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: #FFFFFF;
+        margin-bottom: 32px;
+        font-style: italic;
+        opacity: 0.9;
+      }
+
+      .guardian-features {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+        text-align: left;
+        margin-top: 32px;
+      }
+
+      .guardian-feature {
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        border-radius: 12px;
+        padding: 20px;
+        backdrop-filter: blur(10px);
+      }
+
+      .guardian-feature h4 {
+        font-size: 1rem;
+        font-weight: 700;
+        margin-bottom: 6px;
+      }
+
+      .guardian-feature p {
+        font-size: 0.9rem;
+        color: rgba(255, 255, 255, 0.8);
+        line-height: 1.5;
+      }
+
+      /* Screenshot Showcase Section */
+      .screenshots-section {
+        padding: 80px 24px;
+        background: var(--bg-white);
+        text-align: center;
+        overflow: hidden;
+      }
+      
+      .screenshots-grid {
+        display: flex;
+        gap: 20px;
+        max-width: 1200px;
+        margin: 0 auto;
+        overflow-x: auto;
+        padding: 20px 0;
+        scroll-snap-type: x mandatory;
+        -webkit-overflow-scrolling: touch;
+      }
+      
+      .screenshot-card {
+        flex: 0 0 260px;
+        scroll-snap-align: center;
+        background: var(--bg-white);
+        border-radius: 20px;
+        padding: 20px;
+        box-shadow: var(--shadow-card);
+        transition: transform 0.3s ease;
+      }
+      
+      .screenshot-card:hover {
+        transform: translateY(-4px);
+      }
+      
+      .screenshot-image {
+        width: 100%;
+        height: 380px;
+        object-fit: cover;
+        border-radius: 14px;
+        margin-bottom: 16px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      }
+      
+      .screenshot-card h4 {
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--text-heading);
+        margin-bottom: 6px;
+      }
+      
+      .screenshot-card p {
+        font-size: 0.85rem;
+        color: var(--text-light);
+        line-height: 1.5;
+      }
+      
+      .feature-tag {
+        display: inline-block;
+        background: var(--primary);
+        color: #FFFFFF;
+        font-size: 0.7rem;
+        font-weight: 700;
+        padding: 4px 12px;
+        border-radius: 50px;
+        margin-bottom: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      /* Why We Built This */
+      .why-section {
+        padding: 80px 24px;
+        background: var(--bg-alt);
+        text-align: center;
+      }
+
+      .why-content {
+        max-width: 640px;
+        margin: 0 auto;
+      }
+
+      .why-story {
+        font-size: 1.1rem;
+        color: var(--text-body);
+        line-height: 1.8;
+        text-align: left;
+        margin-bottom: 24px;
+      }
+
+      .why-story strong {
+        color: var(--text-heading);
+      }
+
+      .why-principles {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 16px;
+        margin-top: 36px;
+      }
+
+      .why-principle {
+        background: var(--bg-white);
+        border-radius: 14px;
+        padding: 24px;
+        text-align: left;
+        box-shadow: var(--shadow-soft);
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+      }
+
+      .why-principle-icon {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .why-principle h4 {
+        font-size: 1rem;
+        font-weight: 700;
+        color: var(--text-heading);
+        margin-bottom: 4px;
+      }
+
+      .why-principle p {
+        font-size: 0.9rem;
+        color: var(--text-light);
+        line-height: 1.5;
+      }
+
+      /* Pricing Section */
+      .pricing-section {
+        padding: 80px 24px;
+        background: var(--bg-white);
+        text-align: center;
+      }
+
+      .pricing-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 24px;
+        max-width: 700px;
+        margin: 0 auto;
+      }
+
+      .pricing-card {
+        background: var(--bg-white);
+        border: 2px solid rgba(0, 0, 0, 0.08);
+        border-radius: 20px;
+        padding: 32px;
+        position: relative;
+        transition: transform 0.2s;
+      }
+
+      .pricing-card:hover {
+        transform: translateY(-4px);
+      }
+
+      .pricing-card.featured {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 1px var(--primary), var(--shadow-card);
+      }
+
+      .pricing-badge {
+        position: absolute;
+        top: -12px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--primary);
+        color: #FFFFFF;
+        font-size: 0.75rem;
+        font-weight: 700;
+        padding: 4px 16px;
+        border-radius: 50px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .pricing-card h3 {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: var(--text-heading);
+        margin-bottom: 8px;
+      }
+
+      .pricing-amount {
+        font-size: 2.5rem;
+        font-weight: 800;
+        color: var(--text-heading);
+      }
+
+      .pricing-amount span {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-light);
+      }
+
+      .pricing-savings {
+        display: inline-block;
+        background: var(--success-light);
+        color: var(--success);
+        font-size: 0.8rem;
+        font-weight: 700;
+        padding: 4px 12px;
+        border-radius: 50px;
+        margin: 8px 0 16px;
+      }
+
+      .pricing-features {
+        list-style: none;
+        padding: 0;
+        margin: 20px 0 24px;
+        text-align: left;
+      }
+
+      .pricing-features li {
+        padding: 8px 0;
+        padding-left: 28px;
+        position: relative;
+        color: var(--text-body);
+        font-size: 0.95rem;
+      }
+
+      .pricing-features li::before {
+        content: '';
+        position: absolute;
+        left: 0;
+        top: 13px;
+        width: 18px;
+        height: 18px;
+        background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23059669' stroke-width='3'%3E%3Cpolyline points='20 6 9 17 4 12'%3E%3C/polyline%3E%3C/svg%3E") no-repeat center;
+        background-size: contain;
+      }
+
+      .pricing-trial {
+        font-size: 0.9rem;
+        color: var(--primary);
+        font-weight: 700;
+        margin-bottom: 20px;
+      }
+
+      .pricing-btn {
+        display: inline-block;
+        width: 100%;
+        padding: 14px;
+        background: var(--primary);
+        color: #FFFFFF;
+        font-size: 1rem;
+        font-weight: 700;
+        border-radius: 12px;
+        text-decoration: none;
+        border: none;
+        cursor: pointer;
+        transition: background 0.2s;
+      }
+
+      .pricing-btn:hover {
+        background: var(--primary-dark);
+      }
+
+      .pricing-btn.outline {
+        background: transparent;
+        color: var(--primary);
+        border: 2px solid var(--primary);
+      }
+
+      .pricing-btn.outline:hover {
+        background: var(--primary-light);
+      }
+      
+      /* CTA Section */
+      .cta-section {
+        padding: 80px 24px;
+        background: var(--gradient-hero);
+        text-align: center;
+      }
+      
+      .cta-content {
+        max-width: 550px;
+        margin: 0 auto;
+      }
+      
+      .cta-section h2 {
+        font-size: 2rem;
+        font-weight: 800;
+        color: var(--text-heading);
+        margin-bottom: 16px;
+      }
+      
+      .cta-section p {
+        font-size: 1.05rem;
+        color: var(--text-body);
+        margin-bottom: 32px;
+      }
+
+      .download-box {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 20px;
+      }
+
+      .store-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 36px;
+        background: var(--text-heading);
+        color: #FFFFFF;
+        font-size: 1.1rem;
+        font-weight: 700;
+        border-radius: 14px;
+        text-decoration: none;
+        transition: all 0.2s ease;
+        box-shadow: var(--shadow-medium);
+      }
+
+      .store-button:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-float);
+        background: #000;
+      }
+
+      .store-button svg {
+        width: 28px;
+        height: 28px;
+      }
+
+      .cta-note {
+        font-size: 0.9rem;
+        color: var(--text-light);
+        margin-top: 8px;
+      }
+      
+      /* Footer */
+      .footer {
+        padding: 40px 24px;
+        background: var(--text-heading);
+        color: rgba(255,255,255,0.6);
+        text-align: center;
+        font-size: 0.85rem;
+      }
+      
+      .footer-links {
+        margin-top: 12px;
+        display: flex;
+        justify-content: center;
+        gap: 20px;
+      }
+
+      .footer a {
+        color: rgba(255,255,255,0.7);
+        text-decoration: none;
+        transition: color 0.2s;
+      }
+
+      .footer a:hover {
+        color: #FFFFFF;
+      }
+      
+      /* Desktop Styles */
+      @media (min-width: 768px) {
+        .hero h1 { font-size: 3.5rem; }
+        .tagline { font-size: 1.4rem; }
+        .hero-description { font-size: 1.15rem; }
+        .cta-buttons { flex-direction: row; justify-content: center; }
+
+        .transparency-grid { grid-template-columns: repeat(3, 1fr); }
+
+        .steps-container { flex-direction: row; gap: 20px; }
+        .step { flex-direction: column; text-align: center; flex: 1; }
+        .step:hover { transform: translateY(-4px); }
+        .step-number { margin: 0 auto; }
+
+        .guardian-features { grid-template-columns: repeat(3, 1fr); }
+
+        .screenshots-grid {
+          justify-content: center;
+          flex-wrap: wrap;
+          overflow-x: visible;
+        }
+        .screenshot-card { flex: 0 0 280px; }
+
+        .why-principles { grid-template-columns: repeat(3, 1fr); }
+
+        .pricing-grid { grid-template-columns: repeat(2, 1fr); }
+
+        .guardian-section h2 { font-size: 2.5rem; }
+      }
+      
+      @media (min-width: 1024px) {
+        .hero h1 { font-size: 4rem; }
+        .section-title { font-size: 2.5rem; }
+      }
+      
+      /* Dark Mode */
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg-white: #16213e;
+          --bg-alt: #1a1a2e;
+          --text-heading: #e8e8e8;
+          --text-body: #b8b8b8;
+          --text-light: #888888;
+        }
+
+        body { background: #1a1a2e; }
+
+        .nav {
+          background: rgba(26, 26, 46, 0.92);
+          border-bottom-color: rgba(255, 255, 255, 0.06);
+        }
+        .nav-brand { color: #e8e8e8; }
+
+        .hero { background: linear-gradient(135deg, #2d2d44 0%, #1a1a2e 50%, #16213e 100%); }
+        .hero h1 span {
+          background: linear-gradient(90deg, var(--primary) 0%, #A78BFA 100%);
+          -webkit-background-clip: text;
+          background-clip: text;
+        }
+
+        .hero-badge { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.1); }
+
+        .transparency-card { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.08); }
+        .step { background: rgba(255,255,255,0.05); }
+        .screenshot-card { background: rgba(255,255,255,0.05); }
+        .why-principle { background: rgba(255,255,255,0.05); }
+        .pricing-card { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); }
+        .pricing-card.featured { border-color: var(--primary); }
+        .store-button { background: #e8e8e8; color: #1a1a2e; }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Navigation -->
+    <nav class="nav">
+      <div class="nav-inner">
+        <a href="#" class="nav-brand">
+          <img src="assets/images/icon.png" alt="Build Together" />
+          Build Together
+        </a>
+        <ul class="nav-links">
+          <li><a href="#how-it-works">How It Works</a></li>
+          <li><a href="#features">Features</a></li>
+          <li><a href="#pricing">Pricing</a></li>
+          <li><a href="/privacy">Privacy</a></li>
+          <li><a href="#download" class="nav-cta">Download Free</a></li>
+        </ul>
+      </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+      <div class="hero-content">
+        <img src="assets/images/icon.png" alt="Build Together" class="app-icon" />
+        <h1>
+          <span>Build Together</span>
+        </h1>
+        <p class="tagline">The finance app for couples<br/>who dream together.</p>
+        <p class="hero-description">
+          Track shared expenses, save toward your dreams, and get gentle AI coaching 
+          that adapts to how you and your partner actually spend.
+        </p>
+        <div class="hero-badges">
+          <span class="hero-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            No bank linking
+          </span>
+          <span class="hero-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            14-day free trial
+          </span>
+          <span class="hero-badge">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Your data stays private
+          </span>
+        </div>
+        <div class="cta-buttons">
+          <a href="#download" class="btn-primary">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+            </svg>
+            Download on App Store
+          </a>
+          <a href="#how-it-works" class="btn-secondary">
+            See how it works
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 12 15 18 9"></polyline>
+            </svg>
+          </a>
+          <a href="/app/" class="btn-secondary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            Try on Web
+          </a>
+        </div>
+      </div>
+      <div class="scroll-hint">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </div>
+    </section>
+
+    <!-- Transparency & Trust Section (moved up) -->
+    <section class="transparency-section" id="trust">
+      <div class="transparency-content">
+        <h2 class="section-title">Built on Trust, Not Tricks</h2>
+        <p class="section-subtitle">We believe couples deserve full transparency about their money and the AI helping them.</p>
+
+        <div class="transparency-grid">
+          <div class="transparency-card">
+            <div class="card-icon" style="background: #EDE9FE;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            </div>
+            <h3>See What AI Learns</h3>
+            <p>Guardian Memory shows you every pattern the AI has noticed and why it makes each suggestion. Nothing hidden.</p>
+          </div>
+          <div class="transparency-card">
+            <div class="card-icon" style="background: #D1FAE5;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <h3>No Bank Connections</h3>
+            <p>You add expenses manually or by scanning receipts. We never touch your bank accounts. Period.</p>
+          </div>
+          <div class="transparency-card">
+            <div class="card-icon" style="background: #FEF3C7;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            </div>
+            <h3>Your Data, Always Yours</h3>
+            <p>Your financial data stays on your account. Never sold, never shared. Full privacy, always.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- How It Works Section -->
+    <section class="how-it-works" id="how-it-works">
+      <h2 class="section-title" style="text-align: center;">How It Works</h2>
+      <p class="section-subtitle" style="text-align: center;">Three steps. That's it.</p>
+      
+      <div class="steps-container">
+        <div class="step">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <h3>Add Your Expenses</h3>
+            <p>Snap a receipt, type a quick note, or describe it in your own words. Takes under 5 seconds.</p>
+          </div>
+        </div>
+        
+        <div class="step">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <h3>We Handle the Rest</h3>
+            <p>AI categorizes every purchase, splits costs between partners, tracks budgets, and keeps a running tally.</p>
+          </div>
+        </div>
+        
+        <div class="step">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <h3>Watch Dreams Grow</h3>
+            <p>Your AI companion learns your habits, sends personalized nudges at the right moment, and helps your shared goals get closer every day.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Dream Guardian Section (consolidated) -->
+    <section class="guardian-section" id="features">
+      <div class="guardian-content">
+        <div class="guardian-avatar">
+          <img src="assets/images/dream-guardian-icon.png" alt="Dream Guardian" class="guardian-icon-img" />
+        </div>
+        <h2>Meet Your <span class="highlight">Dream Guardian</span></h2>
+        <p class="guardian-description">
+          An AI companion that quietly observes your spending, learns what motivates you and your partner, 
+          and sends gentle nudges at exactly the right moment. 
+          If a suggestion doesn't work, it adapts. Over time, it becomes uniquely yours.
+        </p>
+        <p class="guardian-tagline">No lectures. No shame. Just steady guidance that evolves with you.</p>
+
+        <div class="guardian-features">
+          <div class="guardian-feature">
+            <h4>Pattern Detection</h4>
+            <p>Spots habitual spending you might not notice and shows you how small changes add up.</p>
+          </div>
+          <div class="guardian-feature">
+            <h4>Personalized Nudges</h4>
+            <p>Uses behavioral science to send the right message at the right time, tailored to your personality.</p>
+          </div>
+          <div class="guardian-feature">
+            <h4>Full Transparency</h4>
+            <p>See exactly what the AI has learned about you in Guardian Memory. Nothing is hidden.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Screenshot Showcase Section -->
+    <section class="screenshots-section">
+      <h2 class="section-title">See It in Action</h2>
+      <p class="section-subtitle">A sleek, intuitive experience that makes managing money together enjoyable.</p>
+      
+      <div class="screenshots-grid">
+        <div class="screenshot-card">
+          <span class="feature-tag">Home</span>
+          <img src="assets/screenshots/dashboard.png" alt="Home screen" class="screenshot-image" />
+          <h4>Your Daily Overview</h4>
+          <p>Dream progress, savings streak, and a personalized greeting from your AI companion.</p>
+        </div>
+        
+        <div class="screenshot-card">
+          <span class="feature-tag">Expenses</span>
+          <img src="assets/screenshots/expenses.png" alt="Expenses screen" class="screenshot-image" />
+          <h4>Track Who Pays What</h4>
+          <p>Spending by category, partner settlements, and monthly budget tracking at a glance.</p>
+        </div>
+        
+        <div class="screenshot-card">
+          <span class="feature-tag">Receipt Scanner</span>
+          <img src="assets/screenshots/receipt-scan.png" alt="Receipt scanning" class="screenshot-image" />
+          <h4>Every Item Classified</h4>
+          <p>AI reads receipts line-by-line, categorizing groceries, treats, and staples automatically.</p>
+        </div>
+        
+        <div class="screenshot-card">
+          <span class="feature-tag">AI Insights</span>
+          <img src="assets/screenshots/ai-insights.png" alt="AI spending insights" class="screenshot-image" />
+          <h4>Smart Analysis</h4>
+          <p>Spending compared to similar households in your city, with actionable savings tips.</p>
+        </div>
+        
+        <div class="screenshot-card">
+          <span class="feature-tag">Dreams</span>
+          <img src="assets/screenshots/hawaii-dream.png" alt="Dream goal progress" class="screenshot-image" />
+          <h4>Watch Dreams Grow</h4>
+          <p>Visual progress, milestone celebrations, and AI-suggested savings to reach goals faster.</p>
+        </div>
+        
+        <div class="screenshot-card">
+          <span class="feature-tag">Guardian Memory</span>
+          <img src="assets/screenshots/guardian-memory.png" alt="Guardian Memory transparency" class="screenshot-image" />
+          <h4>Full AI Transparency</h4>
+          <p>See every pattern learned, which advice worked, and how recommendations evolve over time.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Why We Built This Section -->
+    <section class="why-section">
+      <div class="why-content">
+        <h2 class="section-title">Why We Built This</h2>
+        <p class="section-subtitle">A personal problem that needed a better solution.</p>
+
+        <p class="why-story">
+          <strong>Money is the #1 source of stress in relationships.</strong> 
+          Studies show 35% of couples say finances cause the most friction in their partnership. 
+          Yet most finance apps are built for individuals — they ignore the reality that 
+          couples share expenses, save together, and make financial decisions as a team.
+        </p>
+        <p class="why-story">
+          We built Build Together because we couldn't find an app that treated shared finances 
+          as a collaboration instead of a chore. One that didn't require handing over bank credentials. 
+          One that gently helped instead of shamed.
+        </p>
+
+        <div class="why-principles">
+          <div class="why-principle">
+            <div class="why-principle-icon" style="background: #EDE9FE;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7C3AED" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+            </div>
+            <div>
+              <h4>Built for Two</h4>
+              <p>Every feature is designed for partners managing money together, not retrofitted from a single-user app.</p>
+            </div>
+          </div>
+          <div class="why-principle">
+            <div class="why-principle-icon" style="background: #D1FAE5;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <div>
+              <h4>Privacy by Design</h4>
+              <p>We chose no bank linking on purpose. You control what goes in. Your data is never sold or shared.</p>
+            </div>
+          </div>
+          <div class="why-principle">
+            <div class="why-principle-icon" style="background: #FEF3C7;">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#D97706" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+            </div>
+            <div>
+              <h4>Encouragement, Not Guilt</h4>
+              <p>Behavioral science says shame doesn't work. Our AI adapts to what actually motivates you.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section class="pricing-section" id="pricing">
+      <h2 class="section-title">Simple, Honest Pricing</h2>
+      <p class="section-subtitle">Start with a 14-day free trial. Full access to every feature. Cancel anytime.</p>
+
+      <div class="pricing-grid">
+        <div class="pricing-card">
+          <h3>Monthly</h3>
+          <div class="pricing-amount">$7.99<span>/month</span></div>
+          <p class="pricing-trial">14-day free trial included</p>
+          <ul class="pricing-features">
+            <li>Unlimited expense tracking</li>
+            <li>AI receipt scanning</li>
+            <li>Dream Guardian AI coaching</li>
+            <li>Guardian Memory transparency</li>
+            <li>Smart spending insights</li>
+            <li>Partner linking & bill splitting</li>
+          </ul>
+          <a href="#download" class="pricing-btn outline">Start Free Trial</a>
+        </div>
+
+        <div class="pricing-card featured">
+          <span class="pricing-badge">Best Value</span>
+          <h3>Annual</h3>
+          <div class="pricing-amount">$59.99<span>/year</span></div>
+          <span class="pricing-savings">Save 37% (~$5/month)</span>
+          <p class="pricing-trial">14-day free trial included</p>
+          <ul class="pricing-features">
+            <li>Everything in Monthly</li>
+            <li>Priority AI processing</li>
+            <li>Advanced spending benchmarks</li>
+            <li>Family-specific insights</li>
+            <li>Early access to new features</li>
+            <li>Cancel anytime during trial</li>
+          </ul>
+          <a href="#download" class="pricing-btn">Start Free Trial</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section class="cta-section" id="download">
+      <div class="cta-content">
+        <h2>Stop worrying about shared money.<br/>Start building together.</h2>
+        <p>14-day free trial. No bank linking required. Cancel anytime.</p>
+        
+        <div class="download-box">
+          <a href="https://apps.apple.com/app/build-together/id6742961498" class="store-button" target="_blank">
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+            </svg>
+            Download on App Store
+          </a>
+          <p class="cta-note">Free to download. Start your 14-day trial inside the app.</p>
+          <a href="/app/" style="display: inline-block; margin-top: 12px; color: rgba(255,255,255,0.8); text-decoration: underline; font-size: 14px;">Or try the web version</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>Made with love for couples building their future together.</p>
+      <div class="footer-links">
+        <a href="/privacy">Privacy Policy</a>
+        <a href="/terms">Terms of Service</a>
+        <a href="mailto:hello@buildtogether.app">Contact</a>
+      </div>
+    </footer>
+
+    <script>
+      document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function(e) {
+          e.preventDefault();
+          const target = document.querySelector(this.getAttribute('href'));
+          if (target) {
+            target.scrollIntoView({ behavior: 'smooth' });
+          }
+        });
+      });
+    </script>
+  </body>
+</html>

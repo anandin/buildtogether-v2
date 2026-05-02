@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "Build Together"
+version = "1.0.0"
+id = "artifacts/buildtogether"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 18829
+
+[services.development]
+run = "pnpm --filter @workspace/buildtogether run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/buildtogether", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/buildtogether", "run", "serve" ]
+
+[services.env]
+PORT = "18829"
+BASE_PATH = "/"

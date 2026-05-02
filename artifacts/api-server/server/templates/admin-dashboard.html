@@ -1,0 +1,1767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Build Together - Admin Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #7C3AED;
+      --primary-dark: #5B21B6;
+      --success: #10B981;
+      --warning: #F59E0B;
+      --error: #EF4444;
+      --bg-root: #F8FAFC;
+      --bg-card: #FFFFFF;
+      --text: #1E293B;
+      --text-secondary: #64748B;
+      --border: #E2E8F0;
+    }
+    
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg-root);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    
+    .layout {
+      display: flex;
+      min-height: 100vh;
+    }
+    
+    .sidebar {
+      width: 260px;
+      background: var(--bg-card);
+      border-right: 1px solid var(--border);
+      padding: 24px 16px;
+      position: fixed;
+      height: 100vh;
+      overflow-y: auto;
+    }
+    
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 12px 24px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+    
+    .logo-icon {
+      width: 40px;
+      height: 40px;
+      background: var(--primary);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 700;
+      font-size: 18px;
+    }
+    
+    .logo-text {
+      font-weight: 700;
+      font-size: 18px;
+    }
+    
+    .logo-text span {
+      color: var(--text-secondary);
+      font-weight: 400;
+      font-size: 12px;
+      display: block;
+    }
+    
+    .nav-section {
+      margin-bottom: 24px;
+    }
+    
+    .nav-section-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      padding: 0 12px;
+      margin-bottom: 8px;
+    }
+    
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+      color: var(--text-secondary);
+      text-decoration: none;
+    }
+    
+    .nav-item:hover {
+      background: var(--bg-root);
+      color: var(--text);
+    }
+    
+    .nav-item.active {
+      background: var(--primary);
+      color: white;
+    }
+    
+    .nav-item svg {
+      width: 20px;
+      height: 20px;
+    }
+    
+    .main {
+      flex: 1;
+      margin-left: 260px;
+      padding: 32px;
+    }
+    
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 32px;
+    }
+    
+    .header h1 {
+      font-size: 24px;
+      font-weight: 700;
+    }
+    
+    .header-actions {
+      display: flex;
+      gap: 12px;
+    }
+    
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 500;
+      font-size: 14px;
+      cursor: pointer;
+      transition: all 0.15s;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: var(--primary-dark);
+    }
+    
+    .btn-secondary {
+      background: var(--bg-root);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    
+    .btn-secondary:hover {
+      background: var(--border);
+    }
+    
+    .card {
+      background: var(--bg-card);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      padding: 24px;
+      margin-bottom: 24px;
+    }
+    
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+    }
+    
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 24px;
+      margin-bottom: 32px;
+    }
+    
+    .stat-card {
+      background: var(--bg-card);
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      padding: 20px;
+    }
+    
+    .stat-label {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+    
+    .stat-value {
+      font-size: 28px;
+      font-weight: 700;
+    }
+    
+    .stat-change {
+      font-size: 12px;
+      margin-top: 4px;
+    }
+    
+    .stat-change.positive {
+      color: var(--success);
+    }
+    
+    .stat-change.negative {
+      color: var(--error);
+    }
+    
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    
+    .table th,
+    .table td {
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .table th {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      background: var(--bg-root);
+    }
+    
+    .table tr:hover td {
+      background: var(--bg-root);
+    }
+    
+    .badge {
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    
+    .badge-success {
+      background: #D1FAE5;
+      color: #065F46;
+    }
+    
+    .badge-warning {
+      background: #FEF3C7;
+      color: #92400E;
+    }
+    
+    .badge-error {
+      background: #FEE2E2;
+      color: #991B1B;
+    }
+    
+    .badge-info {
+      background: #E0E7FF;
+      color: #3730A3;
+    }
+    
+    .prompt-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    
+    .prompt-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px;
+      background: var(--bg-root);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    
+    .prompt-item:hover {
+      background: var(--border);
+    }
+    
+    .prompt-info {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    
+    .prompt-name {
+      font-weight: 600;
+    }
+    
+    .prompt-category {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+    
+    .prompt-actions {
+      display: flex;
+      gap: 8px;
+    }
+    
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .modal-overlay.active {
+      display: flex;
+    }
+    
+    .modal {
+      background: var(--bg-card);
+      border-radius: 16px;
+      width: 90%;
+      max-width: 800px;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 32px;
+    }
+    
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+    
+    .modal-title {
+      font-size: 20px;
+      font-weight: 700;
+    }
+    
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: var(--text-secondary);
+    }
+    
+    .form-group {
+      margin-bottom: 20px;
+    }
+    
+    .form-label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+    
+    .form-input {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+    
+    .form-input:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+    
+    .form-textarea {
+      width: 100%;
+      padding: 12px 16px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: 'Monaco', 'Menlo', monospace;
+      min-height: 200px;
+      resize: vertical;
+    }
+    
+    .form-textarea:focus {
+      outline: none;
+      border-color: var(--primary);
+    }
+    
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+    
+    .tabs {
+      display: flex;
+      gap: 4px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+    
+    .tab {
+      padding: 12px 20px;
+      cursor: pointer;
+      font-weight: 500;
+      color: var(--text-secondary);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: all 0.15s;
+    }
+    
+    .tab:hover {
+      color: var(--text);
+    }
+    
+    .tab.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+    
+    .tab-content {
+      display: none;
+    }
+    
+    .tab-content.active {
+      display: block;
+    }
+    
+    .log-item {
+      display: flex;
+      gap: 16px;
+      padding: 16px;
+      background: var(--bg-root);
+      border-radius: 8px;
+      margin-bottom: 12px;
+    }
+    
+    .log-status {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-top: 6px;
+    }
+    
+    .log-status.success {
+      background: var(--success);
+    }
+    
+    .log-status.error {
+      background: var(--error);
+    }
+    
+    .log-content {
+      flex: 1;
+    }
+    
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    
+    .log-name {
+      font-weight: 600;
+    }
+    
+    .log-time {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+    
+    .log-details {
+      font-size: 13px;
+      color: var(--text-secondary);
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text-secondary);
+    }
+    
+    .empty-state svg {
+      width: 64px;
+      height: 64px;
+      margin-bottom: 16px;
+      opacity: 0.5;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-secondary);
+    }
+    
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      padding: 16px 24px;
+      border-radius: 8px;
+      color: white;
+      font-weight: 500;
+      z-index: 200;
+      animation: slideIn 0.3s ease;
+    }
+    
+    .toast.success {
+      background: var(--success);
+    }
+    
+    .toast.error {
+      background: var(--error);
+    }
+    
+    @keyframes slideIn {
+      from {
+        transform: translateY(20px);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    #login-page {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #7C3AED 0%, #5B21B6 100%);
+    }
+
+    .login-card {
+      background: white;
+      padding: 48px;
+      border-radius: 16px;
+      width: 400px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    }
+
+    .login-logo {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .login-logo h2 {
+      font-size: 24px;
+      margin-top: 12px;
+    }
+
+    .login-logo p {
+      color: var(--text-secondary);
+      margin-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div id="login-page">
+    <div class="login-card">
+      <div class="login-logo">
+        <div class="logo-icon" style="width: 64px; height: 64px; font-size: 28px; margin: 0 auto;">BT</div>
+        <h2>Admin Dashboard</h2>
+        <p>Build Together</p>
+      </div>
+      <form id="login-form">
+        <div class="form-group">
+          <label class="form-label">Email</label>
+          <input type="email" id="login-email" class="form-input" value="admin@buildtogether.app" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input type="password" id="login-password" class="form-input" placeholder="Enter password" required>
+        </div>
+        <div id="login-error" style="color: #EF4444; margin-bottom: 12px; display: none;"></div>
+        <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">Sign In</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="app" style="display: none;">
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="logo">
+          <div class="logo-icon">BT</div>
+          <div class="logo-text">
+            Build Together
+            <span>Admin Dashboard</span>
+          </div>
+        </div>
+        
+        <nav>
+          <div class="nav-section">
+            <div class="nav-section-title">AI Management</div>
+            <a class="nav-item active" data-page="prompts">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+              AI Prompts
+            </a>
+            <a class="nav-item" data-page="logs">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line></svg>
+              AI Logs
+            </a>
+            <a class="nav-item" data-page="corrections">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+              User Corrections
+            </a>
+          </div>
+          
+          <div class="nav-section">
+            <div class="nav-section-title">Configuration</div>
+            <a class="nav-item" data-page="benchmarks">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+              Benchmarks
+            </a>
+            <a class="nav-item" data-page="categories">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+              Categories
+            </a>
+          </div>
+          
+          <div class="nav-section">
+            <div class="nav-section-title">Guardian AI</div>
+            <a class="nav-item" data-page="patterns">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+              Spending Patterns
+            </a>
+            <a class="nav-item" data-page="nudges">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
+              Nudges
+            </a>
+            <a class="nav-item" data-page="commitments">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+              Commitments
+            </a>
+          </div>
+
+          <div class="nav-section">
+            <div class="nav-section-title">Analytics</div>
+            <a class="nav-item" data-page="stats">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"></path><path d="M22 12A10 10 0 0 0 12 2v10z"></path></svg>
+              Statistics
+            </a>
+            <a class="nav-item" data-page="behavioral">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M19.07 4.93L4.93 19.07"/></svg>
+              Behavioral Economics
+            </a>
+          </div>
+
+          <div class="nav-section">
+            <div class="nav-section-title">Support</div>
+            <a class="nav-item" data-page="feedback">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+              Feedback
+            </a>
+          </div>
+        </nav>
+      </aside>
+      
+      <main class="main">
+        <div id="page-prompts" class="page active">
+          <div class="header">
+            <h1>AI Prompts</h1>
+            <div class="header-actions">
+              <button class="btn btn-primary" onclick="openPromptModal()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                Add Prompt
+              </button>
+            </div>
+          </div>
+          
+          <div class="tabs">
+            <div class="tab active" data-category="all">All Prompts</div>
+            <div class="tab" data-category="categorization">Categorization</div>
+            <div class="tab" data-category="budgeting">Budgeting</div>
+            <div class="tab" data-category="nudges">Nudges</div>
+            <div class="tab" data-category="insights">Insights</div>
+          </div>
+          
+          <div class="card">
+            <div id="prompts-list" class="prompt-list">
+              <div class="loading">Loading prompts...</div>
+            </div>
+          </div>
+        </div>
+        
+        <div id="page-logs" class="page" style="display: none;">
+          <div class="header">
+            <h1>AI Logs</h1>
+            <div class="header-actions">
+              <button class="btn btn-secondary" onclick="refreshLogs()">Refresh</button>
+            </div>
+          </div>
+          
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">Total Calls (24h)</div>
+              <div class="stat-value" id="stat-total-calls">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Success Rate</div>
+              <div class="stat-value" id="stat-success-rate">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Avg Latency</div>
+              <div class="stat-value" id="stat-avg-latency">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Errors (24h)</div>
+              <div class="stat-value" id="stat-errors">-</div>
+            </div>
+          </div>
+          
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Recent AI Calls</div>
+            </div>
+            <div id="logs-list">
+              <div class="loading">Loading logs...</div>
+            </div>
+          </div>
+        </div>
+        
+        <div id="page-corrections" class="page" style="display: none;">
+          <div class="header">
+            <h1>User Corrections</h1>
+          </div>
+          
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Category Corrections</div>
+            </div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Original Category</th>
+                  <th>Corrected To</th>
+                  <th>AI Confidence</th>
+                  <th>Couple ID</th>
+                </tr>
+              </thead>
+              <tbody id="corrections-list">
+                <tr>
+                  <td colspan="5" class="loading">Loading corrections...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        
+        <div id="page-benchmarks" class="page" style="display: none;">
+          <div class="header">
+            <h1>Benchmark Configuration</h1>
+            <div class="header-actions">
+              <button class="btn btn-primary" onclick="saveBenchmarks()">Save Changes</button>
+            </div>
+          </div>
+          
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Default Category Budgets</div>
+            </div>
+            <p style="color: var(--text-secondary); margin-bottom: 20px;">These values are used as fallback when AI budget generation fails.</p>
+            <div id="default-budgets-form">
+              <div class="loading">Loading configuration...</div>
+            </div>
+          </div>
+          
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Family Size Multipliers</div>
+            </div>
+            <p style="color: var(--text-secondary); margin-bottom: 20px;">Multipliers applied to base budgets based on family composition.</p>
+            <div id="family-multipliers-form">
+              <div class="loading">Loading configuration...</div>
+            </div>
+          </div>
+        </div>
+        
+        <div id="page-categories" class="page" style="display: none;">
+          <div class="header">
+            <h1>Expense Categories</h1>
+          </div>
+          
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Default Categories</div>
+            </div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Category</th>
+                  <th>Default Budget</th>
+                  <th>Budget Type</th>
+                </tr>
+              </thead>
+              <tbody id="categories-list">
+              </tbody>
+            </table>
+          </div>
+        </div>
+        
+        <div id="page-stats" class="page" style="display: none;">
+          <div class="header">
+            <h1>Statistics</h1>
+          </div>
+          
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">Total Couples</div>
+              <div class="stat-value" id="stat-couples">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Total Expenses</div>
+              <div class="stat-value" id="stat-expenses">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Total Goals</div>
+              <div class="stat-value" id="stat-goals">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">AI Prompts</div>
+              <div class="stat-value" id="stat-prompts">-</div>
+            </div>
+          </div>
+        </div>
+        
+        <div id="page-patterns" class="page" style="display: none;">
+          <div class="header">
+            <h1>Spending Patterns</h1>
+            <div class="header-actions">
+              <button class="btn btn-primary" onclick="simulatePattern()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                Simulate Pattern
+              </button>
+            </div>
+          </div>
+          <div class="card" style="margin-top: 24px;">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Couple</th>
+                  <th>Type</th>
+                  <th>Merchant</th>
+                  <th>Category</th>
+                  <th>Avg Amount</th>
+                  <th>Occurrences</th>
+                  <th>Habitual</th>
+                  <th>Savings Potential</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody id="patterns-list"></tbody>
+            </table>
+            <div id="patterns-empty" class="empty-state" style="display:none;">No spending patterns detected yet.</div>
+          </div>
+        </div>
+
+        <div id="page-nudges" class="page" style="display: none;">
+          <div class="header">
+            <h1>Guardian Nudges</h1>
+            <div class="header-actions">
+              <button class="btn btn-primary" onclick="simulateNudge()">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                Simulate Nudge
+              </button>
+            </div>
+          </div>
+          <div class="card" style="margin-top: 24px;">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Couple</th>
+                  <th>Type</th>
+                  <th>Title</th>
+                  <th>Message</th>
+                  <th>Status</th>
+                  <th>Technique</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody id="nudges-list"></tbody>
+            </table>
+            <div id="nudges-empty" class="empty-state" style="display:none;">No nudges generated yet.</div>
+          </div>
+        </div>
+
+        <div id="page-commitments" class="page" style="display: none;">
+          <div class="header">
+            <h1>User Commitments</h1>
+          </div>
+          <div class="card" style="margin-top: 24px;">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Couple</th>
+                  <th>Type</th>
+                  <th>Description</th>
+                  <th>Target</th>
+                  <th>Status</th>
+                  <th>Start</th>
+                  <th>End</th>
+                </tr>
+              </thead>
+              <tbody id="commitments-list"></tbody>
+            </table>
+            <div id="commitments-empty" class="empty-state" style="display:none;">No commitments created yet.</div>
+          </div>
+        </div>
+
+        <div id="page-behavioral" class="page" style="display: none;">
+          <div class="header">
+            <h1>Behavioral Economics</h1>
+          </div>
+          
+          <div class="stats-grid" id="behavioral-stats">
+            <div class="stat-card">
+              <div class="stat-label">Users Tracked</div>
+              <div class="stat-value" id="behavioral-users">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Total Nudges Sent</div>
+              <div class="stat-value" id="behavioral-nudges">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Nudges Acted On</div>
+              <div class="stat-value" id="behavioral-acted">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Response Rate</div>
+              <div class="stat-value" id="behavioral-rate">-</div>
+            </div>
+          </div>
+          
+          <div class="card" style="margin-top: 24px;">
+            <h3 style="margin-bottom: 16px; font-size: 16px; font-weight: 600;">Average Nudge Effectiveness Scores</h3>
+            <p style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px;">Higher scores (closer to 1.0) indicate users respond better to this nudge type</p>
+            <div id="score-bars" style="display: grid; gap: 16px;">
+            </div>
+          </div>
+          
+          <div class="card" style="margin-top: 24px;">
+            <h3 style="margin-bottom: 16px; font-size: 16px; font-weight: 600;">User Behavioral Profiles</h3>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Couple ID</th>
+                  <th>Partner</th>
+                  <th>Loss Aversion</th>
+                  <th>Gain Framing</th>
+                  <th>Social Proof</th>
+                  <th>Progress</th>
+                  <th>Urgency</th>
+                  <th>Nudges</th>
+                  <th>Response Rate</th>
+                </tr>
+              </thead>
+              <tbody id="behavioral-list">
+              </tbody>
+            </table>
+          </div>
+          
+          <div class="card" style="margin-top: 24px;">
+            <h3 style="margin-bottom: 16px; font-size: 16px; font-weight: 600;">Learning History</h3>
+            <div id="learning-history" style="max-height: 400px; overflow-y: auto;">
+            </div>
+          </div>
+        </div>
+
+        <div id="page-feedback" class="page" style="display: none;">
+          <div class="header">
+            <h1>User Feedback</h1>
+            <div class="header-actions">
+              <select id="feedback-type-filter" class="form-input" style="width: auto;" onchange="loadFeedback()">
+                <option value="all">All Types</option>
+                <option value="feedback">Feedback</option>
+                <option value="issue">Issues</option>
+                <option value="idea">Ideas</option>
+              </select>
+              <select id="feedback-status-filter" class="form-input" style="width: auto;" onchange="loadFeedback()">
+                <option value="all">All Statuses</option>
+                <option value="new">New</option>
+                <option value="reviewed">Reviewed</option>
+                <option value="resolved">Resolved</option>
+              </select>
+              <button class="btn btn-secondary" onclick="loadFeedback()">Refresh</button>
+            </div>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">Total Feedback</div>
+              <div class="stat-value" id="feedback-total">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">New</div>
+              <div class="stat-value" id="feedback-new">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Reviewed</div>
+              <div class="stat-value" id="feedback-reviewed">-</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Resolved</div>
+              <div class="stat-value" id="feedback-resolved">-</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Submissions</div>
+            </div>
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Title</th>
+                  <th>Description</th>
+                  <th>Platform</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="feedback-list">
+                <tr>
+                  <td colspan="7" class="loading">Loading feedback...</td>
+                </tr>
+              </tbody>
+            </table>
+            <div id="feedback-empty" class="empty-state" style="display: none;">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+              <p>No feedback submissions yet</p>
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div id="prompt-modal" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modal-title">Edit Prompt</h2>
+        <button class="modal-close" onclick="closePromptModal()">&times;</button>
+      </div>
+      <form id="prompt-form">
+        <input type="hidden" id="prompt-id">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Prompt Name</label>
+            <input type="text" id="prompt-name" class="form-input" placeholder="e.g., expense_categorization" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Category</label>
+            <select id="prompt-category" class="form-input" required>
+              <option value="categorization">Categorization</option>
+              <option value="budgeting">Budgeting</option>
+              <option value="nudges">Nudges</option>
+              <option value="insights">Insights</option>
+              <option value="receipt">Receipt OCR</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <input type="text" id="prompt-description" class="form-input" placeholder="What this prompt does">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Prompt Template</label>
+          <textarea id="prompt-template" class="form-textarea" placeholder="Enter the prompt template. Use {{variable}} for placeholders." required></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Model</label>
+            <select id="prompt-model" class="form-input">
+              <option value="gpt-4o">GPT-4o</option>
+              <option value="gpt-4o-mini">GPT-4o Mini</option>
+              <option value="gpt-4-turbo">GPT-4 Turbo</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Temperature</label>
+            <input type="number" id="prompt-temperature" class="form-input" value="0.3" step="0.1" min="0" max="2">
+          </div>
+        </div>
+        <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+          <button type="button" class="btn btn-secondary" onclick="closePromptModal()">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Prompt</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let adminToken = localStorage.getItem('adminToken');
+    
+    async function apiCall(endpoint, options = {}) {
+      const headers = {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      };
+      if (adminToken) {
+        headers['Authorization'] = `Bearer ${adminToken}`;
+      }
+      
+      const response = await fetch(`/api/admin${endpoint}`, {
+        ...options,
+        headers,
+      });
+      
+      if (response.status === 401) {
+        logout();
+        throw new Error('Unauthorized');
+      }
+      
+      return response.json();
+    }
+    
+    function esc(str) {
+      if (!str) return '-';
+      const d = document.createElement('div');
+      d.textContent = str;
+      return d.innerHTML;
+    }
+
+    function showToast(message, type = 'success') {
+      const toast = document.createElement('div');
+      toast.className = `toast ${type}`;
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+    }
+    
+    function logout() {
+      localStorage.removeItem('adminToken');
+      adminToken = null;
+      document.getElementById('login-page').style.display = 'flex';
+      document.getElementById('app').style.display = 'none';
+    }
+    
+    // Check if already logged in
+    if (adminToken) {
+      document.getElementById('login-page').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      loadPrompts();
+    }
+    
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('login-email').value;
+      const password = document.getElementById('login-password').value;
+      const errorDiv = document.getElementById('login-error');
+      
+      try {
+        const response = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+        });
+        
+        const data = await response.json();
+        if (data.token) {
+          adminToken = data.token;
+          localStorage.setItem('adminToken', data.token);
+          document.getElementById('login-page').style.display = 'none';
+          document.getElementById('app').style.display = 'block';
+          loadPrompts();
+        } else {
+          errorDiv.textContent = data.error || 'Login failed';
+          errorDiv.style.display = 'block';
+        }
+      } catch (error) {
+        errorDiv.textContent = 'Login failed - please try again';
+        errorDiv.style.display = 'block';
+      }
+    });
+    
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', (e) => {
+        e.preventDefault();
+        const page = item.dataset.page;
+        
+        document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+        
+        document.querySelectorAll('.page').forEach(p => p.style.display = 'none');
+        document.getElementById(`page-${page}`).style.display = 'block';
+        
+        if (page === 'prompts') loadPrompts();
+        if (page === 'logs') loadLogs();
+        if (page === 'corrections') loadCorrections();
+        if (page === 'benchmarks') loadBenchmarks();
+        if (page === 'categories') loadCategories();
+        if (page === 'stats') loadStats();
+        if (page === 'behavioral') loadBehavioral();
+        if (page === 'patterns') loadPatterns();
+        if (page === 'nudges') loadNudges();
+        if (page === 'commitments') loadCommitments();
+        if (page === 'feedback') loadFeedback();
+      });
+    });
+    
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        loadPrompts(tab.dataset.category);
+      });
+    });
+    
+    async function loadPrompts(category = 'all') {
+      try {
+        const data = await apiCall(`/prompts${category !== 'all' ? `?category=${category}` : ''}`);
+        const list = document.getElementById('prompts-list');
+        
+        if (!data.prompts || data.prompts.length === 0) {
+          list.innerHTML = `<div class="empty-state">No prompts found. Click "Add Prompt" to create one.</div>`;
+          return;
+        }
+        
+        list.innerHTML = data.prompts.map(p => `
+          <div class="prompt-item" onclick="editPrompt('${p.id}')">
+            <div class="prompt-info">
+              <div class="prompt-name">${p.name}</div>
+              <div class="prompt-category">${p.category} | ${p.modelId} | temp: ${p.temperature}</div>
+            </div>
+            <div class="prompt-actions">
+              <span class="badge ${p.isActive ? 'badge-success' : 'badge-warning'}">${p.isActive ? 'Active' : 'Inactive'}</span>
+            </div>
+          </div>
+        `).join('');
+      } catch (error) {
+        document.getElementById('prompts-list').innerHTML = `<div class="empty-state">Failed to load prompts</div>`;
+      }
+    }
+    
+    async function loadLogs() {
+      try {
+        const data = await apiCall('/logs');
+        
+        document.getElementById('stat-total-calls').textContent = data.stats?.totalCalls || '0';
+        document.getElementById('stat-success-rate').textContent = (data.stats?.successRate || 0) + '%';
+        document.getElementById('stat-avg-latency').textContent = (data.stats?.avgLatency || 0) + 'ms';
+        document.getElementById('stat-errors').textContent = data.stats?.errors || '0';
+        
+        const list = document.getElementById('logs-list');
+        if (!data.logs || data.logs.length === 0) {
+          list.innerHTML = `<div class="empty-state">No logs yet</div>`;
+          return;
+        }
+        
+        list.innerHTML = data.logs.map(log => `
+          <div class="log-item">
+            <div class="log-status ${log.status}"></div>
+            <div class="log-content">
+              <div class="log-header">
+                <span class="log-name">${log.promptName}</span>
+                <span class="log-time">${new Date(log.createdAt).toLocaleString()}</span>
+              </div>
+              <div class="log-details">
+                ${log.latencyMs}ms | ${log.tokensUsed || 'N/A'} tokens
+                ${log.errorMessage ? `| Error: ${log.errorMessage}` : ''}
+              </div>
+            </div>
+          </div>
+        `).join('');
+      } catch (error) {
+        document.getElementById('logs-list').innerHTML = `<div class="empty-state">Failed to load logs</div>`;
+      }
+    }
+    
+    async function loadCorrections() {
+      try {
+        const data = await apiCall('/corrections');
+        const list = document.getElementById('corrections-list');
+        
+        if (!data.corrections || data.corrections.length === 0) {
+          list.innerHTML = `<tr><td colspan="5" class="empty-state">No corrections recorded yet</td></tr>`;
+          return;
+        }
+        
+        list.innerHTML = data.corrections.map(c => `
+          <tr>
+            <td>${new Date(c.createdAt).toLocaleDateString()}</td>
+            <td><span class="badge badge-warning">${c.originalCategory}</span></td>
+            <td><span class="badge badge-success">${c.correctedCategory}</span></td>
+            <td>${c.aiConfidence ? (c.aiConfidence * 100).toFixed(0) + '%' : 'N/A'}</td>
+            <td>${c.coupleId.substring(0, 8)}...</td>
+          </tr>
+        `).join('');
+      } catch (error) {
+        document.getElementById('corrections-list').innerHTML = `<tr><td colspan="5">Failed to load corrections</td></tr>`;
+      }
+    }
+    
+    async function loadBenchmarks() {
+      try {
+        const data = await apiCall('/benchmarks');
+        
+        const defaultBudgets = data.configs?.find(c => c.configKey === 'default_budgets')?.configValue || {};
+        const familyMultipliers = data.configs?.find(c => c.configKey === 'family_multipliers')?.configValue || {};
+        
+        document.getElementById('default-budgets-form').innerHTML = `
+          <div class="form-row">
+            ${Object.entries(defaultBudgets).map(([key, val]) => `
+              <div class="form-group">
+                <label class="form-label">${key}</label>
+                <input type="number" class="form-input" data-budget="${key}" value="${val}">
+              </div>
+            `).join('')}
+          </div>
+        `;
+        
+        document.getElementById('family-multipliers-form').innerHTML = `
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Per Child Under 5</label>
+              <input type="number" class="form-input" id="mult-under5" value="${familyMultipliers.perChildUnder5 || 0.25}" step="0.05">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Per Child 5-12</label>
+              <input type="number" class="form-input" id="mult-5to12" value="${familyMultipliers.perChild5to12 || 0.2}" step="0.05">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Per Teen</label>
+              <input type="number" class="form-input" id="mult-teen" value="${familyMultipliers.perTeen || 0.3}" step="0.05">
+            </div>
+          </div>
+        `;
+      } catch (error) {
+        console.error(error);
+      }
+    }
+    
+    async function loadCategories() {
+      const categories = [
+        { name: 'groceries', budget: 600, type: 'recurring' },
+        { name: 'restaurants', budget: 300, type: 'recurring' },
+        { name: 'utilities', budget: 200, type: 'recurring' },
+        { name: 'internet', budget: 100, type: 'recurring' },
+        { name: 'transport', budget: 200, type: 'rollover' },
+        { name: 'entertainment', budget: 150, type: 'rollover' },
+        { name: 'shopping', budget: 200, type: 'rollover' },
+        { name: 'health', budget: 100, type: 'rollover' },
+        { name: 'subscriptions', budget: 100, type: 'recurring' },
+      ];
+      
+      document.getElementById('categories-list').innerHTML = categories.map(c => `
+        <tr>
+          <td style="text-transform: capitalize;">${c.name}</td>
+          <td>$${c.budget}</td>
+          <td><span class="badge badge-info">${c.type}</span></td>
+        </tr>
+      `).join('');
+    }
+    
+    async function loadStats() {
+      try {
+        const data = await apiCall('/stats');
+        document.getElementById('stat-couples').textContent = data.couples || '0';
+        document.getElementById('stat-expenses').textContent = data.expenses || '0';
+        document.getElementById('stat-goals').textContent = data.goals || '0';
+        document.getElementById('stat-prompts').textContent = data.prompts || '0';
+      } catch (error) {
+        console.error(error);
+      }
+    }
+    
+    async function loadBehavioral() {
+      try {
+        const data = await apiCall('/behavioral');
+        
+        // Update stats
+        document.getElementById('behavioral-users').textContent = data.stats?.totalUsers || '0';
+        document.getElementById('behavioral-nudges').textContent = data.stats?.totalNudges || '0';
+        document.getElementById('behavioral-acted').textContent = data.stats?.totalActedOn || '0';
+        document.getElementById('behavioral-rate').textContent = (data.stats?.avgResponseRate || '0') + '%';
+        
+        // Render score bars
+        const scores = data.stats?.avgScores || {};
+        const scoreLabels = {
+          lossAversion: { name: 'Loss Aversion', desc: 'You\'ll lose X if...', color: '#EF4444' },
+          gainFraming: { name: 'Gain Framing', desc: 'You\'ll gain X if...', color: '#10B981' },
+          socialProof: { name: 'Social Proof', desc: 'Couples like you...', color: '#3B82F6' },
+          progress: { name: 'Progress', desc: 'You\'re X% there!', color: '#8B5CF6' },
+          urgency: { name: 'Urgency', desc: 'Act now before...', color: '#F59E0B' }
+        };
+        
+        document.getElementById('score-bars').innerHTML = Object.entries(scoreLabels).map(([key, info]) => {
+          const score = parseFloat(scores[key] || 0.5);
+          const pct = (score * 100).toFixed(0);
+          return `
+            <div style="display: flex; align-items: center; gap: 16px;">
+              <div style="width: 120px;">
+                <div style="font-weight: 500; font-size: 14px;">${info.name}</div>
+                <div style="font-size: 11px; color: var(--text-secondary);">${info.desc}</div>
+              </div>
+              <div style="flex: 1; background: #E5E7EB; border-radius: 4px; height: 24px; position: relative;">
+                <div style="width: ${pct}%; background: ${info.color}; height: 100%; border-radius: 4px; transition: width 0.3s;"></div>
+                <span style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); font-size: 12px; font-weight: 600;">${score}</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+        
+        // Render user profiles table
+        const prefs = data.nudgePreferences || [];
+        document.getElementById('behavioral-list').innerHTML = prefs.length > 0 ? prefs.map(p => {
+          const responseRate = p.nudgesSent > 0 ? ((p.nudgesActedOn || 0) / p.nudgesSent * 100).toFixed(0) : 0;
+          return `
+            <tr>
+              <td style="font-family: monospace; font-size: 11px;">${p.coupleId?.slice(0, 8)}...</td>
+              <td><span class="badge badge-${p.partnerRole === 'partner1' ? 'info' : 'warning'}">${p.partnerRole}</span></td>
+              <td>${(p.lossAversionScore || 0.5).toFixed(2)}</td>
+              <td>${(p.gainFramingScore || 0.5).toFixed(2)}</td>
+              <td>${(p.socialProofScore || 0.5).toFixed(2)}</td>
+              <td>${(p.progressScore || 0.5).toFixed(2)}</td>
+              <td>${(p.urgencyScore || 0.5).toFixed(2)}</td>
+              <td>${p.nudgesSent || 0}</td>
+              <td>${responseRate}%</td>
+            </tr>
+          `;
+        }).join('') : '<tr><td colspan="9" style="text-align: center; color: var(--text-secondary);">No behavioral data yet. Data appears as users interact with nudges.</td></tr>';
+        
+        // Render learning history
+        const history = data.learningHistory || [];
+        document.getElementById('learning-history').innerHTML = history.length > 0 ? history.map(h => {
+          const date = new Date(h.createdAt).toLocaleString();
+          return `
+            <div style="padding: 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <div style="font-size: 13px; font-weight: 500;">${h.triggerEvent || 'Unknown event'}</div>
+                <div style="font-size: 11px; color: var(--text-secondary);">Couple ${h.coupleId?.slice(0, 8)}... - ${h.partnerRole || 'Both'}</div>
+              </div>
+              <div style="text-align: right;">
+                <div style="font-size: 12px; color: var(--text-secondary);">${date}</div>
+              </div>
+            </div>
+          `;
+        }).join('') : '<div style="text-align: center; padding: 24px; color: var(--text-secondary);">No learning history yet.</div>';
+        
+      } catch (error) {
+        console.error('Load behavioral error:', error);
+      }
+    }
+    
+    async function loadPatterns() {
+      try {
+        const data = await apiCall('/patterns');
+        const list = document.getElementById('patterns-list');
+        const empty = document.getElementById('patterns-empty');
+        
+        if (!data || data.length === 0) {
+          list.innerHTML = '';
+          empty.style.display = 'block';
+          return;
+        }
+        empty.style.display = 'none';
+        list.innerHTML = data.map(p => `
+          <tr>
+            <td style="font-family: monospace; font-size: 11px;">${(p.coupleId || '').slice(0, 12)}...</td>
+            <td><span class="badge badge-info">${p.patternType || '-'}</span></td>
+            <td>${p.merchant || '-'}</td>
+            <td>${p.category || '-'}</td>
+            <td>$${(p.averageAmount || 0).toFixed(2)}</td>
+            <td>${p.occurrenceCount || 0}</td>
+            <td><span class="badge ${p.isHabitual ? 'badge-success' : 'badge-warning'}">${p.isHabitual ? 'Yes' : 'No'}</span></td>
+            <td>$${(p.potentialMonthlySavings || 0).toFixed(2)}/mo</td>
+            <td>${p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '-'}</td>
+          </tr>
+        `).join('');
+      } catch (error) {
+        console.error('Load patterns error:', error);
+      }
+    }
+
+    async function loadNudges() {
+      try {
+        const data = await apiCall('/nudges');
+        const list = document.getElementById('nudges-list');
+        const empty = document.getElementById('nudges-empty');
+        
+        if (!data || data.length === 0) {
+          list.innerHTML = '';
+          empty.style.display = 'block';
+          return;
+        }
+        empty.style.display = 'none';
+        list.innerHTML = data.map(n => `
+          <tr>
+            <td style="font-family: monospace; font-size: 11px;">${(n.coupleId || '').slice(0, 12)}...</td>
+            <td><span class="badge badge-info">${n.type || '-'}</span></td>
+            <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${n.title || '-'}</td>
+            <td style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${n.message || '-'}</td>
+            <td><span class="badge badge-${n.status === 'accepted' ? 'success' : n.status === 'dismissed' ? 'warning' : 'info'}">${n.status || 'pending'}</span></td>
+            <td>${n.behavioralTechnique || '-'}</td>
+            <td>${n.createdAt ? new Date(n.createdAt).toLocaleDateString() : '-'}</td>
+          </tr>
+        `).join('');
+      } catch (error) {
+        console.error('Load nudges error:', error);
+      }
+    }
+
+    async function loadCommitments() {
+      try {
+        const data = await apiCall('/commitments');
+        const list = document.getElementById('commitments-list');
+        const empty = document.getElementById('commitments-empty');
+        const items = Array.isArray(data) ? data : (data.commitments || []);
+        
+        if (items.length === 0) {
+          list.innerHTML = '';
+          empty.style.display = 'block';
+          return;
+        }
+        empty.style.display = 'none';
+        list.innerHTML = items.map(c => `
+          <tr>
+            <td style="font-family: monospace; font-size: 11px;">${(c.coupleId || '').slice(0, 12)}...</td>
+            <td><span class="badge badge-info">${c.commitmentType || '-'}</span></td>
+            <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${c.description || '-'}</td>
+            <td>$${(c.targetAmount || 0).toFixed(2)}</td>
+            <td><span class="badge badge-${c.status === 'completed' ? 'success' : c.status === 'broken' ? 'error' : 'info'}">${c.status || 'active'}</span></td>
+            <td>${c.startDate ? new Date(c.startDate).toLocaleDateString() : '-'}</td>
+            <td>${c.endDate ? new Date(c.endDate).toLocaleDateString() : '-'}</td>
+          </tr>
+        `).join('');
+      } catch (error) {
+        console.error('Load commitments error:', error);
+      }
+    }
+
+    async function loadFeedback() {
+      try {
+        const typeFilter = document.getElementById('feedback-type-filter').value;
+        const statusFilter = document.getElementById('feedback-status-filter').value;
+        const params = new URLSearchParams();
+        if (typeFilter !== 'all') params.set('type', typeFilter);
+        if (statusFilter !== 'all') params.set('status', statusFilter);
+        const queryStr = params.toString() ? `?${params.toString()}` : '';
+
+        const data = await apiCall(`/feedback${queryStr}`);
+        const list = document.getElementById('feedback-list');
+        const empty = document.getElementById('feedback-empty');
+        const items = data.feedback || [];
+
+        const total = items.length;
+        const newCount = items.filter(f => f.status === 'new').length;
+        const reviewedCount = items.filter(f => f.status === 'reviewed').length;
+        const resolvedCount = items.filter(f => f.status === 'resolved').length;
+        document.getElementById('feedback-total').textContent = total;
+        document.getElementById('feedback-new').textContent = newCount;
+        document.getElementById('feedback-reviewed').textContent = reviewedCount;
+        document.getElementById('feedback-resolved').textContent = resolvedCount;
+
+        if (items.length === 0) {
+          list.innerHTML = '';
+          empty.style.display = 'block';
+          return;
+        }
+        empty.style.display = 'none';
+
+        const typeBadgeClass = { feedback: 'badge-info', issue: 'badge-error', idea: 'badge-success' };
+        const statusBadgeClass = { 'new': 'badge-warning', reviewed: 'badge-info', resolved: 'badge-success' };
+
+        list.innerHTML = items.map(f => `
+          <tr>
+            <td>${f.createdAt ? new Date(f.createdAt).toLocaleDateString() : '-'}</td>
+            <td><span class="badge ${typeBadgeClass[f.type] || 'badge-info'}">${f.type || '-'}</span></td>
+            <td style="font-weight: 500; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(f.title)}</td>
+            <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${esc(f.description)}</td>
+            <td>${f.platform || '-'}</td>
+            <td><span class="badge ${statusBadgeClass[f.status] || 'badge-info'}">${f.status || 'new'}</span></td>
+            <td>
+              <div style="display: flex; gap: 4px;">
+                ${f.status !== 'reviewed' ? `<button class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px;" onclick="updateFeedbackStatus('${f.id}', 'reviewed')">Reviewed</button>` : ''}
+                ${f.status !== 'resolved' ? `<button class="btn btn-primary" style="padding: 4px 10px; font-size: 12px;" onclick="updateFeedbackStatus('${f.id}', 'resolved')">Resolve</button>` : ''}
+              </div>
+            </td>
+          </tr>
+        `).join('');
+      } catch (error) {
+        console.error('Load feedback error:', error);
+        document.getElementById('feedback-list').innerHTML = '<tr><td colspan="7">Failed to load feedback</td></tr>';
+      }
+    }
+
+    async function updateFeedbackStatus(id, status) {
+      try {
+        await apiCall(`/feedback/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status }),
+        });
+        showToast(`Feedback marked as ${status}`);
+        loadFeedback();
+      } catch (error) {
+        showToast('Failed to update feedback status', 'error');
+      }
+    }
+
+    async function simulatePattern() {
+      const coupleId = prompt('Enter couple ID (or leave empty for test-couple-001):') || 'test-couple-001';
+      const merchant = prompt('Enter merchant name:') || 'Test Coffee Shop';
+      const category = prompt('Enter category:') || 'restaurants';
+      const amount = parseFloat(prompt('Enter average amount:') || '5.50');
+      
+      try {
+        await apiCall('/simulate-pattern', {
+          method: 'POST',
+          body: JSON.stringify({ coupleId, merchant, category, amount, occurrences: 8 })
+        });
+        showToast('Pattern simulated successfully');
+        loadPatterns();
+      } catch (error) {
+        showToast('Failed to simulate pattern', 'error');
+      }
+    }
+
+    async function simulateNudge() {
+      const coupleId = prompt('Enter couple ID (or leave empty for test-couple-001):') || 'test-couple-001';
+      
+      try {
+        const patterns = await apiCall('/patterns');
+        const couplePatterns = (patterns || []).filter(p => p.coupleId === coupleId && p.isHabitual);
+        
+        if (couplePatterns.length === 0) {
+          showToast('No habitual patterns found for this couple. Simulate a pattern first.', 'error');
+          return;
+        }
+        
+        await apiCall('/simulate-nudge', {
+          method: 'POST',
+          body: JSON.stringify({ coupleId, patternId: couplePatterns[0].id })
+        });
+        showToast('Nudge simulated successfully');
+        loadNudges();
+      } catch (error) {
+        showToast('Failed to simulate nudge', 'error');
+      }
+    }
+
+    function openPromptModal(id = null) {
+      document.getElementById('modal-title').textContent = id ? 'Edit Prompt' : 'Add Prompt';
+      document.getElementById('prompt-id').value = id || '';
+      document.getElementById('prompt-name').value = '';
+      document.getElementById('prompt-category').value = 'categorization';
+      document.getElementById('prompt-description').value = '';
+      document.getElementById('prompt-template').value = '';
+      document.getElementById('prompt-model').value = 'gpt-4o';
+      document.getElementById('prompt-temperature').value = '0.3';
+      document.getElementById('prompt-modal').classList.add('active');
+    }
+    
+    async function editPrompt(id) {
+      try {
+        const data = await apiCall(`/prompts/${id}`);
+        const p = data.prompt;
+        document.getElementById('modal-title').textContent = 'Edit Prompt';
+        document.getElementById('prompt-id').value = p.id;
+        document.getElementById('prompt-name').value = p.name;
+        document.getElementById('prompt-category').value = p.category;
+        document.getElementById('prompt-description').value = p.description || '';
+        document.getElementById('prompt-template').value = p.promptTemplate;
+        document.getElementById('prompt-model').value = p.modelId;
+        document.getElementById('prompt-temperature').value = p.temperature;
+        document.getElementById('prompt-modal').classList.add('active');
+      } catch (error) {
+        showToast('Failed to load prompt', 'error');
+      }
+    }
+    
+    function closePromptModal() {
+      document.getElementById('prompt-modal').classList.remove('active');
+    }
+    
+    document.getElementById('prompt-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const id = document.getElementById('prompt-id').value;
+      const data = {
+        name: document.getElementById('prompt-name').value,
+        category: document.getElementById('prompt-category').value,
+        description: document.getElementById('prompt-description').value,
+        promptTemplate: document.getElementById('prompt-template').value,
+        modelId: document.getElementById('prompt-model').value,
+        temperature: parseFloat(document.getElementById('prompt-temperature').value),
+      };
+      
+      try {
+        if (id) {
+          await apiCall(`/prompts/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+        } else {
+          await apiCall('/prompts', { method: 'POST', body: JSON.stringify(data) });
+        }
+        showToast('Prompt saved successfully');
+        closePromptModal();
+        loadPrompts();
+      } catch (error) {
+        showToast('Failed to save prompt', 'error');
+      }
+    });
+    
+    async function saveBenchmarks() {
+      const budgets = {};
+      document.querySelectorAll('[data-budget]').forEach(input => {
+        budgets[input.dataset.budget] = parseFloat(input.value);
+      });
+      
+      const multipliers = {
+        perChildUnder5: parseFloat(document.getElementById('mult-under5').value),
+        perChild5to12: parseFloat(document.getElementById('mult-5to12').value),
+        perTeen: parseFloat(document.getElementById('mult-teen').value),
+      };
+      
+      try {
+        await apiCall('/benchmarks', {
+          method: 'POST',
+          body: JSON.stringify({ defaultBudgets: budgets, familyMultipliers: multipliers }),
+        });
+        showToast('Configuration saved');
+      } catch (error) {
+        showToast('Failed to save configuration', 'error');
+      }
+    }
+    
+    function refreshLogs() {
+      loadLogs();
+    }
+    
+    if (adminToken) {
+      document.getElementById('login-page').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      loadPrompts();
+    }
+  </script>
+</body>
+</html>

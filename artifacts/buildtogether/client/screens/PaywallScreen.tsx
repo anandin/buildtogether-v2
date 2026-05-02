@@ -1,0 +1,488 @@
+import React, { useState } from "react";
+import { View, StyleSheet, Pressable, ActivityIndicator, ScrollView, Platform, Linking } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
+import { useNavigation } from "@react-navigation/native";
+import Animated, { useAnimatedStyle, withSpring } from "react-native-reanimated";
+
+import { ThemedText } from "@/components/ThemedText";
+import { useTheme } from "@/hooks/useTheme";
+import { useSubscription } from "@/context/SubscriptionContext";
+import { Spacing, BorderRadius } from "@/constants/theme";
+
+const IS_WEB = Platform.OS === "web";
+const APP_STORE_URL = "https://apps.apple.com/app/build-together/id6742961498";
+
+type PlanType = "monthly" | "annual";
+
+const PREMIUM_FEATURES = [
+  {
+    icon: "cpu" as const,
+    title: "Dream Guardian AI",
+    description: "Self-learning AI that adapts to what motivates you",
+  },
+  {
+    icon: "camera" as const,
+    title: "Unlimited Receipt Scans",
+    description: "Snap receipts and let AI do the work",
+  },
+  {
+    icon: "trending-up" as const,
+    title: "Smart Spending Insights",
+    description: "AI-powered analysis of your spending patterns",
+  },
+  {
+    icon: "target" as const,
+    title: "Unlimited Dreams",
+    description: "Set as many savings goals as you want",
+  },
+  {
+    icon: "eye" as const,
+    title: "Guardian Memory",
+    description: "See exactly how the AI learns about you",
+  },
+];
+
+export default function PaywallScreen() {
+  const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  const { 
+    purchasePackage, 
+    restorePurchases, 
+    isLoading, 
+    isPreviewMode, 
+    activatePreviewTrial,
+    packages,
+    getTrialInfo,
+  } = useSubscription();
+  
+  const [isPurchasing, setIsPurchasing] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<PlanType>("annual");
+
+  const { hasTrial, trialDays } = getTrialInfo();
+
+  const monthlyPkg = packages.monthly;
+  const annualPkg = packages.annual;
+  
+  const monthlyPrice = monthlyPkg?.product?.priceString || "$7.99";
+  const annualPrice = annualPkg?.product?.priceString || "$59.99";
+  const annualMonthlyEquivalent = "$5.00";
+  const savingsPercent = "37%";
+
+  const handleSelectPlan = (plan: PlanType) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedPlan(plan);
+  };
+
+  const handlePurchase = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    
+    if (IS_WEB) {
+      Linking.openURL(APP_STORE_URL);
+      return;
+    }
+
+    if (isPreviewMode) {
+      await activatePreviewTrial();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      navigation.goBack();
+      return;
+    }
+    
+    const selectedPackage = selectedPlan === "annual" ? annualPkg : monthlyPkg;
+    
+    if (!selectedPackage) {
+      console.error("No package available for selected plan");
+      return;
+    }
+    
+    setIsPurchasing(true);
+    
+    const success = await purchasePackage(selectedPackage);
+    
+    setIsPurchasing(false);
+    
+    if (success) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      navigation.goBack();
+    }
+  };
+
+  const handleRestore = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    if (IS_WEB) {
+      Linking.openURL(APP_STORE_URL);
+      return;
+    }
+
+    if (isPreviewMode) {
+      await activatePreviewTrial();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      navigation.goBack();
+      return;
+    }
+    
+    setIsRestoring(true);
+    
+    const success = await restorePurchases();
+    
+    setIsRestoring(false);
+    
+    if (success) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      navigation.goBack();
+    }
+  };
+
+  const handleClose = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    navigation.goBack();
+  };
+
+  return (
+    <View style={[styles.container, { backgroundColor: theme.backgroundRoot }]}>
+      <LinearGradient
+        colors={[theme.primary + "20", theme.accent + "10", "transparent"]}
+        style={styles.gradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+      />
+      
+      <Pressable 
+        style={[styles.closeButton, { top: insets.top + Spacing.md }]} 
+        onPress={handleClose}
+      >
+        <Feather name="x" size={24} color={theme.text} />
+      </Pressable>
+
+      <ScrollView 
+        contentContainerStyle={[
+          styles.content, 
+          { 
+            paddingTop: insets.top + Spacing["2xl"],
+            paddingBottom: insets.bottom + Spacing.xl,
+          }
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.header}>
+          <View style={[styles.badge, { backgroundColor: theme.primary }]}>
+            <Feather name="star" size={16} color="#FFFFFF" />
+            <ThemedText type="small" style={styles.badgeText}>PREMIUM</ThemedText>
+          </View>
+          
+          <ThemedText type="h1" style={styles.title}>
+            Unlock Dream Guardian
+          </ThemedText>
+          
+          <ThemedText type="body" style={[styles.subtitle, { color: theme.textSecondary }]}>
+            Your AI companion that gets smarter the more you use it
+          </ThemedText>
+        </View>
+
+        <View style={styles.features}>
+          {PREMIUM_FEATURES.map((feature, index) => (
+            <View 
+              key={index} 
+              style={[styles.featureRow, { backgroundColor: theme.backgroundSecondary }]}
+            >
+              <View style={[styles.featureIcon, { backgroundColor: theme.primary + "15" }]}>
+                <Feather name={feature.icon} size={20} color={theme.primary} />
+              </View>
+              <View style={styles.featureContent}>
+                <ThemedText type="body" style={styles.featureTitle}>
+                  {feature.title}
+                </ThemedText>
+                <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                  {feature.description}
+                </ThemedText>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.pricingSection}>
+          <View style={styles.planSelector}>
+            <Pressable
+              style={[
+                styles.planOption,
+                { 
+                  backgroundColor: selectedPlan === "annual" ? theme.primary + "15" : theme.backgroundSecondary,
+                  borderColor: selectedPlan === "annual" ? theme.primary : "transparent",
+                }
+              ]}
+              onPress={() => handleSelectPlan("annual")}
+            >
+              <View style={styles.planHeader}>
+                <ThemedText type="body" style={styles.planLabel}>Annual</ThemedText>
+                <View style={[styles.savingsBadge, { backgroundColor: theme.success + "20" }]}>
+                  <ThemedText type="small" style={[styles.savingsText, { color: theme.success }]}>
+                    SAVE {savingsPercent}
+                  </ThemedText>
+                </View>
+              </View>
+              <View style={styles.planPriceRow}>
+                <ThemedText type="h2" style={[styles.planPrice, { color: selectedPlan === "annual" ? theme.primary : theme.text }]}>
+                  {annualPrice}
+                </ThemedText>
+                <ThemedText type="small" style={{ color: theme.textSecondary }}>/year</ThemedText>
+              </View>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                Just {annualMonthlyEquivalent}/month
+              </ThemedText>
+              {selectedPlan === "annual" ? (
+                <View style={[styles.checkCircle, { backgroundColor: theme.primary }]}>
+                  <Feather name="check" size={14} color="#FFFFFF" />
+                </View>
+              ) : (
+                <View style={[styles.emptyCircle, { borderColor: theme.border }]} />
+              )}
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.planOption,
+                { 
+                  backgroundColor: selectedPlan === "monthly" ? theme.primary + "15" : theme.backgroundSecondary,
+                  borderColor: selectedPlan === "monthly" ? theme.primary : "transparent",
+                }
+              ]}
+              onPress={() => handleSelectPlan("monthly")}
+            >
+              <View style={styles.planHeader}>
+                <ThemedText type="body" style={styles.planLabel}>Monthly</ThemedText>
+              </View>
+              <View style={styles.planPriceRow}>
+                <ThemedText type="h2" style={[styles.planPrice, { color: selectedPlan === "monthly" ? theme.primary : theme.text }]}>
+                  {monthlyPrice}
+                </ThemedText>
+                <ThemedText type="small" style={{ color: theme.textSecondary }}>/month</ThemedText>
+              </View>
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                Flexible, cancel anytime
+              </ThemedText>
+              {selectedPlan === "monthly" ? (
+                <View style={[styles.checkCircle, { backgroundColor: theme.primary }]}>
+                  <Feather name="check" size={14} color="#FFFFFF" />
+                </View>
+              ) : (
+                <View style={[styles.emptyCircle, { borderColor: theme.border }]} />
+              )}
+            </Pressable>
+          </View>
+
+          {hasTrial ? (
+            <View style={[styles.trialBanner, { backgroundColor: theme.accent + "20" }]}>
+              <Feather name="gift" size={18} color={theme.accent} />
+              <ThemedText type="body" style={{ color: theme.text, flex: 1 }}>
+                Start with a <ThemedText type="body" style={{ fontWeight: "700" }}>{trialDays}-day free trial</ThemedText>
+              </ThemedText>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={styles.actions}>
+          <Pressable
+            style={[styles.primaryButton, { backgroundColor: theme.primary }]}
+            onPress={handlePurchase}
+            disabled={isPurchasing || isLoading}
+          >
+            {isPurchasing ? (
+              <ActivityIndicator color="#FFFFFF" />
+            ) : (
+              <ThemedText type="body" style={styles.primaryButtonText}>
+                {IS_WEB ? "Get it on the App Store" : "Start Free Trial"}
+              </ThemedText>
+            )}
+          </Pressable>
+
+          <Pressable
+            style={styles.restoreButton}
+            onPress={handleRestore}
+            disabled={isRestoring}
+          >
+            {isRestoring ? (
+              <ActivityIndicator color={theme.textSecondary} size="small" />
+            ) : (
+              <ThemedText type="small" style={{ color: theme.textSecondary }}>
+                Restore Purchases
+              </ThemedText>
+            )}
+          </Pressable>
+        </View>
+
+        <ThemedText type="small" style={[styles.legal, { color: theme.textSecondary }]}>
+          Payment will be charged to your Apple ID or Google Play account. 
+          Subscription automatically renews unless canceled at least 24 hours before the end of the current period.
+        </ThemedText>
+      </ScrollView>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  gradient: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 300,
+  },
+  closeButton: {
+    position: "absolute",
+    right: Spacing.lg,
+    zIndex: 10,
+    padding: Spacing.sm,
+  },
+  content: {
+    paddingHorizontal: Spacing.lg,
+  },
+  header: {
+    alignItems: "center",
+    marginBottom: Spacing.xl,
+  },
+  badge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+    marginBottom: Spacing.md,
+    gap: Spacing.xs,
+  },
+  badgeText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+  title: {
+    textAlign: "center",
+    marginBottom: Spacing.sm,
+  },
+  subtitle: {
+    textAlign: "center",
+    maxWidth: 280,
+  },
+  features: {
+    gap: Spacing.sm,
+    marginBottom: Spacing.xl,
+  },
+  featureRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    gap: Spacing.md,
+  },
+  featureIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  featureContent: {
+    flex: 1,
+  },
+  featureTitle: {
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  pricingSection: {
+    marginBottom: Spacing.xl,
+    gap: Spacing.md,
+  },
+  planSelector: {
+    flexDirection: "row",
+    gap: Spacing.sm,
+  },
+  planOption: {
+    flex: 1,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 2,
+    position: "relative",
+  },
+  planHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
+  planLabel: {
+    fontWeight: "600",
+  },
+  savingsBadge: {
+    paddingHorizontal: Spacing.xs,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.sm,
+  },
+  savingsText: {
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  planPriceRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 2,
+  },
+  planPrice: {
+    fontSize: 24,
+    fontWeight: "700",
+  },
+  checkCircle: {
+    position: "absolute",
+    top: Spacing.sm,
+    right: Spacing.sm,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyCircle: {
+    position: "absolute",
+    top: Spacing.sm,
+    right: Spacing.sm,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 2,
+  },
+  trialBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    gap: Spacing.sm,
+  },
+  actions: {
+    gap: Spacing.md,
+    marginBottom: Spacing.lg,
+  },
+  primaryButton: {
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    alignItems: "center",
+  },
+  primaryButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+    fontSize: 17,
+  },
+  restoreButton: {
+    alignItems: "center",
+    paddingVertical: Spacing.sm,
+  },
+  legal: {
+    textAlign: "center",
+    lineHeight: 18,
+  },
+});
