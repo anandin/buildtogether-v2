@@ -17,9 +17,15 @@ const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 let _client: OpenAI | null = null;
 function client(): OpenAI {
   if (_client) return _client;
+  // Boot validation in env-validation.ts already guarantees this is set,
+  // but we re-check defensively in case the module is imported in a
+  // serverless cold-start path that bypasses getApp() (e.g. cron handlers).
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY not set — embeddings unavailable");
+    throw new Error(
+      "OPENROUTER_API_KEY not set — Tilly RAG embeddings unavailable. " +
+        "This should have failed at boot; check env-validation.ts.",
+    );
   }
   _client = new OpenAI({
     apiKey,

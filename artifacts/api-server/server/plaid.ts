@@ -14,6 +14,9 @@ let _plaidClient: PlaidApi | null = null;
 let _initAttempted = false;
 
 export function isPlaidConfigured(): boolean {
+  // Boot-time env-validation.ts already rejects the half-configured case
+  // (one of CLIENT_ID / SECRET set without the other), so by the time we
+  // reach a request handler this is a clean either-on-or-off check.
   return !!(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
 }
 

@@ -20,6 +20,7 @@ import { db } from "../../db";
 import { tillyConfig } from "../../../shared/schema";
 import type { LLMClient } from "./types";
 import { OpenRouterLLM } from "./openrouter";
+import { AnthropicDirectLLM } from "./anthropic-direct";
 
 type CachedConfig = {
   client: LLMClient;
@@ -82,9 +83,11 @@ function buildClient(config: typeof tillyConfig.$inferSelect): LLMClient {
     case "openrouter":
       return new OpenRouterLLM(config.model);
     case "anthropic":
-      // Future: native Anthropic SDK impl. For now, route through OpenRouter
-      // with the equivalent Anthropic model id. Admin page warns about this.
-      return new OpenRouterLLM(`anthropic/${config.model.replace(/^claude-/, "claude-")}`);
+      // Native Anthropic SDK impl. Requires ANTHROPIC_API_KEY; the client
+      // throws a clear error on first use if the secret is missing, and
+      // /admin/tilly can switch the provider back to "openrouter" without
+      // a redeploy.
+      return new AnthropicDirectLLM(config.model);
     default:
       return new OpenRouterLLM();
   }

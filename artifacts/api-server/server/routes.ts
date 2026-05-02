@@ -68,8 +68,14 @@ function generateSessionToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
+if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
+  throw new Error(
+    "AI_INTEGRATIONS_OPENAI_API_KEY is not set. Configure the OpenAI Replit AI Integration (recommended) or set the env var directly so AI features (Tilly chat fallback, embeddings, audio, image, parsing) work.",
+  );
+}
+
 const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY || "missing-openai-key",
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
   // If using OpenRouter, these headers improve rankings (optional)
   defaultHeaders: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL?.includes("openrouter.ai")

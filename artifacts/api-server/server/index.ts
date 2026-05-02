@@ -7,6 +7,7 @@ import { registerTillyRoutes } from "./routes/index";
 import { requestId } from "./middleware/requestId";
 import { pool } from "./db";
 import { applyBootMigrations } from "./migrate-boot";
+import { validateRequiredEnv, getFeatureFlags } from "./env-validation";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -290,9 +291,15 @@ export async function getApp(): Promise<express.Application> {
   if (appReady) return appReady;
 
   appReady = (async () => {
-    // Fail fast at boot if the admin credentials / session secret aren't
-    // configured. This prevents shipping a default-password admin login.
-    loadAdminConfig();
+    // Fail fast at boot if any required AI / DB credentials are missing.
+    // Avoids the much worse failure mode where a user sends a chat message,
+    // waits for a response, and gets an opaque "Authorization missing" error
+    // 8 seconds later from a deep-stack provider call.
+    validateRequiredEnv();
+    const flags = getFeatureFlags();
+    log(
+      `[boot] feature flags: plaid=${flags.plaid} anthropicDirect=${flags.anthropicDirect} openrouter=${flags.openrouter}`,
+    );
 
     setupCors(app);
     setupBodyParsing(app);
