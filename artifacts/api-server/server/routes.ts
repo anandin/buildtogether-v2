@@ -69,7 +69,7 @@ function generateSessionToken(): string {
 }
 
 const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY || "missing-openai-key",
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
   // If using OpenRouter, these headers improve rankings (optional)
   defaultHeaders: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL?.includes("openrouter.ai")

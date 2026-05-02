@@ -6,15 +6,17 @@
     "noImplicitAny": false,
     "skipLibCheck": true,
     "paths": {
-      "@/*": ["./client/*"],
-      "@shared/*": ["./shared/*"]
+      "@/*": [
+        "./client/*"
+      ],
+      "@shared/*": [
+        "./shared/*"
+      ]
     }
   },
   "include": [
     "client/**/*.ts",
     "client/**/*.tsx",
-    "shared/**/*.ts",
-    ".expo/types/**/*.ts",
-    "expo-env.d.ts"
+    "shared/**/*.ts"
   ]
 }
