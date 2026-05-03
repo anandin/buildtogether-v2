@@ -47,7 +47,7 @@ export default function Home() {
             </h1>
             
             <p className="text-xl sm:text-2xl text-muted-foreground leading-relaxed">
-              Tilly is your personal money coach—part wise sibling, part gentle guide—turning your spending into insights, and your goals into a plan that actually fits your life.
+              Tilly keeps an eye on your money and quietly helps you save for your dreams. She'll tell you when you can spend, when to hold off, and when something you want is about to get cheaper.
             </p>
             
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 pt-4">
