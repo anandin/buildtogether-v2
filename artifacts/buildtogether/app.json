@@ -16,7 +16,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.tilly.app",
-      "usesAppleSignIn": true
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Tilly uses Face ID as a second factor to protect your bank connection. Your face data never leaves the device."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -32,7 +35,15 @@
     },
     "plugins": [
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Tilly uses Face ID as a second factor to protect your bank connection. Your face data never leaves the device."
+        }
+      ],
+      "expo-secure-store",
+      "expo-apple-authentication"
     ]
   }
 }
