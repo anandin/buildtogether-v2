@@ -43,7 +43,7 @@ export default function Home() {
             </div>
             
             <h1 className="text-5xl sm:text-7xl font-serif text-foreground leading-[1.1]">
-              You're not bad with money. <span className="text-primary italic">You're just tired.</span>
+              A money app that <span className="text-primary italic">gets what you're saving for.</span>
             </h1>
             
             <p className="text-xl sm:text-2xl text-muted-foreground leading-relaxed">
