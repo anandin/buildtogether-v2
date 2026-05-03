@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Build Together",
-    "slug": "buildtogether",
+    "name": "Tilly",
+    "slug": "tilly",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "buildtogether",
+    "scheme": "tilly",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -15,7 +15,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "app.replit.buildtogether",
+      "bundleIdentifier": "com.tilly.app",
       "usesAppleSignIn": true
     },
     "android": {
@@ -24,7 +24,7 @@
         "foregroundImage": "./assets/images/icon.png"
       },
       "edgeToEdgeEnabled": true,
-      "package": "app.replit.buildtogether"
+      "package": "com.tilly.app"
     },
     "web": {
       "output": "single",
