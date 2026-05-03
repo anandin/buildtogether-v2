@@ -42,7 +42,7 @@ import {
 } from "../shared/schema";
 import { detectPatterns, savePatterns, createNudgeFromPattern, getActivePatterns, getPendingNudges } from "./pattern-detection";
 import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt, buildQuickAddPrompt, buildGuardianCoachPrompt, buildGuardianIntentClassifierPrompt, type GuardianCoachContext } from "./prompts";
-import { getPlaidClient, isPlaidConfigured, mapPlaidCategory, shouldImportPlaidTransaction } from "./plaid";
+import { getPlaidClient, getPlaidRedirectUri, isPlaidConfigured, mapPlaidCategory, shouldImportPlaidTransaction } from "./plaid";
 
 const DEFAULT_CATEGORY_BUDGETS = [
   { category: "groceries", monthlyLimit: 600, budgetType: "recurring" },
@@ -4514,6 +4514,45 @@ Return just the message text.`;
     next();
   }
 
+  // Plaid webhook receiver. Public (no auth) — Plaid posts here from
+  // their servers when transactions update. We always 200 quickly to
+  // prevent Plaid retry storms, then trigger an incremental sync for
+  // the affected item in the background.
+  //
+  // NOTE: production-grade webhook signature verification (Plaid's
+  // JWT in the `Plaid-Verification` header) is tracked separately;
+  // for now we lookup the item by Plaid item_id and only act on
+  // events for items we own, which limits blast radius from spoofed
+  // calls to "trigger an extra sync we'd run anyway."
+  app.post("/api/plaid/webhook", async (req, res) => {
+    res.status(200).json({ ok: true });
+    try {
+      const { webhook_type, webhook_code, item_id } = req.body || {};
+      if (!item_id || typeof item_id !== "string") return;
+      if (webhook_type !== "TRANSACTIONS") return;
+      // SYNC_UPDATES_AVAILABLE / DEFAULT_UPDATE / HISTORICAL_UPDATE all
+      // mean "new data — call /transactions/sync".
+      if (
+        webhook_code !== "SYNC_UPDATES_AVAILABLE" &&
+        webhook_code !== "DEFAULT_UPDATE" &&
+        webhook_code !== "HISTORICAL_UPDATE"
+      ) {
+        return;
+      }
+      const [item] = await db
+        .select()
+        .from(plaidItems)
+        .where(eq(plaidItems.plaidItemId, item_id))
+        .limit(1);
+      if (!item) return;
+      syncPlaidItem(item.id).catch((err) =>
+        console.error("Plaid webhook sync failed:", err?.message || err),
+      );
+    } catch (err: any) {
+      console.error("Plaid webhook handler error:", err?.message || err);
+    }
+  });
+
   // Returns current config status — client reads this to decide whether to
   // show the "Connect bank" CTA or a "Coming soon" state.
   app.get("/api/plaid/status", requireAuth, (_req, res) => {
@@ -4538,6 +4577,11 @@ Return just the message text.`;
         language: "en",
         // Webhook wiring is optional; for now we poll on demand via /sync.
         webhook: process.env.PLAID_WEBHOOK_URL || undefined,
+        // OAuth-based banks (Chase, Wells Fargo, Capital One, BofA, …) only
+        // complete in production when the redirect_uri is both passed here
+        // AND pre-registered on the Plaid dashboard. Sandbox skips OAuth so
+        // it's optional there.
+        redirect_uri: getPlaidRedirectUri(),
       });
 
       res.json({ linkToken: response.data.link_token, expiration: response.data.expiration });

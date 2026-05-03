@@ -315,8 +315,9 @@ export async function getApp(): Promise<express.Application> {
     // 8 seconds later from a deep-stack provider call.
     validateRequiredEnv();
     const flags = getFeatureFlags();
+    const plaidEnv = (process.env.PLAID_ENV || "sandbox").toLowerCase();
     log(
-      `[boot] feature flags: plaid=${flags.plaid} anthropicDirect=${flags.anthropicDirect} openrouter=${flags.openrouter}`,
+      `[boot] feature flags: plaid=${flags.plaid} plaidEnv=${plaidEnv} anthropicDirect=${flags.anthropicDirect} openrouter=${flags.openrouter}`,
     );
 
     setupCors(app);

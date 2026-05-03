@@ -144,3 +144,6 @@ as a follow-up; it is **not** a blocker for the Plaid Q4 attestation.
   `requirePasskeyVerified` (full list above).
 - `docs/security/screenshots/` — drop point for the device screenshots
   the Plaid reviewer requires (captured manually on a physical phone).
+- `docs/security/plaid-credentials.md` — rotation runbook for the
+  Plaid `client_secret` and the one-time sandbox → production switch
+  on the deployed API server.

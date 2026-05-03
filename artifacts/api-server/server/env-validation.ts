@@ -82,7 +82,35 @@ export function validateRequiredEnv(): void {
     }
   }
 
-  if (missing.length === 0 && halfConfigured.length === 0) return;
+  // Production-Plaid extra requirements: OAuth banks (Chase, Wells Fargo,
+  // Capital One, BofA, …) need a registered redirect_uri, and a deployment
+  // without a webhook silently misses transaction updates. Both are
+  // optional in sandbox so dev iteration stays fast.
+  const productionPlaidMissing: string[] = [];
+  const plaidEnv = (process.env.PLAID_ENV || "").toLowerCase();
+  if (
+    plaidEnv === "production" &&
+    process.env.PLAID_CLIENT_ID &&
+    process.env.PLAID_SECRET
+  ) {
+    if (!process.env.PLAID_REDIRECT_URI) {
+      productionPlaidMissing.push(
+        "  - PLAID_REDIRECT_URI: required in production so OAuth banks (Chase, Wells Fargo, Capital One, BofA) complete the Plaid Link flow",
+      );
+    }
+    if (!process.env.PLAID_WEBHOOK_URL) {
+      productionPlaidMissing.push(
+        "  - PLAID_WEBHOOK_URL: required in production so transaction updates arrive in the background instead of only on user-triggered /sync",
+      );
+    }
+  }
+
+  if (
+    missing.length === 0 &&
+    halfConfigured.length === 0 &&
+    productionPlaidMissing.length === 0
+  )
+    return;
 
   const lines: string[] = ["Environment validation failed:"];
   if (missing.length > 0) {
@@ -92,6 +120,13 @@ export function validateRequiredEnv(): void {
   if (halfConfigured.length > 0) {
     lines.push("", "Partially configured features (set both keys or neither):");
     lines.push(...halfConfigured);
+  }
+  if (productionPlaidMissing.length > 0) {
+    lines.push(
+      "",
+      "Plaid is set to PLAID_ENV=production but is missing required production wiring:",
+    );
+    lines.push(...productionPlaidMissing);
   }
   lines.push(
     "",

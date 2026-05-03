@@ -21,6 +21,26 @@ import {
 let _plaidClient: PlaidApi | null = null;
 let _initAttempted = false;
 
+/**
+ * Active Plaid environment ("sandbox" | "development" | "production").
+ * Defaults to sandbox when unset so a half-configured deployment doesn't
+ * silently hit production with the wrong creds.
+ */
+export function getPlaidEnv(): string {
+  return (process.env.PLAID_ENV || "sandbox").toLowerCase();
+}
+
+/**
+ * OAuth redirect URI to hand to Plaid Link. Required for production banks
+ * that use OAuth (Chase, Wells Fargo, Capital One, BofA, etc.) — Plaid
+ * rejects the link-token request if the URI isn't pre-registered on their
+ * dashboard. Returns undefined when unset (sandbox skips OAuth banks).
+ */
+export function getPlaidRedirectUri(): string | undefined {
+  const v = process.env.PLAID_REDIRECT_URI;
+  return v && v.trim() ? v.trim() : undefined;
+}
+
 export function isPlaidConfigured(): boolean {
   // Boot-time env-validation.ts already rejects the half-configured case
   // (one of CLIENT_ID / SECRET set without the other), so by the time we
@@ -36,7 +56,7 @@ export function getPlaidClient(): PlaidApi | null {
   if (!isPlaidConfigured()) return null;
 
   try {
-    const env = (process.env.PLAID_ENV || "sandbox").toLowerCase();
+    const env = getPlaidEnv();
     const basePath =
       (PlaidEnvironments as Record<string, string>)[env] ||
       PlaidEnvironments.sandbox;
