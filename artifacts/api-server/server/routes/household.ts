@@ -28,17 +28,13 @@ import {
   guardianConversations,
 } from "../../shared/schema";
 
-// ─── Life-context shaping ────────────────────────────────────────────────
-// Allowed buckets for the "Tell me about you" onboarding step. Kept as
-// const arrays so we can validate inbound payloads without depending on
-// zod for one tiny shape, and so the LLM-facing summary phrasing stays
-// in one place.
 const EMPLOYMENT_TYPES = [
   "student",
   "salaried",
   "hourly",
   "freelance",
   "between_jobs",
+  "retired",
   "other",
 ] as const;
 type EmploymentType = (typeof EMPLOYMENT_TYPES)[number];
@@ -61,6 +57,23 @@ type NormalizedLifeContext = {
   dependents: number | null;
   supportNote: string | null;
   schoolName: string | null;
+};
+
+const EMPLOYMENT_LABEL: Record<EmploymentType, string> = {
+  student: "student",
+  salaried: "works a salaried job",
+  hourly: "hourly worker",
+  freelance: "freelancer",
+  between_jobs: "between jobs right now",
+  retired: "retired",
+  other: "non-traditional work",
+};
+const AGE_LABEL: Record<AgeBand, string> = {
+  under_18: "under 18",
+  "18_24": "18-24",
+  "25_34": "25-34",
+  "35_44": "35-44",
+  "45_plus": "45+",
 };
 
 function normalizeLifeContext(raw: unknown): NormalizedLifeContext | null {
@@ -88,26 +101,27 @@ function normalizeLifeContext(raw: unknown): NormalizedLifeContext | null {
     typeof r.supportNote === "string" && r.supportNote.trim()
       ? r.supportNote.trim().slice(0, 280)
       : null;
-  // schoolName only applies when the user is a student — drop it
-  // otherwise so a stray field doesn't keep an otherwise-empty payload
-  // alive (which would write a row with no real life-context bits).
   const schoolName =
     employmentType === "student" &&
     typeof r.schoolName === "string" &&
     r.schoolName.trim()
       ? r.schoolName.trim().slice(0, 80)
       : null;
-  const anything =
-    !!employmentType ||
-    !!ageBand ||
-    !!city ||
-    dependents !== null ||
-    !!supportNote;
-  if (!anything) return null;
   return { employmentType, ageBand, city, dependents, supportNote, schoolName };
 }
 
-function lifeContextSentence(name: string, lc: NormalizedLifeContext): string {
+function lifeContextHasFields(lc: NormalizedLifeContext): boolean {
+  return (
+    !!lc.employmentType ||
+    !!lc.ageBand ||
+    !!lc.city ||
+    (lc.dependents ?? 0) > 0 ||
+    !!lc.supportNote ||
+    !!lc.schoolName
+  );
+}
+
+function lifeContextBits(lc: NormalizedLifeContext): string[] {
   const bits: string[] = [];
   if (lc.employmentType) bits.push(EMPLOYMENT_LABEL[lc.employmentType]);
   if (lc.ageBand) bits.push(AGE_LABEL[lc.ageBand]);
@@ -115,25 +129,42 @@ function lifeContextSentence(name: string, lc: NormalizedLifeContext): string {
   if (lc.dependents && lc.dependents > 0) {
     bits.push(`supports ${lc.dependents} ${lc.dependents === 1 ? "person" : "people"}`);
   }
-  if (lc.supportNote) bits.push(`note: ${lc.supportNote}`);
+  if (lc.supportNote) bits.push(lc.supportNote);
+  return bits;
+}
+
+function lifeContextSentence(name: string, lc: NormalizedLifeContext): string {
+  const bits = lifeContextBits(lc);
+  if (!bits.length) return `${name} — cleared their about-me.`;
   return `${name} — ${bits.join(", ")}.`;
 }
 
-const EMPLOYMENT_LABEL: Record<EmploymentType, string> = {
-  student: "student",
-  salaried: "works a salaried job",
-  hourly: "hourly worker",
-  freelance: "freelancer",
-  between_jobs: "between jobs right now",
-  other: "non-traditional work",
-};
-const AGE_LABEL: Record<AgeBand, string> = {
-  under_18: "under 18",
-  "18_24": "18-24",
-  "25_34": "25-34",
-  "35_44": "35-44",
-  "45_plus": "45+",
-};
+function lifeFlavorFor(lc: NormalizedLifeContext): string {
+  // Employment-specific phrasing wins when present so the welcome reads
+  // like Tilly heard the most consequential thing first.
+  const t = lc.employmentType;
+  if (t === "student") {
+    return " I know you're studying — money looks different on a student calendar and I'll keep that in mind.";
+  }
+  if (t === "between_jobs") {
+    return " I know you're between gigs right now — we'll be careful about runway, not just spending.";
+  }
+  if (t === "freelance") {
+    return " I know your income's lumpy — I'll think about good months vs lean months, not just monthly averages.";
+  }
+  if (t === "hourly") {
+    return " I know your hours can shift week to week — I'll watch for the weeks that get tight.";
+  }
+  if (t === "retired") {
+    return " I know you're retired — I'll think in terms of drawdown and steady months, not paychecks.";
+  }
+  // Fall back to a generic acknowledgement built from whatever bits the
+  // user shared so they can tell Tilly listened even when the employment
+  // type is "salaried"/"other"/blank.
+  const bits = lifeContextBits(lc);
+  if (!bits.length) return "";
+  return ` I've noted ${bits.join(", ")} — I'll keep that in mind.`;
+}
 
 export function mountHouseholdRoutes(app: Express): void {
   // Read onboarding status — drives the BTApp onboarding gate.
@@ -276,10 +307,9 @@ export function mountHouseholdRoutes(app: Express): void {
           : null;
       const hasSnapshot = monthlyIncome !== null || currentBalance !== null || !!primaryBank;
 
-      // Optional life context captured on the new "Tell me about you"
-      // onboarding step. Same append-only / observation-mirror pattern
-      // as moneySnapshot below.
-      const lifeContext = normalizeLifeContext(req.body?.lifeContext);
+      const lifeContextRaw = normalizeLifeContext(req.body?.lifeContext);
+      const lifeContext =
+        lifeContextRaw && lifeContextHasFields(lifeContextRaw) ? lifeContextRaw : null;
       const hasLifeContext = !!lifeContext;
 
       try {
@@ -307,11 +337,6 @@ export function mountHouseholdRoutes(app: Express): void {
             .set({ hasCompletedOnboarding: true })
             .where(eq(households.id, householdId));
 
-          // Persist life context first so the welcome message + memory
-          // observation can reference it. If the user said they're a
-          // student and gave a school, also propagate to the legacy
-          // households columns so existing UI (BTProfile pair caption)
-          // keeps working without rework.
           if (hasLifeContext && lifeContext) {
             await tx.insert(tillyLifeContext).values({
               householdId,
@@ -393,21 +418,7 @@ export function mountHouseholdRoutes(app: Express): void {
             )
             .limit(1);
 
-          // Optional life-context flavor woven into the welcome so it
-          // doesn't read like a stock greeting. Stays empty when the
-          // user skipped the about step.
-          let lifeFlavor = "";
-          if (lifeContext?.employmentType === "student") {
-            lifeFlavor = " I know you're studying — money looks different on a student calendar and I'll keep that in mind.";
-          } else if (lifeContext?.employmentType === "between_jobs") {
-            lifeFlavor = " I know you're between gigs right now — we'll be careful about runway, not just spending.";
-          } else if (lifeContext?.employmentType === "freelance") {
-            lifeFlavor = " I know your income's lumpy — I'll think about good months vs lean months, not just monthly averages.";
-          } else if (lifeContext?.employmentType === "hourly") {
-            lifeFlavor = " I know your hours can shift week to week — I'll watch for the weeks that get tight.";
-          } else if (lifeContext && (lifeContext.dependents ?? 0) > 0) {
-            lifeFlavor = " I know you're looking after people, not just yourself — I'll factor that in.";
-          }
+          const lifeFlavor = lifeContext ? lifeFlavorFor(lifeContext) : "";
 
           let welcome: string;
           if (activePlaid) {
@@ -471,7 +482,7 @@ export function mountHouseholdRoutes(app: Express): void {
                 city: row.city,
                 dependents: row.dependents,
                 supportNote: row.supportNote,
-                schoolName: hh?.schoolName ?? null,
+                schoolName: row.employmentType === "student" ? hh?.schoolName ?? null : null,
                 updatedAt: row.createdAt,
               }
             : null,
@@ -494,7 +505,7 @@ export function mountHouseholdRoutes(app: Express): void {
       if (!householdId) return res.status(400).json({ error: "no household" });
 
       const lc = normalizeLifeContext(req.body);
-      if (!lc) return res.status(400).json({ error: "no usable fields" });
+      if (!lc) return res.status(400).json({ error: "invalid body" });
 
       try {
         await db.transaction(async (tx) => {
@@ -516,6 +527,13 @@ export function mountHouseholdRoutes(app: Express): void {
                 schoolShort: lc.schoolName.slice(0, 8),
                 studentRole: "Student",
               })
+              .where(eq(households.id, householdId));
+          } else if (lc.employmentType !== "student") {
+            // No longer student (or cleared) → drop legacy school caption
+            // so it stops showing in BTProfile.
+            await tx
+              .update(households)
+              .set({ schoolName: null, schoolShort: null, studentRole: null })
               .where(eq(households.id, householdId));
           }
           await tx.insert(tillyMemory).values({

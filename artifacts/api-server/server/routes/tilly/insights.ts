@@ -322,9 +322,6 @@ export function mountTillyInsightsRoutes(app: Express): void {
           )
         : 1;
 
-      // Pull most recent life-context row so the Profile screen can
-      // display "About me" without a second roundtrip. Best-effort —
-      // a missing table just yields null.
       let lifeContext: {
         employmentType: string | null;
         ageBand: string | null;

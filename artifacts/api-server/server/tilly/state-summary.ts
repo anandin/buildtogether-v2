@@ -88,10 +88,7 @@ export async function buildFinancialStateSummary(
     }
   } catch {}
 
-  // 1c. Life context (most recent row from tilly_life_context). Tells
-  // Tilly who the user is right now (employment, age band, city, who
-  // they support) so advice can be appropriate to their situation
-  // instead of generic.
+  // 1c. Life context — who the user is right now.
   try {
     const [lc] = await db
       .select()

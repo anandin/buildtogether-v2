@@ -302,9 +302,6 @@ function BTProfileMain({
         </View>
       </View>
 
-      {/* About me — current life-context summary, edit lives in App settings.
-          Stays hidden until the user has actually answered the about step
-          so we don't render an empty placeholder for legacy users. */}
       {lifeContext &&
       (lifeContext.employmentType ||
         lifeContext.ageBand ||
@@ -677,11 +674,6 @@ function SettingsEntry({
   );
 }
 
-/**
- * Render the life-context summary as a single readable sentence for the
- * About me card. Mirrors the LLM-facing phrasing in state-summary.ts so
- * what Tilly sees and what the user reads stay consistent.
- */
 function formatLifeContext(lc: {
   employmentType: string | null;
   ageBand: string | null;
@@ -695,6 +687,7 @@ function formatLifeContext(lc: {
     hourly: "Hourly worker",
     freelance: "Freelancer",
     between_jobs: "Between jobs",
+    retired: "Retired",
     other: "Non-traditional work",
   };
   const ageLabel: Record<string, string> = {

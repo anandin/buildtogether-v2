@@ -48,14 +48,7 @@ type MoneySnapshot = {
   primaryBank?: string;
 };
 
-type EmploymentType =
-  | "student"
-  | "salaried"
-  | "hourly"
-  | "freelance"
-  | "between_jobs"
-  | "other";
-type AgeBand = "under_18" | "18_24" | "25_34" | "35_44" | "45_plus";
+import type { EmploymentType, AgeBand, LifeContextInput } from "../api/client";
 type LifeContextDraft = {
   employmentType?: EmploymentType;
   ageBand?: AgeBand;
@@ -74,9 +67,6 @@ export function Onboarding() {
   // tilly_money_snapshot + a memory row, giving Tilly real numbers from
   // turn 1 instead of $0 placeholders.
   const [moneySnapshot, setMoneySnapshot] = useState<MoneySnapshot | null>(null);
-  // Captured on the new "Tell me about you" step (between name + bank).
-  // Sent with complete-onboarding so Tilly knows whether the user is a
-  // student, freelancer, parent, etc. from turn 1 instead of guessing.
   const [lifeContext, setLifeContext] = useState<LifeContextDraft | null>(null);
 
   const status = useOnboardingStatus();
@@ -253,17 +243,6 @@ function NameCard({
   );
 }
 
-/**
- * Step 2.5 — "Tell me about you". Optional but heavily encouraged. Captures
- * employment type, age band, city, dependents and an optional support note
- * so Tilly's advice can be appropriate to the user's situation from turn 1
- * (a salaried 35-year-old supporting a parent gets very different replies
- * than a college freshman, etc.).
- *
- * Whole step is skippable — the bottom "skip — I'll tell you later" link
- * lets the user move on without filling anything in. Same pattern as the
- * bank card.
- */
 function AboutCard({
   onNext,
 }: {
@@ -327,6 +306,7 @@ function AboutCard({
               ["hourly", "Hourly"],
               ["freelance", "Freelance"],
               ["between_jobs", "Between jobs"],
+              ["retired", "Retired"],
               ["other", "Other"],
             ] as [EmploymentType, string][]
           ).map(([k, label]) => (
@@ -417,11 +397,6 @@ function AboutCard({
   );
 }
 
-/**
- * Pill-shaped multi-state chip used by AboutCard. Tap to select, tap again
- * to clear. Active state inverts to ink-on-surface so it reads as the
- * primary choice without needing checkmarks.
- */
 function Chip({
   t,
   label,
@@ -480,9 +455,6 @@ function BankCard({
   onNext,
 }: {
   connected: boolean;
-  /** From the prior About step — drives the manual-income placeholder
-   *  copy ("monthly stipend" for students vs "monthly income" for everyone
-   *  else) so the prompt feels written for them. */
   employmentType?: EmploymentType;
   onNext: (snap?: MoneySnapshot) => void;
 }) {
@@ -659,6 +631,8 @@ function BankCard({
                 ? "Typical monthly income (rough average)"
                 : employmentType === "between_jobs"
                 ? "Monthly money in right now (UI, savings draw, gigs)"
+                : employmentType === "retired"
+                ? "Monthly money in (pension, social security, drawdown)"
                 : "Monthly income (after tax)"
             }
             value={income}

@@ -244,11 +244,6 @@ export function AppSettingsScreen({
           />
         </Section>
 
-        {/* About me — life-context editor. Mirrors the AboutCard in
-            onboarding so the user can change what they shared (or fill
-            it in if they skipped it). Each save writes a new
-            tilly_life_context row (append-only) so Tilly sees the
-            update on her next reply. */}
         <AboutMeSection t={t} />
 
         {/* Bank connectivity */}
@@ -402,10 +397,6 @@ export function AppSettingsScreen({
   );
 }
 
-/**
- * About me — editable life-context section. Loads the current row and
- * lets the user revise any field. Posts a new row on save (append-only).
- */
 function AboutMeSection({ t }: { t: BTTheme }) {
   const lc = useLifeContext();
   const update = useUpdateLifeContext();
@@ -418,7 +409,6 @@ function AboutMeSection({ t }: { t: BTTheme }) {
   const [supportNote, setSupportNote] = useState("");
   const [school, setSchool] = useState("");
 
-  // Hydrate fields from the loaded row once it arrives.
   useEffect(() => {
     if (!current) return;
     setEmploymentType((current.employmentType as EmploymentType | null) ?? undefined);
@@ -482,6 +472,7 @@ function AboutMeSection({ t }: { t: BTTheme }) {
             ["hourly", "Hourly"],
             ["freelance", "Freelance"],
             ["between_jobs", "Between jobs"],
+            ["retired", "Retired"],
             ["other", "Other"],
           ] as [EmploymentType, string][]}
           value={employmentType}
@@ -637,20 +628,17 @@ function SettingTextInput({
         placeholderTextColor={t.inkMute}
         keyboardType={keyboardType}
         autoCapitalize={keyboardType === "numeric" ? "none" : "sentences"}
-        style={
-          {
-            paddingHorizontal: 12,
-            paddingVertical: 10,
-            borderRadius: 12,
-            backgroundColor: t.bg,
-            borderWidth: 1,
-            borderColor: t.rule,
-            color: t.ink,
-            fontFamily: BTFonts.sans,
-            fontSize: 14,
-            outlineStyle: "none",
-          } as any
-        }
+        style={{
+          paddingHorizontal: 12,
+          paddingVertical: 10,
+          borderRadius: 12,
+          backgroundColor: t.bg,
+          borderWidth: 1,
+          borderColor: t.rule,
+          color: t.ink,
+          fontFamily: BTFonts.sans,
+          fontSize: 14,
+        }}
       />
     </View>
   );

@@ -28,13 +28,13 @@ import type {
 } from "./types";
 import type { BTToneKey } from "../tones";
 
-// ─── Life context (about-me) types ────────────────────────────────────────
 export type EmploymentType =
   | "student"
   | "salaried"
   | "hourly"
   | "freelance"
   | "between_jobs"
+  | "retired"
   | "other";
 export type AgeBand = "under_18" | "18_24" | "25_34" | "35_44" | "45_plus";
 export type LifeContextInput = {
@@ -45,9 +45,7 @@ export type LifeContextInput = {
   supportNote?: string | null;
   schoolName?: string | null;
 };
-export type LifeContext = LifeContextInput & {
-  updatedAt?: string;
-};
+export type LifeContext = LifeContextInput & { updatedAt?: string };
 
 async function getJson<T>(route: string): Promise<T> {
   const res = await apiRequest("GET", route);
