@@ -1,0 +1,26 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "o1DIoOzwDRuMPJVeMsmYK"
+uri = "file://artifacts/landing/public/images/tilly-study.png"
+type = "image"
+title = "Tilly owl studying late"
+
+[[generated]]
+id = "fhmLSebjhPjQvyWkG5jTK"
+uri = "file://artifacts/landing/public/images/tilly-receipt.png"
+type = "image"
+title = "Tilly reading receipt"
+
+[[generated]]
+id = "kYGEdVutvB9vhQHQgcDIz"
+uri = "file://artifacts/landing/public/images/tilly-grad.png"
+type = "image"
+title = "Tilly on grad cap"
+
+[[generated]]
+id = "j0-1bKB221OytRzmoZgG-"
+uri = "file://artifacts/landing/public/images/tilly-ramen.png"
+type = "image"
+title = "Tilly with ramen"
