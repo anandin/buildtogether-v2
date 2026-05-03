@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, timestamp, jsonb, real } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, jsonb, real, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -70,13 +70,19 @@ export const userCredentials = pgTable("user_credentials", {
 // Short-lived nonces issued by the server for the passkey authenticate
 // ceremony. Bound to the session so a stolen challenge can't be replayed
 // from another device.
+// Multiple challenges per session are valid (e.g. one "authenticate" plus
+// concurrent "register:<credentialId>" enrollments) so the unique key is
+// (session_id, purpose), not session_id alone.
 export const passkeyChallenges = pgTable("passkey_challenges", {
-  sessionId: varchar("session_id").primaryKey().references(() => sessions.id, { onDelete: "cascade" }),
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => sessions.id, { onDelete: "cascade" }),
   challenge: text("challenge").notNull(), // base64url, 32 bytes
-  purpose: text("purpose").notNull(), // "authenticate"
+  purpose: text("purpose").notNull(), // "authenticate" | "register:<credentialId>"
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-});
+}, (t) => ({
+  sessionPurposeUnique: uniqueIndex("passkey_challenges_session_purpose_uniq").on(t.sessionId, t.purpose),
+}));
 
 export const partnerInvites = pgTable("partner_invites", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

@@ -47,13 +47,19 @@ const CRITICAL_STATEMENTS: string[] = [
     "last_used_at" timestamp
   )`,
   `CREATE INDEX IF NOT EXISTS "user_credentials_user_idx" ON "user_credentials" ("user_id")`,
+  // Reshape passkey_challenges: original PK was session_id alone, but the
+  // server issues concurrent challenges per (session, purpose) — drop and
+  // recreate. Safe because rows are short-lived (5-10 min TTL) nonces.
+  `DROP TABLE IF EXISTS "passkey_challenges"`,
   `CREATE TABLE IF NOT EXISTS "passkey_challenges" (
-    "session_id" varchar PRIMARY KEY REFERENCES "sessions"("id") ON DELETE CASCADE,
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "session_id" varchar NOT NULL REFERENCES "sessions"("id") ON DELETE CASCADE,
     "challenge" text NOT NULL,
     "purpose" text NOT NULL,
     "expires_at" timestamp NOT NULL,
     "created_at" timestamp DEFAULT now() NOT NULL
   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "passkey_challenges_session_purpose_uniq" ON "passkey_challenges" ("session_id", "purpose")`,
 
   // Phase 2: tilly tables (idempotent)
   `CREATE TABLE IF NOT EXISTS "tilly_memory" (

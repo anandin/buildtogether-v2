@@ -210,10 +210,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error("Logout error:", error);
     } finally {
-      // Wipe the device-bound passkey too — a different user signing in on
-      // this device must enroll their own. (Server credential is left in
-      // place; the user can revoke it from the dashboard if needed.)
-      try { await clearLocalPasskey(); } catch {}
+      // Intentionally NOT clearing the local passkey on sign-out: the
+      // device-bound key + biometric is what makes Plaid re-verification
+      // possible after the user signs back in. If we wiped it here, the
+      // server would still hold the public credential but the device key
+      // would be gone, and re-enrollment is blocked by step-up policy
+      // (additional credentials require a fresh existing-passkey verify).
+      // That's a lockout. Per-credential meta is namespaced by credentialId,
+      // so a different user signing in won't pick up the wrong key.
       await removeToken();
       setUser(null);
     }

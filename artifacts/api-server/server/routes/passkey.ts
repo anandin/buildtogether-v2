@@ -27,7 +27,7 @@ import * as ed from "@noble/ed25519";
 import { eq, and } from "drizzle-orm";
 import crypto from "node:crypto";
 import { db } from "../db";
-import { sessions, userCredentials, passkeyChallenges } from "../../shared/schema";
+import { sessions, userCredentials, passkeyChallenges, plaidItems, users } from "../../shared/schema";
 import { requireAuth } from "../middleware/auth";
 
 const CHALLENGE_TTL_MS = 5 * 60 * 1000; // 5 min
@@ -365,12 +365,42 @@ export function mountPasskeyRoutes(app: Express): void {
   });
 
   // -------- DELETE credential --------
+  // Refuses to remove the user's last passkey while their household has
+  // any active Plaid connections — otherwise they'd lose the ability to
+  // re-prove MFA and the bank-data flows would 403 forever. They must
+  // disconnect their banks first, or enroll a replacement device.
   app.delete("/api/auth/passkey/credentials/:id", requireAuth, async (req, res) => {
     try {
+      const userId = req.user!.id;
+      const all = await db.select().from(userCredentials).where(eq(userCredentials.userId, userId));
+      const target = all.find((c) => c.id === req.params.id);
+      if (!target) return res.status(404).json({ error: "credential not found" });
+
+      if (all.length === 1) {
+        const me = await db.query.users.findFirst({ where: eq(users.id, userId) });
+        const coupleId = me?.coupleId;
+        if (coupleId) {
+          const activeBanks = await db.select({ id: plaidItems.id })
+            .from(plaidItems)
+            .where(and(
+              eq(plaidItems.coupleId, coupleId),
+              eq(plaidItems.status, "active"),
+            ));
+          if (activeBanks.length > 0) {
+            return res.status(409).json({
+              error: "last_passkey_with_active_banks",
+              code: "LAST_PASSKEY_WITH_ACTIVE_BANKS",
+              activeBankCount: activeBanks.length,
+              message: "Disconnect your bank connections before removing your only passkey, or add another device first.",
+            });
+          }
+        }
+      }
+
       await db.delete(userCredentials)
         .where(and(
           eq(userCredentials.id, req.params.id),
-          eq(userCredentials.userId, req.user!.id),
+          eq(userCredentials.userId, userId),
         ));
       res.json({ ok: true });
     } catch (err: any) {

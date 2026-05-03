@@ -112,8 +112,24 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
       if (tokenRes.status === 403) {
         let code: string | undefined;
         try { code = (await tokenRes.json())?.code; } catch {}
+        // PASSKEY_REQUIRED can mean "never verified on this session" for
+        // either a brand-new user (enroll) OR a returning user who just
+        // re-logged-in (verify). Ask the server which is true rather
+        // than guessing — server-enrolled state is the source of truth.
+        let mode: PasskeyGateMode = "verify";
+        if (code === "PASSKEY_REQUIRED") {
+          try {
+            const sessRes = await apiRequestRaw("GET", "/api/auth/session");
+            if (sessRes.ok) {
+              const sess = await sessRes.json();
+              mode = sess?.passkey?.enrolled ? "verify" : "enroll";
+            } else {
+              mode = "enroll";
+            }
+          } catch { mode = "enroll"; }
+        }
         setLaunching(false);
-        setPasskeyMode(code === "PASSKEY_REQUIRED" ? "enroll" : "verify");
+        setPasskeyMode(mode);
         setShowPasskeyGate(true);
         return;
       }
