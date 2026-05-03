@@ -51,8 +51,12 @@ const REQUIRED: RequiredVar[] = [
 
 const PAIRED: PairedVars[] = [
   {
-    feature: "Plaid bank linking",
+    feature: "Plaid bank linking (sandbox/dev)",
     vars: ["PLAID_CLIENT_ID", "PLAID_SECRET"],
+  },
+  {
+    feature: "Plaid bank linking (production override)",
+    vars: ["PLAID_PRODUCTION_CLIENT_ID", "PLAID_PRODUCTION_SECRET"],
   },
 ];
 
@@ -88,11 +92,15 @@ export function validateRequiredEnv(): void {
   // optional in sandbox so dev iteration stays fast.
   const productionPlaidMissing: string[] = [];
   const plaidEnv = (process.env.PLAID_ENV || "").toLowerCase();
-  if (
-    plaidEnv === "production" &&
-    process.env.PLAID_CLIENT_ID &&
-    process.env.PLAID_SECRET
-  ) {
+  // The production credentials may be supplied either as the prefixed
+  // pair (preferred — kept out of `.replit` by living in Replit Secrets
+  // only) or, as a fallback, the plain PLAID_CLIENT_ID/PLAID_SECRET
+  // globals.
+  const hasProdCreds =
+    !!(process.env.PLAID_PRODUCTION_CLIENT_ID &&
+       process.env.PLAID_PRODUCTION_SECRET) ||
+    !!(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
+  if (plaidEnv === "production" && hasProdCreds) {
     if (!process.env.PLAID_REDIRECT_URI) {
       productionPlaidMissing.push(
         "  - PLAID_REDIRECT_URI: required in production so OAuth banks (Chase, Wells Fargo, Capital One, BofA) complete the Plaid Link flow",
@@ -140,8 +148,17 @@ export function validateRequiredEnv(): void {
  * /api/health and admin debugging without leaking the actual key values.
  */
 export function getFeatureFlags(): Record<string, boolean> {
+  const plaidEnv = (process.env.PLAID_ENV || "sandbox").toLowerCase();
+  const plaidConfigured =
+    plaidEnv === "production"
+      ? !!(
+          (process.env.PLAID_PRODUCTION_CLIENT_ID &&
+            process.env.PLAID_PRODUCTION_SECRET) ||
+          (process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET)
+        )
+      : !!(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
   return {
-    plaid: !!(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET),
+    plaid: plaidConfigured,
     anthropicDirect: !!process.env.ANTHROPIC_API_KEY,
     openrouter: !!process.env.OPENROUTER_API_KEY,
   };

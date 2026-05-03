@@ -23,9 +23,9 @@ production Items every time we re-test locally.
 1. **Plaid dashboard → Team Settings → Keys.** Click *Rotate* next to
    the production `client_secret`. Copy the new value into a password
    manager immediately — Plaid only shows it once.
-2. **Update deployment secrets** (do NOT paste the secret in chat). In
-   the Replit workspace, open *Secrets* and update:
-   - `PLAID_SECRET` → the new rotated value (production environment)
+2. **Update Replit Secrets** (do NOT paste the secret in chat). In the
+   workspace open *Secrets* and update:
+   - `PLAID_PRODUCTION_SECRET` → the new rotated value
 3. Redeploy. The server boot log should show:
    ```
    [boot] feature flags: plaid=true plaidEnv=production …
@@ -51,18 +51,32 @@ production.
   endpoint is already implemented in `routes.ts` and 200s immediately
   while syncing in the background.
 
-### 2. Deployment secrets
+### 2. Deployment configuration
 
-Set all of these in the **deployment / production** environment (never
-paste any of them into chat):
+Two storage tiers, picked deliberately:
+
+**Replit Secrets (global, not committed) — for the actual credentials:**
 
 | Key | Value | Where it comes from |
 | --- | --- | --- |
-| `PLAID_CLIENT_ID` | production client_id | Plaid dashboard → Keys |
-| `PLAID_SECRET` | production client_secret | Plaid dashboard → Keys (rotated) |
+| `PLAID_PRODUCTION_CLIENT_ID` | production client_id | Plaid dashboard → Keys |
+| `PLAID_PRODUCTION_SECRET` | production client_secret | Plaid dashboard → Keys (rotated) |
+
+**Production env vars (in `.replit`, safe because non-sensitive):**
+
+| Key | Value | Notes |
+| --- | --- | --- |
 | `PLAID_ENV` | `production` | literal string |
 | `PLAID_REDIRECT_URI` | `https://<your-replit-app>.replit.app/plaid/oauth-redirect` | matches dashboard registration |
 | `PLAID_WEBHOOK_URL` | `https://<your-replit-app>.replit.app/api/plaid/webhook` | matches dashboard registration |
+
+Why two tiers: Replit env vars (any environment) live in `.replit` in
+plaintext, which is committed to git. So real secrets MUST stay in
+Replit Secrets. Replit Secrets are global (not env-scoped), so we use
+the prefixed names `PLAID_PRODUCTION_*` only — the dev workspace keeps
+its sandbox values under the un-prefixed `PLAID_CLIENT_ID` /
+`PLAID_SECRET` globals, and the server (`plaid.ts`) prefers the
+prefixed pair when `PLAID_ENV=production`.
 
 If any of `PLAID_REDIRECT_URI` or `PLAID_WEBHOOK_URL` are missing while
 `PLAID_ENV=production`, the server **refuses to boot** with a clear

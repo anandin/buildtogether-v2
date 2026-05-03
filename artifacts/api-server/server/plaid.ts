@@ -41,11 +41,42 @@ export function getPlaidRedirectUri(): string | undefined {
   return v && v.trim() ? v.trim() : undefined;
 }
 
+/**
+ * Active Plaid client_id / secret pair.
+ *
+ * Why two name shapes: Replit env vars (production-scoped) live in
+ * `.replit` in plaintext (committed to git), so we can't store a real
+ * production secret there. Replit secrets ARE safe but are global
+ * (not env-scoped), which means dev would inherit them. To get the
+ * best of both, we keep dev/sandbox values in the un-prefixed
+ * PLAID_CLIENT_ID / PLAID_SECRET globals and store the production
+ * pair under PLAID_PRODUCTION_CLIENT_ID / PLAID_PRODUCTION_SECRET.
+ * When PLAID_ENV=production, we prefer the prefixed pair; otherwise
+ * we fall back to the plain names. This keeps dev on sandbox without
+ * any production secret ever touching `.replit`.
+ */
+function getPlaidCreds(): { clientId?: string; secret?: string } {
+  const env = getPlaidEnv();
+  if (env === "production") {
+    return {
+      clientId:
+        process.env.PLAID_PRODUCTION_CLIENT_ID || process.env.PLAID_CLIENT_ID,
+      secret:
+        process.env.PLAID_PRODUCTION_SECRET || process.env.PLAID_SECRET,
+    };
+  }
+  return {
+    clientId: process.env.PLAID_CLIENT_ID,
+    secret: process.env.PLAID_SECRET,
+  };
+}
+
 export function isPlaidConfigured(): boolean {
   // Boot-time env-validation.ts already rejects the half-configured case
   // (one of CLIENT_ID / SECRET set without the other), so by the time we
   // reach a request handler this is a clean either-on-or-off check.
-  return !!(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
+  const { clientId, secret } = getPlaidCreds();
+  return !!(clientId && secret);
 }
 
 export function getPlaidClient(): PlaidApi | null {
@@ -61,12 +92,13 @@ export function getPlaidClient(): PlaidApi | null {
       (PlaidEnvironments as Record<string, string>)[env] ||
       PlaidEnvironments.sandbox;
 
+    const { clientId, secret } = getPlaidCreds();
     const config = new Configuration({
       basePath,
       baseOptions: {
         headers: {
-          "PLAID-CLIENT-ID": process.env.PLAID_CLIENT_ID!,
-          "PLAID-SECRET": process.env.PLAID_SECRET!,
+          "PLAID-CLIENT-ID": clientId!,
+          "PLAID-SECRET": secret!,
           "Plaid-Version": "2020-09-14",
         },
       },
