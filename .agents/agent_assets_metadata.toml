@@ -1,5 +1,4 @@
 uploads = []
-outputs = []
 
 [[generated]]
 id = "o1DIoOzwDRuMPJVeMsmYK"
@@ -24,3 +23,27 @@ id = "j0-1bKB221OytRzmoZgG-"
 uri = "file://artifacts/landing/public/images/tilly-ramen.png"
 type = "image"
 title = "Tilly with ramen"
+
+[[generated]]
+id = "BjS3USuc7KxkCqs2jl1Ce"
+uri = "file://artifacts/landing/src/assets/tilly-app-icon.png"
+type = "image"
+title = "tilly app icon"
+
+[[generated]]
+id = "j6t8gyUT0R7IKrzLKOeLz"
+uri = "file://artifacts/landing/src/assets/tilly-mark.png"
+type = "image"
+title = "tilly logo mark clean"
+
+[[outputs]]
+id = "EFDWKooftVyKr2xkHtWVA"
+uri = "file://artifacts/landing/src/assets/tilly-app-icon.png"
+type = "image"
+title = "Tilly app icon (square, for iOS/Android home screen)"
+
+[[outputs]]
+id = "kpVDgziOODgLNdMRRvanl"
+uri = "file://artifacts/landing/src/assets/tilly-mark.png"
+type = "image"
+title = "Tilly logo mark (transparent, for nav/headers)"
