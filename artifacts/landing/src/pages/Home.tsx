@@ -43,11 +43,11 @@ export default function Home() {
             </div>
             
             <h1 className="text-5xl sm:text-7xl font-serif text-foreground leading-[1.1]">
-              A money app that <span className="text-primary italic">gets what you're saving for.</span>
+              Like a sibling who's <span className="text-primary italic">really good with money.</span>
             </h1>
             
             <p className="text-xl sm:text-2xl text-muted-foreground leading-relaxed">
-              Tilly is a soft-spoken pocket owl who watches your money so you can chase the things you actually want—without the guilt, the spreadsheets, or the red bars.
+              Tilly is your personal money coach—part wise sibling, part gentle guide—turning your spending into insights, and your goals into a plan that actually fits your life.
             </p>
             
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 pt-4">
