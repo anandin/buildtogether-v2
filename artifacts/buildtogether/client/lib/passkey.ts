@@ -18,14 +18,18 @@ import { sha512 } from "@noble/hashes/sha2.js";
 import { Platform } from "react-native";
 import { apiRequest, apiRequestRaw } from "./query-client";
 
-// @noble/ed25519 v3 needs SHA-512 wired in. By default it tries
-// `crypto.subtle.digest`, which React Native (Hermes) does not provide,
-// so enrollment crashes on real devices with
-// "crypto.subtle must be defined, consider polyfill". Setting the sync
-// hash from @noble/hashes makes signAsync/verifyAsync work on every
-// platform we ship (iOS, Android, web) without pulling in a native
-// WebCrypto polyfill. Must run before any sign/verify call.
+// @noble/ed25519 v3 needs SHA-512 wired in. The async path
+// (signAsync/verifyAsync — the only ones we use) routes through
+// `hashes.sha512Async`, whose default implementation calls
+// `crypto.subtle.digest`. React Native (Hermes) does not provide
+// `crypto.subtle`, so enrollment crashes on real devices with
+// "crypto.subtle must be defined, consider polyfill". Override BOTH
+// slots with the pure-JS implementation from @noble/hashes so async +
+// any future sync caller work on every platform we ship (iOS,
+// Android, web) without pulling in a native WebCrypto polyfill. Must
+// run before any sign/verify call.
 ed.hashes.sha512 = (msg: Uint8Array) => sha512(msg);
+ed.hashes.sha512Async = async (msg: Uint8Array) => sha512(msg);
 
 const PRIV_KEY_PREFIX = "tilly.passkey.priv."; // suffix with credentialId
 const META_KEY = "tilly.passkey.meta";

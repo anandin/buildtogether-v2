@@ -5,6 +5,7 @@ import "react-native-get-random-values";
 import * as ed from "@noble/ed25519";
 import { sha512 } from "@noble/hashes/sha2.js";
 ed.hashes.sha512 = (msg: Uint8Array) => sha512(msg);
+ed.hashes.sha512Async = async (msg: Uint8Array) => sha512(msg);
 
 import React, { useEffect } from "react";
 import { StyleSheet } from "react-native";
