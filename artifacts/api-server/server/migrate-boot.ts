@@ -287,6 +287,23 @@ const CRITICAL_STATEMENTS: string[] = [
     "created_at" timestamp DEFAULT now() NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS "tilly_money_snapshot_household_idx" ON "tilly_money_snapshot" ("household_id", "created_at" DESC)`,
+
+  // tilly_life_context — captures who the user is right now (employment,
+  // age band, city, dependents, support obligations) so Tilly can give
+  // context-aware advice. Append-only; latest row wins.
+  `CREATE TABLE IF NOT EXISTS "tilly_life_context" (
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "household_id" varchar NOT NULL,
+    "user_id" varchar,
+    "employment_type" text,
+    "age_band" text,
+    "city" text,
+    "dependents" integer,
+    "support_note" text,
+    "source" text NOT NULL DEFAULT 'onboarding',
+    "created_at" timestamp DEFAULT now() NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS "tilly_life_context_household_idx" ON "tilly_life_context" ("household_id", "created_at" DESC)`,
 ];
 
 export async function applyBootMigrations(): Promise<{

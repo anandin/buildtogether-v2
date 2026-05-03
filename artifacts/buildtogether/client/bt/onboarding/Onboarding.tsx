@@ -39,13 +39,30 @@ import {
 import { useCreateDream } from "../hooks/useDreams";
 import { useUser } from "../hooks/useUser";
 
-type Step = "welcome" | "name" | "bank" | "dream" | "commit";
-const STEPS: Step[] = ["welcome", "name", "bank", "dream", "commit"];
+type Step = "welcome" | "name" | "about" | "bank" | "dream" | "commit";
+const STEPS: Step[] = ["welcome", "name", "about", "bank", "dream", "commit"];
 
 type MoneySnapshot = {
   monthlyIncome?: number;
   currentBalance?: number;
   primaryBank?: string;
+};
+
+type EmploymentType =
+  | "student"
+  | "salaried"
+  | "hourly"
+  | "freelance"
+  | "between_jobs"
+  | "other";
+type AgeBand = "under_18" | "18_24" | "25_34" | "35_44" | "45_plus";
+type LifeContextDraft = {
+  employmentType?: EmploymentType;
+  ageBand?: AgeBand;
+  city?: string;
+  dependents?: number;
+  supportNote?: string;
+  schoolName?: string;
 };
 
 export function Onboarding() {
@@ -57,6 +74,10 @@ export function Onboarding() {
   // tilly_money_snapshot + a memory row, giving Tilly real numbers from
   // turn 1 instead of $0 placeholders.
   const [moneySnapshot, setMoneySnapshot] = useState<MoneySnapshot | null>(null);
+  // Captured on the new "Tell me about you" step (between name + bank).
+  // Sent with complete-onboarding so Tilly knows whether the user is a
+  // student, freelancer, parent, etc. from turn 1 instead of guessing.
+  const [lifeContext, setLifeContext] = useState<LifeContextDraft | null>(null);
 
   const status = useOnboardingStatus();
   const createHousehold = useCreateHousehold();
@@ -108,14 +129,23 @@ export function Onboarding() {
             isPending={createHousehold.isPending}
             onNext={(payload) =>
               createHousehold.mutate(payload, {
-                onSuccess: () => advance("bank"),
+                onSuccess: () => advance("about"),
               })
             }
+          />
+        )}
+        {step === "about" && (
+          <AboutCard
+            onNext={(lc) => {
+              if (lc) setLifeContext(lc);
+              advance("bank");
+            }}
           />
         )}
         {step === "bank" && (
           <BankCard
             connected={!!status.data?.hasPlaid}
+            employmentType={lifeContext?.employmentType}
             onNext={(snap) => {
               if (snap) setMoneySnapshot(snap);
               advance("dream");
@@ -135,11 +165,17 @@ export function Onboarding() {
         {step === "commit" && (
           <CommitCard
             isPending={completeOnboarding.isPending}
-            onNext={() =>
+            onNext={() => {
+              const body: {
+                moneySnapshot?: MoneySnapshot;
+                lifeContext?: LifeContextDraft;
+              } = {};
+              if (moneySnapshot) body.moneySnapshot = moneySnapshot;
+              if (lifeContext) body.lifeContext = lifeContext;
               completeOnboarding.mutate(
-                moneySnapshot ? { moneySnapshot } : undefined,
-              )
-            }
+                Object.keys(body).length ? body : undefined,
+              );
+            }}
           />
         )}
       </ScrollView>
@@ -185,13 +221,12 @@ function NameCard({
   isPending,
   initialName,
 }: {
-  onNext: (p: { name: string; schoolName?: string; studentRole?: string }) => void;
+  onNext: (p: { name: string }) => void;
   isPending: boolean;
   initialName?: string;
 }) {
   const { t } = useBT();
   const [name, setName] = useState(initialName ?? "");
-  const [school, setSchool] = useState("");
 
   // The most common case: user signed up with their name, so we prefill it
   // and lead with confirmation copy instead of asking a fresh question.
@@ -208,25 +243,221 @@ function NameCard({
           : "Let's start with your name."}
       </BTSerif>
       <Field t={t} label="Your name" value={name} onChangeText={setName} placeholder="Maya" />
-      <Field
-        t={t}
-        label="Where do you study? (optional)"
-        value={school}
-        onChangeText={setSchool}
-        placeholder="NYU"
-      />
       <PrimaryButton
         t={t}
         label={isPending ? "Saving…" : "Next"}
         disabled={!name.trim() || isPending}
-        onPress={() =>
-          onNext({
-            name: name.trim(),
-            schoolName: school.trim() || undefined,
-          })
-        }
+        onPress={() => onNext({ name: name.trim() })}
       />
     </View>
+  );
+}
+
+/**
+ * Step 2.5 — "Tell me about you". Optional but heavily encouraged. Captures
+ * employment type, age band, city, dependents and an optional support note
+ * so Tilly's advice can be appropriate to the user's situation from turn 1
+ * (a salaried 35-year-old supporting a parent gets very different replies
+ * than a college freshman, etc.).
+ *
+ * Whole step is skippable — the bottom "skip — I'll tell you later" link
+ * lets the user move on without filling anything in. Same pattern as the
+ * bank card.
+ */
+function AboutCard({
+  onNext,
+}: {
+  onNext: (lc: LifeContextDraft | null) => void;
+}) {
+  const { t } = useBT();
+  const [employmentType, setEmploymentType] = useState<EmploymentType | undefined>();
+  const [ageBand, setAgeBand] = useState<AgeBand | undefined>();
+  const [city, setCity] = useState("");
+  const [dependents, setDependents] = useState("");
+  const [supportNote, setSupportNote] = useState("");
+  const [school, setSchool] = useState("");
+
+  const submit = () => {
+    const lc: LifeContextDraft = {};
+    if (employmentType) lc.employmentType = employmentType;
+    if (ageBand) lc.ageBand = ageBand;
+    const cityT = city.trim();
+    if (cityT) lc.city = cityT;
+    const depN = Number((dependents || "").replace(/[^0-9]/g, ""));
+    if (Number.isFinite(depN) && depN > 0) lc.dependents = depN;
+    const noteT = supportNote.trim();
+    if (noteT) lc.supportNote = noteT;
+    if (employmentType === "student") {
+      const sT = school.trim();
+      if (sT) lc.schoolName = sT;
+    }
+    onNext(Object.keys(lc).length ? lc : null);
+  };
+
+  return (
+    <View style={{ gap: 18 }}>
+      <BTLabel color={t.inkMute}>So my advice fits your life</BTLabel>
+      <BTSerif size={28} color={t.ink} weight="500">
+        Tell me a bit{" "}
+        <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
+          about you
+        </Text>
+        .
+      </BTSerif>
+      <Text
+        style={{
+          color: t.inkSoft,
+          fontFamily: BTFonts.serifItalic,
+          fontSize: 15,
+          lineHeight: 22,
+        }}
+      >
+        None of this is required. Anything you share helps me give advice
+        that actually fits your situation instead of generic tips.
+      </Text>
+
+      {/* Employment chips */}
+      <View style={{ gap: 8 }}>
+        <BTLabel color={t.inkMute} size={10}>What you're doing</BTLabel>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {(
+            [
+              ["student", "Student"],
+              ["salaried", "Salaried"],
+              ["hourly", "Hourly"],
+              ["freelance", "Freelance"],
+              ["between_jobs", "Between jobs"],
+              ["other", "Other"],
+            ] as [EmploymentType, string][]
+          ).map(([k, label]) => (
+            <Chip
+              key={k}
+              t={t}
+              label={label}
+              active={employmentType === k}
+              onPress={() => setEmploymentType(employmentType === k ? undefined : k)}
+            />
+          ))}
+        </View>
+      </View>
+
+      {/* Age band chips */}
+      <View style={{ gap: 8 }}>
+        <BTLabel color={t.inkMute} size={10}>Age range</BTLabel>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          {(
+            [
+              ["under_18", "Under 18"],
+              ["18_24", "18 — 24"],
+              ["25_34", "25 — 34"],
+              ["35_44", "35 — 44"],
+              ["45_plus", "45+"],
+            ] as [AgeBand, string][]
+          ).map(([k, label]) => (
+            <Chip
+              key={k}
+              t={t}
+              label={label}
+              active={ageBand === k}
+              onPress={() => setAgeBand(ageBand === k ? undefined : k)}
+            />
+          ))}
+        </View>
+      </View>
+
+      {employmentType === "student" && (
+        <Field
+          t={t}
+          label="Where do you study? (optional)"
+          value={school}
+          onChangeText={setSchool}
+          placeholder="NYU"
+        />
+      )}
+
+      <Field
+        t={t}
+        label="City (optional)"
+        value={city}
+        onChangeText={setCity}
+        placeholder="Brooklyn"
+      />
+      <Field
+        t={t}
+        label="People you support (kids, parents) — optional"
+        value={dependents}
+        onChangeText={setDependents}
+        placeholder="0"
+        keyboardType="numeric"
+      />
+      <Field
+        t={t}
+        label="Anything I should know? (optional)"
+        value={supportNote}
+        onChangeText={setSupportNote}
+        placeholder="Helping mom with rent"
+      />
+
+      <PrimaryButton t={t} label="Save & continue" onPress={submit} />
+      <Pressable
+        onPress={() => onNext(null)}
+        style={{ alignItems: "center", paddingVertical: 4 }}
+      >
+        <Text
+          style={{
+            color: t.inkMute,
+            fontFamily: BTFonts.serifItalic,
+            fontSize: 13,
+          }}
+        >
+          skip — I'll tell you in chat later
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
+/**
+ * Pill-shaped multi-state chip used by AboutCard. Tap to select, tap again
+ * to clear. Active state inverts to ink-on-surface so it reads as the
+ * primary choice without needing checkmarks.
+ */
+function Chip({
+  t,
+  label,
+  active,
+  onPress,
+}: {
+  t: ReturnType<typeof useBT>["t"];
+  label: string;
+  active: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      style={{
+        paddingHorizontal: 14,
+        paddingVertical: 9,
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: active ? t.ink : t.rule,
+        backgroundColor: active ? t.ink : t.surface,
+      }}
+    >
+      <Text
+        style={{
+          color: active ? t.surface : t.inkSoft,
+          fontFamily: BTFonts.sans,
+          fontSize: 13,
+          fontWeight: active ? "700" : "500",
+        }}
+      >
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -245,9 +476,14 @@ function NameCard({
  */
 function BankCard({
   connected,
+  employmentType,
   onNext,
 }: {
   connected: boolean;
+  /** From the prior About step — drives the manual-income placeholder
+   *  copy ("monthly stipend" for students vs "monthly income" for everyone
+   *  else) so the prompt feels written for them. */
+  employmentType?: EmploymentType;
   onNext: (snap?: MoneySnapshot) => void;
 }) {
   const { t } = useBT();
@@ -416,7 +652,15 @@ function BankCard({
           </Text>
           <Field
             t={t}
-            label="Monthly income (after tax)"
+            label={
+              employmentType === "student"
+                ? "Monthly money in (job, stipend, parents)"
+                : employmentType === "freelance"
+                ? "Typical monthly income (rough average)"
+                : employmentType === "between_jobs"
+                ? "Monthly money in right now (UI, savings draw, gigs)"
+                : "Monthly income (after tax)"
+            }
             value={income}
             onChangeText={setIncome}
             placeholder="2400"

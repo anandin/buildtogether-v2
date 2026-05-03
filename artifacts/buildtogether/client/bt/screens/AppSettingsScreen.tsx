@@ -23,6 +23,7 @@ import {
   Pressable,
   ScrollView,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
@@ -30,6 +31,12 @@ import { Feather } from "@expo/vector-icons";
 import { useBT } from "../BTContext";
 import { useUser } from "../hooks/useUser";
 import { useAuth } from "@/context/AuthContext";
+import { useLifeContext, useUpdateLifeContext } from "../hooks/useOnboarding";
+import type {
+  AgeBand,
+  EmploymentType,
+  LifeContextInput,
+} from "../api/client";
 import { BTLabel, BTRule, BTSerif } from "../atoms";
 import { BTFonts, BT_THEMES, type BTTheme, type BTThemeKey } from "../theme";
 import { ScreenHeader } from "./plaid/_chrome";
@@ -237,6 +244,13 @@ export function AppSettingsScreen({
           />
         </Section>
 
+        {/* About me — life-context editor. Mirrors the AboutCard in
+            onboarding so the user can change what they shared (or fill
+            it in if they skipped it). Each save writes a new
+            tilly_life_context row (append-only) so Tilly sees the
+            update on her next reply. */}
+        <AboutMeSection t={t} />
+
         {/* Bank connectivity */}
         <Section title="Bank connectivity" t={t}>
           <Row
@@ -384,6 +398,260 @@ export function AppSettingsScreen({
           {" "}support@buildtogether.app and we'll handle it within 7 days.
         </Text>
       </ScrollView>
+    </View>
+  );
+}
+
+/**
+ * About me — editable life-context section. Loads the current row and
+ * lets the user revise any field. Posts a new row on save (append-only).
+ */
+function AboutMeSection({ t }: { t: BTTheme }) {
+  const lc = useLifeContext();
+  const update = useUpdateLifeContext();
+  const current = lc.data?.lifeContext ?? null;
+
+  const [employmentType, setEmploymentType] = useState<EmploymentType | undefined>();
+  const [ageBand, setAgeBand] = useState<AgeBand | undefined>();
+  const [city, setCity] = useState("");
+  const [dependents, setDependents] = useState("");
+  const [supportNote, setSupportNote] = useState("");
+  const [school, setSchool] = useState("");
+
+  // Hydrate fields from the loaded row once it arrives.
+  useEffect(() => {
+    if (!current) return;
+    setEmploymentType((current.employmentType as EmploymentType | null) ?? undefined);
+    setAgeBand((current.ageBand as AgeBand | null) ?? undefined);
+    setCity(current.city ?? "");
+    setDependents(current.dependents != null ? String(current.dependents) : "");
+    setSupportNote(current.supportNote ?? "");
+    setSchool(current.schoolName ?? "");
+  }, [current]);
+
+  const save = () => {
+    const body: LifeContextInput = {};
+    body.employmentType = employmentType ?? null;
+    body.ageBand = ageBand ?? null;
+    body.city = city.trim() || null;
+    const depN = Number((dependents || "").replace(/[^0-9]/g, ""));
+    body.dependents = Number.isFinite(depN) && depN > 0 ? depN : null;
+    body.supportNote = supportNote.trim() || null;
+    body.schoolName = employmentType === "student" ? school.trim() || null : null;
+    update.mutate(body, {
+      onSuccess: () => {
+        Alert.alert("Saved", "I'll use this from now on.");
+      },
+      onError: () => {
+        Alert.alert("Couldn't save", "Try again in a moment.");
+      },
+    });
+  };
+
+  return (
+    <View style={{ gap: 8 }}>
+      <BTLabel color={t.inkMute}>About me</BTLabel>
+      <View
+        style={{
+          backgroundColor: t.surface,
+          borderRadius: 16,
+          borderWidth: 1,
+          borderColor: t.rule,
+          padding: 14,
+          gap: 14,
+        }}
+      >
+        <Text
+          style={{
+            color: t.inkSoft,
+            fontFamily: BTFonts.serifItalic,
+            fontSize: 14,
+            lineHeight: 21,
+          }}
+        >
+          What you tell me here shapes the advice I give. Everything is
+          optional and you can update any of it later.
+        </Text>
+
+        <SettingChipRow
+          t={t}
+          label="What you're doing"
+          options={[
+            ["student", "Student"],
+            ["salaried", "Salaried"],
+            ["hourly", "Hourly"],
+            ["freelance", "Freelance"],
+            ["between_jobs", "Between jobs"],
+            ["other", "Other"],
+          ] as [EmploymentType, string][]}
+          value={employmentType}
+          onChange={(v) => setEmploymentType(v ?? undefined)}
+        />
+        <SettingChipRow
+          t={t}
+          label="Age range"
+          options={[
+            ["under_18", "Under 18"],
+            ["18_24", "18 — 24"],
+            ["25_34", "25 — 34"],
+            ["35_44", "35 — 44"],
+            ["45_plus", "45+"],
+          ] as [AgeBand, string][]}
+          value={ageBand}
+          onChange={(v) => setAgeBand(v ?? undefined)}
+        />
+        {employmentType === "student" && (
+          <SettingTextInput
+            t={t}
+            label="Where do you study"
+            value={school}
+            onChangeText={setSchool}
+            placeholder="NYU"
+          />
+        )}
+        <SettingTextInput
+          t={t}
+          label="City"
+          value={city}
+          onChangeText={setCity}
+          placeholder="Brooklyn"
+        />
+        <SettingTextInput
+          t={t}
+          label="People you support (kids, parents)"
+          value={dependents}
+          onChangeText={setDependents}
+          placeholder="0"
+          keyboardType="numeric"
+        />
+        <SettingTextInput
+          t={t}
+          label="Anything I should know"
+          value={supportNote}
+          onChangeText={setSupportNote}
+          placeholder="Helping mom with rent"
+        />
+
+        <Pressable
+          onPress={save}
+          disabled={update.isPending}
+          accessibilityRole="button"
+          accessibilityLabel="Save about me"
+          style={{
+            backgroundColor: update.isPending ? t.surfaceAlt : t.ink,
+            borderRadius: 12,
+            paddingVertical: 12,
+            alignItems: "center",
+          }}
+        >
+          <Text
+            style={{
+              color: update.isPending ? t.inkMute : t.surface,
+              fontFamily: BTFonts.sans,
+              fontWeight: "700",
+              fontSize: 13,
+            }}
+          >
+            {update.isPending ? "Saving…" : "Save about me"}
+          </Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function SettingChipRow<T extends string>({
+  t,
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  t: BTTheme;
+  label: string;
+  options: [T, string][];
+  value: T | undefined;
+  onChange: (v: T | undefined) => void;
+}) {
+  return (
+    <View style={{ gap: 8 }}>
+      <BTLabel color={t.inkMute} size={10}>{label}</BTLabel>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {options.map(([k, lbl]) => {
+          const active = value === k;
+          return (
+            <Pressable
+              key={k}
+              onPress={() => onChange(active ? undefined : k)}
+              accessibilityRole="button"
+              accessibilityState={{ selected: active }}
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 8,
+                borderRadius: 999,
+                borderWidth: 1,
+                borderColor: active ? t.ink : t.rule,
+                backgroundColor: active ? t.ink : "transparent",
+              }}
+            >
+              <Text
+                style={{
+                  color: active ? t.surface : t.inkSoft,
+                  fontFamily: BTFonts.sans,
+                  fontSize: 12,
+                  fontWeight: active ? "700" : "500",
+                }}
+              >
+                {lbl}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+function SettingTextInput({
+  t,
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  keyboardType,
+}: {
+  t: BTTheme;
+  label: string;
+  value: string;
+  onChangeText: (v: string) => void;
+  placeholder?: string;
+  keyboardType?: "default" | "numeric";
+}) {
+  return (
+    <View style={{ gap: 6 }}>
+      <BTLabel color={t.inkMute} size={10}>{label}</BTLabel>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={t.inkMute}
+        keyboardType={keyboardType}
+        autoCapitalize={keyboardType === "numeric" ? "none" : "sentences"}
+        style={
+          {
+            paddingHorizontal: 12,
+            paddingVertical: 10,
+            borderRadius: 12,
+            backgroundColor: t.bg,
+            borderWidth: 1,
+            borderColor: t.rule,
+            color: t.ink,
+            fontFamily: BTFonts.sans,
+            fontSize: 14,
+            outlineStyle: "none",
+          } as any
+        }
+      />
     </View>
   );
 }

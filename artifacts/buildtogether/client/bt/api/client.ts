@@ -28,6 +28,27 @@ import type {
 } from "./types";
 import type { BTToneKey } from "../tones";
 
+// ─── Life context (about-me) types ────────────────────────────────────────
+export type EmploymentType =
+  | "student"
+  | "salaried"
+  | "hourly"
+  | "freelance"
+  | "between_jobs"
+  | "other";
+export type AgeBand = "under_18" | "18_24" | "25_34" | "35_44" | "45_plus";
+export type LifeContextInput = {
+  employmentType?: EmploymentType | null;
+  ageBand?: AgeBand | null;
+  city?: string | null;
+  dependents?: number | null;
+  supportNote?: string | null;
+  schoolName?: string | null;
+};
+export type LifeContext = LifeContextInput & {
+  updatedAt?: string;
+};
+
 async function getJson<T>(route: string): Promise<T> {
   const res = await apiRequest("GET", route);
   return (await res.json()) as T;
@@ -250,11 +271,18 @@ export const btApi = {
       currentBalance?: number;
       primaryBank?: string;
     };
+    lifeContext?: LifeContextInput;
   }) =>
-    postJson<{ ok: true; seededSnapshot?: boolean }>(
+    postJson<{ ok: true; seededSnapshot?: boolean; seededLifeContext?: boolean }>(
       "/api/household/complete-onboarding",
       body ?? {},
     ),
+
+  // ── Life context (about-me) ────────────────────────────────────────────
+  getLifeContext: () =>
+    getJson<{ lifeContext: LifeContext | null }>("/api/profile/life-context"),
+  updateLifeContext: (body: LifeContextInput) =>
+    postJson<{ ok: true }>("/api/profile/life-context", body),
 
   // ── Plaid (bank connectivity) ──────────────────────────────────────────
   plaidStatus: () => getJson<PlaidStatus>("/api/plaid/status"),

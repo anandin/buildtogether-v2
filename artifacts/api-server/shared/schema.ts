@@ -1192,6 +1192,35 @@ export const tillyMoneySnapshot = pgTable("tilly_money_snapshot", {
 
 export type TillyMoneySnapshot = typeof tillyMoneySnapshot.$inferSelect;
 
+/**
+ * Life context — who the user is right now, in money-shaping terms. Captured
+ * on the new "Tell me about you" onboarding step so Tilly can give context-
+ * aware advice from turn 1 (a salaried 35-year-old with two kids and a
+ * student-loan parent get very different replies than a college freshman).
+ *
+ * One row per disclosure (append-only). state-summary.ts reads the most
+ * recent row and surfaces it as "Life:" context to the LLM. The Profile /
+ * App Settings edit screens write a new row each time so we keep history.
+ */
+export const tillyLifeContext = pgTable("tilly_life_context", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  householdId: varchar("household_id").notNull(),
+  userId: varchar("user_id"),
+  // Free-form but constrained on the client to a known set so the LLM can
+  // match on it. Allowed: student | salaried | hourly | freelance |
+  // between_jobs | other.
+  employmentType: text("employment_type"),
+  // Coarse buckets — under_18 | 18_24 | 25_34 | 35_44 | 45_plus.
+  ageBand: text("age_band"),
+  city: text("city"),
+  dependents: integer("dependents"),
+  supportNote: text("support_note"), // free-text, e.g. "helping mom with rent"
+  source: text("source").notNull().default("onboarding"), // onboarding | settings | chat
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type TillyLifeContext = typeof tillyLifeContext.$inferSelect;
+
 // ==================== Legacy aliases ====================
 // Keep V1-name imports compiling during the Phase 1c route-splitting transition.
 // These re-exports point to the renamed tables. Do NOT use in new code.

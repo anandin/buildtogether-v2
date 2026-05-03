@@ -25,6 +25,7 @@ import {
   protections,
   subscriptions,
   tillyMoneySnapshot,
+  tillyLifeContext,
 } from "../../shared/schema";
 import { buildWeeklyPattern } from "./spend-pattern";
 
@@ -82,6 +83,31 @@ export async function buildFinancialStateSummary(
         const ageDays = Math.floor((Date.now() - new Date(snap.createdAt).getTime()) / 86400000);
         const ageLabel = ageDays <= 0 ? "today" : ageDays === 1 ? "yesterday" : `${ageDays}d ago`;
         lines.push(`User-stated (${ageLabel}): ${bits.join(", ")}.`);
+        hasData = true;
+      }
+    }
+  } catch {}
+
+  // 1c. Life context (most recent row from tilly_life_context). Tells
+  // Tilly who the user is right now (employment, age band, city, who
+  // they support) so advice can be appropriate to their situation
+  // instead of generic.
+  try {
+    const [lc] = await db
+      .select()
+      .from(tillyLifeContext)
+      .where(eq(tillyLifeContext.householdId, householdId))
+      .orderBy(desc(tillyLifeContext.createdAt))
+      .limit(1);
+    if (lc) {
+      const bits: string[] = [];
+      if (lc.employmentType) bits.push(lc.employmentType);
+      if (lc.ageBand) bits.push(lc.ageBand.replace("_plus", "+").replace("_", "-"));
+      if (lc.city) bits.push(lc.city);
+      if (lc.dependents != null && lc.dependents > 0) bits.push(`supports ${lc.dependents}`);
+      if (lc.supportNote) bits.push(`note: ${lc.supportNote}`);
+      if (bits.length) {
+        lines.push(`Life: ${bits.join(", ")}.`);
         hasData = true;
       }
     }

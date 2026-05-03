@@ -23,9 +23,117 @@ import {
   goals,
   commitments,
   tillyMoneySnapshot,
+  tillyLifeContext,
   tillyMemory,
   guardianConversations,
 } from "../../shared/schema";
+
+// ─── Life-context shaping ────────────────────────────────────────────────
+// Allowed buckets for the "Tell me about you" onboarding step. Kept as
+// const arrays so we can validate inbound payloads without depending on
+// zod for one tiny shape, and so the LLM-facing summary phrasing stays
+// in one place.
+const EMPLOYMENT_TYPES = [
+  "student",
+  "salaried",
+  "hourly",
+  "freelance",
+  "between_jobs",
+  "other",
+] as const;
+type EmploymentType = (typeof EMPLOYMENT_TYPES)[number];
+const AGE_BANDS = ["under_18", "18_24", "25_34", "35_44", "45_plus"] as const;
+type AgeBand = (typeof AGE_BANDS)[number];
+
+type LifeContextInput = {
+  employmentType?: EmploymentType | null;
+  ageBand?: AgeBand | null;
+  city?: string | null;
+  dependents?: number | null;
+  supportNote?: string | null;
+  schoolName?: string | null;
+};
+
+type NormalizedLifeContext = {
+  employmentType: EmploymentType | null;
+  ageBand: AgeBand | null;
+  city: string | null;
+  dependents: number | null;
+  supportNote: string | null;
+  schoolName: string | null;
+};
+
+function normalizeLifeContext(raw: unknown): NormalizedLifeContext | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as LifeContextInput;
+  const employmentType =
+    typeof r.employmentType === "string" &&
+    (EMPLOYMENT_TYPES as readonly string[]).includes(r.employmentType)
+      ? (r.employmentType as EmploymentType)
+      : null;
+  const ageBand =
+    typeof r.ageBand === "string" &&
+    (AGE_BANDS as readonly string[]).includes(r.ageBand)
+      ? (r.ageBand as AgeBand)
+      : null;
+  const city =
+    typeof r.city === "string" && r.city.trim()
+      ? r.city.trim().slice(0, 80)
+      : null;
+  const dependents =
+    typeof r.dependents === "number" && Number.isFinite(r.dependents) && r.dependents >= 0
+      ? Math.min(20, Math.floor(r.dependents))
+      : null;
+  const supportNote =
+    typeof r.supportNote === "string" && r.supportNote.trim()
+      ? r.supportNote.trim().slice(0, 280)
+      : null;
+  // schoolName only applies when the user is a student — drop it
+  // otherwise so a stray field doesn't keep an otherwise-empty payload
+  // alive (which would write a row with no real life-context bits).
+  const schoolName =
+    employmentType === "student" &&
+    typeof r.schoolName === "string" &&
+    r.schoolName.trim()
+      ? r.schoolName.trim().slice(0, 80)
+      : null;
+  const anything =
+    !!employmentType ||
+    !!ageBand ||
+    !!city ||
+    dependents !== null ||
+    !!supportNote;
+  if (!anything) return null;
+  return { employmentType, ageBand, city, dependents, supportNote, schoolName };
+}
+
+function lifeContextSentence(name: string, lc: NormalizedLifeContext): string {
+  const bits: string[] = [];
+  if (lc.employmentType) bits.push(EMPLOYMENT_LABEL[lc.employmentType]);
+  if (lc.ageBand) bits.push(AGE_LABEL[lc.ageBand]);
+  if (lc.city) bits.push(`in ${lc.city}`);
+  if (lc.dependents && lc.dependents > 0) {
+    bits.push(`supports ${lc.dependents} ${lc.dependents === 1 ? "person" : "people"}`);
+  }
+  if (lc.supportNote) bits.push(`note: ${lc.supportNote}`);
+  return `${name} — ${bits.join(", ")}.`;
+}
+
+const EMPLOYMENT_LABEL: Record<EmploymentType, string> = {
+  student: "student",
+  salaried: "works a salaried job",
+  hourly: "hourly worker",
+  freelance: "freelancer",
+  between_jobs: "between jobs right now",
+  other: "non-traditional work",
+};
+const AGE_LABEL: Record<AgeBand, string> = {
+  under_18: "under 18",
+  "18_24": "18-24",
+  "25_34": "25-34",
+  "35_44": "35-44",
+  "45_plus": "45+",
+};
 
 export function mountHouseholdRoutes(app: Express): void {
   // Read onboarding status — drives the BTApp onboarding gate.
@@ -168,6 +276,12 @@ export function mountHouseholdRoutes(app: Express): void {
           : null;
       const hasSnapshot = monthlyIncome !== null || currentBalance !== null || !!primaryBank;
 
+      // Optional life context captured on the new "Tell me about you"
+      // onboarding step. Same append-only / observation-mirror pattern
+      // as moneySnapshot below.
+      const lifeContext = normalizeLifeContext(req.body?.lifeContext);
+      const hasLifeContext = !!lifeContext;
+
       try {
         // All side effects are gated on the false→true transition of
         // hasCompletedOnboarding and run inside a single transaction so
@@ -192,6 +306,46 @@ export function mountHouseholdRoutes(app: Express): void {
             .update(households)
             .set({ hasCompletedOnboarding: true })
             .where(eq(households.id, householdId));
+
+          // Persist life context first so the welcome message + memory
+          // observation can reference it. If the user said they're a
+          // student and gave a school, also propagate to the legacy
+          // households columns so existing UI (BTProfile pair caption)
+          // keeps working without rework.
+          if (hasLifeContext && lifeContext) {
+            await tx.insert(tillyLifeContext).values({
+              householdId,
+              userId,
+              employmentType: lifeContext.employmentType,
+              ageBand: lifeContext.ageBand,
+              city: lifeContext.city,
+              dependents: lifeContext.dependents,
+              supportNote: lifeContext.supportNote,
+              source: "onboarding",
+            });
+            if (
+              lifeContext.employmentType === "student" &&
+              lifeContext.schoolName
+            ) {
+              await tx
+                .update(households)
+                .set({
+                  schoolName: lifeContext.schoolName,
+                  schoolShort: lifeContext.schoolName.slice(0, 8),
+                  studentRole: "Student",
+                })
+                .where(eq(households.id, householdId));
+            }
+            await tx.insert(tillyMemory).values({
+              userId,
+              householdId,
+              kind: "observation",
+              body: lifeContextSentence(userName, lifeContext),
+              source: "onboarding",
+              dateLabel: "Today",
+              isMostRecent: true,
+            });
+          }
 
           // Persist the manual money snapshot if any field was provided.
           if (hasSnapshot) {
@@ -239,13 +393,29 @@ export function mountHouseholdRoutes(app: Express): void {
             )
             .limit(1);
 
+          // Optional life-context flavor woven into the welcome so it
+          // doesn't read like a stock greeting. Stays empty when the
+          // user skipped the about step.
+          let lifeFlavor = "";
+          if (lifeContext?.employmentType === "student") {
+            lifeFlavor = " I know you're studying — money looks different on a student calendar and I'll keep that in mind.";
+          } else if (lifeContext?.employmentType === "between_jobs") {
+            lifeFlavor = " I know you're between gigs right now — we'll be careful about runway, not just spending.";
+          } else if (lifeContext?.employmentType === "freelance") {
+            lifeFlavor = " I know your income's lumpy — I'll think about good months vs lean months, not just monthly averages.";
+          } else if (lifeContext?.employmentType === "hourly") {
+            lifeFlavor = " I know your hours can shift week to week — I'll watch for the weeks that get tight.";
+          } else if (lifeContext && (lifeContext.dependents ?? 0) > 0) {
+            lifeFlavor = " I know you're looking after people, not just yourself — I'll factor that in.";
+          }
+
           let welcome: string;
           if (activePlaid) {
-            welcome = `Hey ${userName}. Your bank's wired up — I can see what's coming in and going out. I'll stay quiet unless something's worth flagging. Whenever you want to think out loud about money, this is the place.`;
+            welcome = `Hey ${userName}. Your bank's wired up — I can see what's coming in and going out. I'll stay quiet unless something's worth flagging. Whenever you want to think out loud about money, this is the place.${lifeFlavor}`;
           } else if (hasSnapshot) {
-            welcome = `Hey ${userName}. Thanks for telling me where you're starting from — I've got it written down. Whenever something happens with your money, just tell me here and I'll keep track. No bank needed for us to talk.`;
+            welcome = `Hey ${userName}. Thanks for telling me where you're starting from — I've got it written down. Whenever something happens with your money, just tell me here and I'll keep track. No bank needed for us to talk.${lifeFlavor}`;
           } else {
-            welcome = `Hey ${userName}. I'm Tilly. We don't have your bank wired up yet, but we don't need it to start — just tell me about anything you spend ("$5 coffee") or anything that's on your mind, and I'll remember. When you're ready to link a bank, the option's on your home screen.`;
+            welcome = `Hey ${userName}. I'm Tilly. We don't have your bank wired up yet, but we don't need it to start — just tell me about anything you spend ("$5 coffee") or anything that's on your mind, and I'll remember. When you're ready to link a bank, the option's on your home screen.${lifeFlavor}`;
           }
           await tx.insert(guardianConversations).values({
             coupleId: householdId,
@@ -255,13 +425,113 @@ export function mountHouseholdRoutes(app: Express): void {
             intent: "welcome",
           });
 
-          return { firstCompletion: true, seededSnapshot: hasSnapshot };
+          return {
+            firstCompletion: true,
+            seededSnapshot: hasSnapshot,
+            seededLifeContext: hasLifeContext,
+          };
         });
 
         res.json({ ok: true, ...result });
       } catch (err) {
         console.error("/api/household/complete-onboarding error:", err);
         res.status(500).json({ error: "complete failed" });
+      }
+    },
+  );
+
+  // ─── Life context (about-me) ─────────────────────────────────────────
+  // Read latest row + write a new one. Append-only so we keep a history
+  // of how the user's situation has evolved (useful for the dossier).
+
+  app.get(
+    "/api/profile/life-context",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const householdId = req.user.coupleId;
+      if (!householdId) return res.json({ lifeContext: null });
+      try {
+        const [row] = await db
+          .select()
+          .from(tillyLifeContext)
+          .where(eq(tillyLifeContext.householdId, householdId))
+          .orderBy(sql`${tillyLifeContext.createdAt} desc`)
+          .limit(1);
+        // Pull schoolName from the legacy households col so the edit
+        // form can re-display it for student users.
+        const hh = await db.query.households.findFirst({
+          where: eq(households.id, householdId),
+        });
+        res.json({
+          lifeContext: row
+            ? {
+                employmentType: row.employmentType,
+                ageBand: row.ageBand,
+                city: row.city,
+                dependents: row.dependents,
+                supportNote: row.supportNote,
+                schoolName: hh?.schoolName ?? null,
+                updatedAt: row.createdAt,
+              }
+            : null,
+        });
+      } catch (err) {
+        console.error("/api/profile/life-context GET error:", err);
+        res.status(500).json({ error: "read failed" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/profile/life-context",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const userId = req.user.id;
+      const userName = req.user.name?.split(" ")[0] ?? "there";
+      const householdId = req.user.coupleId;
+      if (!householdId) return res.status(400).json({ error: "no household" });
+
+      const lc = normalizeLifeContext(req.body);
+      if (!lc) return res.status(400).json({ error: "no usable fields" });
+
+      try {
+        await db.transaction(async (tx) => {
+          await tx.insert(tillyLifeContext).values({
+            householdId,
+            userId,
+            employmentType: lc.employmentType,
+            ageBand: lc.ageBand,
+            city: lc.city,
+            dependents: lc.dependents,
+            supportNote: lc.supportNote,
+            source: "settings",
+          });
+          if (lc.employmentType === "student" && lc.schoolName) {
+            await tx
+              .update(households)
+              .set({
+                schoolName: lc.schoolName,
+                schoolShort: lc.schoolName.slice(0, 8),
+                studentRole: "Student",
+              })
+              .where(eq(households.id, householdId));
+          }
+          await tx.insert(tillyMemory).values({
+            userId,
+            householdId,
+            kind: "observation",
+            body: lifeContextSentence(userName, lc),
+            source: "settings",
+            dateLabel: "Today",
+            isMostRecent: true,
+          });
+        });
+        res.json({ ok: true });
+      } catch (err) {
+        console.error("/api/profile/life-context POST error:", err);
+        res.status(500).json({ error: "save failed" });
       }
     },
   );

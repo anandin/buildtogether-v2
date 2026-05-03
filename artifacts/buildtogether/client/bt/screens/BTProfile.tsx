@@ -149,6 +149,13 @@ function BTProfileMain({
     live?.trusted ?? [];
   const daysWithTilly = live?.daysWithTilly ?? null;
   const studentRole: string | null = live?.studentRole ?? null;
+  const lifeContext: {
+    employmentType: string | null;
+    ageBand: string | null;
+    city: string | null;
+    dependents: number | null;
+    supportNote: string | null;
+  } | null = live?.lifeContext ?? null;
 
   const liveMemory = memory.data?.memory ?? [];
   const memoryItems = liveMemory.map((m) => ({
@@ -294,6 +301,56 @@ function BTProfileMain({
           </Text>
         </View>
       </View>
+
+      {/* About me — current life-context summary, edit lives in App settings.
+          Stays hidden until the user has actually answered the about step
+          so we don't render an empty placeholder for legacy users. */}
+      {lifeContext &&
+      (lifeContext.employmentType ||
+        lifeContext.ageBand ||
+        lifeContext.city ||
+        (lifeContext.dependents ?? 0) > 0 ||
+        lifeContext.supportNote) ? (
+        <View style={{ gap: 10 }}>
+          <BTLabel color={t.inkMute}>About me</BTLabel>
+          <Pressable
+            onPress={onOpenAppSettings}
+            accessibilityRole="button"
+            accessibilityLabel="Edit about me"
+            style={{
+              padding: 16,
+              borderRadius: 16,
+              backgroundColor: t.surface,
+              borderWidth: 1,
+              borderColor: t.rule,
+              gap: 6,
+            }}
+          >
+            <Text
+              style={{
+                color: t.ink,
+                fontFamily: BTFonts.serifItalic,
+                fontSize: 16,
+                lineHeight: 24,
+              }}
+            >
+              {formatLifeContext(lifeContext)}
+            </Text>
+            <Text
+              style={{
+                color: t.inkMute,
+                fontFamily: BTFonts.mono,
+                fontSize: 10,
+                letterSpacing: 1.2,
+                textTransform: "uppercase",
+                marginTop: 4,
+              }}
+            >
+              tap to edit
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {/* What I've learned about you */}
       <View style={{ gap: 14 }}>
@@ -618,6 +675,44 @@ function SettingsEntry({
       <Text style={{ color: t.inkMute, fontSize: 14, fontFamily: BTFonts.sans }}>›</Text>
     </Pressable>
   );
+}
+
+/**
+ * Render the life-context summary as a single readable sentence for the
+ * About me card. Mirrors the LLM-facing phrasing in state-summary.ts so
+ * what Tilly sees and what the user reads stay consistent.
+ */
+function formatLifeContext(lc: {
+  employmentType: string | null;
+  ageBand: string | null;
+  city: string | null;
+  dependents: number | null;
+  supportNote: string | null;
+}): string {
+  const employmentLabel: Record<string, string> = {
+    student: "Student",
+    salaried: "Salaried",
+    hourly: "Hourly worker",
+    freelance: "Freelancer",
+    between_jobs: "Between jobs",
+    other: "Non-traditional work",
+  };
+  const ageLabel: Record<string, string> = {
+    under_18: "under 18",
+    "18_24": "18-24",
+    "25_34": "25-34",
+    "35_44": "35-44",
+    "45_plus": "45+",
+  };
+  const bits: string[] = [];
+  if (lc.employmentType) bits.push(employmentLabel[lc.employmentType] ?? lc.employmentType);
+  if (lc.ageBand) bits.push(ageLabel[lc.ageBand] ?? lc.ageBand);
+  if (lc.city) bits.push(lc.city);
+  if (lc.dependents && lc.dependents > 0) {
+    bits.push(`supports ${lc.dependents} ${lc.dependents === 1 ? "person" : "people"}`);
+  }
+  if (lc.supportNote) bits.push(`"${lc.supportNote}"`);
+  return bits.join(" · ");
 }
 
 function tonePreviewBg(k: BTToneKey, t: BTTheme): string {

@@ -322,6 +322,35 @@ export function mountTillyInsightsRoutes(app: Express): void {
           )
         : 1;
 
+      // Pull most recent life-context row so the Profile screen can
+      // display "About me" without a second roundtrip. Best-effort —
+      // a missing table just yields null.
+      let lifeContext: {
+        employmentType: string | null;
+        ageBand: string | null;
+        city: string | null;
+        dependents: number | null;
+        supportNote: string | null;
+      } | null = null;
+      try {
+        const { tillyLifeContext } = await import("../../../shared/schema");
+        const [row] = await db
+          .select()
+          .from(tillyLifeContext)
+          .where(eq(tillyLifeContext.householdId, householdId))
+          .orderBy(sql`${tillyLifeContext.createdAt} desc`)
+          .limit(1);
+        if (row) {
+          lifeContext = {
+            employmentType: row.employmentType ?? null,
+            ageBand: row.ageBand ?? null,
+            city: row.city ?? null,
+            dependents: row.dependents ?? null,
+            supportNote: row.supportNote ?? null,
+          };
+        }
+      } catch {}
+
       res.json({
         ready: true,
         name: user?.name ?? "You",
@@ -330,6 +359,7 @@ export function mountTillyInsightsRoutes(app: Express): void {
         daysWithTilly,
         tone,
         trusted,
+        lifeContext,
       });
     } catch (err) {
       console.error("/api/tilly/profile error:", err);

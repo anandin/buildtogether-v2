@@ -6,7 +6,27 @@
  * flow uses one of the mutations below to advance.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { btApi } from "../api/client";
+import { btApi, type LifeContextInput } from "../api/client";
+
+export function useLifeContext() {
+  return useQuery({
+    queryKey: ["/api/profile/life-context"],
+    queryFn: btApi.getLifeContext,
+    staleTime: 60_000,
+  });
+}
+
+export function useUpdateLifeContext() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: LifeContextInput) => btApi.updateLifeContext(body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/profile/life-context"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/profile"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/memory"] });
+    },
+  });
+}
 
 export function useOnboardingStatus() {
   return useQuery({

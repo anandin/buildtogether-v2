@@ -218,6 +218,15 @@ export type TillyProfile =
       daysWithTilly: number;
       tone: BTToneKey;
       trusted: TrustedPerson[];
+      /** Most recent life-context disclosure — drives the BTProfile
+       *  "About me" card. Null when the user skipped the about step. */
+      lifeContext: {
+        employmentType: string | null;
+        ageBand: string | null;
+        city: string | null;
+        dependents: number | null;
+        supportNote: string | null;
+      } | null;
     };
 
 // ── Plaid ──────────────────────────────────────────────────────────────
