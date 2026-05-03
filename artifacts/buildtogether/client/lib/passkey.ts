@@ -14,12 +14,18 @@ import "react-native-get-random-values";
 import * as SecureStore from "expo-secure-store";
 import * as LocalAuth from "expo-local-authentication";
 import * as ed from "@noble/ed25519";
+import { sha512 } from "@noble/hashes/sha2.js";
 import { Platform } from "react-native";
 import { apiRequest, apiRequestRaw } from "./query-client";
 
-// @noble/ed25519 v3 async API uses WebCrypto for SHA-512 (available in
-// modern RN via the JSI/Hermes runtime + React Native 0.76+ web crypto
-// polyfill, and on Node 18+ via the global `crypto` object).
+// @noble/ed25519 v3 needs SHA-512 wired in. By default it tries
+// `crypto.subtle.digest`, which React Native (Hermes) does not provide,
+// so enrollment crashes on real devices with
+// "crypto.subtle must be defined, consider polyfill". Setting the sync
+// hash from @noble/hashes makes signAsync/verifyAsync work on every
+// platform we ship (iOS, Android, web) without pulling in a native
+// WebCrypto polyfill. Must run before any sign/verify call.
+ed.hashes.sha512 = (msg: Uint8Array) => sha512(msg);
 
 const PRIV_KEY_PREFIX = "tilly.passkey.priv."; // suffix with credentialId
 const META_KEY = "tilly.passkey.meta";

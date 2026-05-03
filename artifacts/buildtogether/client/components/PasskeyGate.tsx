@@ -71,7 +71,14 @@ export function PasskeyGate({ visible, mode, onSuccess, onCancel, reason }: Prop
       }
       onSuccess();
     } catch (err: any) {
-      setError(err?.message || "Something went wrong. Try again?");
+      const raw = String(err?.message || "");
+      // If the SHA-512 polyfill failed to install for any reason, hide the
+      // raw "crypto.subtle must be defined" exception behind a friendly
+      // message — the user can't do anything about the underlying issue.
+      const friendly = /crypto\.subtle|sha512/i.test(raw)
+        ? "Face ID setup is unavailable on this device. Please update the app and try again."
+        : raw || "Something went wrong. Try again?";
+      setError(friendly);
     } finally {
       setBusy(false);
     }

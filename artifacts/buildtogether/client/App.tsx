@@ -1,4 +1,11 @@
 import "react-native-get-random-values";
+// Wire SHA-512 into @noble/ed25519 at app boot so any consumer (not just
+// the passkey module) can sign/verify without hitting the missing
+// `crypto.subtle` on Hermes. See client/lib/passkey.ts for context.
+import * as ed from "@noble/ed25519";
+import { sha512 } from "@noble/hashes/sha2.js";
+ed.hashes.sha512 = (msg: Uint8Array) => sha512(msg);
+
 import React, { useEffect } from "react";
 import { StyleSheet } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
