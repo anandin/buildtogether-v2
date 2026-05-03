@@ -272,6 +272,21 @@ const CRITICAL_STATEMENTS: string[] = [
   `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "city" text`,
   // Reminder UX S6 — Expo Push Token for the fire-reminders cron.
   `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "expo_push_token" text`,
+
+  // Beta-without-Plaid: manual money snapshots collected at onboarding
+  // (or later from settings) so Tilly has income/balance numbers to work
+  // with even when no bank is connected.
+  `CREATE TABLE IF NOT EXISTS "tilly_money_snapshot" (
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "household_id" varchar NOT NULL,
+    "user_id" varchar,
+    "monthly_income" real,
+    "current_balance" real,
+    "primary_bank" text,
+    "source" text NOT NULL DEFAULT 'onboarding',
+    "created_at" timestamp DEFAULT now() NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS "tilly_money_snapshot_household_idx" ON "tilly_money_snapshot" ("household_id", "created_at" DESC)`,
 ];
 
 export async function applyBootMigrations(): Promise<{

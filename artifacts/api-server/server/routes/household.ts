@@ -15,7 +15,17 @@ import { eq, and, sql } from "drizzle-orm";
 
 import { requireAuth } from "../middleware/auth";
 import { db } from "../db";
-import { users, households, members, plaidItems, goals, commitments } from "../../shared/schema";
+import {
+  users,
+  households,
+  members,
+  plaidItems,
+  goals,
+  commitments,
+  tillyMoneySnapshot,
+  tillyMemory,
+  guardianConversations,
+} from "../../shared/schema";
 
 export function mountHouseholdRoutes(app: Express): void {
   // Read onboarding status — drives the BTApp onboarding gate.
@@ -122,22 +132,133 @@ export function mountHouseholdRoutes(app: Express): void {
   );
 
   // Mark onboarding complete — called from the last onboarding card.
+  //
+  // Optional body: { moneySnapshot?: { monthlyIncome?, currentBalance?, primaryBank? } }
+  // When the beta user skipped Plaid, the bank card collects a manual
+  // money snapshot. We persist it so state-summary.ts can give Tilly real
+  // numbers instead of $0 placeholders, and write a matching memory row
+  // so it shows up in the dossier and can be revised later in chat.
+  //
+  // Always-on: seeds a Tilly welcome chat message into guardian_conversations
+  // so the chat tab isn't an empty room when the user first lands.
   app.post(
     "/api/household/complete-onboarding",
     requireAuth,
     async (req: Request, res: Response) => {
       if (!req.user) return res.status(401).json({ error: "auth required" });
+      const userId = req.user.id;
+      const userName = req.user.name?.split(" ")[0] ?? "there";
       const householdId = req.user.coupleId;
       if (!householdId) {
         return res.status(400).json({ error: "no household — call /api/household/create first" });
       }
 
+      const snap = req.body?.moneySnapshot ?? null;
+      const monthlyIncome =
+        snap && Number.isFinite(Number(snap.monthlyIncome)) && Number(snap.monthlyIncome) > 0
+          ? Number(snap.monthlyIncome)
+          : null;
+      const currentBalance =
+        snap && Number.isFinite(Number(snap.currentBalance)) && Number(snap.currentBalance) >= 0
+          ? Number(snap.currentBalance)
+          : null;
+      const primaryBank =
+        snap && typeof snap.primaryBank === "string" && snap.primaryBank.trim()
+          ? snap.primaryBank.trim().slice(0, 80)
+          : null;
+      const hasSnapshot = monthlyIncome !== null || currentBalance !== null || !!primaryBank;
+
       try {
-        await db
-          .update(households)
-          .set({ hasCompletedOnboarding: true })
-          .where(eq(households.id, householdId));
-        res.json({ ok: true });
+        // All side effects are gated on the false→true transition of
+        // hasCompletedOnboarding and run inside a single transaction so
+        // a failed step rolls back the flag flip. This makes the
+        // endpoint idempotent — replays/retries return ok:true with
+        // firstCompletion:false and no duplicate snapshots, memories,
+        // or welcome messages.
+        const result = await db.transaction(async (tx) => {
+          const [hh] = await tx
+            .select({ done: households.hasCompletedOnboarding })
+            .from(households)
+            .where(eq(households.id, householdId))
+            .for("update")
+            .limit(1);
+
+          if (!hh) throw new Error("household disappeared mid-request");
+          if (hh.done) {
+            return { firstCompletion: false, seededSnapshot: false };
+          }
+
+          await tx
+            .update(households)
+            .set({ hasCompletedOnboarding: true })
+            .where(eq(households.id, householdId));
+
+          // Persist the manual money snapshot if any field was provided.
+          if (hasSnapshot) {
+            await tx.insert(tillyMoneySnapshot).values({
+              householdId,
+              userId,
+              monthlyIncome,
+              currentBalance,
+              primaryBank,
+              source: "onboarding",
+            });
+
+            // Mirror into the memory layer as an observation so it shows
+            // up on the Profile timeline and feeds the dossier.
+            const parts: string[] = [];
+            if (monthlyIncome !== null) parts.push(`makes about $${Math.round(monthlyIncome)}/mo`);
+            if (currentBalance !== null) parts.push(`has roughly $${Math.round(currentBalance)} in checking right now`);
+            if (primaryBank) parts.push(`banks with ${primaryBank}`);
+            if (parts.length) {
+              await tx.insert(tillyMemory).values({
+                userId,
+                householdId,
+                kind: "observation",
+                body: `${userName} ${parts.join(", ")} — told me at signup, no bank linked yet.`,
+                source: "onboarding",
+                dateLabel: "Today",
+                isMostRecent: true,
+              });
+            }
+          }
+
+          // Welcome copy branches on actual Plaid connection state, not
+          // just whether they shared a manual snapshot. Three buckets:
+          //   1. Bank linked    → "I can see your accounts, here we go"
+          //   2. Manual snapshot → "Thanks for telling me where you're at"
+          //   3. Neither         → "Tell me as you go, no bank needed"
+          const [activePlaid] = await tx
+            .select({ id: plaidItems.id })
+            .from(plaidItems)
+            .where(
+              and(
+                eq(plaidItems.coupleId, householdId),
+                eq(plaidItems.status, "active"),
+              ),
+            )
+            .limit(1);
+
+          let welcome: string;
+          if (activePlaid) {
+            welcome = `Hey ${userName}. Your bank's wired up — I can see what's coming in and going out. I'll stay quiet unless something's worth flagging. Whenever you want to think out loud about money, this is the place.`;
+          } else if (hasSnapshot) {
+            welcome = `Hey ${userName}. Thanks for telling me where you're starting from — I've got it written down. Whenever something happens with your money, just tell me here and I'll keep track. No bank needed for us to talk.`;
+          } else {
+            welcome = `Hey ${userName}. I'm Tilly. We don't have your bank wired up yet, but we don't need it to start — just tell me about anything you spend ("$5 coffee") or anything that's on your mind, and I'll remember. When you're ready to link a bank, the option's on your home screen.`;
+          }
+          await tx.insert(guardianConversations).values({
+            coupleId: householdId,
+            userId,
+            role: "guardian",
+            content: welcome,
+            intent: "welcome",
+          });
+
+          return { firstCompletion: true, seededSnapshot: hasSnapshot };
+        });
+
+        res.json({ ok: true, ...result });
       } catch (err) {
         console.error("/api/household/complete-onboarding error:", err);
         res.status(500).json({ error: "complete failed" });

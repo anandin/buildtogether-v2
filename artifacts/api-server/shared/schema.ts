@@ -1168,6 +1168,30 @@ export const tillyConfig = pgTable("tilly_config", {
 
 export type TillyConfig = typeof tillyConfig.$inferSelect;
 
+/**
+ * Manual money snapshot — what the user tells Tilly when they don't (or
+ * don't yet) connect a bank. Lets a beta user say "I make ~$2,400/mo and
+ * have $612 in checking" during onboarding so Tilly's chat replies have
+ * real numbers to work with instead of $0 placeholders.
+ *
+ * One row per disclosure (append-only). state-summary.ts reads the most
+ * recent row per household and surfaces it as "User-stated" context to
+ * the LLM. When Plaid is later connected, real bank numbers take
+ * precedence and these stay as historical color.
+ */
+export const tillyMoneySnapshot = pgTable("tilly_money_snapshot", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  householdId: varchar("household_id").notNull(),
+  userId: varchar("user_id"), // who reported it; null for system-seeded
+  monthlyIncome: real("monthly_income"), // self-reported, after-tax
+  currentBalance: real("current_balance"), // checking + immediately spendable
+  primaryBank: text("primary_bank"), // free-text, optional
+  source: text("source").notNull().default("onboarding"), // onboarding | settings | chat
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type TillyMoneySnapshot = typeof tillyMoneySnapshot.$inferSelect;
+
 // ==================== Legacy aliases ====================
 // Keep V1-name imports compiling during the Phase 1c route-splitting transition.
 // These re-exports point to the renamed tables. Do NOT use in new code.

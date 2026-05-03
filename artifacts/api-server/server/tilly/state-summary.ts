@@ -24,6 +24,7 @@ import {
   plaidTransactions,
   protections,
   subscriptions,
+  tillyMoneySnapshot,
 } from "../../shared/schema";
 import { buildWeeklyPattern } from "./spend-pattern";
 
@@ -58,6 +59,31 @@ export async function buildFinancialStateSummary(
       hasData = true;
     } else {
       lines.push("Bank: not connected (yet — they may have added expenses manually).");
+    }
+  } catch {}
+
+  // 1b. User-stated money snapshot (set during onboarding when the user
+  // skipped Plaid, or later from settings). Surfaced even when a bank IS
+  // connected — Plaid balance is authoritative, but a stated income gives
+  // Tilly context Plaid alone can't provide.
+  try {
+    const [snap] = await db
+      .select()
+      .from(tillyMoneySnapshot)
+      .where(eq(tillyMoneySnapshot.householdId, householdId))
+      .orderBy(desc(tillyMoneySnapshot.createdAt))
+      .limit(1);
+    if (snap) {
+      const bits: string[] = [];
+      if (snap.monthlyIncome != null) bits.push(`income ~$${Math.round(snap.monthlyIncome)}/mo`);
+      if (snap.currentBalance != null) bits.push(`checking ~$${Math.round(snap.currentBalance)}`);
+      if (snap.primaryBank) bits.push(`bank: ${snap.primaryBank}`);
+      if (bits.length) {
+        const ageDays = Math.floor((Date.now() - new Date(snap.createdAt).getTime()) / 86400000);
+        const ageLabel = ageDays <= 0 ? "today" : ageDays === 1 ? "yesterday" : `${ageDays}d ago`;
+        lines.push(`User-stated (${ageLabel}): ${bits.join(", ")}.`);
+        hasData = true;
+      }
     }
   } catch {}
 

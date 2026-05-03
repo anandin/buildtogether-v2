@@ -34,6 +34,10 @@ export function useCompleteOnboarding() {
     mutationFn: btApi.completeOnboarding,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/household/onboarding-status"] });
+      // The server seeded a Tilly welcome chat message; refresh chat
+      // history so it appears the moment the user lands on the chat tab.
+      qc.invalidateQueries({ queryKey: ["/api/guardian/conversations"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/chat"] });
     },
   });
 }

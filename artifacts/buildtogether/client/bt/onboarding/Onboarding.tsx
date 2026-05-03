@@ -42,10 +42,21 @@ import { useUser } from "../hooks/useUser";
 type Step = "welcome" | "name" | "bank" | "dream" | "commit";
 const STEPS: Step[] = ["welcome", "name", "bank", "dream", "commit"];
 
+type MoneySnapshot = {
+  monthlyIncome?: number;
+  currentBalance?: number;
+  primaryBank?: string;
+};
+
 export function Onboarding() {
   const { t } = useBT();
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState<Step>("welcome");
+  // Manual money snapshot collected on the bank step when the user opts
+  // out of Plaid. Sent with complete-onboarding so the server can seed
+  // tilly_money_snapshot + a memory row, giving Tilly real numbers from
+  // turn 1 instead of $0 placeholders.
+  const [moneySnapshot, setMoneySnapshot] = useState<MoneySnapshot | null>(null);
 
   const status = useOnboardingStatus();
   const createHousehold = useCreateHousehold();
@@ -105,7 +116,10 @@ export function Onboarding() {
         {step === "bank" && (
           <BankCard
             connected={!!status.data?.hasPlaid}
-            onNext={() => advance("dream")}
+            onNext={(snap) => {
+              if (snap) setMoneySnapshot(snap);
+              advance("dream");
+            }}
           />
         )}
         {step === "dream" && (
@@ -121,7 +135,11 @@ export function Onboarding() {
         {step === "commit" && (
           <CommitCard
             isPending={completeOnboarding.isPending}
-            onNext={() => completeOnboarding.mutate()}
+            onNext={() =>
+              completeOnboarding.mutate(
+                moneySnapshot ? { moneySnapshot } : undefined,
+              )
+            }
           />
         )}
       </ScrollView>
@@ -212,43 +230,246 @@ function NameCard({
   );
 }
 
-function BankCard({ connected, onNext }: { connected: boolean; onNext: () => void }) {
+/**
+ * Step 3 — two equally-weighted paths:
+ *
+ *   A) "Connect your bank"      → Plaid Link, advances on success
+ *   B) "I'll tell you myself"   → reveals 3 fields (income, balance, bank
+ *                                 name) and persists them as a manual
+ *                                 money snapshot the server uses to seed
+ *                                 a tilly_money_snapshot row + memory.
+ *
+ * Both options live in mirrored cards so neither feels like the
+ * "consolation prize". Beta users without prod Plaid still get a Tilly
+ * who knows roughly how much money they make and have on hand.
+ */
+function BankCard({
+  connected,
+  onNext,
+}: {
+  connected: boolean;
+  onNext: (snap?: MoneySnapshot) => void;
+}) {
   const { t } = useBT();
+  const [mode, setMode] = useState<"choose" | "manual">("choose");
+  const [income, setIncome] = useState("");
+  const [balance, setBalance] = useState("");
+  const [bank, setBank] = useState("");
+
+  const parseNum = (s: string): number | undefined => {
+    const n = Number(s.replace(/[^0-9.]/g, ""));
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  };
+
+  const submitManual = () => {
+    const snap: MoneySnapshot = {
+      monthlyIncome: parseNum(income),
+      currentBalance: parseNum(balance),
+      primaryBank: bank.trim() || undefined,
+    };
+    // If the user filled nothing, treat it as a true "skip" — no snapshot.
+    const anything =
+      snap.monthlyIncome !== undefined ||
+      snap.currentBalance !== undefined ||
+      !!snap.primaryBank;
+    onNext(anything ? snap : undefined);
+  };
+
   return (
     <View style={{ gap: 18 }}>
-      <BTLabel color={t.inkMute}>The hard part — done in one minute</BTLabel>
+      <BTLabel color={t.inkMute}>So I can actually be useful</BTLabel>
       <BTSerif size={28} color={t.ink} weight="500">
-        Connect your bank so I can{" "}
+        Two ways to{" "}
         <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
-          watch
+          start
         </Text>
-        .
+        . Either is fine.
       </BTSerif>
-      <Text
-        style={{
-          color: t.inkSoft,
-          fontFamily: BTFonts.serifItalic,
-          fontSize: 16,
-          lineHeight: 23,
-        }}
-      >
-        I never see your password. I never share your data. I'll only flag
-        what's worth flagging.
-      </Text>
-      <PlaidConnectButton variant="hero" onConnected={onNext} />
-      <Pressable onPress={onNext} style={{ alignItems: "center", paddingVertical: 12 }}>
-        <Text
-          style={{
-            color: t.inkMute,
-            fontFamily: BTFonts.mono,
-            fontSize: 11,
-            letterSpacing: 1.2,
-            textTransform: "uppercase",
-          }}
-        >
-          {connected ? "continue" : "skip for now"}
-        </Text>
-      </Pressable>
+
+      {mode === "choose" && (
+        <>
+          {/* Option A — Connect bank */}
+          <View
+            style={{
+              borderWidth: 1,
+              borderColor: t.rule,
+              borderRadius: 16,
+              padding: 18,
+              gap: 12,
+              backgroundColor: t.surface,
+            }}
+          >
+            <BTLabel color={t.accent} size={10}>
+              Option a — connect a bank
+            </BTLabel>
+            <Text
+              style={{
+                color: t.inkSoft,
+                fontFamily: BTFonts.serifItalic,
+                fontSize: 15,
+                lineHeight: 22,
+              }}
+            >
+              One minute through Plaid. I never see your password. Real
+              numbers light up everywhere from day one.
+            </Text>
+            <PlaidConnectButton variant="hero" onConnected={() => onNext()} />
+          </View>
+
+          {/* OR divider */}
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <View style={{ flex: 1, height: 1, backgroundColor: t.rule }} />
+            <Text
+              style={{
+                color: t.inkMute,
+                fontFamily: BTFonts.mono,
+                fontSize: 10,
+                letterSpacing: 1.5,
+              }}
+            >
+              OR
+            </Text>
+            <View style={{ flex: 1, height: 1, backgroundColor: t.rule }} />
+          </View>
+
+          {/* Option B — Manual */}
+          <View
+            style={{
+              borderWidth: 1,
+              borderColor: t.rule,
+              borderRadius: 16,
+              padding: 18,
+              gap: 12,
+              backgroundColor: t.surface,
+            }}
+          >
+            <BTLabel color={t.accent} size={10}>
+              Option b — tell me yourself
+            </BTLabel>
+            <Text
+              style={{
+                color: t.inkSoft,
+                fontFamily: BTFonts.serifItalic,
+                fontSize: 15,
+                lineHeight: 22,
+              }}
+            >
+              Share your income and balance once and we can talk about
+              real money — no bank link needed. You can connect later.
+            </Text>
+            <Pressable
+              onPress={() => setMode("manual")}
+              style={{
+                alignSelf: "stretch",
+                backgroundColor: t.ink,
+                borderRadius: 14,
+                paddingVertical: 14,
+                alignItems: "center",
+              }}
+            >
+              <Text
+                style={{
+                  color: t.surface,
+                  fontFamily: BTFonts.sans,
+                  fontSize: 14,
+                  fontWeight: "700",
+                }}
+              >
+                I'll tell you myself
+              </Text>
+            </Pressable>
+          </View>
+
+          {connected && (
+            <Pressable
+              onPress={() => onNext()}
+              style={{ alignItems: "center", paddingVertical: 12 }}
+            >
+              <Text
+                style={{
+                  color: t.inkMute,
+                  fontFamily: BTFonts.mono,
+                  fontSize: 11,
+                  letterSpacing: 1.2,
+                  textTransform: "uppercase",
+                }}
+              >
+                continue
+              </Text>
+            </Pressable>
+          )}
+        </>
+      )}
+
+      {mode === "manual" && (
+        <View style={{ gap: 14 }}>
+          <Text
+            style={{
+              color: t.inkSoft,
+              fontFamily: BTFonts.serifItalic,
+              fontSize: 15,
+              lineHeight: 22,
+            }}
+          >
+            Rough numbers are perfect. I'll remember what you say and we
+            can update anytime in chat — "actually it's $2,800 now."
+          </Text>
+          <Field
+            t={t}
+            label="Monthly income (after tax)"
+            value={income}
+            onChangeText={setIncome}
+            placeholder="2400"
+            keyboardType="numeric"
+          />
+          <Field
+            t={t}
+            label="Roughly in checking right now"
+            value={balance}
+            onChangeText={setBalance}
+            placeholder="612"
+            keyboardType="numeric"
+          />
+          <Field
+            t={t}
+            label="Bank name (optional)"
+            value={bank}
+            onChangeText={setBank}
+            placeholder="Chase"
+          />
+          <PrimaryButton t={t} label="Save & continue" onPress={submitManual} />
+          <Pressable
+            onPress={() => setMode("choose")}
+            style={{ alignItems: "center", paddingVertical: 8 }}
+          >
+            <Text
+              style={{
+                color: t.inkMute,
+                fontFamily: BTFonts.mono,
+                fontSize: 11,
+                letterSpacing: 1.2,
+                textTransform: "uppercase",
+              }}
+            >
+              back
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => onNext()}
+            style={{ alignItems: "center", paddingVertical: 4 }}
+          >
+            <Text
+              style={{
+                color: t.inkMute,
+                fontFamily: BTFonts.serifItalic,
+                fontSize: 13,
+              }}
+            >
+              skip — I'll tell you in chat later
+            </Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }

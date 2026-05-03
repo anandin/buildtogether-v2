@@ -244,8 +244,17 @@ export const btApi = {
     }>("/api/household/onboarding-status"),
   createHousehold: (body: { name: string; schoolName?: string; studentRole?: string }) =>
     postJson<{ householdId: string; created: boolean }>("/api/household/create", body),
-  completeOnboarding: () =>
-    postJson<{ ok: true }>("/api/household/complete-onboarding"),
+  completeOnboarding: (body?: {
+    moneySnapshot?: {
+      monthlyIncome?: number;
+      currentBalance?: number;
+      primaryBank?: string;
+    };
+  }) =>
+    postJson<{ ok: true; seededSnapshot?: boolean }>(
+      "/api/household/complete-onboarding",
+      body ?? {},
+    ),
 
   // ── Plaid (bank connectivity) ──────────────────────────────────────────
   plaidStatus: () => getJson<PlaidStatus>("/api/plaid/status"),
