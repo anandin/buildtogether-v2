@@ -136,6 +136,34 @@ export default function Home() {
           </div>
         </section>
 
+        {/* FEATURE: SCOUT (wait-for-sale / cheaper alternatives) */}
+        <section className="py-24 px-6 sm:px-12 max-w-7xl mx-auto flex flex-col md:flex-row-reverse items-center gap-16">
+          <div className="flex-1 relative">
+            <div className="absolute -inset-4 bg-accent/30 rounded-3xl -z-10 -rotate-3" />
+            <img src={tillyStudy} alt="Tilly checking prices" className="w-full rounded-2xl shadow-lg border border-border/50" />
+          </div>
+          <div className="flex-1 space-y-6">
+            <h2 className="text-4xl font-serif text-foreground">Are you sure? It goes on sale next week.</h2>
+            <p className="text-lg text-muted-foreground">
+              Before a real purchase, Tilly quietly checks two things: is this item about to hit a known sale window like Black Friday or Boxing Week, and is someone nearby already selling the same thing on Facebook Marketplace, Kijiji, or a refurb site? You hear about it before you click buy, not after.
+            </p>
+            <ul className="space-y-4 mt-8">
+              <li className="flex items-start gap-3">
+                <div className="mt-1 w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
+                  <div className="w-2 h-2 rounded-full bg-primary" />
+                </div>
+                <p className="text-foreground font-medium">Knows the sale calendar <span className="block text-muted-foreground font-normal mt-1">"Hold off until Nov 28 — Levi's has run 40% off every Black Friday for four years."</span></p>
+              </li>
+              <li className="flex items-start gap-3">
+                <div className="mt-1 w-6 h-6 rounded-full bg-accent/20 flex items-center justify-center shrink-0">
+                  <div className="w-2 h-2 rounded-full bg-accent" />
+                </div>
+                <p className="text-foreground font-medium">Finds it cheaper, locally <span className="block text-muted-foreground font-normal mt-1">"Three of these are listed on Facebook Marketplace within 5km. Want the closest one?"</span></p>
+              </li>
+            </ul>
+          </div>
+        </section>
+
         {/* BEHAVIORAL SCIENCE */}
         <section className="py-24 px-6 sm:px-12 bg-primary text-primary-foreground relative overflow-hidden">
           <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none" />
