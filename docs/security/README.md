@@ -91,6 +91,45 @@ For the **enrollment** screenshot (also useful for Plaid):
 3. Tap **Set up Face ID** → the system Face ID sheet shows
    *"Set up Face ID for bank access"*. Screenshot here too.
 
+## Why a custom Ed25519 ceremony instead of `@simplewebauthn/server` + WebAuthn?
+
+The phishing-resistance properties Plaid Q4 cares about — device-bound
+hardware-backed key, biometric unlock, server-issued challenge, signed
+assertion — are achieved by both designs. We picked the custom Ed25519
+flow over the WebAuthn standard libraries for these concrete reasons:
+
+1. **WebAuthn on React Native / Expo is not first-class today.**
+   `react-native-passkeys` requires Expo dev builds (no Expo Go),
+   modern OS versions (iOS 16+ / Android 9+), AND a registered
+   associated domain (`apple-app-site-association`,
+   Digital Asset Links) tied to a stable production hostname. Tilly
+   does not yet have a finalized production domain locked in, and the
+   evidence is needed before that's true.
+2. **The on-device key store is the same.** Both designs end up with
+   a hardware-backed key in the iOS Secure Enclave / Android Keystore
+   gated by `LAContext` / `BiometricPrompt`. We use `expo-secure-store`
+   with `requireAuthentication: true`, which is the same OS API
+   `react-native-passkeys` calls under the hood.
+3. **The server-side trust model is identical.** Server issues a
+   single-use 32-byte challenge, client signs it with the device-bound
+   private key, server verifies the signature against a stored public
+   key it accepted at enrollment time after verifying a separate
+   challenge. WebAuthn adds RP-ID/origin binding on top, which on a
+   native mobile app reduces to "the OS knows which app is asking" —
+   already enforced by iOS app code-signing + Keychain access groups
+   that scope the key to this bundle ID.
+4. **Phishing resistance does not require WebAuthn.** Plaid's Q4 asks
+   for a phishing-resistant factor; the operative properties are
+   "device-bound" and "non-replayable", both of which this design
+   provides. A phishing site cannot replay a signature signed by a
+   key that lives in another phone's Secure Enclave behind Face ID.
+
+If/when Tilly registers a stable production domain and ships dev
+builds via TestFlight/Play, swapping to `react-native-passkeys` +
+`@simplewebauthn/server` is a drop-in replacement for the ceremony
+without changing the server's gating model. That migration is tracked
+as a follow-up; it is **not** a blocker for the Plaid Q4 attestation.
+
 ## Files
 
 - `artifacts/api-server/server/routes/passkey.ts` — server endpoints +
@@ -102,4 +141,6 @@ For the **enrollment** screenshot (also useful for Plaid):
 - `artifacts/buildtogether/client/components/PasskeyGate.tsx` — the
   enroll/verify modal sheet.
 - `artifacts/api-server/server/routes.ts` — Plaid endpoints gated by
-  `requirePasskeyVerified` (link-token, exchange).
+  `requirePasskeyVerified` (full list above).
+- `docs/security/screenshots/` — drop point for the device screenshots
+  the Plaid reviewer requires (captured manually on a physical phone).

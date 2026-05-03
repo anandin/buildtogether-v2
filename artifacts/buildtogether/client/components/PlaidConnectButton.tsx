@@ -71,30 +71,57 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
   // After PasskeyGate.onSuccess we replay the original launch.
   const [showPasskeyGate, setShowPasskeyGate] = useState(false);
   const [passkeyMode, setPasskeyMode] = useState<PasskeyGateMode>("verify");
+  // Pre-emptive enrollment state so the CTA copy reflects "set up Face ID
+  // first" before the user even taps — instead of only reacting to a 403.
+  // null = unknown (still loading); true/false reflect server state.
+  const [passkeyEnrolled, setPasskeyEnrolled] = useState<boolean | null>(null);
 
-  // Check if Plaid is configured on this deployment
+  // Check if Plaid is configured AND whether the user has enrolled a passkey.
+  // Fetched in parallel; both gate the CTA's state.
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await apiRequest("GET", "/api/plaid/status");
-        const data = await res.json();
+        const [plaidStatus, sessRes] = await Promise.all([
+          apiRequest("GET", "/api/plaid/status").then((r) => r.json()).catch(() => ({ configured: false })),
+          apiRequestRaw("GET", "/api/auth/session"),
+        ]);
         if (cancelled) return;
-        setStatus(data.configured ? "available" : "unavailable");
+        setStatus(plaidStatus?.configured ? "available" : "unavailable");
+        if (sessRes.ok) {
+          try {
+            const sess = await sessRes.json();
+            setPasskeyEnrolled(!!sess?.passkey?.enrolled);
+          } catch { setPasskeyEnrolled(false); }
+        } else {
+          setPasskeyEnrolled(false);
+        }
       } catch {
-        if (!cancelled) setStatus("unavailable");
+        if (!cancelled) {
+          setStatus("unavailable");
+          setPasskeyEnrolled(false);
+        }
       }
     })();
     return () => { cancelled = true; };
   }, []);
 
-  // First tap shows the disclosure; accepting it launches the actual Link flow.
+  // First tap routes either to enrollment (no passkey yet) or to the
+  // privacy disclosure → Plaid Link flow. Disabled while we don't yet
+  // know enrollment state.
   const requestLaunch = useCallback(() => {
-    if (launching || status !== "available") return;
+    if (launching || status !== "available" || passkeyEnrolled === null) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setError(null);
+    if (!passkeyEnrolled) {
+      // Pre-emptive: open the enroll gate directly. On success we
+      // continue into the privacy disclosure → Plaid Link.
+      setPasskeyMode("enroll");
+      setShowPasskeyGate(true);
+      return;
+    }
     setShowDisclosure(true);
-  }, [launching, status]);
+  }, [launching, status, passkeyEnrolled]);
 
   const launch = useCallback(async () => {
     if (launching || status !== "available") return;
@@ -247,8 +274,15 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
       mode={passkeyMode}
       onSuccess={() => {
         setShowPasskeyGate(false);
-        // Re-trigger the launch now that the session is passkey-verified.
-        setTimeout(() => { void launch(); }, 50);
+        setPasskeyEnrolled(true);
+        // After enroll, drop into the privacy disclosure first; after
+        // verify, jump straight to Plaid Link launch. Either way the
+        // session is now passkey-verified so the gate won't re-trigger.
+        if (passkeyMode === "enroll") {
+          setTimeout(() => setShowDisclosure(true), 50);
+        } else {
+          setTimeout(() => { void launch(); }, 50);
+        }
       }}
       onCancel={() => {
         setShowPasskeyGate(false);
@@ -333,32 +367,43 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
     </Modal>
   );
 
+  // Pre-emptive copy: when the user hasn't enrolled a passkey yet, the
+  // CTA tells them they'll set up Face ID first instead of letting them
+  // tap into a 403. This is the Plaid Q4 evidence that MFA is a hard
+  // pre-requisite, not a reactive popup.
+  const needsEnroll = passkeyEnrolled === false;
+  const heroIcon = needsEnroll ? "shield" : "link-2";
+  const heroTitle = needsEnroll ? "Set up Face ID to connect a bank" : "Connect your bank";
+  const heroSub = needsEnroll
+    ? "We require Face ID before any bank access — it's quick"
+    : "Skip manual entry — expenses appear automatically";
+
   if (variant === "hero") {
     return (
       <>
       <Pressable
         onPress={requestLaunch}
-        disabled={launching}
-        accessibilityLabel="Connect your bank account"
+        disabled={launching || passkeyEnrolled === null}
+        accessibilityLabel={needsEnroll ? "Set up Face ID to connect your bank account" : "Connect your bank account"}
         accessibilityRole="button"
         style={({ pressed }) => [
           styles.hero,
           {
             backgroundColor: theme.aiLight,
             borderColor: theme.aiPrimary + "40",
-            opacity: pressed ? 0.9 : 1,
+            opacity: pressed ? 0.9 : passkeyEnrolled === null ? 0.6 : 1,
           },
         ]}
       >
         <View style={[styles.iconWrap, { backgroundColor: theme.aiPrimary + "20" }]}>
-          <Feather name="link-2" size={20} color={theme.aiPrimary} />
+          <Feather name={heroIcon} size={20} color={theme.aiPrimary} />
         </View>
         <View style={{ flex: 1 }}>
           <ThemedText type="small" style={{ color: theme.text, fontWeight: "600" }}>
-            Connect your bank
+            {heroTitle}
           </ThemedText>
           <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
-            Skip manual entry — expenses appear automatically
+            {heroSub}
           </ThemedText>
           {error ? (
             <ThemedText type="tiny" style={{ color: theme.error, marginTop: 4 }}>
@@ -366,7 +411,7 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
             </ThemedText>
           ) : null}
         </View>
-        {launching ? (
+        {launching || passkeyEnrolled === null ? (
           <ActivityIndicator size="small" color={theme.aiPrimary} />
         ) : (
           <Feather name="chevron-right" size={18} color={theme.aiPrimary} />
@@ -393,13 +438,13 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
         },
       ]}
     >
-      {launching ? (
+      {launching || passkeyEnrolled === null ? (
         <ActivityIndicator size="small" color="#FFFFFF" />
       ) : (
         <>
-          <Feather name="link-2" size={14} color="#FFFFFF" />
+          <Feather name={needsEnroll ? "shield" : "link-2"} size={14} color="#FFFFFF" />
           <ThemedText type="small" style={{ color: "#FFFFFF", fontWeight: "600" }}>
-            Connect bank
+            {needsEnroll ? "Set up Face ID" : "Connect bank"}
           </ThemedText>
         </>
       )}
