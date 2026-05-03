@@ -43,6 +43,39 @@ export const sessions = pgTable("sessions", {
   token: text("token").notNull().unique(),
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  // Phishing-resistant MFA timestamp. When set + within freshness window
+  // (12h), the session is allowed to hit Plaid endpoints. Stamped by the
+  // /api/auth/passkey/{register,authenticate/verify} routes.
+  passkeyVerifiedAt: timestamp("passkey_verified_at"),
+});
+
+// Device-bound Ed25519 public keys ("passkeys") used as the
+// possession-factor of phishing-resistant MFA. The matching private key
+// lives only in the device Keychain/Keystore behind a biometric prompt
+// (expo-secure-store with requireAuthentication=true).
+export const userCredentials = pgTable("user_credentials", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  // Random 24-byte client-generated id (base64url). Globally unique.
+  credentialId: text("credential_id").notNull().unique(),
+  // 32-byte Ed25519 public key, base64url-encoded.
+  publicKey: text("public_key").notNull(),
+  deviceLabel: text("device_label"),
+  platform: text("platform"), // "ios" | "android" | "web"
+  signCount: integer("sign_count").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  lastUsedAt: timestamp("last_used_at"),
+});
+
+// Short-lived nonces issued by the server for the passkey authenticate
+// ceremony. Bound to the session so a stolen challenge can't be replayed
+// from another device.
+export const passkeyChallenges = pgTable("passkey_challenges", {
+  sessionId: varchar("session_id").primaryKey().references(() => sessions.id, { onDelete: "cascade" }),
+  challenge: text("challenge").notNull(), // base64url, 32 bytes
+  purpose: text("purpose").notNull(), // "authenticate"
+  expiresAt: timestamp("expires_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const partnerInvites = pgTable("partner_invites", {

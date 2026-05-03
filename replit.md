@@ -118,6 +118,22 @@ ever scales beyond a single instance, swap `lastRunDayUtc` for a
 `tilly_job_log` table with a UPSERT-claim pattern, or the daily jobs
 will run N times.
 
+## Phishing-resistant MFA (Plaid Q4)
+
+Tilly gates all sensitive Plaid endpoints behind a device-bound passkey
+ceremony — Ed25519 keypair generated on the phone, private key in the
+iOS Keychain (Secure Enclave) or Android Keystore behind Face ID /
+Touch ID, public key on the server. Enrollment is a 2-step
+challenge-response (`/api/auth/passkey/register/options` →
+`/register/verify`) with anti-bootstrap step-up: the first credential
+requires a fresh login (≤10 min) and additional credentials require an
+existing fresh passkey verification. Verification stamps
+`sessions.passkey_verified_at`; the `requirePasskeyVerified` middleware
+permits Plaid link-token, exchange, items list/delete, sync, and
+pending review for 12 h before re-prompting. See
+`docs/security/README.md` for the full Plaid evidence write-up + how to
+capture the Face ID screenshot.
+
 ## Production readiness checklist (before public sign-up)
 
 Required env / secrets (server refuses to boot without these):

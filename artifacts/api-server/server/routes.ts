@@ -4,6 +4,8 @@ import OpenAI from "openai";
 import bcrypt from "bcryptjs";
 import { eq, and, desc, inArray } from "drizzle-orm";
 import { requireAuth, requireCoupleAccess } from "./middleware/auth";
+import { requirePasskeyVerified, PASSKEY_FRESHNESS_MS } from "./routes/passkey";
+import { userCredentials } from "../shared/schema";
 import { guardianLimiter, authLimiter } from "./middleware/rateLimit";
 import { db } from "./db";
 import {
@@ -529,6 +531,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "User not found" });
       }
 
+      // Surface passkey state so the client can decide whether to prompt
+      // for enrollment/verification before reaching Plaid.
+      const credCountRows = await db.select({ id: userCredentials.id })
+        .from(userCredentials).where(eq(userCredentials.userId, user.id));
+      const verifiedAt = session.passkeyVerifiedAt
+        ? new Date(session.passkeyVerifiedAt)
+        : null;
+      const passkeyFresh =
+        !!verifiedAt && Date.now() - verifiedAt.getTime() <= PASSKEY_FRESHNESS_MS;
+
       res.json({
         user: {
           id: user.id,
@@ -537,6 +549,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           coupleId: user.coupleId,
           partnerRole: user.partnerRole,
           city: user.city ?? null,
+        },
+        passkey: {
+          enrolled: credCountRows.length > 0,
+          credentialCount: credCountRows.length,
+          verifiedAt: verifiedAt ? verifiedAt.toISOString() : null,
+          fresh: passkeyFresh,
         },
       });
     } catch (error: any) {
@@ -4507,7 +4525,7 @@ Return just the message text.`;
 
   // Step 1 of the Link flow: backend creates a link_token scoped to this user
   // and returns it. Client hands it to Plaid Link SDK.
-  app.post("/api/plaid/link-token", requireAuth, guardPlaidConfigured, async (req, res) => {
+  app.post("/api/plaid/link-token", requireAuth, requirePasskeyVerified, guardPlaidConfigured, async (req, res) => {
     try {
       const plaid = getPlaidClient();
       if (!plaid) return res.status(503).json({ error: "Plaid unavailable" });
@@ -4532,7 +4550,7 @@ Return just the message text.`;
   // Step 2 of the Link flow: client gets a public_token from Plaid Link on
   // success, sends it here. We exchange for a long-lived access_token and
   // store the Item row. Then we kick off an initial sync.
-  app.post("/api/plaid/exchange", requireAuth, guardPlaidConfigured, async (req, res) => {
+  app.post("/api/plaid/exchange", requireAuth, requirePasskeyVerified, guardPlaidConfigured, async (req, res) => {
     try {
       const { publicToken, institution } = req.body;
       if (!publicToken) return res.status(400).json({ error: "publicToken required" });
@@ -4564,7 +4582,7 @@ Return just the message text.`;
   });
 
   // List connected banks for the couple
-  app.get("/api/plaid/items/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
+  app.get("/api/plaid/items/:coupleId", requireAuth, requirePasskeyVerified, requireCoupleAccess, async (req, res) => {
     try {
       const rows = await db.select().from(plaidItems)
         .where(eq(plaidItems.coupleId, req.params.coupleId))
@@ -4585,7 +4603,7 @@ Return just the message text.`;
   });
 
   // Disconnect a bank — revoke the access token with Plaid, soft-delete our row
-  app.delete("/api/plaid/items/:itemId", requireAuth, async (req, res) => {
+  app.delete("/api/plaid/items/:itemId", requireAuth, requirePasskeyVerified, async (req, res) => {
     try {
       const [item] = await db.select().from(plaidItems).where(eq(plaidItems.id, req.params.itemId)).limit(1);
       if (!item) return res.status(404).json({ error: "Item not found" });
@@ -4606,7 +4624,7 @@ Return just the message text.`;
   });
 
   // Pull fresh transactions for all the couple's connected banks
-  app.post("/api/plaid/sync/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
+  app.post("/api/plaid/sync/:coupleId", requireAuth, requirePasskeyVerified, requireCoupleAccess, async (req, res) => {
     try {
       const items = await db.select().from(plaidItems)
         .where(and(
@@ -4631,7 +4649,7 @@ Return just the message text.`;
 
   // List transactions pending the user's review (imported from Plaid, not yet
   // accepted as expenses)
-  app.get("/api/plaid/pending/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
+  app.get("/api/plaid/pending/:coupleId", requireAuth, requirePasskeyVerified, requireCoupleAccess, async (req, res) => {
     try {
       const rows = await db.select().from(plaidTransactions)
         .where(and(
@@ -4648,7 +4666,7 @@ Return just the message text.`;
   });
 
   // Accept one pending transaction → creates an expense row and marks it accepted
-  app.post("/api/plaid/pending/:plaidTxnId/accept", requireAuth, async (req, res) => {
+  app.post("/api/plaid/pending/:plaidTxnId/accept", requireAuth, requirePasskeyVerified, async (req, res) => {
     try {
       const { overrides } = req.body || {};
       const [ptx] = await db.select().from(plaidTransactions)
@@ -4681,7 +4699,7 @@ Return just the message text.`;
   });
 
   // Ignore a pending transaction (user doesn't want to track it)
-  app.post("/api/plaid/pending/:plaidTxnId/ignore", requireAuth, async (req, res) => {
+  app.post("/api/plaid/pending/:plaidTxnId/ignore", requireAuth, requirePasskeyVerified, async (req, res) => {
     try {
       const [ptx] = await db.select().from(plaidTransactions)
         .where(eq(plaidTransactions.id, req.params.plaidTxnId))

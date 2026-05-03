@@ -4,6 +4,7 @@ import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getApiUrl } from "@/lib/query-client";
+import { clearLocalPasskey } from "@/lib/passkey";
 
 interface User {
   id: string;
@@ -209,6 +210,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error("Logout error:", error);
     } finally {
+      // Wipe the device-bound passkey too — a different user signing in on
+      // this device must enroll their own. (Server credential is left in
+      // place; the user can revoke it from the dashboard if needed.)
+      try { await clearLocalPasskey(); } catch {}
       await removeToken();
       setUser(null);
     }
@@ -234,6 +239,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         throw new Error(data.error || "Failed to delete account");
       }
 
+      try { await clearLocalPasskey(); } catch {}
       await removeToken();
       setUser(null);
     } catch (error: any) {

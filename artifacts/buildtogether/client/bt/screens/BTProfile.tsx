@@ -33,8 +33,9 @@ import { btApi } from "../api/client";
 import { BankConnectionsScreen } from "./plaid/BankConnectionsScreen";
 import { PendingTransactionsScreen } from "./plaid/PendingTransactionsScreen";
 import { AppSettingsScreen } from "./AppSettingsScreen";
+import { PasskeySecurityScreen } from "./PasskeySecurityScreen";
 
-type ProfileRoute = null | "banks" | "pending" | "settings";
+type ProfileRoute = null | "banks" | "pending" | "settings" | "security";
 
 /**
  * Public BTProfile entry — owns sub-route state so the You tab can drill
@@ -48,6 +49,7 @@ export function BTProfile() {
 
   if (route === "banks") return <BankConnectionsScreen onBack={back} />;
   if (route === "pending") return <PendingTransactionsScreen onBack={back} />;
+  if (route === "security") return <PasskeySecurityScreen onBack={back} />;
   if (route === "settings")
     return (
       <AppSettingsScreen
@@ -61,6 +63,7 @@ export function BTProfile() {
       onOpenBanks={() => setRoute("banks")}
       onOpenPending={() => setRoute("pending")}
       onOpenAppSettings={() => setRoute("settings")}
+      onOpenSecurity={() => setRoute("security")}
     />
   );
 }
@@ -122,10 +125,12 @@ function BTProfileMain({
   onOpenBanks,
   onOpenPending,
   onOpenAppSettings,
+  onOpenSecurity,
 }: {
   onOpenBanks: () => void;
   onOpenPending: () => void;
   onOpenAppSettings: () => void;
+  onOpenSecurity: () => void;
 }) {
   const { t, tone, setTone } = useBT();
   const memory = useMemory();
@@ -460,6 +465,34 @@ function BTProfileMain({
         settingKey={quietOpen}
         onClose={() => setQuietOpen(null)}
       />
+
+      {/* Security — passkeys / phishing-resistant MFA. */}
+      <Pressable
+        onPress={onOpenSecurity}
+        accessibilityRole="button"
+        accessibilityLabel="Open security settings"
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          gap: 12,
+          padding: 14,
+          borderRadius: 14,
+          backgroundColor: t.surface,
+          borderWidth: 1,
+          borderColor: t.rule,
+        }}
+      >
+        <Feather name="shield" size={18} color={t.accent} />
+        <View style={{ flex: 1 }}>
+          <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontWeight: "700", fontSize: 14 }}>
+            Security & passkeys
+          </Text>
+          <Text style={{ color: t.inkSoft, fontFamily: BTFonts.serifItalic, fontSize: 12, marginTop: 2 }}>
+            Face ID gate before bank connections
+          </Text>
+        </View>
+        <Text style={{ color: t.inkMute, fontSize: 18, fontFamily: BTFonts.sans }}>›</Text>
+      </Pressable>
 
       {/* Sign out — quiet, at the very bottom of Profile so it's reachable
           without being prominent. Forgotten how to leave is a worse UX

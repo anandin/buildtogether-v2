@@ -33,6 +33,28 @@ const CRITICAL_STATEMENTS: string[] = [
   `ALTER TABLE "goals" ADD COLUMN IF NOT EXISTS "nudge" text`,
   `ALTER TABLE "goals" ADD COLUMN IF NOT EXISTS "due_label" text`,
 
+  // Passkey MFA (phishing-resistant) — used to gate Plaid endpoints.
+  `ALTER TABLE "sessions" ADD COLUMN IF NOT EXISTS "passkey_verified_at" timestamp`,
+  `CREATE TABLE IF NOT EXISTS "user_credentials" (
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "user_id" varchar NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+    "credential_id" text NOT NULL UNIQUE,
+    "public_key" text NOT NULL,
+    "device_label" text,
+    "platform" text,
+    "sign_count" integer NOT NULL DEFAULT 0,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "last_used_at" timestamp
+  )`,
+  `CREATE INDEX IF NOT EXISTS "user_credentials_user_idx" ON "user_credentials" ("user_id")`,
+  `CREATE TABLE IF NOT EXISTS "passkey_challenges" (
+    "session_id" varchar PRIMARY KEY REFERENCES "sessions"("id") ON DELETE CASCADE,
+    "challenge" text NOT NULL,
+    "purpose" text NOT NULL,
+    "expires_at" timestamp NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  )`,
+
   // Phase 2: tilly tables (idempotent)
   `CREATE TABLE IF NOT EXISTS "tilly_memory" (
     "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,

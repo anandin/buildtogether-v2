@@ -29,8 +29,10 @@ import { mountPushRoutes } from "./push";
 import { mountExpensesRoutes } from "./expenses";
 import { mountInvitesRoutes } from "./invites";
 import { mountDemoRoutes } from "./demo";
+import { mountPasskeyRoutes } from "./passkey";
 
 export function registerTillyRoutes(app: Express): void {
+  mountPasskeyRoutes(app);
   mountHouseholdRoutes(app);
   mountTillyChatRoutes(app);
   mountTillyMemoryRoutes(app);

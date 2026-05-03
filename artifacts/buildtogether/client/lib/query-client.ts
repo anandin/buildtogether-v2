@@ -48,6 +48,21 @@ export async function apiRequest(
   route: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  const res = await apiRequestRaw(method, route, data);
+  await throwIfResNotOk(res);
+  return res;
+}
+
+/**
+ * Same as apiRequest but does NOT throw on non-2xx — callers can inspect
+ * `res.status` themselves. Used by flows that need to react to specific
+ * status codes (e.g. 403 PASSKEY_REQUIRED before launching Plaid Link).
+ */
+export async function apiRequestRaw(
+  method: string,
+  route: string,
+  data?: unknown | undefined,
+): Promise<Response> {
   const baseUrl = getApiUrl();
   const url = new URL(route, baseUrl);
   const authHeaders = await getAuthHeaders();
@@ -57,15 +72,12 @@ export async function apiRequest(
     ...(data ? { "Content-Type": "application/json" } : {}),
   };
 
-  const res = await fetch(url, {
+  return fetch(url, {
     method,
     headers,
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
-
-  await throwIfResNotOk(res);
-  return res;
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";

@@ -25,7 +25,8 @@ import type {
 import { ThemedText } from "@/components/ThemedText";
 import { useTheme } from "@/hooks/useTheme";
 import { Spacing, BorderRadius } from "@/constants/theme";
-import { apiRequest } from "@/lib/query-client";
+import { apiRequest, apiRequestRaw } from "@/lib/query-client";
+import { PasskeyGate, type PasskeyGateMode } from "@/components/PasskeyGate";
 
 interface Props {
   variant?: "hero" | "inline"; // hero = big CTA card, inline = compact button
@@ -65,6 +66,11 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
   const [launching, setLaunching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showDisclosure, setShowDisclosure] = useState(false);
+  // Phishing-resistant MFA gate. Shown when the server returns
+  // 403 { code: "PASSKEY_REQUIRED" | "PASSKEY_STALE" } from /api/plaid/*.
+  // After PasskeyGate.onSuccess we replay the original launch.
+  const [showPasskeyGate, setShowPasskeyGate] = useState(false);
+  const [passkeyMode, setPasskeyMode] = useState<PasskeyGateMode>("verify");
 
   // Check if Plaid is configured on this deployment
   useEffect(() => {
@@ -98,8 +104,23 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      // 1. Get link token from backend
-      const tokenRes = await apiRequest("POST", "/api/plaid/link-token");
+      // 1. Get link token from backend. The server's requirePasskeyVerified
+      // middleware will respond 403 with `code: PASSKEY_REQUIRED` (no
+      // passkey enrolled) or `PASSKEY_STALE` (verified > 12h ago). On
+      // either, surface the PasskeyGate; its onSuccess re-runs launch.
+      const tokenRes = await apiRequestRaw("POST", "/api/plaid/link-token");
+      if (tokenRes.status === 403) {
+        let code: string | undefined;
+        try { code = (await tokenRes.json())?.code; } catch {}
+        setLaunching(false);
+        setPasskeyMode(code === "PASSKEY_REQUIRED" ? "enroll" : "verify");
+        setShowPasskeyGate(true);
+        return;
+      }
+      if (!tokenRes.ok) {
+        const text = await tokenRes.text();
+        throw new Error(text || "Failed to get link token");
+      }
       const { linkToken } = await tokenRes.json();
       if (!linkToken) throw new Error("No link token returned");
 
@@ -203,6 +224,23 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
     return null;
   }
 
+  // Phishing-resistant MFA gate (Plaid production-access requirement).
+  const passkeyGate = (
+    <PasskeyGate
+      visible={showPasskeyGate}
+      mode={passkeyMode}
+      onSuccess={() => {
+        setShowPasskeyGate(false);
+        // Re-trigger the launch now that the session is passkey-verified.
+        setTimeout(() => { void launch(); }, 50);
+      }}
+      onCancel={() => {
+        setShowPasskeyGate(false);
+        setError("Bank connections need a quick Face ID check. Try again when you're ready.");
+      }}
+    />
+  );
+
   // Privacy disclosure modal, shown once on first tap before launching Plaid
   const disclosureModal = (
     <Modal
@@ -212,7 +250,7 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
       onRequestClose={() => setShowDisclosure(false)}
     >
       <View style={[styles.modalOverlay, { backgroundColor: "rgba(0,0,0,0.5)" }]}>
-        <View style={[styles.modalCard, { backgroundColor: theme.surface }]}>
+        <View style={[styles.modalCard, { backgroundColor: theme.backgroundDefault }]}>
           <View style={[styles.modalIconWrap, { backgroundColor: theme.aiLight }]}>
             <Feather name="shield" size={24} color={theme.aiPrimary} />
           </View>
@@ -319,6 +357,7 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
         )}
       </Pressable>
       {disclosureModal}
+      {passkeyGate}
       </>
     );
   }
@@ -350,6 +389,7 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
       )}
     </Pressable>
     {disclosureModal}
+    {passkeyGate}
     </>
   );
 }
