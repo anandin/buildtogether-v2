@@ -104,7 +104,7 @@ export async function buildFinancialStateSummary(
       if (lc.dependents != null && lc.dependents > 0) bits.push(`supports ${lc.dependents}`);
       if (lc.supportNote) bits.push(`note: ${lc.supportNote}`);
       if (bits.length) {
-        lines.push(`Life: ${bits.join(", ")}.`);
+        lines.push(`Life context: ${bits.join(", ")}.`);
         hasData = true;
       }
     }

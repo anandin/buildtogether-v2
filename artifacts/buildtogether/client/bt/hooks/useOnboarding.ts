@@ -58,6 +58,9 @@ export function useCompleteOnboarding() {
       // history so it appears the moment the user lands on the chat tab.
       qc.invalidateQueries({ queryKey: ["/api/guardian/conversations"] });
       qc.invalidateQueries({ queryKey: ["/api/tilly/chat"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/profile"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/memory"] });
+      qc.invalidateQueries({ queryKey: ["/api/profile/life-context"] });
     },
   });
 }

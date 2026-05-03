@@ -633,7 +633,9 @@ function BankCard({
                 ? "Monthly money in right now (UI, savings draw, gigs)"
                 : employmentType === "retired"
                 ? "Monthly money in (pension, social security, drawdown)"
-                : "Monthly income (after tax)"
+                : employmentType === "hourly"
+                ? "Typical monthly take-home (hours x rate)"
+                : "Monthly take-home (after tax)"
             }
             value={income}
             onChangeText={setIncome}
