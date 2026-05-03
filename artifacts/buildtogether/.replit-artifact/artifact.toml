@@ -20,7 +20,7 @@ run = "pnpm --filter @workspace/buildtogether run dev"
 
 [services.production]
 build = [ "pnpm", "--filter", "@workspace/buildtogether", "run", "build" ]
-run = [ "pnpm", "--filter", "@workspace/buildtogether", "run", "serve" ]
+run = [ "node", "artifacts/buildtogether/server/serve.js" ]
 
 [services.env]
 PORT = "18829"
