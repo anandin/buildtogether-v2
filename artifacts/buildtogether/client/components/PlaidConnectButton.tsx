@@ -135,7 +135,15 @@ export function PlaidConnectButton({ variant = "inline", onConnected }: Props) {
       // middleware will respond 403 with `code: PASSKEY_REQUIRED` (no
       // passkey enrolled) or `PASSKEY_STALE` (verified > 12h ago). On
       // either, surface the PasskeyGate; its onSuccess re-runs launch.
-      const tokenRes = await apiRequestRaw("POST", "/api/plaid/link-token");
+      // Opt out of the global passkey-gate guard: this component owns
+      // its own enroll → privacy disclosure → Plaid Link sequence and
+      // needs to inspect the raw 403 to drive that flow itself.
+      const tokenRes = await apiRequestRaw(
+        "POST",
+        "/api/plaid/link-token",
+        undefined,
+        { passkeyGuard: false },
+      );
       if (tokenRes.status === 403) {
         let code: string | undefined;
         try { code = (await tokenRes.json())?.code; } catch {}

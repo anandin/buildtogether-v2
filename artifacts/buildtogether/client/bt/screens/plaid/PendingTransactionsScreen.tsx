@@ -32,6 +32,8 @@ import {
   usePlaidSync,
   usePlaidItems,
 } from "../../hooks/usePlaid";
+import { PasskeyStaleBanner } from "./PasskeyStaleBanner";
+import { usePasskeyGate } from "@/context/PasskeyGateContext";
 import type { PlaidPendingTransaction } from "../../api/types";
 
 export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
@@ -41,6 +43,7 @@ export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
   const accept = usePlaidAccept();
   const ignore = usePlaidIgnore();
   const sync = usePlaidSync();
+  const passkeyGate = usePasskeyGate();
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const list = pending.data ?? [];
@@ -136,6 +139,22 @@ export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
             </Text>
           ) : null}
         </View>
+
+        {/* Face ID re-prompt banner — visible when the user dismissed
+            the shared PasskeyGate after a 403 PASSKEY_STALE. */}
+        {passkeyGate.staleSinceCancel ? (
+          <PasskeyStaleBanner
+            t={t}
+            label="Verify Face ID to refresh banks"
+            onVerify={async () => {
+              const ok = await passkeyGate.reverify();
+              if (ok) {
+                pending.refetch();
+                items.refetch();
+              }
+            }}
+          />
+        ) : null}
 
         {/* Empty / error / loading */}
         {pending.isLoading ? (

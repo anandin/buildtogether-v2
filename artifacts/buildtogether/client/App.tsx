@@ -35,6 +35,7 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider } from "@/context/AuthContext";
 import { AIFeedbackProvider } from "@/context/AIFeedbackContext";
 import { SubscriptionProvider } from "@/context/SubscriptionContext";
+import { PasskeyGateProvider } from "@/context/PasskeyGateContext";
 import { AppContent } from "@/components/AppContent";
 
 SplashScreen.preventAutoHideAsync();
@@ -78,8 +79,10 @@ export default function App() {
               <SafeAreaProvider>
                 <GestureHandlerRootView style={styles.root}>
                   <KeyboardProvider>
-                    <AppContent />
-                    <StatusBar style="auto" />
+                    <PasskeyGateProvider>
+                      <AppContent />
+                      <StatusBar style="auto" />
+                    </PasskeyGateProvider>
                   </KeyboardProvider>
                 </GestureHandlerRootView>
               </SafeAreaProvider>

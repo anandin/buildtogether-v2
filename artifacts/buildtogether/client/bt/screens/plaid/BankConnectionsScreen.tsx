@@ -34,6 +34,8 @@ import {
   useInvalidatePlaid,
 } from "../../hooks/usePlaid";
 import { PlaidConnectButton } from "@/components/PlaidConnectButton";
+import { PasskeyStaleBanner } from "./PasskeyStaleBanner";
+import { usePasskeyGate } from "@/context/PasskeyGateContext";
 import type { PlaidItem } from "../../api/types";
 
 export function BankConnectionsScreen({ onBack }: { onBack: () => void }) {
@@ -43,6 +45,7 @@ export function BankConnectionsScreen({ onBack }: { onBack: () => void }) {
   const sync = usePlaidSync();
   const disconnect = usePlaidDisconnect();
   const refreshPlaid = useInvalidatePlaid();
+  const passkeyGate = usePasskeyGate();
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const handleSync = async () => {
@@ -109,6 +112,22 @@ export function BankConnectionsScreen({ onBack }: { onBack: () => void }) {
             never sees your password — you sign in with your bank directly.
           </Text>
         </View>
+
+        {/* Face ID re-prompt banner — visible when the user dismissed
+            the shared PasskeyGate after a 403 PASSKEY_STALE. */}
+        {passkeyGate.staleSinceCancel ? (
+          <PasskeyStaleBanner
+            t={t}
+            label="Verify Face ID to refresh banks"
+            onVerify={async () => {
+              const ok = await passkeyGate.reverify();
+              if (ok) {
+                items.refetch();
+                refreshPlaid();
+              }
+            }}
+          />
+        ) : null}
 
         {/* Status / configured? */}
         {status.data && !status.data.configured ? (
