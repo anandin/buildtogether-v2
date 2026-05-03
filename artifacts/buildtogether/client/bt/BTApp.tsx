@@ -15,7 +15,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Circle, Path } from "react-native-svg";
 
 import { BTProvider, useBT } from "./BTContext";
-import { TweaksToggle } from "./TweaksPanel";
 import { Tilly } from "./Tilly";
 import { BTFonts } from "./theme";
 import { BTHome } from "./screens/BTHome";
@@ -105,7 +104,6 @@ function BTShell() {
         {tab === "credit" && <BTCredit />}
         {tab === "dreams" && <BTDreams />}
         {tab === "profile" && <BTProfile />}
-        <TweaksToggle />
       </View>
 
       <View
