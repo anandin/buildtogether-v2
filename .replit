@@ -59,5 +59,10 @@ externalPort = 3003
 
 [userenv.shared]
 
+[userenv.production]
+PLAID_ENV = "production"
+PLAID_REDIRECT_URI = "https://buildtogether-tilly.replit.app/plaid/oauth-redirect"
+PLAID_WEBHOOK_URL = "https://buildtogether-tilly.replit.app/api/plaid/webhook"
+
 [nix]
 channel = "stable-25_05"
