@@ -7,6 +7,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import path from "path";
 import { loadAdminConfig } from "./admin-config";
+import { apiServerDir } from "./paths";
 
 interface AdminRequest extends Request {
   adminUser?: { id: string; email: string };
@@ -31,7 +32,7 @@ function authenticateAdmin(req: AdminRequest, res: Response, next: NextFunction)
 
 export function registerAdminRoutes(app: Express) {
   app.get("/admin", (req, res) => {
-    res.sendFile(path.resolve(process.cwd(), "server", "templates", "admin-dashboard.html"));
+    res.sendFile(path.resolve(apiServerDir, "server", "templates", "admin-dashboard.html"));
   });
 
   // Login uses credentials configured via environment variables

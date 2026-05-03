@@ -13,11 +13,12 @@
 import type { Express, Request, Response } from "express";
 import * as fs from "fs";
 import * as path from "path";
+import { apiServerDir } from "../paths";
 
 const _cache: Record<string, string> = {};
 function loadHtml(filename: string): string {
   if (_cache[filename]) return _cache[filename];
-  const p = path.resolve(process.cwd(), "server", "templates", filename);
+  const p = path.resolve(apiServerDir, "server", "templates", filename);
   _cache[filename] = fs.readFileSync(p, "utf-8");
   return _cache[filename];
 }

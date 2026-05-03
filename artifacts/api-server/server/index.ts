@@ -11,6 +11,7 @@ import { validateRequiredEnv, getFeatureFlags } from "./env-validation";
 import { startTillyScheduler } from "./tilly/scheduler";
 import * as fs from "fs";
 import * as path from "path";
+import { apiServerDir, expoAppDir } from "./paths";
 
 const app = express();
 const log = console.log;
@@ -155,7 +156,7 @@ function setupHealthCheck(app: express.Application) {
 
 function getAppName(): string {
   try {
-    const appJsonPath = path.resolve(process.cwd(), "app.json");
+    const appJsonPath = path.resolve(expoAppDir, "app.json");
     const appJsonContent = fs.readFileSync(appJsonPath, "utf-8");
     const appJson = JSON.parse(appJsonContent);
     return appJson.expo?.name || "App Landing Page";
@@ -166,7 +167,7 @@ function getAppName(): string {
 
 function serveExpoManifest(platform: string, res: Response) {
   const manifestPath = path.resolve(
-    process.cwd(),
+    expoAppDir,
     "static-build",
     platform,
     "manifest.json",
@@ -218,7 +219,7 @@ function serveLandingPage({
 
 function configureExpoAndLanding(app: express.Application) {
   const templatePath = path.resolve(
-    process.cwd(),
+    apiServerDir,
     "server",
     "templates",
     "landing-page.html",
@@ -254,11 +255,11 @@ function configureExpoAndLanding(app: express.Application) {
     next();
   });
 
-  app.use("/assets", express.static(path.resolve(process.cwd(), "assets")));
-  app.use("/assets", express.static(path.resolve(process.cwd(), "server", "templates", "assets")));
-  app.use(express.static(path.resolve(process.cwd(), "static-build")));
+  app.use("/assets", express.static(path.resolve(expoAppDir, "assets")));
+  app.use("/assets", express.static(path.resolve(apiServerDir, "server", "templates", "assets")));
+  app.use(express.static(path.resolve(expoAppDir, "static-build")));
 
-  const webDistPath = path.resolve(process.cwd(), "dist");
+  const webDistPath = path.resolve(expoAppDir, "dist");
   if (fs.existsSync(webDistPath)) {
     app.use("/_expo", express.static(path.join(webDistPath, "_expo")));
     const favicoPath = path.join(webDistPath, "favicon.ico");
