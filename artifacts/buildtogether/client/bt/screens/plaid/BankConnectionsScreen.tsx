@@ -41,7 +41,7 @@ import type { PlaidItem } from "../../api/types";
 export function BankConnectionsScreen({ onBack }: { onBack: () => void }) {
   const { t } = useBT();
   const status = usePlaidStatus();
-  const items = usePlaidItems();
+  const items = usePlaidItems({ silent: true });
   const sync = usePlaidSync();
   const disconnect = usePlaidDisconnect();
   const refreshPlaid = useInvalidatePlaid();
@@ -164,9 +164,7 @@ export function BankConnectionsScreen({ onBack }: { onBack: () => void }) {
         ) : items.isError ? (
           <ErrorPanel
             t={t}
-            message={
-              (items.error as any)?.message ?? "Couldn't load your banks."
-            }
+            message="Couldn't load your banks. Verify Face ID first, then try again."
             onRetry={() => items.refetch()}
             retrying={items.isFetching}
           />

@@ -13,7 +13,9 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { btApi } from "../api/client";
+import { apiRequestRaw } from "@/lib/query-client";
 import { useUser } from "./useUser";
+import type { PlaidItem, PlaidPendingTransaction } from "../api/types";
 
 const QK = {
   status: ["/api/plaid/status"] as const,
@@ -29,23 +31,51 @@ export function usePlaidStatus() {
   });
 }
 
-export function usePlaidItems() {
+/**
+ * Fetch helper that skips the global passkey gate. Returns an empty
+ * array instead of popping the Face ID modal when the server says 403
+ * PASSKEY_REQUIRED / PASSKEY_STALE. Callers that are just showing a
+ * badge count or a list preview shouldn't force a biometric check.
+ */
+async function plaidGetSilent<T>(route: string, fallback: T): Promise<T> {
+  const res = await apiRequestRaw("GET", route, undefined, {
+    passkeyGuard: false,
+  });
+  if (!res.ok) {
+    if (res.status === 403) return fallback;
+    const text = await res.text();
+    throw new Error(`${res.status}: ${text}`);
+  }
+  return (await res.json()) as T;
+}
+
+export function usePlaidItems(opts?: { silent?: boolean }) {
   const { user } = useUser();
   const couple = user?.householdId ?? null;
+  const silent = opts?.silent ?? false;
   return useQuery({
     queryKey: couple ? QK.items(couple) : ["/api/plaid/items", "anon"],
-    queryFn: () => btApi.plaidItems(couple as string),
+    queryFn: silent
+      ? () => plaidGetSilent<PlaidItem[]>(`/api/plaid/items/${couple}`, [])
+      : () => btApi.plaidItems(couple as string),
     enabled: !!couple,
     staleTime: 30_000,
   });
 }
 
-export function usePlaidPending() {
+export function usePlaidPending(opts?: { silent?: boolean }) {
   const { user } = useUser();
   const couple = user?.householdId ?? null;
+  const silent = opts?.silent ?? false;
   return useQuery({
     queryKey: couple ? QK.pending(couple) : ["/api/plaid/pending", "anon"],
-    queryFn: () => btApi.plaidPending(couple as string),
+    queryFn: silent
+      ? () =>
+          plaidGetSilent<PlaidPendingTransaction[]>(
+            `/api/plaid/pending/${couple}`,
+            [],
+          )
+      : () => btApi.plaidPending(couple as string),
     enabled: !!couple,
     staleTime: 30_000,
   });

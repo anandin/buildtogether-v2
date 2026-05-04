@@ -137,7 +137,7 @@ function BTProfileMain({
   const setServerTone = useSetTillyTone();
   const profile = useProfile();
   const { user } = useUser();
-  const pending = usePlaidPending();
+  const pending = usePlaidPending({ silent: true });
   const pendingCount = pending.data?.length ?? 0;
   const [inviteOpen, setInviteOpen] = useState(false);
   const [quietOpen, setQuietOpen] = useState<QuietSettingKey | null>(null);

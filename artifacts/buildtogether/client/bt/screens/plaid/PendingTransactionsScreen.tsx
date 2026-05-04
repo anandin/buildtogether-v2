@@ -38,8 +38,8 @@ import type { PlaidPendingTransaction } from "../../api/types";
 
 export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
   const { t } = useBT();
-  const pending = usePlaidPending();
-  const items = usePlaidItems();
+  const pending = usePlaidPending({ silent: true });
+  const items = usePlaidItems({ silent: true });
   const accept = usePlaidAccept();
   const ignore = usePlaidIgnore();
   const sync = usePlaidSync();
