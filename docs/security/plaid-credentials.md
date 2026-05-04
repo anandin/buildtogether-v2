@@ -51,6 +51,15 @@ production.
   endpoint is already implemented in `routes.ts` and 200s immediately
   while syncing in the background.
 
+  Signature verification is **on**: every webhook is required to carry
+  a valid `Plaid-Verification` JWT (ES256) signed by Plaid's rotating
+  JWK set. Requests with missing, malformed, replayed (>5 min old), or
+  body-tampered signatures are rejected with 401 before any DB or
+  Plaid-client work happens. Public keys are fetched on demand from
+  `/webhook_verification_key/get` and cached in-memory for 5 minutes.
+  Implementation lives in
+  `artifacts/api-server/server/plaid-webhook-verify.ts`.
+
 ### 2. Deployment configuration
 
 Two storage tiers, picked deliberately:

@@ -43,6 +43,7 @@ import {
 import { detectPatterns, savePatterns, createNudgeFromPattern, getActivePatterns, getPendingNudges } from "./pattern-detection";
 import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt, buildQuickAddPrompt, buildGuardianCoachPrompt, buildGuardianIntentClassifierPrompt, type GuardianCoachContext } from "./prompts";
 import { getPlaidClient, getPlaidRedirectUri, isPlaidConfigured, mapPlaidCategory, shouldImportPlaidTransaction } from "./plaid";
+import { verifyPlaidWebhook } from "./plaid-webhook-verify";
 
 const DEFAULT_CATEGORY_BUDGETS = [
   { category: "groceries", monthlyLimit: 600, budgetType: "recurring" },
@@ -4514,17 +4515,26 @@ Return just the message text.`;
     next();
   }
 
-  // Plaid webhook receiver. Public (no auth) — Plaid posts here from
-  // their servers when transactions update. We always 200 quickly to
-  // prevent Plaid retry storms, then trigger an incremental sync for
-  // the affected item in the background.
-  //
-  // NOTE: production-grade webhook signature verification (Plaid's
-  // JWT in the `Plaid-Verification` header) is tracked separately;
-  // for now we lookup the item by Plaid item_id and only act on
-  // events for items we own, which limits blast radius from spoofed
-  // calls to "trigger an extra sync we'd run anyway."
+  // Plaid webhook receiver. Public (no auth header), but every request
+  // must carry a valid `Plaid-Verification` JWT (ES256) signed by
+  // Plaid's rotating JWK set — we verify it before doing any work.
+  // Spoofed/unsigned/replayed requests get a 401 and are dropped
+  // before we touch the DB or Plaid client.
   app.post("/api/plaid/webhook", async (req, res) => {
+    const verification = req.header("plaid-verification");
+    const rawBody = (req as any).rawBody as Buffer | undefined;
+    const verifyResult = await verifyPlaidWebhook(verification, rawBody);
+    if (!verifyResult.ok) {
+      console.warn(
+        "Plaid webhook rejected:",
+        verifyResult.reason,
+        "from",
+        req.ip,
+      );
+      return res.status(401).json({ error: "invalid signature" });
+    }
+
+    // Respond 200 fast to prevent Plaid retry storms; sync runs after.
     res.status(200).json({ ok: true });
     try {
       const { webhook_type, webhook_code, item_id } = req.body || {};
