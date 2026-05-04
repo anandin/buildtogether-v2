@@ -6,9 +6,10 @@ import tillyStudy from "@/assets/tilly-study.png";
 import tillyRamen from "@/assets/tilly-ramen.png";
 import tillyGrad from "@/assets/tilly-grad.png";
 import tillyReceipt from "@/assets/tilly-receipt.png";
+import { EXPO_GO_FALLBACK_URL, handleDownloadClick } from "@/lib/download";
 
 export default function Home() {
-  const appUrl = import.meta.env.VITE_APP_URL ? `https://${import.meta.env.VITE_APP_URL}` : "#download";
+  const appUrl = EXPO_GO_FALLBACK_URL;
 
   const faqs = [
     {
@@ -52,7 +53,7 @@ export default function Home() {
             
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 pt-4">
               <Button asChild size="lg" className="rounded-full px-8 text-lg h-14 bg-foreground text-background hover:bg-foreground/90">
-                <a href={appUrl}>
+                <a href={appUrl} onClick={handleDownloadClick} rel="noopener">
                   Start free <ArrowRight className="ml-2 w-5 h-5" />
                 </a>
               </Button>
@@ -277,7 +278,7 @@ export default function Home() {
              <p className="text-xl text-muted">Ready to protect your dreams?</p>
              <div className="pt-4">
                <Button asChild size="lg" className="rounded-full px-10 text-lg h-16 bg-background text-foreground hover:bg-background/90">
-                 <a href={appUrl}>
+                 <a href={appUrl} onClick={handleDownloadClick} rel="noopener">
                    Meet your Tilly <ArrowUpRight className="ml-2 w-5 h-5" />
                  </a>
                </Button>

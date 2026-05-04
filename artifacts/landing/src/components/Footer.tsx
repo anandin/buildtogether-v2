@@ -1,7 +1,8 @@
 import { Link } from "wouter";
+import { EXPO_GO_FALLBACK_URL, handleDownloadClick } from "@/lib/download";
 
 export function Footer() {
-  const appUrl = import.meta.env.VITE_APP_URL ? `https://${import.meta.env.VITE_APP_URL}` : "#download";
+  const appUrl = EXPO_GO_FALLBACK_URL;
 
   return (
     <footer className="bg-foreground text-background py-20 px-6 sm:px-12 mt-20">
@@ -16,7 +17,7 @@ export function Footer() {
         <div className="space-y-4">
           <h4 className="font-serif text-lg text-card">Company</h4>
           <ul className="space-y-3">
-            <li><a href={appUrl} className="text-muted hover:text-card transition-colors">Download</a></li>
+            <li><a href={appUrl} onClick={handleDownloadClick} rel="noopener" className="text-muted hover:text-card transition-colors">Download</a></li>
             <li><a href="#" className="text-muted hover:text-card transition-colors">About us</a></li>
             <li><a href="#" className="text-muted hover:text-card transition-colors">Careers</a></li>
             <li><a href="#" className="text-muted hover:text-card transition-colors">Contact</a></li>
