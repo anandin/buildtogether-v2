@@ -42,7 +42,7 @@ import {
 } from "../shared/schema";
 import { detectPatterns, savePatterns, createNudgeFromPattern, getActivePatterns, getPendingNudges } from "./pattern-detection";
 import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt, buildQuickAddPrompt, buildGuardianCoachPrompt, buildGuardianIntentClassifierPrompt, type GuardianCoachContext } from "./prompts";
-import { getPlaidClient, getPlaidRedirectUri, isPlaidConfigured, mapPlaidCategory, shouldImportPlaidTransaction } from "./plaid";
+import { getPlaidClient, getPlaidRedirectUri, isPlaidConfigured, mapPlaidCategory, shouldImportPlaidTransaction, shouldAutoAcceptPlaidTransaction } from "./plaid";
 import { verifyPlaidWebhook } from "./plaid-webhook-verify";
 
 const DEFAULT_CATEGORY_BUDGETS = [
@@ -182,6 +182,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     let cursor = item.cursor || undefined;
     let hasMore = true;
 
+    // Look up the connecting partner's role once so we can attribute auto-accepted
+    // expenses to them (matches the manual /accept handler's default).
+    const [connector] = await db.select().from(users).where(eq(users.id, item.userId)).limit(1);
+    const paidBy = connector?.partnerRole || "partner1";
+
     while (hasMore) {
       const resp: any = await plaid.transactionsSync({
         access_token: item.accessToken,
@@ -193,20 +198,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!shouldImportPlaidTransaction(tx)) continue;
 
         const ourCat = mapPlaidCategory(tx.category, tx.personal_finance_category);
+        // Never auto-accept while Plaid still says "pending" — the amount/merchant
+        // can change when it posts, and Plaid may send a `removed` for the pending
+        // id and a fresh `added` for the posted id. Waiting until post avoids
+        // duplicate or stale expense rows.
+        const autoAccept = !tx.pending && shouldAutoAcceptPlaidTransaction(tx);
         try {
-          await db.insert(plaidTransactions).values({
-            coupleId: item.coupleId,
-            plaidItemId: item.id,
-            plaidTransactionId: tx.transaction_id,
-            accountId: tx.account_id,
-            amount: tx.amount,
-            date: tx.date,
-            merchantName: tx.merchant_name || null,
-            name: tx.name || "Unknown",
-            plaidCategory: tx.category || null,
-            ourCategory: ourCat,
-            pending: tx.pending || false,
-            status: "pending_review",
+          // Insert the plaid_transactions row FIRST. Its unique
+          // (plaid_transaction_id) constraint is our idempotency key — if a
+          // resync replays the same tx, this throws and we never create a
+          // duplicate expense. Then create the expense and link it back.
+          await db.transaction(async (txn) => {
+            const [inserted] = await txn.insert(plaidTransactions).values({
+              coupleId: item.coupleId,
+              plaidItemId: item.id,
+              plaidTransactionId: tx.transaction_id,
+              accountId: tx.account_id,
+              amount: tx.amount,
+              date: tx.date,
+              merchantName: tx.merchant_name || null,
+              name: tx.name || "Unknown",
+              plaidCategory: tx.category || null,
+              ourCategory: ourCat,
+              pending: tx.pending || false,
+              status: autoAccept ? "auto_accepting" : "pending_review",
+            }).returning();
+
+            if (autoAccept) {
+              const [expense] = await txn.insert(expenses).values({
+                coupleId: item.coupleId,
+                amount: tx.amount,
+                description: tx.merchant_name || tx.name || "Unknown",
+                merchant: tx.merchant_name || tx.name || null,
+                category: ourCat,
+                date: tx.date,
+                paidBy,
+                splitMethod: "joint",
+                source: "plaid",
+              }).returning();
+              await txn.update(plaidTransactions)
+                .set({ status: "accepted", expenseId: expense.id })
+                .where(eq(plaidTransactions.id, inserted.id));
+            }
           });
           added++;
         } catch (err: any) {
@@ -4702,12 +4735,91 @@ Return just the message text.`;
   });
 
   // List transactions pending the user's review (imported from Plaid, not yet
-  // accepted as expenses)
+  // accepted as expenses). Before returning, run the auto-accept classifier
+  // over the queue once so any items that should never have been queued (back-
+  // fill from before smart auto-accept landed) get folded into the spend feed
+  // automatically. The user only sees the genuinely noisy items left over.
   app.get("/api/plaid/pending/:coupleId", requireAuth, requirePasskeyVerified, requireCoupleAccess, async (req, res) => {
     try {
+      const coupleId = req.params.coupleId;
+
+      const queue = await db.select().from(plaidTransactions)
+        .where(and(
+          eq(plaidTransactions.coupleId, coupleId),
+          eq(plaidTransactions.status, "pending_review"),
+        ));
+
+      if (queue.length > 0) {
+        // Cache connector → partnerRole per plaidItemId so we attribute each
+        // expense to the partner who actually connected that bank, not whoever
+        // happens to open the queue.
+        const itemIds = Array.from(new Set(queue.map((q) => q.plaidItemId)));
+        const itemsForQueue = await db.select().from(plaidItems)
+          .where(inArray(plaidItems.id, itemIds));
+        const userIds = Array.from(new Set(itemsForQueue.map((i) => i.userId)));
+        const connectors = userIds.length
+          ? await db.select().from(users).where(inArray(users.id, userIds))
+          : [];
+        const roleByItem = new Map<string, string>();
+        for (const it of itemsForQueue) {
+          const u = connectors.find((c) => c.id === it.userId);
+          roleByItem.set(it.id, u?.partnerRole || "partner1");
+        }
+
+        for (const ptx of queue) {
+          // Skip rows still marked pending — wait until they post so we don't
+          // double-count when Plaid swaps the pending id for the posted id.
+          if (ptx.pending) continue;
+
+          const txShape = {
+            amount: ptx.amount,
+            name: ptx.name,
+            merchant_name: ptx.merchantName,
+            category: (ptx.plaidCategory as string[] | null) || null,
+            personal_finance_category: null,
+          };
+          if (!shouldAutoAcceptPlaidTransaction(txShape)) continue;
+
+          const paidBy = roleByItem.get(ptx.plaidItemId) || "partner1";
+
+          try {
+            await db.transaction(async (txn) => {
+              // Conditional update guards against double-accept races: only
+              // proceed if this row is still pending_review and not already
+              // linked to an expense.
+              const claim = await txn.update(plaidTransactions)
+                .set({ status: "auto_accepting" })
+                .where(and(
+                  eq(plaidTransactions.id, ptx.id),
+                  eq(plaidTransactions.status, "pending_review"),
+                ))
+                .returning({ id: plaidTransactions.id });
+              if (claim.length === 0) return; // someone else processed it
+
+              const [expense] = await txn.insert(expenses).values({
+                coupleId: ptx.coupleId,
+                amount: ptx.amount,
+                description: ptx.merchantName || ptx.name,
+                merchant: ptx.merchantName || ptx.name,
+                category: ptx.ourCategory || "other",
+                date: ptx.date,
+                paidBy,
+                splitMethod: "joint",
+                source: "plaid",
+              }).returning();
+              await txn.update(plaidTransactions)
+                .set({ status: "accepted", expenseId: expense.id })
+                .where(eq(plaidTransactions.id, ptx.id));
+            });
+          } catch (err: any) {
+            console.error("Plaid backfill auto-accept failed:", err.message);
+          }
+        }
+      }
+
       const rows = await db.select().from(plaidTransactions)
         .where(and(
-          eq(plaidTransactions.coupleId, req.params.coupleId),
+          eq(plaidTransactions.coupleId, coupleId),
           eq(plaidTransactions.status, "pending_review"),
         ))
         .orderBy(desc(plaidTransactions.date))

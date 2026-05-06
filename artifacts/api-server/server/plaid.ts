@@ -188,3 +188,71 @@ export function shouldImportPlaidTransaction(
 
   return true;
 }
+
+/**
+ * Threshold above which a transaction is sent to the human review queue
+ * regardless of category. Anything ≤ this auto-accepts into the spend feed
+ * (subject to the noisy-category checks below).
+ */
+export const AUTO_ACCEPT_AMOUNT_CAP = 500;
+
+/**
+ * Decide whether a Plaid transaction is "clearly a normal purchase" we can
+ * silently fold into the household ledger, vs. something the user should eyeball.
+ *
+ * Sent to review (return false) when ANY of:
+ *   - amount > AUTO_ACCEPT_AMOUNT_CAP (could be a big one-off the user wants to
+ *     classify deliberately — rent, tuition, large electronics, etc.)
+ *   - category looks like fees / interest / loan / transfer / payment-to-self
+ *     (these distort the spend picture and aren't really discretionary spend)
+ *   - the merchant name contains keywords that historically appear on noisy
+ *     items even when Plaid can't categorize them (INTEREST CHARGES, NSF FEE,
+ *     CARD PAYMENT, E-TRANSFER, etc.)
+ *
+ * Otherwise auto-accept. Caller should already have run
+ * shouldImportPlaidTransaction() first to filter out income/refunds.
+ */
+export function shouldAutoAcceptPlaidTransaction(
+  tx: { amount: number; name?: string | null; merchant_name?: string | null; category?: string[] | null; personal_finance_category?: any },
+): boolean {
+  if (tx.amount > AUTO_ACCEPT_AMOUNT_CAP) return false;
+
+  const primary = (tx.personal_finance_category?.primary || "").toUpperCase();
+  const detailed = (tx.personal_finance_category?.detailed || "").toUpperCase();
+  if (
+    primary === "BANK_FEES" ||
+    primary === "LOAN_PAYMENTS" ||
+    primary === "TRANSFER_IN" ||
+    primary === "TRANSFER_OUT"
+  ) return false;
+  if (detailed.includes("INTEREST_CHARGE") || detailed.includes("OVERDRAFT") || detailed.includes("ATM_FEE")) return false;
+
+  const top = (tx.category?.[0] || "").toLowerCase();
+  if (top === "transfer" || top === "payment" || top === "bank fees" || top === "interest") return false;
+
+  // Belt-and-suspenders: catch poorly-categorized noise by name keywords
+  // (e.g. Scotiabank reports "INTEREST CHARGES CASH" as category=OTHER).
+  const haystack = `${tx.name || ""} ${tx.merchant_name || ""}`.toLowerCase();
+  const noisyKeywords = [
+    "interest charge",
+    "interest chrg",
+    "nsf fee",
+    "overdraft",
+    "service charge",
+    "service fee",
+    "annual fee",
+    "foreign transaction fee",
+    "card payment",
+    "credit card payment",
+    "payment - thank you",
+    "payment thank you",
+    "e-transfer",
+    "etransfer",
+    "wire transfer",
+    "loan payment",
+    "mortgage payment",
+  ];
+  if (noisyKeywords.some((kw) => haystack.includes(kw))) return false;
+
+  return true;
+}
