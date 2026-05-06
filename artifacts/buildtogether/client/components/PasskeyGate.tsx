@@ -3,7 +3,7 @@
  * verification. Used inline before launching Plaid Link, and from the
  * Security settings screen.
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Modal,
@@ -22,6 +22,7 @@ import {
   hasLocalPasskey,
   isPasskeySupported,
 } from "@/lib/passkey";
+import { useAuth } from "@/context/AuthContext";
 
 export type PasskeyGateMode = "enroll" | "verify";
 
@@ -35,11 +36,22 @@ interface Props {
 
 export function PasskeyGate({ visible, mode, onSuccess, onCancel, reason }: Props) {
   const { theme } = useTheme();
+  const { signOut } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [needsReauth, setNeedsReauth] = useState(false);
+
+  useEffect(() => {
+    if (!visible) {
+      setError(null);
+      setNeedsReauth(false);
+      setBusy(false);
+    }
+  }, [visible]);
 
   const run = async () => {
     setError(null);
+    setNeedsReauth(false);
     setBusy(true);
     try {
       const supported = await isPasskeySupported();
@@ -72,6 +84,7 @@ export function PasskeyGate({ visible, mode, onSuccess, onCancel, reason }: Prop
       onSuccess();
     } catch (err: any) {
       const raw = String(err?.message || "");
+      const code = String(err?.code || "");
       // If the SHA-512 polyfill failed to install for any reason, hide the
       // raw "crypto.subtle must be defined" exception behind a friendly
       // message — the user can't do anything about the underlying issue.
@@ -79,7 +92,22 @@ export function PasskeyGate({ visible, mode, onSuccess, onCancel, reason }: Prop
         ? "Face ID setup is unavailable on this device. Please update the app and try again."
         : raw || "Something went wrong. Try again?";
       setError(friendly);
+      // Surface a "Sign out & sign back in" CTA when the server says the
+      // session is too old to bootstrap MFA — otherwise the user is stuck.
+      if (code === "STEP_UP_REQUIRED" || /sign out and sign back in|recent sign-in/i.test(raw)) {
+        setNeedsReauth(true);
+      }
     } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleReauth = async () => {
+    setBusy(true);
+    try {
+      onCancel();
+      await signOut();
+    } catch {
       setBusy(false);
     }
   };
@@ -121,18 +149,18 @@ export function PasskeyGate({ visible, mode, onSuccess, onCancel, reason }: Prop
               <ThemedText type="small" style={{ color: theme.text }}>Not now</ThemedText>
             </Pressable>
             <Pressable
-              onPress={run}
+              onPress={needsReauth ? handleReauth : run}
               disabled={busy}
               style={[styles.btn, { backgroundColor: theme.primary }]}
               accessibilityRole="button"
-              accessibilityLabel={cta}
+              accessibilityLabel={needsReauth ? "Sign out and sign back in" : cta}
               testID="button-passkey-run"
             >
               {busy ? (
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
                 <ThemedText type="small" style={{ color: "#fff", fontWeight: "600" }}>
-                  {cta}
+                  {needsReauth ? "Sign out & sign in" : cta}
                 </ThemedText>
               )}
             </Pressable>

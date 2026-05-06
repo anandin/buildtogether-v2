@@ -142,9 +142,13 @@ export async function enrollPasskey(deviceLabel?: string): Promise<{ credentialI
     let code: string | undefined;
     try { code = (await optsRes.json())?.code; } catch {}
     if (code === "PASSKEY_STEP_UP_REQUIRED") {
-      throw new Error("STEP_UP_REQUIRED");
+      const err: any = new Error(
+        "For your security, Face ID setup needs a recent sign-in. Please sign out and sign back in, then try again.",
+      );
+      err.code = "STEP_UP_REQUIRED";
+      throw err;
     }
-    throw new Error("Enrollment not allowed right now. Please sign in again and try.");
+    throw new Error("Enrollment not allowed right now. Please sign out, sign back in, then try again.");
   }
   if (!optsRes.ok) {
     const text = await optsRes.text();
