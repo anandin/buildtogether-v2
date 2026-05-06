@@ -112,12 +112,17 @@ export function PasskeyGate({ visible, mode, onSuccess, onCancel, reason }: Prop
     }
   };
 
-  const title = mode === "enroll" ? "Protect your bank with Face ID" : "Verify it's you";
-  const body =
-    reason ??
-    (mode === "enroll"
-      ? "Tilly uses your phone's Face ID, Touch ID, or fingerprint as a second factor before connecting a bank. The key never leaves this phone — even Tilly can't see it."
-      : "Bank connections need a quick biometric check first. This protects your account if your password is ever leaked.");
+  const title = needsReauth
+    ? "One quick step first"
+    : mode === "enroll"
+      ? "Protect your bank with Face ID"
+      : "Verify it's you";
+  const body = needsReauth
+    ? "To set up Face ID for your bank, we need to confirm it's really you with a fresh sign-in. Tap below — you'll be taken to the sign-in screen. Sign in with your email or Apple/Google, then come back here and tap 'Set up Face ID' again. (Just opening the app isn't enough — we need an actual sign-in.)"
+    : (reason ??
+      (mode === "enroll"
+        ? "Tilly uses your phone's Face ID, Touch ID, or fingerprint as a second factor before connecting a bank. The key never leaves this phone — even Tilly can't see it."
+        : "Bank connections need a quick biometric check first. This protects your account if your password is ever leaked."));
   const cta = mode === "enroll" ? "Set up Face ID" : "Verify with Face ID";
 
   return (
@@ -133,7 +138,7 @@ export function PasskeyGate({ visible, mode, onSuccess, onCancel, reason }: Prop
           <ThemedText type="small" style={{ color: theme.textSecondary, textAlign: "center" }}>
             {body}
           </ThemedText>
-          {error ? (
+          {error && !needsReauth ? (
             <ThemedText type="tiny" style={{ color: theme.error, textAlign: "center" }}>
               {error}
             </ThemedText>
