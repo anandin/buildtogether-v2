@@ -132,9 +132,11 @@ export function usePlaidAccept() {
   const { user } = useUser();
   const couple = user?.householdId ?? null;
   return useMutation({
-    mutationFn: (txnId: string) => {
+    mutationFn: (input: string | { txnId: string; note?: string | null; tags?: string[] | null }) => {
       requireCouple(couple);
-      return btApi.plaidAccept(txnId);
+      if (typeof input === "string") return btApi.plaidAccept(input);
+      const { txnId, note, tags } = input;
+      return btApi.plaidAccept(txnId, { note: note ?? null, tags: tags ?? null });
     },
     onSuccess: () => invalidatePlaid(qc, couple),
   });

@@ -290,8 +290,13 @@ export const btApi = {
     getJson<PlaidPendingTransaction[]>(`/api/plaid/pending/${coupleId}`),
   plaidSync: (coupleId: string) =>
     postJson<{ ok: true }>(`/api/plaid/sync/${coupleId}`),
-  plaidAccept: (txnId: string) =>
-    postJson<{ expense: any }>(`/api/plaid/pending/${txnId}/accept`),
+  plaidAccept: (
+    txnId: string,
+    overrides?: { note?: string | null; tags?: string[] | null },
+  ) =>
+    postJson<{ expense: any }>(`/api/plaid/pending/${txnId}/accept`, {
+      overrides: overrides ?? {},
+    }),
   plaidIgnore: (txnId: string) =>
     postJson<{ ok: true }>(`/api/plaid/pending/${txnId}/ignore`),
   plaidDisconnect: async (itemId: string) => {

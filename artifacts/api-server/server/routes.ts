@@ -4831,10 +4831,36 @@ Return just the message text.`;
     }
   });
 
-  // Accept one pending transaction → creates an expense row and marks it accepted
+  // Accept one pending transaction → creates an expense row and marks it accepted.
+  // Atomic: claims the row via conditional UPDATE before inserting the expense,
+  // so two concurrent accept calls can't double-insert. Validates note/tags from
+  // the client; other override fields are passthrough (legacy).
   app.post("/api/plaid/pending/:plaidTxnId/accept", requireAuth, requirePasskeyVerified, async (req, res) => {
     try {
       const { overrides } = req.body || {};
+
+      // Validate user-supplied context (note + tags). Everything else in
+      // overrides is legacy passthrough for now.
+      let cleanNote: string | null = null;
+      if (typeof overrides?.note === "string") {
+        const trimmed = overrides.note.trim();
+        if (trimmed.length > 0) cleanNote = trimmed.slice(0, 240);
+      }
+      let cleanTags: string[] | null = null;
+      if (Array.isArray(overrides?.tags)) {
+        const seen = new Set<string>();
+        const collected: string[] = [];
+        for (const raw of overrides.tags) {
+          if (typeof raw !== "string") continue;
+          const tag = raw.trim().slice(0, 30);
+          if (!tag || seen.has(tag)) continue;
+          seen.add(tag);
+          collected.push(tag);
+          if (collected.length >= 8) break;
+        }
+        if (collected.length > 0) cleanTags = collected;
+      }
+
       const [ptx] = await db.select().from(plaidTransactions)
         .where(eq(plaidTransactions.id, req.params.plaidTxnId))
         .limit(1);
@@ -4842,23 +4868,43 @@ Return just the message text.`;
       if (ptx.coupleId !== req.user?.coupleId) return res.status(403).json({ error: "Access denied" });
       if (ptx.status !== "pending_review") return res.status(400).json({ error: "Already processed" });
 
-      const [expense] = await db.insert(expenses).values({
-        coupleId: ptx.coupleId,
-        amount: overrides?.amount ?? ptx.amount,
-        description: overrides?.description ?? (ptx.merchantName || ptx.name),
-        merchant: overrides?.merchant ?? (ptx.merchantName || ptx.name),
-        category: overrides?.category ?? (ptx.ourCategory || "other"),
-        date: ptx.date,
-        paidBy: overrides?.paidBy ?? (req.user.partnerRole || "partner1"),
-        splitMethod: overrides?.splitMethod ?? "joint",
-      }).returning();
-
-      await db.update(plaidTransactions)
-        .set({ status: "accepted", expenseId: expense.id })
-        .where(eq(plaidTransactions.id, ptx.id));
+      // Atomic claim + insert. The conditional WHERE guards against a second
+      // concurrent accept slipping past the read-then-check above.
+      const expense = await db.transaction(async (tx) => {
+        const claimed = await tx.update(plaidTransactions)
+          .set({ status: "accepted" })
+          .where(and(
+            eq(plaidTransactions.id, ptx.id),
+            eq(plaidTransactions.status, "pending_review"),
+          ))
+          .returning({ id: plaidTransactions.id });
+        if (claimed.length === 0) {
+          throw Object.assign(new Error("Already processed"), { httpStatus: 409 });
+        }
+        const [row] = await tx.insert(expenses).values({
+          coupleId: ptx.coupleId,
+          amount: overrides?.amount ?? ptx.amount,
+          description: overrides?.description ?? (ptx.merchantName || ptx.name),
+          merchant: overrides?.merchant ?? (ptx.merchantName || ptx.name),
+          category: overrides?.category ?? (ptx.ourCategory || "other"),
+          date: ptx.date,
+          paidBy: overrides?.paidBy ?? (req.user!.partnerRole || "partner1"),
+          splitMethod: overrides?.splitMethod ?? "joint",
+          note: cleanNote,
+          tags: cleanTags,
+          source: "plaid",
+        }).returning();
+        await tx.update(plaidTransactions)
+          .set({ expenseId: row.id })
+          .where(eq(plaidTransactions.id, ptx.id));
+        return row;
+      });
 
       res.json({ expense });
     } catch (error: any) {
+      if (error?.httpStatus === 409) {
+        return res.status(409).json({ error: "Already processed" });
+      }
       console.error("Plaid accept error:", error);
       res.status(500).json({ error: error.message });
     }

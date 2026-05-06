@@ -332,6 +332,11 @@ const CRITICAL_STATEMENTS: string[] = [
     "created_at" timestamp DEFAULT now() NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS "tilly_life_context_household_idx" ON "tilly_life_context" ("household_id", "created_at" DESC)`,
+
+  // User context on expenses: optional note + jsonb array of preset/custom tags.
+  // Captured at Plaid review time (and eventually on manual entry) so Tilly can
+  // explain why spend looked unusual.
+  `ALTER TABLE "expenses" ADD COLUMN IF NOT EXISTS "tags" jsonb`,
 ];
 
 export async function applyBootMigrations(): Promise<{

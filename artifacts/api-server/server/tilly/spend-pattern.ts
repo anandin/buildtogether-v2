@@ -51,6 +51,8 @@ async function readAllTransactions(
           eq(expenses.coupleId, householdId),
           sql`${expenses.date} >= ${sinceIso}`,
           sql`${expenses.amount} > 0`,
+          // (note + tags read via expenses.* and surfaced to Tilly downstream
+          // — see analyze-affordability for consumption.)
         ),
       ),
   ]);

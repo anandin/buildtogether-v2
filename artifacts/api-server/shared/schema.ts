@@ -142,6 +142,11 @@ export const expenses = pgTable("expenses", {
   splitRatio: real("split_ratio"),
   splitAmounts: jsonb("split_amounts"),
   note: text("note"),
+  // User-supplied context tags chosen at capture time (e.g. ["gift", "work"]).
+  // Free-form strings — UI offers a preset list but accepts custom too.
+  // Read by Tilly when she summarizes spend patterns so she can say things like
+  // "most of last month's bumps were tagged 'gift'".
+  tags: jsonb("tags"),
   isRecurring: boolean("is_recurring").default(false),
   recurringFrequency: text("recurring_frequency"),
   receiptImage: text("receipt_image"),

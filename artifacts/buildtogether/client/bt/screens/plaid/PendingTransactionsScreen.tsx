@@ -16,6 +16,7 @@ import {
   RefreshControl,
   ScrollView,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { Feather } from "@expo/vector-icons";
@@ -49,10 +50,17 @@ export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
   const list = pending.data ?? [];
   const hasItems = (items.data ?? []).some((i) => i.status !== "disconnected");
 
-  const handleAccept = async (txn: PlaidPendingTransaction) => {
+  const handleAccept = async (
+    txn: PlaidPendingTransaction,
+    context?: { note?: string | null; tags?: string[] | null },
+  ) => {
     setBusyId(txn.id);
     try {
-      await accept.mutateAsync(txn.id);
+      if (context && (context.note || (context.tags && context.tags.length > 0))) {
+        await accept.mutateAsync({ txnId: txn.id, note: context.note ?? null, tags: context.tags ?? null });
+      } else {
+        await accept.mutateAsync(txn.id);
+      }
     } catch (err: any) {
       Alert.alert("Couldn't accept", err?.message ?? "Try again.");
     } finally {
@@ -133,9 +141,13 @@ export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
                 lineHeight: 19,
               }}
             >
-              {list.length} waiting · ${total.toFixed(2)} total. Accept the
-              real ones, ignore noise (transfers, refunds you've already
-              counted).
+              {list.length} waiting · ${total.toFixed(2)} total. Tap{" "}
+              <Text style={{ fontWeight: "700", color: t.ink }}>Accept</Text> to
+              count it as spend, or{" "}
+              <Text style={{ fontWeight: "700", color: t.ink }}>Ignore</Text> for
+              noise (transfers, refunds, double-counts). Tap{" "}
+              <Text style={{ fontWeight: "700", color: t.ink }}>Add note</Text>{" "}
+              to tell Tilly why.
             </Text>
           ) : null}
         </View>
@@ -181,7 +193,7 @@ export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
                 txn={txn}
                 t={t}
                 busy={busyId === txn.id}
-                onAccept={() => handleAccept(txn)}
+                onAccept={(ctx) => handleAccept(txn, ctx)}
                 onIgnore={() => handleIgnore(txn)}
               />
             ))}
@@ -363,6 +375,20 @@ function EmptyState({
   );
 }
 
+// Preset tags offered as quick chips. Free-text note covers anything else.
+// Kept short so it fits without scrolling; users can still type custom context
+// in the note field.
+const PRESET_TAGS = [
+  "one-off",
+  "gift",
+  "work",
+  "essential",
+  "splurge",
+  "regret",
+  "shared",
+  "emergency",
+] as const;
+
 function PendingRow({
   txn,
   t,
@@ -373,10 +399,22 @@ function PendingRow({
   txn: PlaidPendingTransaction;
   t: BTTheme;
   busy: boolean;
-  onAccept: () => void;
+  onAccept: (context?: { note?: string | null; tags?: string[] | null }) => void;
   onIgnore: () => void;
 }) {
   const merchant = txn.merchantName?.trim() || txn.name;
+  const [showContext, setShowContext] = useState(false);
+  const [tags, setTags] = useState<string[]>([]);
+  const [note, setNote] = useState("");
+
+  const toggleTag = (tag: string) => {
+    setTags((prev) =>
+      prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag],
+    );
+  };
+
+  const hasContext = tags.length > 0 || note.trim().length > 0;
+
   return (
     <View
       style={{
@@ -465,6 +503,104 @@ function PendingRow({
         </Text>
       </View>
 
+      {/* Add-context expander. Hidden by default so one-tap accept stays fast. */}
+      <Pressable
+        onPress={() => setShowContext((v) => !v)}
+        accessibilityRole="button"
+        accessibilityLabel={showContext ? "Hide note" : "Add note for Tilly"}
+        style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+      >
+        <Feather
+          name={showContext ? "chevron-up" : "plus"}
+          size={12}
+          color={t.accent}
+        />
+        <Text
+          style={{
+            color: t.accent,
+            fontFamily: BTFonts.sans,
+            fontWeight: "600",
+            fontSize: 12,
+          }}
+        >
+          {showContext
+            ? "Hide note"
+            : hasContext
+              ? "Edit note for Tilly"
+              : "Add note for Tilly"}
+        </Text>
+      </Pressable>
+
+      {showContext ? (
+        <View style={{ gap: 10 }}>
+          <Text
+            style={{
+              color: t.inkMute,
+              fontFamily: BTFonts.mono,
+              fontSize: 9,
+              letterSpacing: 0.8,
+              textTransform: "uppercase",
+              fontWeight: "600",
+            }}
+          >
+            Tag this spend
+          </Text>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+            {PRESET_TAGS.map((tag) => {
+              const on = tags.includes(tag);
+              return (
+                <Pressable
+                  key={tag}
+                  onPress={() => toggleTag(tag)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={`Tag ${tag}`}
+                  style={({ pressed }) => ({
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: on ? t.accent : t.rule,
+                    backgroundColor: on ? t.accentSoft : (pressed ? t.chip : "transparent"),
+                  })}
+                >
+                  <Text
+                    style={{
+                      color: on ? t.accent : t.inkSoft,
+                      fontFamily: BTFonts.sans,
+                      fontSize: 11,
+                      fontWeight: on ? "700" : "500",
+                    }}
+                  >
+                    {tag}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <TextInput
+            value={note}
+            onChangeText={setNote}
+            placeholder="Why this spend? (optional, e.g. 'Mom's birthday')"
+            placeholderTextColor={t.inkMute}
+            multiline
+            maxLength={240}
+            style={{
+              color: t.ink,
+              fontFamily: BTFonts.sans,
+              fontSize: 13,
+              padding: 10,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: t.rule,
+              backgroundColor: t.bg,
+              minHeight: 56,
+              textAlignVertical: "top",
+            }}
+          />
+        </View>
+      ) : null}
+
       <View style={{ flexDirection: "row", gap: 8 }}>
         <Pressable
           onPress={onIgnore}
@@ -494,7 +630,13 @@ function PendingRow({
           </Text>
         </Pressable>
         <Pressable
-          onPress={onAccept}
+          onPress={() =>
+            onAccept(
+              hasContext
+                ? { note: note.trim() || null, tags: tags.length > 0 ? tags : null }
+                : undefined,
+            )
+          }
           disabled={busy}
           accessibilityRole="button"
           accessibilityLabel={`Accept ${merchant}`}
@@ -523,7 +665,7 @@ function PendingRow({
               fontSize: 12,
             }}
           >
-            Accept
+            {hasContext ? "Save & accept" : "Accept"}
           </Text>
         </Pressable>
       </View>
