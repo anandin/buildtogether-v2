@@ -4583,7 +4583,7 @@ Return just the message text.`;
         user: { client_user_id: req.user!.id },
         client_name: "BuildTogether",
         products: ["transactions"] as any,
-        country_codes: ["US"] as any,
+        country_codes: ["US", "CA"] as any,
         language: "en",
         // Webhook wiring is optional; for now we poll on demand via /sync.
         webhook: process.env.PLAID_WEBHOOK_URL || undefined,
