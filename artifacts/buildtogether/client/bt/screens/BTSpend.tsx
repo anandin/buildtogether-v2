@@ -8,7 +8,10 @@
  * The screen flips to a single connect-bank empty state instead.
  */
 import React, { useEffect, useRef, useState } from "react";
-import { Animated, Easing, Platform, Pressable, ScrollView, Text, View } from "react-native";
+import { Animated, Easing, Platform, Pressable, ScrollView, Text, View, LayoutAnimation, UIManager } from "react-native";
+if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 import { LinearGradient } from "expo-linear-gradient";
 
 import { useBT } from "../BTContext";
@@ -23,7 +26,8 @@ import { SplitModal } from "../SplitModal";
 import { btApi } from "../api/client";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { Linking } from "react-native";
-import type { DayBar } from "../api/types";
+import { format } from "date-fns";
+import type { DayBar, SpendCategory, SpendTx } from "../api/types";
 
 function useSplitsList() {
   return useQuery({
@@ -203,7 +207,6 @@ export function BTSpend() {
   }
 
   const { spent, italicSpan, bars, categories } = live;
-  const headlineSpan = italicSpan ?? "this week";
   const todayLedger = "today" in live ? live.today : [];
   const paycheck = "paycheck" in live ? live.paycheck : null;
 
@@ -218,13 +221,19 @@ export function BTSpend() {
 
         <View style={{ gap: 8 }}>
           <BTLabel color={t.inkMute}>This week's pattern</BTLabel>
-          <BTSerif size={30} color={t.ink} weight="500">
-            ${spent} spent.{" "}
-            <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
-              {headlineSpan}
-            </Text>{" "}
-            are still your soft spot.
-          </BTSerif>
+          {italicSpan ? (
+            <BTSerif size={30} color={t.ink} weight="500">
+              ${spent} spent.{" "}
+              <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
+                {italicSpan}
+              </Text>{" "}
+              are still your soft spot.
+            </BTSerif>
+          ) : (
+            <BTSerif size={30} color={t.ink} weight="500">
+              ${spent} spent. No surprises this week.
+            </BTSerif>
+          )}
         </View>
 
         <BTCard t={t} padding={20}>
@@ -233,61 +242,9 @@ export function BTSpend() {
 
         <View style={{ gap: 10 }}>
           <BTLabel color={t.inkMute}>Where it goes</BTLabel>
-          {categories.map((c) => {
-            const hueColor =
-              c.hue === "accent"
-                ? t.accent
-                : c.hue === "accent2"
-                ? t.accent2
-                : c.hue === "good"
-                ? t.good
-                : c.hue === "warn"
-                ? t.warn
-                : t.inkSoft;
-            return (
-              <View
-                key={c.id}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 12,
-                  padding: 14,
-                  borderRadius: 16,
-                  backgroundColor: c.softSpot ? t.accentSoft : t.surface,
-                  borderWidth: 1,
-                  borderColor: t.rule,
-                  overflow: "hidden",
-                }}
-              >
-                <View style={{ width: 8, height: 40, borderRadius: 4, backgroundColor: hueColor }} />
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontWeight: "700", fontSize: 14 }}>
-                      {c.name}
-                    </Text>
-                    {c.softSpot ? (
-                      <BTChip bg={t.accentSoft} fg={t.accent}>
-                        soft spot
-                      </BTChip>
-                    ) : null}
-                  </View>
-                  <Text
-                    style={{
-                      color: t.inkSoft,
-                      fontFamily: BTFonts.sans,
-                      fontSize: 12,
-                      marginTop: 4,
-                    }}
-                  >
-                    {c.context}
-                  </Text>
-                </View>
-                <BTNum size={24} color={t.ink}>
-                  ${c.amt}
-                </BTNum>
-              </View>
-            );
-          })}
+          {categories.map((c) => (
+            <CategoryRow key={c.id} c={c} t={t} />
+          ))}
         </View>
 
         {activeSubs.length > 0 ? (
@@ -438,6 +395,133 @@ export function BTSpend() {
         prefillAmount={splitPrefill.amount}
         prefillLabel={splitPrefill.label}
       />
+    </View>
+  );
+}
+
+// ── CategoryRow ─────────────────────────────────────────────────────────────
+// Tappable row that collapses by default and expands to show each transaction
+// inside the category. Solves the "other: $369 — but what is it??" problem.
+
+function CategoryRow({ c, t }: { c: SpendCategory; t: BTTheme }) {
+  const [open, setOpen] = useState(false);
+  const hueColor =
+    c.hue === "accent"
+      ? t.accent
+      : c.hue === "accent2"
+      ? t.accent2
+      : c.hue === "good"
+      ? t.good
+      : c.hue === "warn"
+      ? t.warn
+      : t.inkSoft;
+
+  const toggle = () => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setOpen((v) => !v);
+  };
+
+  return (
+    <Pressable
+      onPress={toggle}
+      accessibilityRole="button"
+      accessibilityLabel={`${c.name} — $${c.amt}. Tap to ${open ? "collapse" : "expand"}`}
+      style={({ pressed }) => ({
+        backgroundColor: c.softSpot ? t.accentSoft : t.surface,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: t.rule,
+        overflow: "hidden",
+        opacity: pressed ? 0.9 : 1,
+      })}
+    >
+      {/* ── Summary row ── */}
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 12, padding: 14 }}>
+        <View style={{ width: 8, height: 40, borderRadius: 4, backgroundColor: hueColor }} />
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontWeight: "700", fontSize: 14 }}>
+              {c.name}
+            </Text>
+            {c.softSpot ? (
+              <BTChip bg={t.accentSoft} fg={t.accent}>soft spot</BTChip>
+            ) : null}
+          </View>
+          {c.context ? (
+            <Text
+              style={{ color: t.inkSoft, fontFamily: BTFonts.sans, fontSize: 11, marginTop: 3 }}
+              numberOfLines={1}
+            >
+              {c.context}
+            </Text>
+          ) : null}
+        </View>
+        <View style={{ alignItems: "flex-end", gap: 2 }}>
+          <BTNum size={24} color={t.ink}>${c.amt}</BTNum>
+          <Text style={{ color: t.inkMute, fontFamily: BTFonts.mono, fontSize: 9 }}>
+            {open ? "▲ less" : "▼ detail"}
+          </Text>
+        </View>
+      </View>
+
+      {/* ── Expanded drill-down ── */}
+      {open && c.transactions.length > 0 ? (
+        <View
+          style={{
+            borderTopWidth: 1,
+            borderTopColor: t.rule,
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+            gap: 10,
+          }}
+        >
+          {c.transactions.map((tx) => (
+            <TxLine key={tx.id} tx={tx} t={t} />
+          ))}
+        </View>
+      ) : null}
+
+      {open && c.transactions.length === 0 ? (
+        <View style={{ borderTopWidth: 1, borderTopColor: t.rule, padding: 14 }}>
+          <Text style={{ color: t.inkMute, fontFamily: BTFonts.sans, fontSize: 12 }}>
+            No transaction details available from your bank for this category.
+          </Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+}
+
+function TxLine({ tx, t }: { tx: SpendTx; t: BTTheme }) {
+  let dateLabel = tx.date;
+  try {
+    dateLabel = format(new Date(tx.date + "T12:00:00"), "MMM d");
+  } catch {}
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+      <View style={{ flex: 1 }}>
+        <Text
+          style={{ color: t.ink, fontFamily: BTFonts.sans, fontWeight: "600", fontSize: 13 }}
+          numberOfLines={1}
+        >
+          {tx.name}
+        </Text>
+        <Text
+          style={{
+            color: t.inkMute,
+            fontFamily: BTFonts.mono,
+            fontSize: 9,
+            letterSpacing: 0.8,
+            textTransform: "uppercase",
+            marginTop: 2,
+          }}
+        >
+          {dateLabel}
+        </Text>
+      </View>
+      <Text style={{ color: t.ink, fontFamily: BTFonts.serif, fontSize: 16 }}>
+        −${tx.amt.toFixed(2)}
+      </Text>
     </View>
   );
 }

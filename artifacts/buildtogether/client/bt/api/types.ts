@@ -112,6 +112,7 @@ export type MemoryNote = {
 export type MemoryList = { memory: MemoryNote[] };
 
 export type DayBar = { d: string; amt: number; soft?: boolean; today?: boolean };
+export type SpendTx = { id: string; name: string; date: string; amt: number };
 export type SpendCategory = {
   id: string;
   name: string;
@@ -119,6 +120,7 @@ export type SpendCategory = {
   context: string;
   amt: number;
   softSpot?: boolean;
+  transactions: SpendTx[];
 };
 export type SpendPattern =
   | StubEnvelope

@@ -96,13 +96,22 @@ export type DayBar = {
   today?: boolean;
 };
 
+// One line item within a category — shown when the user taps to expand.
+export type SpendTx = {
+  id: string;       // stable key for React
+  name: string;     // best available label: merchant → description → category
+  date: string;     // ISO "YYYY-MM-DD"
+  amt: number;      // positive spend amount
+};
+
 export type SpendCategory = {
   id: string;
   name: string;
   hue: "accent" | "accent2" | "good" | "warn" | "inkSoft";
-  context: string;
+  context: string;  // e.g. "3 transactions · Spotify, Netflix"
   amt: number;
   softSpot?: boolean;
+  transactions: SpendTx[];  // drill-down rows, newest first
 };
 
 export type WeeklyPattern = {
@@ -152,12 +161,23 @@ function categoryHue(name: string): SpendCategory["hue"] {
   return "inkSoft";
 }
 
-function contextFor(name: string, softDayIdx: number | null): string {
-  if (softDayIdx !== null) return `${FULL_DAY_NAMES[softDayIdx]} especially`;
-  if (name.toLowerCase().includes("late") || name.toLowerCase().includes("food"))
-    return "Always after 9pm";
-  if (name.toLowerCase().includes("groceries")) return "Trader Joe's haul";
-  return "";
+function contextFor(
+  softDayIdx: number | null,
+  txs: SpendTx[],
+): string {
+  const count = txs.length;
+  // Up to 3 unique names, deduplicated (same merchant bought twice → listed once)
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const t of txs) {
+    const n = t.name;
+    if (!seen.has(n)) { seen.add(n); names.push(n); }
+    if (names.length >= 3) break;
+  }
+  const nameStr = names.join(", ");
+  const countStr = count === 1 ? "1 transaction" : `${count} transactions`;
+  const dayStr = softDayIdx !== null ? ` · ${FULL_DAY_NAMES[softDayIdx]} especially` : "";
+  return nameStr ? `${countStr} · ${nameStr}${dayStr}` : `${countStr}${dayStr}`;
 }
 
 /**
@@ -240,26 +260,49 @@ export async function buildWeeklyPattern(
     today: i === todayIdx,
   }));
 
-  // ─── Categories: this week's top spends with soft-spot tag ─────────────
+  // ─── Categories: this week's top spends with soft-spot tag + drill-down ─
   const catTotals = new Map<string, number>();
+  const catTxs = new Map<string, UnifiedTx[]>();
   for (const t of thisWeekTx) {
     const cat = t.category;
     catTotals.set(cat, (catTotals.get(cat) ?? 0) + t.amount);
+    const arr = catTxs.get(cat) ?? [];
+    arr.push(t);
+    catTxs.set(cat, arr);
   }
   const sortedCats = [...catTotals.entries()]
     .sort(([, a], [, b]) => b - a)
     .slice(0, 5);
 
-  const categories: SpendCategory[] = sortedCats.map(([name, amt]) => {
+  const categories: SpendCategory[] = sortedCats.map(([name, amt], catIdx) => {
     const softCell = softCells.find((c) => c.category === name);
     const softDayIdx = softCell ? softCell.dayIdx : null;
+    // Build per-transaction list for drill-down. Already sorted newest-first
+    // from readAllTransactions; dedupe by (name, amount) so Plaid sandbox
+    // dupes don't inflate the count shown to the user.
+    const rawTxs = catTxs.get(name) ?? [];
+    const seenKeys = new Set<string>();
+    const txList: SpendTx[] = [];
+    for (const t of rawTxs) {
+      const label = (t.who || name).trim();
+      const key = `${label.toLowerCase()}::${t.amount}`;
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      txList.push({
+        id: `cat-${catIdx}-tx-${txList.length}`,
+        name: label,
+        date: t.date,
+        amt: t.amount,
+      });
+    }
     return {
       id: name.toLowerCase().replace(/\s+/g, "-"),
       name,
       hue: categoryHue(name),
-      context: contextFor(name, softDayIdx),
+      context: contextFor(softDayIdx, txList),
       amt: Math.round(amt),
       softSpot: !!softCell,
+      transactions: txList,
     };
   });
 
