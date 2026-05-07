@@ -420,6 +420,31 @@ export function mountPasskeyRoutes(app: Express): void {
  *
  * Must run AFTER requireAuth.
  */
+/**
+ * Dev-only routes — passkey bypass for Expo Go / simulator testing.
+ * MUST NOT be mounted in production (checked by caller in routes/index.ts).
+ *
+ * POST /api/dev/passkey-bypass
+ *   Stamps passkeyVerifiedAt on the current session without a real biometric
+ *   ceremony. Lets developers test bank-connected screens in Expo Go where
+ *   the Secure Enclave / Face ID gate isn't available.
+ */
+export function mountPasskeyDevRoutes(app: Express): void {
+  app.post("/api/dev/passkey-bypass", requireAuth, async (req, res) => {
+    try {
+      const sid = await getSessionId(req);
+      if (!sid) return res.status(401).json({ error: "no session" });
+      const now = new Date();
+      await db.update(sessions).set({ passkeyVerifiedAt: now }).where(eq(sessions.id, sid));
+      console.log(`[dev] passkey bypassed for session ${sid}`);
+      res.json({ ok: true, passkeyVerifiedAt: now.toISOString() });
+    } catch (err: any) {
+      console.error("[dev] passkey-bypass error:", err);
+      res.status(500).json({ error: "bypass failed" });
+    }
+  });
+}
+
 export async function requirePasskeyVerified(req: Request, res: Response, next: NextFunction) {
   try {
     const sid = await getSessionId(req);

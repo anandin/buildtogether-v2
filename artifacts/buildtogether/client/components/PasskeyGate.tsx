@@ -21,6 +21,7 @@ import {
   verifyPasskey,
   hasLocalPasskey,
   isPasskeySupported,
+  devPasskeyBypass,
 } from "@/lib/passkey";
 import { useAuth } from "@/context/AuthContext";
 
@@ -112,6 +113,19 @@ export function PasskeyGate({ visible, mode, onSuccess, onCancel, reason }: Prop
     }
   };
 
+  const handleDevBypass = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      await devPasskeyBypass();
+      onSuccess();
+    } catch (err: any) {
+      setError(err?.message || "Dev bypass failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const title = needsReauth
     ? "One quick step first"
     : mode === "enroll"
@@ -170,6 +184,20 @@ export function PasskeyGate({ visible, mode, onSuccess, onCancel, reason }: Prop
               )}
             </Pressable>
           </View>
+          {__DEV__ ? (
+            <Pressable
+              onPress={handleDevBypass}
+              disabled={busy}
+              style={[styles.devBtn, { borderColor: theme.textSecondary }]}
+              accessibilityRole="button"
+              accessibilityLabel="Skip Face ID (dev only)"
+              testID="button-passkey-dev-bypass"
+            >
+              <ThemedText type="tiny" style={{ color: theme.textSecondary }}>
+                Skip Face ID (dev only)
+              </ThemedText>
+            </Pressable>
+          ) : null}
         </View>
       </View>
     </Modal>
@@ -194,6 +222,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   row: { flexDirection: "row", gap: Spacing.sm, width: "100%", marginTop: Spacing.sm },
+  devBtn: {
+    width: "100%",
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.sm,
+    borderWidth: 1,
+    alignItems: "center",
+  },
   btn: {
     flex: 1,
     paddingVertical: Spacing.md,

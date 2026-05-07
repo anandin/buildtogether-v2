@@ -276,6 +276,20 @@ export async function listServerCredentials(): Promise<ServerCredential[]> {
   return data.credentials || [];
 }
 
+/**
+ * Dev-only: bypass the passkey gate without a real biometric ceremony.
+ * Calls the server endpoint that stamps passkeyVerifiedAt directly.
+ * Only works when the server is running in non-production mode.
+ * Should only be called from UI that is guarded by __DEV__.
+ */
+export async function devPasskeyBypass(): Promise<void> {
+  const res = await apiRequest("POST", "/api/dev/passkey-bypass");
+  if (!res.ok) {
+    const t = await res.text();
+    throw new Error(`Dev bypass failed: ${t}`);
+  }
+}
+
 export async function deleteServerCredential(id: string): Promise<void> {
   const res = await apiRequest("DELETE", `/api/auth/passkey/credentials/${id}`);
   if (!res.ok) throw new Error("Failed to delete passkey");

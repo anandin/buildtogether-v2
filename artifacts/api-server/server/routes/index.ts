@@ -29,7 +29,7 @@ import { mountPushRoutes } from "./push";
 import { mountExpensesRoutes } from "./expenses";
 import { mountInvitesRoutes } from "./invites";
 import { mountDemoRoutes } from "./demo";
-import { mountPasskeyRoutes } from "./passkey";
+import { mountPasskeyRoutes, mountPasskeyDevRoutes } from "./passkey";
 
 export function registerTillyRoutes(app: Express): void {
   mountPasskeyRoutes(app);
@@ -54,8 +54,9 @@ export function registerTillyRoutes(app: Express): void {
   // QA / staging, dangerous in production. Mount only in non-prod environments.
   if (process.env.NODE_ENV !== "production") {
     mountDemoRoutes(app);
-    console.log("[routes] demo routes mounted (NODE_ENV != production)");
+    mountPasskeyDevRoutes(app);
+    console.log("[routes] demo + passkey-dev routes mounted (NODE_ENV != production)");
   } else {
-    console.log("[routes] demo routes SKIPPED (NODE_ENV == production)");
+    console.log("[routes] demo + passkey-dev routes SKIPPED (NODE_ENV == production)");
   }
 }
