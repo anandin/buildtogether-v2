@@ -86,6 +86,27 @@ export function PasskeyGate({ visible, mode, onSuccess, onCancel, reason }: Prop
     } catch (err: any) {
       const raw = String(err?.message || "");
       const code = String(err?.code || "");
+      // Expo Go can't satisfy expo-secure-store's `requireAuthentication`
+      // because its pre-built Info.plist lacks `NSFaceIDUsageDescription`.
+      // In dev, transparently call the server-side bypass so bank flows
+      // still work without a custom dev build. Production is unaffected:
+      // both __DEV__ and the server's NODE_ENV !== "production" guard
+      // must hold, and the bypass endpoint isn't mounted in prod.
+      if (
+        __DEV__ &&
+        /NSFaceIDUsageDescription|setValueWithKeyAsync/i.test(raw)
+      ) {
+        try {
+          console.log("[passkey] Expo Go biometric unavailable — auto-bypassing in dev");
+          await devPasskeyBypass();
+          onSuccess();
+          return;
+        } catch (bypassErr: any) {
+          // Fall through to the normal error path so the user still has
+          // the manual "Skip Face ID (dev only)" button as a fallback.
+          console.warn("[passkey] auto-bypass failed:", bypassErr?.message);
+        }
+      }
       // If the SHA-512 polyfill failed to install for any reason, hide the
       // raw "crypto.subtle must be defined" exception behind a friendly
       // message — the user can't do anything about the underlying issue.
