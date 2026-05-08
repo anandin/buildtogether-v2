@@ -575,6 +575,22 @@
         loadConfig();
         loadStats();
       }
+
+      // Deep-link: /admin/tilly?userId=… auto-fills the user-context
+      // input and triggers a load so admins can paste a URL and land
+      // straight on a user's prompt context.
+      (function bootstrapFromQuery() {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const uid = params.get("userId");
+          if (uid && getToken()) {
+            $("uc-user-id").value = uid;
+            $("sp-user-id").value = uid;
+            // defer one tick so handlers are bound.
+            setTimeout(() => $("uc-btn").click(), 0);
+          }
+        } catch (_e) { /* no-op */ }
+      })();
     </script>
   </body>
 </html>

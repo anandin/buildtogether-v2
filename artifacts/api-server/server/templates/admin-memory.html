@@ -267,6 +267,7 @@
           document.getElementById("token-input").value = token;
           document.getElementById("content").style.display = "block";
           await loadUsers();
+          await maybeBootstrapFromQuery();
         }
         document.getElementById("auth-btn").addEventListener("click", async () => {
           token = document.getElementById("token-input").value.trim();
@@ -274,8 +275,27 @@
             localStorage.setItem("build_together_auth_token", token);
             document.getElementById("content").style.display = "block";
             await loadUsers();
+            await maybeBootstrapFromQuery();
           }
         });
+      }
+
+      // Deep-link: /admin/memory?userId=… auto-selects that user and
+      // highlights its row so admins can paste a URL and land straight
+      // on the user's snapshot.
+      async function maybeBootstrapFromQuery() {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          const uid = params.get("userId");
+          if (!uid) return;
+          const row = document.querySelector('#user-list .user-row[data-id="' + uid + '"]');
+          if (row) {
+            document.querySelectorAll("#user-list .user-row").forEach(r => r.classList.remove("active"));
+            row.classList.add("active");
+            row.scrollIntoView({ block: "nearest" });
+          }
+          await selectUser(uid);
+        } catch (_e) { /* no-op */ }
       }
 
       async function loadUsers() {

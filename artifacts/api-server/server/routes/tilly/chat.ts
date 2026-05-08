@@ -620,7 +620,13 @@ export function mountTillyChatRoutes(app: Express): void {
                   memoryLine?: string | null;
                 })
               : null;
-          if (meta && Array.isArray(meta.rows) && meta.rows.length) {
+          // Disambiguate: only the on-demand money-flow analysis card
+          // should prime chat follow-ups; other cards using
+          // intent="analysis" (e.g. affordability checks) carry a
+          // different title and would produce confusing context.
+          const isMoneyFlow =
+            meta && typeof meta.title === "string" && /money flow/i.test(meta.title);
+          if (isMoneyFlow && meta && Array.isArray(meta.rows) && meta.rows.length) {
             const ageMin = Math.round((Date.now() - ar!.createdAt.getTime()) / 60000);
             const rowLines = meta.rows
               .map((r) => `  ${r.label}: ${r.sign === "-" ? "-" : ""}$${Math.abs(r.amt).toFixed(2)}`)
