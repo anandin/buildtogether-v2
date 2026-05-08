@@ -29,6 +29,13 @@
       "when": 1761639600000,
       "tag": "0003_push_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1778639600000,
+      "tag": "0004_tilly_llm_call_log",
+      "breakpoints": true
     }
   ]
 }

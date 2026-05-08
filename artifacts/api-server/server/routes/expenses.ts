@@ -191,7 +191,7 @@ async function parseToExpense(raw: string, userId?: string | null): Promise<Pars
       schema: ParsedExpenseSchema,
       schemaName: "expense_parse",
       meta: { userId: userId ?? null, route: "expense-parse" },
-    } as any);
+    });
   } catch (err) {
     console.warn("[expenses] LLM parse fell back to stub:", err);
     return {

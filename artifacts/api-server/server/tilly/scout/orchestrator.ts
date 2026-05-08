@@ -252,7 +252,7 @@ export async function processScoutJob(jobId: string): Promise<void> {
         location: job.location,
         searches,
         userId: job.userId,
-      } as any);
+      });
       resultBlob = advice as unknown as Record<string, unknown>;
       summary = advice.summary;
     } else {
