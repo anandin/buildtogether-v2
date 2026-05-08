@@ -5270,6 +5270,84 @@ Return just the message text.`;
     },
   );
 
+  // Bulk ignore every pending tx in one signature group. Mirrors the
+  // bulk-accept path: marks each pending row "ignored", then learns an
+  // ignore rule once for the whole group (with applyToFuture forcing
+  // auto_ignore). Used by the GroupCard "Ignore all" action.
+  app.post(
+    "/api/plaid/pending-group/ignore",
+    requireAuth,
+    requirePasskeyVerified,
+    async (req, res) => {
+      try {
+        const { coupleId, signature, applyToFuture } = req.body || {};
+        if (!coupleId || !signature) {
+          return res.status(400).json({ error: "coupleId and signature required" });
+        }
+        if (req.user?.coupleId !== coupleId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+
+        const rows = await db
+          .select()
+          .from(plaidTransactions)
+          .where(
+            and(
+              eq(plaidTransactions.coupleId, coupleId),
+              eq(plaidTransactions.status, "pending_review"),
+            ),
+          );
+        const inGroup = rows.filter((r) => (r.signature ?? merchantSignature(r)) === signature);
+        if (inGroup.length === 0) {
+          return res.status(404).json({ error: "No pending transactions in this group" });
+        }
+
+        let ignoredCount = 0;
+        for (const ptx of inGroup) {
+          const claimed = await db
+            .update(plaidTransactions)
+            .set({ status: "ignored" })
+            .where(
+              and(
+                eq(plaidTransactions.id, ptx.id),
+                eq(plaidTransactions.status, "pending_review"),
+              ),
+            )
+            .returning({ id: plaidTransactions.id });
+          if (claimed.length > 0) ignoredCount += 1;
+        }
+
+        try {
+          const sample = inGroup[0];
+          const rule = await upsertIgnoreRule(coupleId, sample);
+          if (applyToFuture && !rule.autoIgnore) {
+            const { merchantRules } = await import("../shared/schema");
+            await db
+              .update(merchantRules)
+              .set({ autoIgnore: true, ignoreCount: Math.max(rule.ignoreCount, 2), updatedAt: new Date() })
+              .where(eq(merchantRules.id, rule.id));
+          }
+          await db
+            .update(plaidTransactions)
+            .set({ signature: rule.signature, appliedRuleId: rule.id })
+            .where(
+              and(
+                eq(plaidTransactions.coupleId, coupleId),
+                eq(plaidTransactions.signature, rule.signature),
+              ),
+            );
+        } catch (ruleErr) {
+          console.warn("[merchant-rules] bulk ignore upsert failed:", ruleErr);
+        }
+
+        res.json({ ignored: ignoredCount, total: inGroup.length });
+      } catch (error: any) {
+        console.error("Plaid bulk-ignore error:", error);
+        res.status(500).json({ error: error.message });
+      }
+    },
+  );
+
   // ==================== FEEDBACK ENDPOINTS ====================
 
   app.post("/api/feedback", requireAuth, async (req, res) => {

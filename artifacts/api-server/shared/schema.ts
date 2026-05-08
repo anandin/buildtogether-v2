@@ -842,7 +842,7 @@ export const merchantRules = pgTable("merchant_rules", {
   signature: text("signature").notNull(), // normalized merchant key
   lastMerchant: text("last_merchant").notNull(), // human-readable display name
   category: text("category"), // overrides plaid mapping when set
-  defaultTags: jsonb("default_tags"), // string[]
+  defaultTags: jsonb("default_tags").$type<string[] | null>(), // string[]
   defaultNote: text("default_note"),
   // Auto-accept on next sync: true once a confident pattern is established.
   // Capped at amounts ≤ $5000 unless hit_count ≥ 5.
@@ -876,7 +876,7 @@ export const tillyQuestions = pgTable("tilly_questions", {
   // unknown_merchant | category_spike | outsized_tx
   kind: text("kind").notNull(),
   body: text("body").notNull(), // user-facing question, in Tilly voice
-  payload: jsonb("payload").notNull().default(sql`'{}'::jsonb`), // signature, category, amounts, txn ids
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default(sql`'{}'::jsonb`), // signature, category, amounts, txn ids
   status: text("status").notNull().default("open"), // open | answered | dismissed
   answer: text("answer"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

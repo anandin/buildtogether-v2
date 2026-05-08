@@ -286,4 +286,7 @@ export type PlaidPendingTransaction = {
   ourCategory: string | null;
   pending: boolean;
   status: "pending_review" | "accepted" | "ignored";
+  // Task #23 — normalized merchant key written by the sync hook. Older rows
+  // (pre-#23) may not have this; clients should treat null as "no group".
+  signature: string | null;
 };

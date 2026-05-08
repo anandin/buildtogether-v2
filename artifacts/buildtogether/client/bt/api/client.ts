@@ -323,6 +323,15 @@ export const btApi = {
       `/api/plaid/pending-group/accept`,
       body,
     ),
+  plaidPendingGroupIgnore: (body: {
+    coupleId: string;
+    signature: string;
+    applyToFuture?: boolean;
+  }) =>
+    postJson<{ ignored: number; total: number }>(
+      `/api/plaid/pending-group/ignore`,
+      body,
+    ),
   tillyQuestions: () =>
     getJson<{ questions: TillyQuestion[] }>(`/api/tilly/questions`),
   tillyQuestionAnswer: (

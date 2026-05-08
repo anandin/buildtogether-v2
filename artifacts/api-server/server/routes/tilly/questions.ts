@@ -11,7 +11,7 @@
 import type { Express, Request, Response } from "express";
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "../../db";
-import { tillyQuestions, plaidTransactions } from "../../../shared/schema";
+import { tillyQuestions, plaidTransactions, tillyMemory } from "../../../shared/schema";
 import { requireAuth } from "../../middleware/auth";
 import { upsertRuleFromAccept } from "../../tilly/merchant-rules";
 
@@ -98,6 +98,29 @@ export function mountTillyQuestionsRoutes(app: Express): void {
         }
       } catch (err) {
         console.warn("[tilly-questions] create_rule failed:", err);
+      }
+    }
+
+    // Task #23 fix: persist non-rule answers to tillyMemory so the
+    // assistant remembers the user's response next time they chat ("you
+    // told me Frank Bistro is your weekly Friday lunch spot"). Without
+    // this, an answered "what is X?" disappears the moment the row is
+    // closed and Tilly could ask again on a subsequent merchant.
+    if (!ruleCreated && typeof answer === "string" && answer.trim()) {
+      try {
+        const trimmed = answer.trim().slice(0, 500);
+        const today = new Date();
+        const dateLabel = today.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        await db.insert(tillyMemory).values({
+          userId: req.user.id,
+          householdId: req.user.coupleId,
+          kind: "observation",
+          body: `You told me about "${q.body}" — ${trimmed}`,
+          source: "chat",
+          dateLabel,
+        });
+      } catch (memErr) {
+        console.warn("[tilly-questions] memory write failed:", memErr);
       }
     }
 

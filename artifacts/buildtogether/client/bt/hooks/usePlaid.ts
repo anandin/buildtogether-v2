@@ -131,6 +131,19 @@ export function usePlaidPendingGroupAccept() {
   });
 }
 
+export function usePlaidPendingGroupIgnore() {
+  const qc = useQueryClient();
+  const { user } = useUser();
+  const couple = user?.householdId ?? null;
+  return useMutation({
+    mutationFn: (input: { signature: string; applyToFuture?: boolean }) => {
+      requireCouple(couple);
+      return btApi.plaidPendingGroupIgnore({ ...input, coupleId: couple as string });
+    },
+    onSuccess: () => invalidatePlaid(qc, couple),
+  });
+}
+
 /**
  * Hook callers like BankConnectionsScreen drive PlaidConnectButton via its
  * `onConnected` callback. Expose a thin helper so the call site doesn't

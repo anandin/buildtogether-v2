@@ -34,6 +34,7 @@ import {
   usePlaidItems,
   usePlaidPendingGrouped,
   usePlaidPendingGroupAccept,
+  usePlaidPendingGroupIgnore,
 } from "../../hooks/usePlaid";
 import { PasskeyStaleBanner } from "./PasskeyStaleBanner";
 import { usePasskeyGate } from "@/context/PasskeyGateContext";
@@ -47,6 +48,7 @@ export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
   const accept = usePlaidAccept();
   const ignore = usePlaidIgnore();
   const groupAccept = usePlaidPendingGroupAccept();
+  const groupIgnore = usePlaidPendingGroupIgnore();
   const sync = usePlaidSync();
   const passkeyGate = usePasskeyGate();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -62,7 +64,7 @@ export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
   const multiGroupSigs = new Set(groups.filter((g) => g.count >= 2).map((g) => g.signature));
   const multiGroups = groups.filter((g) => multiGroupSigs.has(g.signature));
   const singleRows = list.filter((row) => {
-    const sig = (row as any).signature ?? null;
+    const sig = row.signature;
     return !sig || !multiGroupSigs.has(sig);
   });
 
@@ -112,6 +114,20 @@ export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
       });
     } catch (err: any) {
       Alert.alert("Couldn't accept group", err?.message ?? "Try again.");
+    } finally {
+      setBusyGroup(null);
+    }
+  };
+
+  const handleGroupIgnore = async (g: PendingGroup, applyToFuture: boolean) => {
+    setBusyGroup(g.signature);
+    try {
+      await groupIgnore.mutateAsync({
+        signature: g.signature,
+        applyToFuture,
+      });
+    } catch (err: any) {
+      Alert.alert("Couldn't ignore group", err?.message ?? "Try again.");
     } finally {
       setBusyGroup(null);
     }
@@ -231,6 +247,7 @@ export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
                 t={t}
                 busy={busyGroup === g.signature}
                 onAccept={(ctx) => handleGroupAccept(g, ctx)}
+                onIgnore={(applyToFuture) => handleGroupIgnore(g, applyToFuture)}
               />
             ))}
             {/* Then singletons via the existing per-row UI */}
@@ -733,6 +750,7 @@ function GroupCard({
   t,
   busy,
   onAccept,
+  onIgnore,
 }: {
   group: PendingGroup;
   t: BTTheme;
@@ -743,6 +761,7 @@ function GroupCard({
     note: string | null;
     applyToFuture: boolean;
   }) => void;
+  onIgnore: (applyToFuture: boolean) => void;
 }) {
   const [showContext, setShowContext] = useState(false);
   const [tags, setTags] = useState<string[]>(group.suggestedTags ?? []);
@@ -971,47 +990,92 @@ function GroupCard({
         </View>
       ) : null}
 
-      <Pressable
-        onPress={() =>
-          onAccept({
-            category: group.suggestedCategory,
-            tags: tags.length > 0 ? tags : null,
-            note: note.trim() || null,
-            applyToFuture,
-          })
-        }
-        disabled={busy}
-        accessibilityRole="button"
-        accessibilityLabel={`Accept all ${group.count} ${group.displayName}`}
-        style={({ pressed }) => ({
-          paddingVertical: 11,
-          borderRadius: 999,
-          backgroundColor: t.ink,
-          alignItems: "center",
-          justifyContent: "center",
-          flexDirection: "row",
-          gap: 6,
-          opacity: pressed ? 0.85 : 1,
-        })}
-      >
-        {busy ? (
-          <ActivityIndicator size="small" color={t.surface} />
-        ) : (
-          <Feather name="check" size={13} color={t.surface} />
-        )}
-        <Text
-          style={{
-            color: t.surface,
-            fontFamily: BTFonts.sans,
-            fontWeight: "700",
-            fontSize: 12,
-          }}
+      <View style={{ flexDirection: "row", gap: 8 }}>
+        <Pressable
+          onPress={() =>
+            onAccept({
+              category: group.suggestedCategory,
+              tags: tags.length > 0 ? tags : null,
+              note: note.trim() || null,
+              applyToFuture,
+            })
+          }
+          disabled={busy}
+          accessibilityRole="button"
+          accessibilityLabel={`Accept all ${group.count} ${group.displayName}`}
+          style={({ pressed }) => ({
+            flex: 1,
+            paddingVertical: 11,
+            borderRadius: 999,
+            backgroundColor: t.ink,
+            alignItems: "center",
+            justifyContent: "center",
+            flexDirection: "row",
+            gap: 6,
+            opacity: pressed ? 0.85 : 1,
+          })}
         >
-          {busy
-            ? "Accepting…"
-            : `Accept all ${group.count} · $${group.totalAmount.toFixed(2)}`}
-        </Text>
-      </Pressable>
+          {busy ? (
+            <ActivityIndicator size="small" color={t.surface} />
+          ) : (
+            <Feather name="check" size={13} color={t.surface} />
+          )}
+          <Text
+            style={{
+              color: t.surface,
+              fontFamily: BTFonts.sans,
+              fontWeight: "700",
+              fontSize: 12,
+            }}
+          >
+            {busy
+              ? "Working…"
+              : `Accept all ${group.count} · $${group.totalAmount.toFixed(2)}`}
+          </Text>
+        </Pressable>
+        <Pressable
+          onPress={() => {
+            Alert.alert(
+              `Ignore all ${group.count}?`,
+              applyToFuture
+                ? `Tilly will silently drop future ${group.displayName} transactions too.`
+                : `These ${group.count} pending rows will move to ignored.`,
+              [
+                { text: "Cancel", style: "cancel" },
+                {
+                  text: "Ignore all",
+                  style: "destructive",
+                  onPress: () => onIgnore(applyToFuture),
+                },
+              ],
+            );
+          }}
+          disabled={busy}
+          accessibilityRole="button"
+          accessibilityLabel={`Ignore all ${group.count} ${group.displayName}`}
+          style={({ pressed }) => ({
+            paddingVertical: 11,
+            paddingHorizontal: 14,
+            borderRadius: 999,
+            borderWidth: 1,
+            borderColor: t.rule,
+            backgroundColor: pressed ? t.chip : "transparent",
+            alignItems: "center",
+            justifyContent: "center",
+          })}
+        >
+          <Text
+            style={{
+              color: t.inkSoft,
+              fontFamily: BTFonts.sans,
+              fontWeight: "600",
+              fontSize: 12,
+            }}
+          >
+            Ignore all
+          </Text>
+        </Pressable>
+      </View>
     </View>
   );
 }

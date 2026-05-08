@@ -117,7 +117,7 @@ export async function upsertRuleFromAccept(input: AcceptInput): Promise<Merchant
       signature,
       lastMerchant: display,
       category: cleanCat,
-      defaultTags: cleanTags as any,
+      defaultTags: cleanTags,
       defaultNote: cleanNote,
       autoAccept: false,
       autoIgnore: false,
@@ -141,7 +141,7 @@ export async function upsertRuleFromAccept(input: AcceptInput): Promise<Merchant
     .set({
       lastMerchant: display,
       category: cleanCat ?? existing.category,
-      defaultTags: (cleanTags ?? (existing.defaultTags as any)) as any,
+      defaultTags: cleanTags ?? existing.defaultTags,
       defaultNote: cleanNote ?? existing.defaultNote,
       autoAccept: flipAutoAccept,
       autoIgnore: false, // any accept clears ignore
@@ -214,7 +214,7 @@ export type ApplyResult =
  */
 export function applyRuleToPlaidTx(plaidTx: PlaidTxLike, rule: MerchantRule | null): ApplyResult {
   if (!rule) return { kind: "none" };
-  const tags = Array.isArray(rule.defaultTags) ? (rule.defaultTags as string[]) : null;
+  const tags = Array.isArray(rule.defaultTags) ? rule.defaultTags : null;
   if (rule.autoIgnore) return { kind: "auto_ignore", ruleId: rule.id };
   if (rule.autoAccept) {
     const amt = Math.abs(plaidTx.amount);

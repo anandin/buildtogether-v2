@@ -268,7 +268,7 @@ export async function generateQuestionsForHousehold(householdId: string): Promis
       householdId,
       kind: c.kind,
       body: c.body,
-      payload: c.payload as any,
+      payload: c.payload,
       status: "open",
     });
     inserted += 1;
