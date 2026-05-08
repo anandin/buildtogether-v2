@@ -45,6 +45,7 @@ type Msg =
       title: string;
       rows: { label: string; amt: number; sign: "+" | "-" | "=" }[];
       note: string;
+      topMerchants?: { name: string; total: number; count: number }[];
       anomalies?: { merchant: string; total: number; reason: "spike" | "new"; baseline?: number }[];
       openQuestions?: string[];
       memoryLine?: string | null;
@@ -93,6 +94,7 @@ function toLocal(m: TillyMessage): Msg {
       title: m.title,
       rows: m.rows,
       note: m.note,
+      topMerchants: m.topMerchants ?? [],
       anomalies: m.anomalies ?? [],
       openQuestions: m.openQuestions ?? [],
       memoryLine: m.memoryLine ?? null,
@@ -509,6 +511,37 @@ function Bubble({
           >
             {m.note}
           </Text>
+          {m.topMerchants && m.topMerchants.length > 0 ? (
+            <View style={{ gap: 4 }}>
+              <BTLabel color={t.inkMute} size={10}>Top merchants</BTLabel>
+              {m.topMerchants.slice(0, 8).map((tm, i) => (
+                <View
+                  key={`tm${i}`}
+                  style={{ flexDirection: "row", justifyContent: "space-between" }}
+                >
+                  <Text
+                    style={{ fontFamily: BTFonts.sans, fontSize: 13, color: t.ink, flex: 1 }}
+                    numberOfLines={1}
+                  >
+                    {tm.name}
+                  </Text>
+                  <Text
+                    style={{
+                      fontFamily: BTFonts.mono,
+                      fontSize: 12,
+                      fontWeight: "700",
+                      color: t.ink,
+                    }}
+                  >
+                    ${tm.total.toFixed(2)}
+                    <Text style={{ color: t.inkMute, fontWeight: "400" }}>
+                      {" "}· {tm.count}×
+                    </Text>
+                  </Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
           {m.anomalies && m.anomalies.length > 0 ? (
             <View style={{ gap: 4 }}>
               <BTLabel color={t.inkMute} size={10}>Worth a second look</BTLabel>

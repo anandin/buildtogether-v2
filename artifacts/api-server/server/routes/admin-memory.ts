@@ -272,23 +272,23 @@ export function mountAdminMemoryRoutes(app: Express): void {
       const offset = Math.max(Number(req.query?.offset ?? 0), 0);
       const filter = typeof req.query?.layer === "string" ? req.query.layer : null;
 
-      const [rows, dossier, distilledRows, totalRow] = await Promise.all([
+      // Fetch the user's full L0 (capped at a sane ceiling) so layer
+      // counts and ?layer= filtering operate over the WHOLE set, not
+      // just the current page. Pagination is applied AFTER classify+
+      // filter so legend counts and the visible page agree.
+      const FULL_CAP = 5000;
+      const [rows, dossier, distilledRows] = await Promise.all([
         db
           .select()
           .from(tillyMemory)
           .where(eq(tillyMemory.userId, id))
           .orderBy(desc(tillyMemory.noticedAt))
-          .limit(limit)
-          .offset(offset),
+          .limit(FULL_CAP),
         getLatestDossier(id),
         db
           .select({ sourceEventIds: tillyMemoryV2.sourceEventIds, body: tillyMemoryV2.body })
           .from(tillyMemoryV2)
           .where(eq(tillyMemoryV2.userId, id)),
-        db
-          .select({ c: sql<number>`count(*)::int` })
-          .from(tillyMemory)
-          .where(eq(tillyMemory.userId, id)),
       ]);
 
       // Build dossier-text bag once. Lowercased + collapsed whitespace so
@@ -336,20 +336,24 @@ export function mountAdminMemoryRoutes(app: Express): void {
         };
       });
 
-      // Layer counts span the WHOLE user's L0 (not just this page) so the
-      // legend doesn't lie when the admin pages forward.
-      const counts = { raw: totalRow[0]?.c ?? 0, distilled: 0, inDossier: 0, archived: 0 };
-      // Distilled / in-dossier / archived are derived from the page rows
-      // for the visible breakdown; that's fine because the legend is
-      // labeled "this page" in the UI.
+      // Counts span the WHOLE classified set (capped at FULL_CAP).
+      const counts = { raw: all.length, distilled: 0, inDossier: 0, archived: 0 };
       for (const r of all) {
         if (r.layer === "distilled") counts.distilled++;
         else if (r.layer === "in-dossier") counts.inDossier++;
         else if (r.layer === "archived") counts.archived++;
       }
 
-      const memories = filter ? all.filter((r) => r.layer === filter) : all;
-      res.json({ memories, counts });
+      // Filter THEN paginate so the visible page is an honest slice
+      // of the filtered total (not a slice of the unfiltered page).
+      const filtered = filter ? all.filter((r) => r.layer === filter) : all;
+      const memories = filtered.slice(offset, offset + limit);
+      res.json({
+        memories,
+        counts,
+        total: filtered.length,
+        capped: rows.length >= FULL_CAP,
+      });
     },
   );
 

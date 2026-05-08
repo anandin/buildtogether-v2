@@ -132,8 +132,10 @@ type WireMessage =
       title: string;
       rows: { label: string; amt: number; sign: "+" | "-" | "=" }[];
       note: string;
-      // Task #24: deterministic anomalies + open questions + memory
-      // provenance line that ride alongside the LLM-written `note`.
+      // Task #24: top merchants + deterministic anomalies + open
+      // questions + memory provenance line that ride alongside the
+      // LLM-written `note`.
+      topMerchants?: { name: string; total: number; count: number }[];
       anomalies?: { merchant: string; total: number; reason: "spike" | "new"; baseline?: number }[];
       openQuestions?: string[];
       memoryLine?: string | null;

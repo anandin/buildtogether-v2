@@ -41,6 +41,7 @@ interface AnalysisPayload {
   title: string;
   rows: AnalysisRow[];
   note: string;
+  topMerchants: { name: string; total: number; count: number }[];
   anomalies: { merchant: string; total: number; reason: "spike" | "new"; baseline?: number }[];
   openQuestions: string[];
   memoryLine: string | null;
@@ -174,33 +175,58 @@ async function gather90DaySpend(householdId: string): Promise<{
       date: String(e.date),
     });
   }
+  // Bucket each merchant's prior 60d into 8 weekly totals so we can
+  // take a real *median* (not a mean). Median is more robust to a
+  // single big-ticket charge inflating an average baseline. The
+  // recent window stays as the merchant's 30d total compared against
+  // the median weekly baseline scaled to 30 days.
   const recent = new Map<string, { total: number; count: number }>();
-  const prior = new Map<string, { total: number; count: number }>();
+  const priorWeekly = new Map<string, number[]>(); // merchant -> 8 weekly totals
+  const today = new Date();
   for (const t of allWithDates) {
-    const bucket = t.date >= cutoffIso ? recent : prior;
-    const v = bucket.get(t.merchant) ?? { total: 0, count: 0 };
-    v.total += t.amount;
-    v.count += 1;
-    bucket.set(t.merchant, v);
+    if (t.date >= cutoffIso) {
+      const v = recent.get(t.merchant) ?? { total: 0, count: 0 };
+      v.total += t.amount;
+      v.count += 1;
+      recent.set(t.merchant, v);
+    } else {
+      // Bucket index 0..7 (week 0 = oldest, week 7 = most recent prior).
+      const dt = new Date(t.date);
+      const daysAgo = Math.floor((today.getTime() - dt.getTime()) / 86400000) - 30;
+      const wk = Math.min(7, Math.max(0, Math.floor(daysAgo / 7)));
+      const arr = priorWeekly.get(t.merchant) ?? new Array<number>(8).fill(0);
+      arr[wk] += t.amount;
+      priorWeekly.set(t.merchant, arr);
+    }
   }
+  const median = (xs: number[]): number => {
+    if (xs.length === 0) return 0;
+    const s = [...xs].sort((a, b) => a - b);
+    const m = Math.floor(s.length / 2);
+    return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  };
   const anomalies: AnomalyHit[] = [];
   for (const [merchant, r] of recent.entries()) {
-    const p = prior.get(merchant);
-    if (!p) {
+    const weeks = priorWeekly.get(merchant);
+    if (!weeks || weeks.every((v) => v === 0)) {
       if (r.total >= 30) {
         anomalies.push({ merchant, total: r.total, count: r.count, reason: "new" });
       }
       continue;
     }
-    // Normalize prior to a 30-day rate (it covered 60 days).
-    const priorRate = p.total / 2;
-    if (priorRate > 0 && r.total > 2 * priorRate && r.total >= 25) {
+    // Weekly median (over all 8 weeks, including zero-weeks — a
+    // merchant that hits once a month should have a low median, so
+    // the next month's spend reads as a spike).
+    const wkMedian = median(weeks);
+    // Scale to a 30-day equivalent (4.286 weeks per 30d).
+    const baseline30 = wkMedian * (30 / 7);
+    if (baseline30 > 0 && r.total > 2 * baseline30 && r.total >= 25) {
       anomalies.push({
         merchant,
         total: r.total,
         count: r.count,
         reason: "spike",
-        baseline: Math.round(priorRate * 100) / 100,
+        baseline: Math.round(baseline30 * 100) / 100,
       });
     }
   }
@@ -403,6 +429,11 @@ ${merchantBlock}`,
           title: "90-DAY MONEY FLOW",
           rows: spend.rows,
           note,
+          topMerchants: spend.topMerchants.slice(0, 8).map((m) => ({
+            name: m.name,
+            total: Math.round(m.total * 100) / 100,
+            count: m.count,
+          })),
           anomalies: spend.anomalies.map((a) => ({
             merchant: a.merchant,
             total: Math.round(a.total * 100) / 100,
@@ -466,6 +497,7 @@ ${merchantBlock}`,
             title: payload.title,
             rows: payload.rows,
             note: payload.note,
+            topMerchants: payload.topMerchants,
             anomalies: payload.anomalies,
             openQuestions: payload.openQuestions,
             memoryLine: payload.memoryLine,

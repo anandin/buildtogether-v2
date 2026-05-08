@@ -65,6 +65,7 @@ export type TillyMessage =
       // Task #24 — deterministic anomalies + open questions + memory provenance
       // line that ride alongside the LLM-written `note`. Optional so old
       // analysis rows persisted before #24 still parse.
+      topMerchants?: { name: string; total: number; count: number }[];
       anomalies?: { merchant: string; total: number; reason: "spike" | "new"; baseline?: number }[];
       openQuestions?: string[];
       memoryLine?: string | null;
