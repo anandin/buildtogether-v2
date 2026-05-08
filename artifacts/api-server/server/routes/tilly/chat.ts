@@ -194,6 +194,7 @@ function rowToWire(
       note: string;
       scoutProposal?: ScoutProposal | null;
       waitProposal?: WaitProposal | null;
+      topMerchants?: { name: string; total: number; count: number }[];
       anomalies?: { merchant: string; total: number; reason: "spike" | "new"; baseline?: number }[];
       openQuestions?: string[];
       memoryLine?: string | null;
@@ -205,6 +206,7 @@ function rowToWire(
       title: m.title,
       rows: m.rows,
       note: m.note,
+      topMerchants: m.topMerchants ?? [],
       anomalies: m.anomalies ?? [],
       openQuestions: m.openQuestions ?? [],
       memoryLine: m.memoryLine ?? null,
