@@ -99,11 +99,23 @@ export function mountTillyMemoryRoutes(app: Express): void {
     const userId = req.user.id;
 
     try {
-      const rows = await db
-        .select()
-        .from(tillyMemory)
-        .where(and(eq(tillyMemory.userId, userId), isNull(tillyMemory.archivedAt)))
-        .orderBy(desc(tillyMemory.noticedAt));
+      const [rows, retrievalRows] = await Promise.all([
+        db
+          .select()
+          .from(tillyMemory)
+          .where(and(eq(tillyMemory.userId, userId), isNull(tillyMemory.archivedAt)))
+          .orderBy(desc(tillyMemory.noticedAt)),
+        // Task #24 — retrieval log is PII (the times Tilly looked things
+        // up, the strategy, the prompt size) and must travel with the
+        // user's data export. Latest 100 rows is plenty for a portable
+        // bundle without bloating the markdown.
+        db
+          .select()
+          .from(tillyRetrievalLog)
+          .where(eq(tillyRetrievalLog.userId, userId))
+          .orderBy(desc(tillyRetrievalLog.createdAt))
+          .limit(100),
+      ]);
 
       const lines: string[] = [
         "# What Tilly remembers about you",
@@ -120,6 +132,27 @@ export function mountTillyMemoryRoutes(app: Express): void {
       if (!rows.length) {
         lines.push("_(Nothing yet — Tilly will start writing as you talk.)_");
       }
+
+      lines.push("");
+      lines.push("---");
+      lines.push("");
+      lines.push("# Retrieval log");
+      lines.push("");
+      lines.push(
+        "_Every time Tilly looked things up to answer you (latest 100). Each row is one chat turn or analysis: the strategy used, how many memories were pulled, and the size of the prompt block they produced._",
+      );
+      lines.push("");
+      if (!retrievalRows.length) {
+        lines.push("_(No retrievals logged yet.)_");
+      } else {
+        for (const r of retrievalRows) {
+          const memIds = Array.isArray(r.memoryIds) ? (r.memoryIds as string[]) : [];
+          lines.push(
+            `- **${r.createdAt.toISOString()}** · ${r.kind} · strategy=${r.strategy} · ${memIds.length} memories · prompt=${r.promptSize} chars`,
+          );
+        }
+      }
+      lines.push("");
 
       res.json({ markdown: lines.join("\n") });
     } catch (err) {

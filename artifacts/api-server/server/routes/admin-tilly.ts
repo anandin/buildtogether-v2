@@ -32,7 +32,8 @@ import {
   DossierContentSchema,
 } from "../tilly/dossier-rewriter";
 import { hybridRetrieve } from "../tilly/retriever";
-import { tillyTonePref, tillyMemory } from "../../shared/schema";
+import { tillyTonePref, tillyMemory, users } from "../../shared/schema";
+import { buildFinancialStateSummary } from "../tilly/state-summary";
 // (`tillyConfig` is also imported above; we add `tillyMemory` here next to
 // the other tilly memory/dossier helpers so the user-context endpoint can
 // hydrate retrieval log rows into bodies.)
@@ -282,10 +283,19 @@ export function mountAdminTillyRoutes(app: Express): void {
         });
         if (tonePref && isValidTone(tonePref.tone)) tone = tonePref.tone;
 
-        const [dossier, lastChat, lastAnalysis] = await Promise.all([
+        // Resolve coupleId so we can rebuild the same financial state
+        // summary chat injects. Without this the admin preview would
+        // show *less* than what Tilly actually sees at runtime.
+        const userRow = await db.query.users.findFirst({
+          where: eq(users.id, userId),
+        });
+        const householdId = userRow?.coupleId ?? null;
+
+        const [dossier, lastChat, lastAnalysis, state] = await Promise.all([
           getLatestDossier(userId),
           getLatestRetrieval(userId, "chat"),
           getLatestRetrieval(userId, "analysis"),
+          householdId ? buildFinancialStateSummary(householdId) : Promise.resolve({ hasData: false, text: "" }),
         ]);
 
         const sections: string[] = [];
@@ -296,6 +306,40 @@ export function mountAdminTillyRoutes(app: Express): void {
             dossierJson = parsed.data;
             sections.push(formatDossierForPrompt(parsed.data));
           }
+        }
+        // Mirror chat.ts: financial state block goes in second.
+        if (state.hasData) {
+          sections.push(
+            `Their current state — use this when they ask about money:\n${state.text}\n\nDO NOT say you can't see their balance or that you need them to connect; the data above is your access. If a specific thing isn't listed (e.g. credit utilization), say you don't see THAT specific thing yet.`,
+          );
+        }
+        // Mirror chat.ts: if there's a recent chat retrieval, render
+        // its hits as the "What you remember" block. This is the
+        // closest faithful reconstruction of the prompt Tilly saw on
+        // the last chat turn — same memories, same ordering.
+        const lastChatHits =
+          lastChat && Array.isArray(lastChat.memoryIds) && (lastChat.memoryIds as string[]).length
+            ? await db
+                .select({
+                  id: tillyMemory.id,
+                  kind: tillyMemory.kind,
+                  body: tillyMemory.body,
+                  dateLabel: tillyMemory.dateLabel,
+                })
+                .from(tillyMemory)
+                .where(inArray(tillyMemory.id, lastChat.memoryIds as string[]))
+            : [];
+        if (lastChatHits.length) {
+          // Preserve the original ordering from the retrieval log.
+          const byId = new Map(lastChatHits.map((m) => [m.id, m]));
+          const ordered = (lastChat!.memoryIds as string[])
+            .map((mid) => byId.get(mid))
+            .filter((m): m is NonNullable<typeof m> => !!m);
+          sections.push(
+            `What you remember about them (in your voice, from RAG):\n${ordered
+              .map((m) => `- [${m.kind}, ${m.dateLabel}] ${m.body}`)
+              .join("\n")}`,
+          );
         }
         const systemPrompts = await buildSystemPrompts(tone, sections);
 
