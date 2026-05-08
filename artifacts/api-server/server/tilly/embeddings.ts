@@ -61,12 +61,15 @@ export async function embed(
       input: text,
     });
     const vec = resp.data[0]?.embedding;
+    // OpenAI's embedding response shape: { usage: { prompt_tokens, total_tokens } }.
+    // The SDK type is correct; destructure typed instead of casting.
+    const usage: { prompt_tokens?: number } | undefined = resp.usage;
     recordLLMCall({
       userId: meta?.userId ?? null,
       route: meta?.route ?? "embedding",
       provider: "openrouter",
       model: modelId,
-      promptTokens: (resp as any).usage?.prompt_tokens ?? 0,
+      promptTokens: usage?.prompt_tokens ?? 0,
       completionTokens: 0,
       latencyMs: Date.now() - t0,
       ok: !!vec,
