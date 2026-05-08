@@ -1018,6 +1018,37 @@ export const tillyDossiers = pgTable("tilly_dossiers", {
 export type TillyDossier = typeof tillyDossiers.$inferSelect;
 
 /**
+ * Tilly retrieval log — every retrieval that fed a chat reply or analysis
+ * gets one row so the admin transparency surface can show "for THIS turn,
+ * Tilly pulled these N memories with these scores" without re-running the
+ * retriever. Also lets us A/B retrieval-strategy changes against outcomes.
+ *
+ * `kind`:    "chat" | "analysis"
+ * `memoryIds`: array of tilly_memory.id rows that scored above threshold,
+ *              ordered by score DESC.
+ * `scores`:  parallel array of floats (same length as memoryIds).
+ * `strategy`: snapshot of retrieval_strategy at log time.
+ * `promptSize`: char-length of the assembled extraSystem block (rough
+ *              proxy for prompt cost).
+ *
+ * Pruned to ~200 rows / user by the writer (see retrieval-log.ts) so the
+ * table stays small without a cron.
+ */
+export const tillyRetrievalLog = pgTable("tilly_retrieval_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  conversationId: varchar("conversation_id"),
+  kind: text("kind").notNull().default("chat"),
+  memoryIds: jsonb("memory_ids").notNull().default([]),
+  scores: jsonb("scores").notNull().default([]),
+  strategy: text("strategy").notNull().default("hybrid"),
+  promptSize: integer("prompt_size").notNull().default(0),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type TillyRetrievalLog = typeof tillyRetrievalLog.$inferSelect;
+
+/**
  * S4 nudge log — every nudge Tilly sends + its outcome.
  *
  * "Nudge" = any proactive thing Tilly surfaces with the intent to

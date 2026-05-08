@@ -16,7 +16,7 @@ import { eq, and, isNull, desc } from "drizzle-orm";
 
 import { requireAuth } from "../../middleware/auth";
 import { db } from "../../db";
-import { tillyMemory } from "../../../shared/schema";
+import { tillyMemory, tillyRetrievalLog } from "../../../shared/schema";
 
 type WireMemoryNote = {
   id: string;
@@ -145,6 +145,10 @@ export function mountTillyMemoryRoutes(app: Express): void {
         .set({ archivedAt: new Date(), isMostRecent: false })
         .where(and(eq(tillyMemory.userId, userId), isNull(tillyMemory.archivedAt)))
         .returning({ id: tillyMemory.id });
+      // Trust contract: when the student says "forget everything", we
+      // also drop the retrieval log so no record of what Tilly read
+      // about them lingers. Idempotent.
+      await db.delete(tillyRetrievalLog).where(eq(tillyRetrievalLog.userId, userId));
       res.json({ ok: true, archived: result.length });
     } catch (err) {
       console.error("/api/tilly/memory purge error:", err);

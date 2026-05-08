@@ -38,7 +38,9 @@ export type EventKind =
   // Push / nudge surface
   | "nudge_sent"
   | "nudge_acted_on"
-  | "nudge_ignored";
+  | "nudge_ignored"
+  // On-demand "Analyse my money flow" (task #24)
+  | "analysis_run";
 
 export type EventPayload = Record<string, unknown>;
 

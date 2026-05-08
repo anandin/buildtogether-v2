@@ -25,7 +25,14 @@ import {
 } from "../tilly/llm";
 import { embed } from "../tilly/embeddings";
 import { buildSystemPrompts } from "../tilly/persona";
-import { isValidTone, type BTToneKey } from "../tilly/tone";
+import { isValidTone, type BTToneKey, DEFAULT_TONE } from "../tilly/tone";
+import {
+  getLatestDossier,
+  formatDossierForPrompt,
+  DossierContentSchema,
+} from "../tilly/dossier-rewriter";
+import { hybridRetrieve } from "../tilly/retriever";
+import { tillyTonePref } from "../../shared/schema";
 
 const ALLOWED_FIELDS = [
   "provider",
@@ -183,6 +190,69 @@ export function mountAdminTillyRoutes(app: Express): void {
       } catch (err) {
         console.error("/api/admin/tilly/reembed error:", err);
         res.status(500).json({ error: "reembed failed" });
+      }
+    },
+  );
+
+  // System prompt preview — assembles the exact stack Tilly would see for
+  // this user's next chat turn (persona + tone + dossier + retrieved
+  // memories). Read-only; no LLM call. Drives the admin transparency
+  // surface ("here is the prompt that just went to Tilly").
+  app.get(
+    "/api/admin/tilly/system-prompt-preview",
+    requireAuth,
+    requireAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const userId = typeof req.query?.userId === "string" ? req.query.userId : null;
+        const probeMessage =
+          typeof req.query?.message === "string" && req.query.message.trim()
+            ? String(req.query.message).trim()
+            : "money flow check-in";
+
+        let tone: BTToneKey = DEFAULT_TONE;
+        const sections: string[] = [];
+        let retrievedCount = 0;
+        let dossierPresent = false;
+
+        if (userId) {
+          const tonePref = await db.query.tillyTonePref.findFirst({
+            where: eq(tillyTonePref.userId, userId),
+          });
+          if (tonePref && isValidTone(tonePref.tone)) tone = tonePref.tone;
+
+          const [dossier, retrieved] = await Promise.all([
+            getLatestDossier(userId),
+            hybridRetrieve(userId, probeMessage),
+          ]);
+          if (dossier) {
+            const parsed = DossierContentSchema.safeParse(dossier.content);
+            if (parsed.success) {
+              dossierPresent = true;
+              sections.push(formatDossierForPrompt(parsed.data));
+            }
+          }
+          if (retrieved.length) {
+            retrievedCount = retrieved.length;
+            sections.push(
+              `What you remember about them (in your voice, from RAG):\n${retrieved
+                .map((m) => `- [${m.kind}, ${m.dateLabel}] ${m.body}`)
+                .join("\n")}`,
+            );
+          }
+        }
+
+        const systemPrompts = await buildSystemPrompts(tone, sections);
+        res.json({
+          tone,
+          dossierPresent,
+          retrievedCount,
+          systemPrompts,
+          totalChars: systemPrompts.reduce((s, p) => s + p.length, 0),
+        });
+      } catch (err) {
+        console.error("/api/admin/tilly/system-prompt-preview error:", err);
+        res.status(500).json({ error: "preview failed" });
       }
     },
   );

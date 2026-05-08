@@ -22,11 +22,13 @@ import { db } from "../db";
 import {
   users,
   tillyEvents,
+  tillyMemory,
   tillyMemoryV2,
   tillyDossiers,
   tillyNudges,
 } from "../../shared/schema";
 import { getFrameStats } from "../tilly/frame-bandit";
+import { getLatestRetrieval } from "../tilly/retrieval-log";
 
 export function mountAdminMemoryRoutes(app: Express): void {
   // List users with rough activity stats. Sorted by most recent activity.
@@ -240,6 +242,91 @@ export function mountAdminMemoryRoutes(app: Express): void {
           sourceTable: r.sourceTable,
           sourceId: r.sourceId,
         })),
+      });
+    },
+  );
+
+  // L0 raw memory (per-turn extractor output) — every memory in `tilly_memory`
+  // for this user, with embedded? flag and archived? flag for layer badges.
+  app.get(
+    "/api/admin/memory/users/:id/raw-memory",
+    requireAuth,
+    requireAdmin,
+    async (req: Request, res: Response) => {
+      const id = String(req.params.id);
+      const limit = Math.min(Number(req.query?.limit ?? 200), 500);
+      const offset = Math.max(Number(req.query?.offset ?? 0), 0);
+      const rows = await db
+        .select()
+        .from(tillyMemory)
+        .where(eq(tillyMemory.userId, id))
+        .orderBy(desc(tillyMemory.noticedAt))
+        .limit(limit)
+        .offset(offset);
+      res.json({
+        memories: rows.map((r) => ({
+          id: r.id,
+          kind: r.kind,
+          body: r.body,
+          source: r.source,
+          category: r.category,
+          dateLabel: r.dateLabel,
+          noticedAt: r.noticedAt.toISOString(),
+          isMostRecent: !!r.isMostRecent,
+          archivedAt: r.archivedAt ? r.archivedAt.toISOString() : null,
+          hasEmbedding: !!(r.embedding && r.embedding.length > 0),
+        })),
+      });
+    },
+  );
+
+  // Latest retrieval log row — what Tilly pulled for the most recent
+  // chat turn or analysis. Joined with memory bodies so the admin sees
+  // the actual snippets and scores side by side.
+  app.get(
+    "/api/admin/memory/users/:id/last-retrieval",
+    requireAuth,
+    requireAdmin,
+    async (req: Request, res: Response) => {
+      const id = String(req.params.id);
+      const log = await getLatestRetrieval(id);
+      if (!log) return res.json({ retrieval: null });
+
+      const memIds = Array.isArray(log.memoryIds) ? (log.memoryIds as string[]) : [];
+      const scores = Array.isArray(log.scores) ? (log.scores as number[]) : [];
+      let memoryBodies: { id: string; kind: string; body: string; dateLabel: string }[] = [];
+      if (memIds.length) {
+        const { inArray } = await import("drizzle-orm");
+        const rows = await db
+          .select({
+            id: tillyMemory.id,
+            kind: tillyMemory.kind,
+            body: tillyMemory.body,
+            dateLabel: tillyMemory.dateLabel,
+          })
+          .from(tillyMemory)
+          .where(inArray(tillyMemory.id, memIds));
+        const byId = new Map(rows.map((r) => [r.id, r]));
+        memoryBodies = memIds
+          .map((mid) => byId.get(mid))
+          .filter((r): r is NonNullable<typeof r> => !!r);
+      }
+      res.json({
+        retrieval: {
+          id: log.id,
+          kind: log.kind,
+          conversationId: log.conversationId,
+          strategy: log.strategy,
+          promptSize: log.promptSize,
+          createdAt: log.createdAt.toISOString(),
+          hits: memoryBodies.map((m, i) => ({
+            id: m.id,
+            kind: m.kind,
+            body: m.body,
+            dateLabel: m.dateLabel,
+            score: scores[i] ?? null,
+          })),
+        },
       });
     },
   );

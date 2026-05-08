@@ -107,6 +107,15 @@
       .nudge-outcome.accepted { background: rgba(31, 122, 74, 0.15); color: var(--good); }
       .nudge-outcome.dismissed { background: rgba(178, 58, 44, 0.15); color: var(--bad); }
       .nudge-outcome.pending { background: rgba(74, 138, 168, 0.15); color: var(--layer5); }
+      .layer-tag.l0 { background: var(--ink-soft); }
+      .badge { display: inline-block; font-family: "JetBrains Mono", Menlo, monospace; font-size: 9.5px; font-weight: 700; letter-spacing: 1px; padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
+      .badge.embedded { background: rgba(74,138,168,0.18); color: var(--layer5); }
+      .badge.no-embed { background: var(--surface-alt); color: var(--ink-mute); }
+      .badge.archived { background: rgba(178, 58, 44, 0.15); color: var(--bad); }
+      .badge.recent { background: rgba(31, 122, 74, 0.15); color: var(--good); }
+      .ret-row { padding: 9px 12px; border-radius: 6px; border-left: 3px solid var(--layer5); margin-bottom: 6px; background: var(--surface-alt); }
+      .ret-score { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10.5px; color: var(--accent); font-weight: 700; margin-right: 8px; }
+      .ret-meta { font-family: "JetBrains Mono", Menlo, monospace; font-size: 11px; color: var(--ink-mute); margin-bottom: 10px; }
     </style>
   </head>
   <body>
@@ -146,6 +155,26 @@
             </div>
             <p class="hint">Beta-Bernoulli posterior per behavioral-econ frame. Picks the next nudge. Cold-start prior from Ideas42.</p>
             <table class="bandit-table" id="bandit-body"></table>
+          </div>
+
+          <div class="layer l5">
+            <div class="layer-header">
+              <span class="layer-tag">RETRIEVAL · LAST TURN</span>
+              <h2>What Tilly just pulled</h2>
+              <span class="count" id="ret-meta"></span>
+            </div>
+            <p class="hint">The retriever's hit list for this user's most recent chat or analysis turn. Score = hybrid (semantic + recency + kind boost).</p>
+            <div id="ret-body"></div>
+          </div>
+
+          <div class="layer l1">
+            <div class="layer-header">
+              <span class="layer-tag l0">L0 · RAW MEMORY</span>
+              <h2>Every memory on file</h2>
+              <span class="count" id="raw-meta"></span>
+            </div>
+            <p class="hint">The full <code>tilly_memory</code> table for this user — every observation/anxiety/value/commitment/preference Tilly has noticed. Badges show whether the row is embedded (eligible for RAG) and whether it's archived.</p>
+            <div id="raw-body"></div>
           </div>
 
           <div class="layer l2">
@@ -286,7 +315,85 @@
           loadMemories(id, "all"),
           loadEvents(id),
           loadNudges(id),
+          loadRawMemory(id),
+          loadLastRetrieval(id),
         ]);
+      }
+
+      async function loadRawMemory(id) {
+        const body = document.getElementById("raw-body");
+        const meta = document.getElementById("raw-meta");
+        clearEl(body);
+        meta.textContent = "loading…";
+        try {
+          const j = await api("/api/admin/memory/users/" + encodeURIComponent(id) + "/raw-memory?limit=200");
+          const list = j.memories || [];
+          meta.textContent = list.length + " rows · newest first";
+          if (!list.length) {
+            body.appendChild(el("div", { cls: "empty", text: "No raw memories." }));
+            return;
+          }
+          for (const m of list) {
+            const badges = [
+              el("span", { cls: "badge " + (m.hasEmbedding ? "embedded" : "no-embed"), text: m.hasEmbedding ? "embedded" : "no-embed" }),
+            ];
+            if (m.archivedAt) badges.push(el("span", { cls: "badge archived", text: "archived" }));
+            if (m.isMostRecent) badges.push(el("span", { cls: "badge recent", text: "most-recent" }));
+            const head = el("div", null, [
+              el("span", { cls: "mem-kind", text: m.kind }),
+              el("span", { cls: "mem-body", text: m.body }),
+              ...badges,
+            ]);
+            const sub = el("div", { cls: "mem-meta", style: { display: "block", marginTop: "4px" } }, [
+              document.createTextNode(
+                "src=" + (m.source || "—") +
+                " · cat=" + (m.category || "—") +
+                " · noticed=" + shortDate(m.noticedAt) +
+                " · " + m.dateLabel
+              ),
+            ]);
+            body.appendChild(el("div", { cls: "mem-row" }, [head, sub]));
+          }
+        } catch (e) {
+          emptyMessage(body, "Failed to load raw memory (" + e.message + ")");
+        }
+      }
+
+      async function loadLastRetrieval(id) {
+        const body = document.getElementById("ret-body");
+        const meta = document.getElementById("ret-meta");
+        clearEl(body);
+        meta.textContent = "loading…";
+        try {
+          const j = await api("/api/admin/memory/users/" + encodeURIComponent(id) + "/last-retrieval");
+          const r = j.retrieval;
+          if (!r) {
+            meta.textContent = "";
+            body.appendChild(el("div", { cls: "empty", text: "No retrievals logged yet for this user." }));
+            return;
+          }
+          meta.textContent = r.kind + " · " + shortDate(r.createdAt);
+          body.appendChild(el("div", { cls: "ret-meta", text:
+            "strategy=" + r.strategy +
+            " · prompt=" + r.promptSize + " chars" +
+            " · convo=" + (r.conversationId ? r.conversationId.slice(0, 8) : "—") +
+            " · " + (r.hits || []).length + " hits"
+          }));
+          if (!r.hits || !r.hits.length) {
+            body.appendChild(el("div", { cls: "empty", text: "Retrieved zero memories for this turn." }));
+            return;
+          }
+          for (const h of r.hits) {
+            body.appendChild(el("div", { cls: "ret-row" }, [
+              el("span", { cls: "ret-score", text: h.score == null ? "—" : Number(h.score).toFixed(3) }),
+              el("span", { cls: "mem-kind", text: h.kind }),
+              el("span", { cls: "mem-body", text: h.body }),
+              el("span", { cls: "badge no-embed", text: h.dateLabel }),
+            ]));
+          }
+        } catch (e) {
+          emptyMessage(body, "Failed to load retrieval log (" + e.message + ")");
+        }
       }
 
       function statBox(num, name) {

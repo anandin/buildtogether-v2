@@ -52,7 +52,9 @@ import {
 } from "../../tilly/analyze-affordability";
 import { extractMemories } from "../../tilly/memory-writer";
 import { embed } from "../../tilly/embeddings";
-import { retrieveContextSnippets } from "../../tilly/retriever";
+import { hybridRetrieve, retrieveContextSnippets } from "../../tilly/retriever";
+import { logRetrieval } from "../../tilly/retrieval-log";
+import { getTillyConfig } from "../../tilly/llm/factory";
 import { assertUnderCap } from "../../tilly/usage";
 import { buildFinancialStateSummary } from "../../tilly/state-summary";
 import { extractReminderFromReply } from "../../tilly/reminder-classifier";
@@ -540,11 +542,15 @@ export function mountTillyChatRoutes(app: Express): void {
             content: r.content,
           }));
 
-        const [memSnippets, state, dossierRow] = await Promise.all([
-          retrieveContextSnippets(userId, message),
+        const [retrievedMemories, state, dossierRow, tillyCfg] = await Promise.all([
+          hybridRetrieve(userId, message),
           buildFinancialStateSummary(householdId),
           getLatestDossier(userId),
+          getTillyConfig(),
         ]);
+        const memSnippets = retrievedMemories.map(
+          (m) => `[${m.kind}, ${m.dateLabel}] ${m.body}`,
+        );
         const sections: string[] = [];
         // S3 dossier — what Tilly believes about this student. Comes
         // FIRST so the persona has the user model before situational
@@ -567,6 +573,18 @@ export function mountTillyChatRoutes(app: Express): void {
           );
         }
         const extraSystem = sections.length ? sections.join("\n\n") : undefined;
+
+        // Log the retrieval that fed this turn — admin transparency surface
+        // reads the latest row to show "for THIS turn, Tilly pulled these
+        // notes". Fire-and-forget; never block the chat reply.
+        void logRetrieval({
+          userId,
+          conversationId: userRow.id,
+          kind: "chat",
+          memories: retrievedMemories,
+          strategy: tillyCfg.retrievalStrategy,
+          promptSize: extraSystem?.length ?? 0,
+        });
 
         const response = await callTilly({
           toneKey: tone,

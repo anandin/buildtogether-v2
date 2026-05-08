@@ -96,6 +96,41 @@ export function useTilly() {
     },
   });
 
+  // On-demand "Analyse my money flow". 429 means throttled — the server
+  // returns a short Tilly-voiced message we surface as a toast. On
+  // success we append both the synthetic user prompt and the analysis
+  // card to the optimistic cache so the chat updates instantly.
+  const [analyseError, setAnalyseError] = useState<string | null>(null);
+  const analyse = useMutation({
+    mutationFn: () => btApi.analyseMoney(),
+    onSuccess: (data) => {
+      qc.setQueryData<{ messages: TillyMessage[] }>(
+        ["/api/tilly/chat/history"],
+        (prev) => ({
+          messages: [...(prev?.messages ?? []), data.userMessage, data.reply],
+        }),
+      );
+      setAnalyseError(null);
+    },
+    onError: async (err: any) => {
+      // The fetch wrapper throws `Error("<status>: <body>")` (see
+      // client/lib/query-client.ts). Strip the status prefix before
+      // parsing so the friendly Tilly-voiced 429 message lands.
+      const raw = String(err?.message ?? "");
+      const colonIdx = raw.indexOf(":");
+      const body = colonIdx > 0 ? raw.slice(colonIdx + 1).trim() : raw;
+      let msg = "Couldn't run that just now.";
+      try {
+        const parsed = JSON.parse(body);
+        if (parsed && typeof parsed.message === "string") msg = parsed.message;
+      } catch {
+        // Plain-text body (or empty) — keep the generic fallback.
+      }
+      setAnalyseError(msg);
+      setTimeout(() => setAnalyseError(null), 5000);
+    },
+  });
+
   const wait = useMutation({
     mutationFn: (body: { query: string; location?: string | null; sourceMessageId?: string }) =>
       btApi.chatWait(body),
@@ -115,6 +150,9 @@ export function useTilly() {
     askWait: (body: { query: string; location?: string | null; sourceMessageId?: string }) =>
       wait.mutate(body),
     isAskingWait: wait.isPending,
+    runAnalysis: () => analyse.mutate(),
+    isAnalysing: analyse.isPending,
+    analyseError,
     confirmedReminders,
   };
 }

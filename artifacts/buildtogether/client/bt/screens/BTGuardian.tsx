@@ -282,6 +282,64 @@ export function BTGuardian() {
         </View>
       ) : null}
 
+      {/* "Analyse my money flow" — task #24. Throttled server-side to
+          once per 3 min; 429 surfaces tilly.analyseError as a toast-like
+          line under the button. Sits right above the composer so it's
+          always reachable but never competes with typing. */}
+      <View
+        style={{
+          paddingHorizontal: 12,
+          paddingTop: 8,
+          gap: 4,
+          backgroundColor: t.surface,
+        }}
+      >
+        <Pressable
+          onPress={() => tilly.runAnalysis()}
+          disabled={tilly.isAnalysing}
+          accessibilityRole="button"
+          accessibilityLabel="Analyse my money flow"
+          style={{
+            paddingHorizontal: 14,
+            paddingVertical: 10,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: t.rule,
+            alignItems: "center",
+            opacity: tilly.isAnalysing ? 0.55 : 1,
+            flexDirection: "row",
+            justifyContent: "center",
+            gap: 8,
+          }}
+        >
+          {tilly.isAnalysing ? <ActivityIndicator size="small" color={t.ink} /> : null}
+          <Text
+            style={{
+              color: t.ink,
+              fontFamily: BTFonts.sans,
+              fontSize: 13,
+              fontWeight: "600",
+            }}
+          >
+            {tilly.isAnalysing ? "Analysing…" : "✦  Analyse my money flow"}
+          </Text>
+        </Pressable>
+        {tilly.analyseError ? (
+          <Text
+            style={{
+              fontFamily: BTFonts.serif,
+              fontSize: 12,
+              fontStyle: "italic",
+              color: t.inkMute,
+              textAlign: "center",
+              paddingTop: 2,
+            }}
+          >
+            {tilly.analyseError}
+          </Text>
+        ) : null}
+      </View>
+
       {/* Composer */}
       <View
         style={{

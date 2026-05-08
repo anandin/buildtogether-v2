@@ -83,6 +83,13 @@ export const btApi = {
     postJson<{ jobId: string; messageId: string }>("/api/tilly/chat/scout", body),
   chatWait: (body: { query: string; location?: string | null; sourceMessageId?: string }) =>
     postJson<{ jobId: string; messageId: string }>("/api/tilly/chat/wait", body),
+  // On-demand "Analyse my money flow" — task #24. Throttled server-side
+  // to once per 3 minutes; 429 carries a friendly Tilly-voiced message.
+  analyseMoney: () =>
+    postJson<{ reply: TillyMessage; userMessage: TillyMessage }>(
+      "/api/tilly/analyse",
+      {},
+    ),
   // S12 — read/write the user's persistent city for default scout location.
   getCity: () => getJson<{ city: string | null }>("/api/tilly/me/city"),
   setCity: (city: string | null) =>

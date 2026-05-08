@@ -236,6 +236,21 @@ const CRITICAL_STATEMENTS: string[] = [
     "generated_at" timestamp DEFAULT now() NOT NULL
   )`,
 
+  // Tilly retrieval log — every chat/analysis turn's RAG hit list.
+  // Powers the admin transparency surface (latest retrieval per user).
+  `CREATE TABLE IF NOT EXISTS "tilly_retrieval_log" (
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "user_id" varchar NOT NULL,
+    "conversation_id" varchar,
+    "kind" text NOT NULL DEFAULT 'chat',
+    "memory_ids" jsonb NOT NULL DEFAULT '[]'::jsonb,
+    "scores" jsonb NOT NULL DEFAULT '[]'::jsonb,
+    "strategy" text NOT NULL DEFAULT 'hybrid',
+    "prompt_size" integer NOT NULL DEFAULT 0,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS "tilly_retrieval_log_user_created_idx" ON "tilly_retrieval_log" ("user_id", "created_at" DESC)`,
+
   // S8 scout jobs — live substitute / wait-and-save lookups.
   // Async — Tilly enqueues from chat, orchestrator runs in background,
   // result writes back here, push notification delivers.

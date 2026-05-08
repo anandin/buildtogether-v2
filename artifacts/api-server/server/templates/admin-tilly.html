@@ -238,6 +238,26 @@
         </div>
         <div class="preview" id="preview-output">(Tilly hasn't said anything yet.)</div>
       </div>
+
+      <div class="card">
+        <h2>System prompt preview</h2>
+        <p class="hint">The exact prompt stack Tilly would see for this user's next chat turn — persona + tone + dossier + retrieved memories. Read-only; no LLM call.</p>
+        <div class="grid">
+          <div class="field">
+            <label>User ID (optional)</label>
+            <input id="sp-user-id" placeholder="leave blank for default tone, no dossier" />
+          </div>
+          <div class="field">
+            <label>Probe message</label>
+            <input id="sp-message" placeholder="money flow check-in" />
+          </div>
+        </div>
+        <div class="row" style="margin-top: 12px;">
+          <button id="sp-btn">Build prompt preview</button>
+          <span class="hint" id="sp-meta"></span>
+        </div>
+        <div class="preview" id="sp-output">(Click to assemble.)</div>
+      </div>
     </div>
 
     <div class="auth hide" id="auth-modal">
@@ -425,6 +445,29 @@
           });
           out.textContent = r.reply || "(empty reply)";
           meta.textContent = r.model + " · in " + r.usage.inputTokens + " → out " + r.usage.outputTokens;
+        } catch (err) {
+          out.textContent = "Preview failed: " + (err && err.message ? err.message : "unknown");
+        }
+      });
+
+      $("sp-btn").addEventListener("click", async () => {
+        const out = $("sp-output");
+        const meta = $("sp-meta");
+        out.textContent = "Assembling…";
+        meta.textContent = "";
+        const uid = $("sp-user-id").value.trim();
+        const msg = $("sp-message").value.trim();
+        const qs = new URLSearchParams();
+        if (uid) qs.set("userId", uid);
+        if (msg) qs.set("message", msg);
+        try {
+          const r = await api("GET", "/api/admin/tilly/system-prompt-preview" + (qs.toString() ? "?" + qs.toString() : ""));
+          meta.textContent =
+            "tone=" + r.tone +
+            " · dossier=" + (r.dossierPresent ? "yes" : "no") +
+            " · retrieved=" + r.retrievedCount +
+            " · " + r.totalChars + " chars across " + r.systemPrompts.length + " blocks";
+          out.textContent = r.systemPrompts.map((p, i) => "── BLOCK " + (i + 1) + " ──\n" + p).join("\n\n");
         } catch (err) {
           out.textContent = "Preview failed: " + (err && err.message ? err.message : "unknown");
         }
