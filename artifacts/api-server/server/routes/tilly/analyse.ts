@@ -35,19 +35,32 @@ const THROTTLE_MS = 3 * 60 * 1000;
 const lastRunAt = new Map<string, number>();
 
 type AnalysisRow = { label: string; amt: number; sign: "+" | "-" | "=" };
+type Tx = { amount: number; merchant: string; category: string };
 
 interface AnalysisPayload {
   title: string;
   rows: AnalysisRow[];
   note: string;
+  anomalies: { merchant: string; total: number; reason: "spike" | "new"; baseline?: number }[];
+  openQuestions: string[];
+  memoryLine: string | null;
 }
 
 // ─── Data gathering ────────────────────────────────────────────────────────
+
+interface AnomalyHit {
+  merchant: string;
+  total: number;
+  count: number;
+  reason: "spike" | "new";
+  baseline?: number;
+}
 
 async function gather90DaySpend(householdId: string): Promise<{
   rows: AnalysisRow[];
   topMerchants: { name: string; total: number; count: number }[];
   byCategory: { name: string; total: number; pct: number }[];
+  anomalies: AnomalyHit[];
   totalSpend: number;
   txCount: number;
   windowStart: string;
@@ -82,7 +95,6 @@ async function gather90DaySpend(householdId: string): Promise<{
       ),
   ]);
 
-  type Tx = { amount: number; merchant: string; category: string };
   const all: Tx[] = [];
   for (const t of plaid) {
     all.push({
@@ -136,10 +148,71 @@ async function gather90DaySpend(householdId: string): Promise<{
     sign: "=" as const,
   });
 
+  // Anomaly detection — simple, deterministic, transparent.
+  // (a) "spike": merchant total in last 30d > 2× average of the prior
+  //     60d window (only fire if both windows have >=1 charge).
+  // (b) "new":   merchant first seen in last 30d, with total > $30.
+  const cutoff30 = new Date();
+  cutoff30.setDate(cutoff30.getDate() - 30);
+  const cutoffIso = cutoff30.toISOString().slice(0, 10);
+  type WTx = Tx & { date: string };
+  const allWithDates: WTx[] = [];
+  for (const t of plaid) {
+    allWithDates.push({
+      amount: t.amount,
+      merchant: (t.merchantName || t.name || "Unknown").trim(),
+      category: (t.ourCategory || "Uncategorized").trim(),
+      date: String(t.date),
+    });
+  }
+  for (const e of manual) {
+    if (e.source === "plaid") continue;
+    allWithDates.push({
+      amount: e.amount,
+      merchant: (e.merchant || e.description || "Manual").trim(),
+      category: (e.category || "other").trim(),
+      date: String(e.date),
+    });
+  }
+  const recent = new Map<string, { total: number; count: number }>();
+  const prior = new Map<string, { total: number; count: number }>();
+  for (const t of allWithDates) {
+    const bucket = t.date >= cutoffIso ? recent : prior;
+    const v = bucket.get(t.merchant) ?? { total: 0, count: 0 };
+    v.total += t.amount;
+    v.count += 1;
+    bucket.set(t.merchant, v);
+  }
+  const anomalies: AnomalyHit[] = [];
+  for (const [merchant, r] of recent.entries()) {
+    const p = prior.get(merchant);
+    if (!p) {
+      if (r.total >= 30) {
+        anomalies.push({ merchant, total: r.total, count: r.count, reason: "new" });
+      }
+      continue;
+    }
+    // Normalize prior to a 30-day rate (it covered 60 days).
+    const priorRate = p.total / 2;
+    if (priorRate > 0 && r.total > 2 * priorRate && r.total >= 25) {
+      anomalies.push({
+        merchant,
+        total: r.total,
+        count: r.count,
+        reason: "spike",
+        baseline: Math.round(priorRate * 100) / 100,
+      });
+    }
+  }
+  // Largest moves first; cap at 4 so the card stays scannable.
+  anomalies.sort((a, b) => b.total - a.total);
+  const topAnomalies = anomalies.slice(0, 4);
+
   return {
     rows,
     topMerchants,
     byCategory,
+    anomalies: topAnomalies,
     totalSpend,
     txCount: all.length,
     windowStart: sinceIso,
@@ -307,11 +380,37 @@ ${merchantBlock}`,
         const note = (reply.text || "").trim() ||
           "Looked at the last 90 days. The shape is steady — nothing screaming at me.";
 
+        // Open questions: surface up to two of the dossier's open_loops
+        // so the analysis card honours the "questions Tilly still has"
+        // requirement without burning another LLM call.
+        const openQuestions: string[] = (() => {
+          if (!dossierRow) return [];
+          const parsed = DossierContentSchema.safeParse(dossierRow.content);
+          if (!parsed.success) return [];
+          return (parsed.data.open_loops ?? []).slice(0, 2);
+        })();
+
+        // Memory provenance: one line, plain language. Pulled into the
+        // card UI so users see which past notes Tilly leaned on.
+        const memoryLine = retrieved.length
+          ? `Drew on ${retrieved.length} past note${retrieved.length === 1 ? "" : "s"} (${
+              Array.from(new Set(retrieved.map((m) => m.kind))).join(", ")
+            }).`
+          : null;
+
         // 4. Build & persist the analysis card.
         const payload: AnalysisPayload = {
           title: "90-DAY MONEY FLOW",
           rows: spend.rows,
           note,
+          anomalies: spend.anomalies.map((a) => ({
+            merchant: a.merchant,
+            total: Math.round(a.total * 100) / 100,
+            reason: a.reason,
+            baseline: a.baseline,
+          })),
+          openQuestions,
+          memoryLine,
         };
         const [tillyRow] = await db
           .insert(guardianConversations)
@@ -354,7 +453,9 @@ ${merchantBlock}`,
         });
 
         console.log(
-          `[analyse] ok user=${userId} tx=${spend.txCount} mem=${retrieved.length} durMs=${Date.now() - t0}`,
+          `[analyse] ok user=${userId} tx=${spend.txCount} mem=${retrieved.length} ` +
+            `tokIn=${reply.usage.inputTokens} tokOut=${reply.usage.outputTokens} ` +
+            `model=${reply.modelId} durMs=${Date.now() - t0}`,
         );
 
         res.json({
@@ -365,6 +466,9 @@ ${merchantBlock}`,
             title: payload.title,
             rows: payload.rows,
             note: payload.note,
+            anomalies: payload.anomalies,
+            openQuestions: payload.openQuestions,
+            memoryLine: payload.memoryLine,
             scoutProposal: null,
             waitProposal: null,
             createdAt: tillyRow.createdAt.toISOString(),

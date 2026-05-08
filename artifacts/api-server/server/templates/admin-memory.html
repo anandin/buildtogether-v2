@@ -113,6 +113,14 @@
       .badge.no-embed { background: var(--surface-alt); color: var(--ink-mute); }
       .badge.archived { background: rgba(178, 58, 44, 0.15); color: var(--bad); }
       .badge.recent { background: rgba(31, 122, 74, 0.15); color: var(--good); }
+      .badge.in-dossier { background: rgba(216, 96, 43, 0.18); color: var(--layer4); }
+      .badge.distilled { background: rgba(180, 143, 185, 0.22); color: var(--layer2); }
+      .badge.raw-only { background: var(--surface-alt); color: var(--ink-soft); }
+      .layer-legend { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; }
+      .layer-pill { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10px; font-weight: 700; letter-spacing: 1px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); cursor: pointer; }
+      .layer-pill.active { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+      .layer-pill .n { color: var(--ink-mute); margin-left: 6px; font-weight: 500; }
+      .layer-pill.active .n { color: rgba(255,255,255,0.7); }
       .ret-row { padding: 9px 12px; border-radius: 6px; border-left: 3px solid var(--layer5); margin-bottom: 6px; background: var(--surface-alt); }
       .ret-score { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10.5px; color: var(--accent); font-weight: 700; margin-right: 8px; }
       .ret-meta { font-family: "JetBrains Mono", Menlo, monospace; font-size: 11px; color: var(--ink-mute); margin-bottom: 10px; }
@@ -173,7 +181,8 @@
               <h2>Every memory on file</h2>
               <span class="count" id="raw-meta"></span>
             </div>
-            <p class="hint">The full <code>tilly_memory</code> table for this user — every observation/anxiety/value/commitment/preference Tilly has noticed. Badges show whether the row is embedded (eligible for RAG) and whether it's archived.</p>
+            <p class="hint">The full <code>tilly_memory</code> table for this user — every observation/anxiety/value/commitment/preference Tilly has noticed. Each row is tagged with the highest layer it has reached: <em>in-dossier</em> (made it into the rewritten dossier Tilly reads every turn), <em>distilled</em> (promoted into typed L2 memory), <em>raw-only</em> (sitting at L0 for now), or <em>archived</em>. Click a pill to filter.</p>
+            <div class="layer-legend" id="raw-legend"></div>
             <div id="raw-body"></div>
           </div>
 
@@ -309,6 +318,9 @@
       async function selectUser(id) {
         activeUserId = id;
         document.getElementById("user-snapshot").style.display = "block";
+        // Reset L0 layer filter when switching users so the legend doesn't
+        // carry stale state across snapshots.
+        rawLayerFilter = null;
         await Promise.all([
           loadSnapshot(id),
           loadBandit(id),
@@ -320,21 +332,59 @@
         ]);
       }
 
+      // Layer filter for the L0 panel — null means "show all". Persisted
+      // for the lifetime of the user-snapshot view; resets when a different
+      // user is selected via loadSnapshot().
+      let rawLayerFilter = null;
+      let rawCurrentUserId = null;
+
+      function renderLayerLegend(counts) {
+        const legend = document.getElementById("raw-legend");
+        clearEl(legend);
+        const layers = [
+          { key: null, label: "ALL", n: counts.raw },
+          { key: "in-dossier", label: "IN-DOSSIER", n: counts.inDossier },
+          { key: "distilled", label: "DISTILLED", n: counts.distilled },
+          { key: "raw-only", label: "RAW-ONLY", n: Math.max(0, counts.raw - counts.inDossier - counts.distilled - counts.archived) },
+          { key: "archived", label: "ARCHIVED", n: counts.archived },
+        ];
+        for (const layer of layers) {
+          const isActive = rawLayerFilter === layer.key;
+          const pill = el("button", {
+            cls: "layer-pill" + (isActive ? " active" : ""),
+            on: { click: () => {
+              rawLayerFilter = layer.key;
+              if (rawCurrentUserId) loadRawMemory(rawCurrentUserId);
+            } },
+          }, [
+            document.createTextNode(layer.label),
+            el("span", { cls: "n", text: layer.n }),
+          ]);
+          legend.appendChild(pill);
+        }
+      }
+
       async function loadRawMemory(id) {
+        rawCurrentUserId = id;
         const body = document.getElementById("raw-body");
         const meta = document.getElementById("raw-meta");
         clearEl(body);
         meta.textContent = "loading…";
         try {
-          const j = await api("/api/admin/memory/users/" + encodeURIComponent(id) + "/raw-memory?limit=200");
+          const qs = "limit=200" + (rawLayerFilter ? "&layer=" + encodeURIComponent(rawLayerFilter) : "");
+          const j = await api("/api/admin/memory/users/" + encodeURIComponent(id) + "/raw-memory?" + qs);
           const list = j.memories || [];
-          meta.textContent = list.length + " rows · newest first";
+          const counts = j.counts || { raw: 0, distilled: 0, inDossier: 0, archived: 0 };
+          renderLayerLegend(counts);
+          meta.textContent = list.length + " rows · " + (rawLayerFilter || "all layers") + " · newest first";
           if (!list.length) {
-            body.appendChild(el("div", { cls: "empty", text: "No raw memories." }));
+            body.appendChild(el("div", { cls: "empty", text: "No raw memories match this filter." }));
             return;
           }
           for (const m of list) {
+            const layerBadge = el("span", { cls: "badge " + m.layer, text: m.layer });
             const badges = [
+              layerBadge,
               el("span", { cls: "badge " + (m.hasEmbedding ? "embedded" : "no-embed"), text: m.hasEmbedding ? "embedded" : "no-embed" }),
             ];
             if (m.archivedAt) badges.push(el("span", { cls: "badge archived", text: "archived" }));

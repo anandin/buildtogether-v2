@@ -62,6 +62,12 @@ export type TillyMessage =
       title: string;
       rows: { label: string; amt: number; sign: "+" | "-" | "=" }[];
       note: string;
+      // Task #24 — deterministic anomalies + open questions + memory provenance
+      // line that ride alongside the LLM-written `note`. Optional so old
+      // analysis rows persisted before #24 still parse.
+      anomalies?: { merchant: string; total: number; reason: "spike" | "new"; baseline?: number }[];
+      openQuestions?: string[];
+      memoryLine?: string | null;
       scoutProposal?: ScoutProposal | null;
       waitProposal?: WaitProposal | null;
       createdAt: string;

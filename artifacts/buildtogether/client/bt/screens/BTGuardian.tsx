@@ -45,9 +45,13 @@ type Msg =
       title: string;
       rows: { label: string; amt: number; sign: "+" | "-" | "=" }[];
       note: string;
+      anomalies?: { merchant: string; total: number; reason: "spike" | "new"; baseline?: number }[];
+      openQuestions?: string[];
+      memoryLine?: string | null;
       scoutProposal?: import("../api/types").ScoutProposal | null;
       waitProposal?: import("../api/types").WaitProposal | null;
     }
+  | { id: string; role: "tilly"; kind: "analysing" }
   | {
       id: string;
       role: "tilly";
@@ -89,6 +93,9 @@ function toLocal(m: TillyMessage): Msg {
       title: m.title,
       rows: m.rows,
       note: m.note,
+      anomalies: m.anomalies ?? [],
+      openQuestions: m.openQuestions ?? [],
+      memoryLine: m.memoryLine ?? null,
       scoutProposal: m.scoutProposal ?? null,
       waitProposal: m.waitProposal ?? null,
     };
@@ -151,10 +158,17 @@ export function BTGuardian() {
       body: `${tone.greeting(userName)} ${tone.sample}`,
     },
   ];
-  const messages: Msg[] =
+  const baseMessages: Msg[] =
     tilly.messages.length > 0
       ? tilly.messages.map(toLocal)
       : firstTimeMessages;
+  // While the analysis mutation is in flight, drop a transient
+  // "Tilly is looking…" placeholder bubble at the end of the list so
+  // the user sees activity in the chat (not just the button spinner).
+  // Removed automatically when the mutation resolves.
+  const messages: Msg[] = tilly.isAnalysing
+    ? [...baseMessages, { id: "analysing-placeholder", role: "tilly", kind: "analysing" }]
+    : baseMessages;
 
   const thinking = tilly.isThinking;
 
@@ -432,6 +446,20 @@ function Bubble({
 
   if (m.kind === "typing") return <TypingBubble />;
 
+  if (m.kind === "analysing") {
+    return (
+      <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end", maxWidth: "92%" }}>
+        <Tilly t={t} size={28} state="think" breathing={false} />
+        <BTCard t={t} alt padding={14} style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <ActivityIndicator size="small" color={t.ink} />
+          <Text style={{ fontFamily: BTFonts.serif, fontSize: 15, color: t.ink, fontStyle: "italic" }}>
+            Tilly is looking through your last 90 days…
+          </Text>
+        </BTCard>
+      </View>
+    );
+  }
+
   if (m.kind === "analysis") {
     return (
       <View style={{ flexDirection: "row", gap: 8, alignItems: "flex-end", maxWidth: "92%" }}>
@@ -481,6 +509,42 @@ function Bubble({
           >
             {m.note}
           </Text>
+          {m.anomalies && m.anomalies.length > 0 ? (
+            <View style={{ gap: 4 }}>
+              <BTLabel color={t.inkMute} size={10}>Worth a second look</BTLabel>
+              {m.anomalies.map((a, i) => (
+                <Text
+                  key={`a${i}`}
+                  style={{ fontFamily: BTFonts.sans, fontSize: 13, color: t.ink }}
+                >
+                  • {a.merchant} — ${a.total.toFixed(2)}{" "}
+                  <Text style={{ color: t.inkMute, fontStyle: "italic" }}>
+                    {a.reason === "new"
+                      ? "(new this month)"
+                      : `(usually ~$${(a.baseline ?? 0).toFixed(2)}/mo)`}
+                  </Text>
+                </Text>
+              ))}
+            </View>
+          ) : null}
+          {m.openQuestions && m.openQuestions.length > 0 ? (
+            <View style={{ gap: 4 }}>
+              <BTLabel color={t.inkMute} size={10}>Still wondering</BTLabel>
+              {m.openQuestions.map((q, i) => (
+                <Text
+                  key={`q${i}`}
+                  style={{ fontFamily: BTFonts.serif, fontSize: 14, color: t.inkSoft, fontStyle: "italic" }}
+                >
+                  — {q}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+          {m.memoryLine ? (
+            <Text style={{ fontFamily: BTFonts.sans, fontSize: 11, color: t.inkMute }}>
+              {m.memoryLine}
+            </Text>
+          ) : null}
           {m.scoutProposal || m.waitProposal ? (
             <ProposalCTAs
               scoutProposal={m.scoutProposal ?? null}

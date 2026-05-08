@@ -132,6 +132,11 @@ type WireMessage =
       title: string;
       rows: { label: string; amt: number; sign: "+" | "-" | "=" }[];
       note: string;
+      // Task #24: deterministic anomalies + open questions + memory
+      // provenance line that ride alongside the LLM-written `note`.
+      anomalies?: { merchant: string; total: number; reason: "spike" | "new"; baseline?: number }[];
+      openQuestions?: string[];
+      memoryLine?: string | null;
       scoutProposal?: ScoutProposal | null;
       waitProposal?: WaitProposal | null;
       createdAt: string;
@@ -187,6 +192,9 @@ function rowToWire(
       note: string;
       scoutProposal?: ScoutProposal | null;
       waitProposal?: WaitProposal | null;
+      anomalies?: { merchant: string; total: number; reason: "spike" | "new"; baseline?: number }[];
+      openQuestions?: string[];
+      memoryLine?: string | null;
     };
     return {
       id: row.id,
@@ -195,6 +203,9 @@ function rowToWire(
       title: m.title,
       rows: m.rows,
       note: m.note,
+      anomalies: m.anomalies ?? [],
+      openQuestions: m.openQuestions ?? [],
+      memoryLine: m.memoryLine ?? null,
       scoutProposal: m.scoutProposal ?? null,
       waitProposal: m.waitProposal ?? null,
       createdAt: row.createdAt.toISOString(),

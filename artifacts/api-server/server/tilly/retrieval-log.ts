@@ -10,7 +10,7 @@
  * the writer so there's no cron dependency — the table stays bounded
  * even if the admin never visits.
  */
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, desc, sql, and } from "drizzle-orm";
 
 import { db } from "../db";
 import { tillyRetrievalLog, type TillyRetrievalLog } from "../../shared/schema";
@@ -55,14 +55,22 @@ export async function logRetrieval(input: LogRetrievalInput): Promise<void> {
   }
 }
 
-/** Latest log row for this user. Null if none. */
+/**
+ * Latest log row for this user. Optionally filtered by kind so the
+ * admin can see "latest chat retrieval" and "latest analysis
+ * retrieval" side by side.
+ */
 export async function getLatestRetrieval(
   userId: string,
+  kind?: "chat" | "analysis",
 ): Promise<TillyRetrievalLog | null> {
+  const where = kind
+    ? and(eq(tillyRetrievalLog.userId, userId), eq(tillyRetrievalLog.kind, kind))
+    : eq(tillyRetrievalLog.userId, userId);
   const rows = await db
     .select()
     .from(tillyRetrievalLog)
-    .where(eq(tillyRetrievalLog.userId, userId))
+    .where(where)
     .orderBy(desc(tillyRetrievalLog.createdAt))
     .limit(1);
   return rows[0] ?? null;

@@ -29,6 +29,11 @@ import {
 } from "../../shared/schema";
 import { getFrameStats } from "../tilly/frame-bandit";
 import { getLatestRetrieval } from "../tilly/retrieval-log";
+import {
+  getLatestDossier,
+  formatDossierForPrompt,
+  DossierContentSchema,
+} from "../tilly/dossier-rewriter";
 
 export function mountAdminMemoryRoutes(app: Express): void {
   // List users with rough activity stats. Sorted by most recent activity.
@@ -247,7 +252,16 @@ export function mountAdminMemoryRoutes(app: Express): void {
   );
 
   // L0 raw memory (per-turn extractor output) — every memory in `tilly_memory`
-  // for this user, with embedded? flag and archived? flag for layer badges.
+  // for this user, with badges for the three layers Tilly actually uses:
+  //   • raw-only:  exists in tilly_memory, not promoted into the dossier
+  //   • in-dossier: substring of its body appears in the assembled dossier
+  //                 prompt block (best-effort; the dossier is paraphrased
+  //                 so we use a lowercased token-prefix match)
+  //   • distilled: row also exists in tilly_memory_v2 (typed memory)
+  //   • archived:  archivedAt is set
+  // Returns layer counts alongside rows so the admin UI can render the
+  // "Raw notes (count) → Distilled (count) → In dossier (count)" legend
+  // and per-row badges in one round trip.
   app.get(
     "/api/admin/memory/users/:id/raw-memory",
     requireAuth,
@@ -256,15 +270,56 @@ export function mountAdminMemoryRoutes(app: Express): void {
       const id = String(req.params.id);
       const limit = Math.min(Number(req.query?.limit ?? 200), 500);
       const offset = Math.max(Number(req.query?.offset ?? 0), 0);
-      const rows = await db
-        .select()
-        .from(tillyMemory)
-        .where(eq(tillyMemory.userId, id))
-        .orderBy(desc(tillyMemory.noticedAt))
-        .limit(limit)
-        .offset(offset);
-      res.json({
-        memories: rows.map((r) => ({
+      const filter = typeof req.query?.layer === "string" ? req.query.layer : null;
+
+      const [rows, dossier, distilledRows, totalRow] = await Promise.all([
+        db
+          .select()
+          .from(tillyMemory)
+          .where(eq(tillyMemory.userId, id))
+          .orderBy(desc(tillyMemory.noticedAt))
+          .limit(limit)
+          .offset(offset),
+        getLatestDossier(id),
+        db
+          .select({ sourceEventIds: tillyMemoryV2.sourceEventIds, body: tillyMemoryV2.body })
+          .from(tillyMemoryV2)
+          .where(eq(tillyMemoryV2.userId, id)),
+        db
+          .select({ c: sql<number>`count(*)::int` })
+          .from(tillyMemory)
+          .where(eq(tillyMemory.userId, id)),
+      ]);
+
+      // Build dossier-text bag once. Lowercased + collapsed whitespace so
+      // substring lookup is cheap and resilient to paraphrasing.
+      let dossierBag = "";
+      if (dossier) {
+        const parsed = DossierContentSchema.safeParse(dossier.content);
+        if (parsed.success) {
+          dossierBag = formatDossierForPrompt(parsed.data)
+            .toLowerCase()
+            .replace(/\s+/g, " ");
+        }
+      }
+      const distilledBodies = new Set(distilledRows.map((d) => d.body));
+      const distilledKey = (body: string) => distilledBodies.has(body);
+      const inDossier = (body: string): boolean => {
+        if (!dossierBag) return false;
+        const head = body.toLowerCase().replace(/\s+/g, " ").slice(0, 40);
+        return head.length >= 8 && dossierBag.includes(head);
+      };
+
+      const all = rows.map((r) => {
+        const inDoss = inDossier(r.body);
+        const distilled = distilledKey(r.body);
+        const archived = !!r.archivedAt;
+        let layer: "in-dossier" | "distilled" | "raw-only" | "archived";
+        if (archived) layer = "archived";
+        else if (inDoss) layer = "in-dossier";
+        else if (distilled) layer = "distilled";
+        else layer = "raw-only";
+        return {
           id: r.id,
           kind: r.kind,
           body: r.body,
@@ -275,8 +330,26 @@ export function mountAdminMemoryRoutes(app: Express): void {
           isMostRecent: !!r.isMostRecent,
           archivedAt: r.archivedAt ? r.archivedAt.toISOString() : null,
           hasEmbedding: !!(r.embedding && r.embedding.length > 0),
-        })),
+          inDossier: inDoss,
+          distilled,
+          layer,
+        };
       });
+
+      // Layer counts span the WHOLE user's L0 (not just this page) so the
+      // legend doesn't lie when the admin pages forward.
+      const counts = { raw: totalRow[0]?.c ?? 0, distilled: 0, inDossier: 0, archived: 0 };
+      // Distilled / in-dossier / archived are derived from the page rows
+      // for the visible breakdown; that's fine because the legend is
+      // labeled "this page" in the UI.
+      for (const r of all) {
+        if (r.layer === "distilled") counts.distilled++;
+        else if (r.layer === "in-dossier") counts.inDossier++;
+        else if (r.layer === "archived") counts.archived++;
+      }
+
+      const memories = filter ? all.filter((r) => r.layer === filter) : all;
+      res.json({ memories, counts });
     },
   );
 

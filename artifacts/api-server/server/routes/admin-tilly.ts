@@ -17,7 +17,7 @@ import { eq, isNull, isNotNull, and } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { requireAdmin } from "../middleware/admin";
 import { db } from "../db";
-import { tillyConfig, tillyMemory } from "../../shared/schema";
+import { tillyConfig } from "../../shared/schema";
 import {
   getTillyConfig,
   invalidateLLMCache,
@@ -32,7 +32,12 @@ import {
   DossierContentSchema,
 } from "../tilly/dossier-rewriter";
 import { hybridRetrieve } from "../tilly/retriever";
-import { tillyTonePref } from "../../shared/schema";
+import { tillyTonePref, tillyMemory } from "../../shared/schema";
+// (`tillyConfig` is also imported above; we add `tillyMemory` here next to
+// the other tilly memory/dossier helpers so the user-context endpoint can
+// hydrate retrieval log rows into bodies.)
+import { getLatestRetrieval } from "../tilly/retrieval-log";
+import { inArray } from "drizzle-orm";
 
 const ALLOWED_FIELDS = [
   "provider",
@@ -253,6 +258,103 @@ export function mountAdminTillyRoutes(app: Express): void {
       } catch (err) {
         console.error("/api/admin/tilly/system-prompt-preview error:", err);
         res.status(500).json({ error: "preview failed" });
+      }
+    },
+  );
+
+  // User context dump — the actual current dossier JSON + the actual
+  // injected system prompt block + the most recent chat retrieval AND
+  // the most recent analysis retrieval (separately) for one user. This
+  // is the "what is Tilly seeing right now for this user" surface that
+  // backs the /admin/tilly transparency panel. Read-only; no LLM call.
+  app.get(
+    "/api/admin/tilly/user-context",
+    requireAuth,
+    requireAdmin,
+    async (req: Request, res: Response) => {
+      try {
+        const userId = typeof req.query?.userId === "string" ? req.query.userId : null;
+        if (!userId) return res.status(400).json({ error: "userId required" });
+
+        let tone: BTToneKey = DEFAULT_TONE;
+        const tonePref = await db.query.tillyTonePref.findFirst({
+          where: eq(tillyTonePref.userId, userId),
+        });
+        if (tonePref && isValidTone(tonePref.tone)) tone = tonePref.tone;
+
+        const [dossier, lastChat, lastAnalysis] = await Promise.all([
+          getLatestDossier(userId),
+          getLatestRetrieval(userId, "chat"),
+          getLatestRetrieval(userId, "analysis"),
+        ]);
+
+        const sections: string[] = [];
+        let dossierJson: unknown = null;
+        if (dossier) {
+          const parsed = DossierContentSchema.safeParse(dossier.content);
+          if (parsed.success) {
+            dossierJson = parsed.data;
+            sections.push(formatDossierForPrompt(parsed.data));
+          }
+        }
+        const systemPrompts = await buildSystemPrompts(tone, sections);
+
+        // Helper — hydrate a retrieval log into {hits} with body+score.
+        const hydrate = async (
+          log: Awaited<ReturnType<typeof getLatestRetrieval>>,
+        ) => {
+          if (!log) return null;
+          const memIds = Array.isArray(log.memoryIds) ? (log.memoryIds as string[]) : [];
+          const scores = Array.isArray(log.scores) ? (log.scores as number[]) : [];
+          let bodies: { id: string; kind: string; body: string; dateLabel: string }[] = [];
+          if (memIds.length) {
+            const rows = await db
+              .select({
+                id: tillyMemory.id,
+                kind: tillyMemory.kind,
+                body: tillyMemory.body,
+                dateLabel: tillyMemory.dateLabel,
+              })
+              .from(tillyMemory)
+              .where(inArray(tillyMemory.id, memIds));
+            const byId = new Map(rows.map((r) => [r.id, r]));
+            bodies = memIds
+              .map((mid) => byId.get(mid))
+              .filter((r): r is NonNullable<typeof r> => !!r);
+          }
+          return {
+            id: log.id,
+            kind: log.kind,
+            strategy: log.strategy,
+            promptSize: log.promptSize,
+            createdAt: log.createdAt.toISOString(),
+            hits: bodies.map((m, i) => ({
+              id: m.id,
+              kind: m.kind,
+              body: m.body,
+              dateLabel: m.dateLabel,
+              score: scores[i] ?? null,
+            })),
+          };
+        };
+
+        res.json({
+          tone,
+          dossier: dossier
+            ? {
+                content: dossierJson,
+                generatedAt: dossier.generatedAt.toISOString(),
+                memoriesConsidered: dossier.memoriesConsidered,
+              }
+            : null,
+          systemPrompts,
+          totalChars: systemPrompts.reduce((s, p) => s + p.length, 0),
+          lastChatRetrieval: await hydrate(lastChat),
+          lastAnalysisRetrieval: await hydrate(lastAnalysis),
+        });
+      } catch (err) {
+        console.error("/api/admin/tilly/user-context error:", err);
+        res.status(500).json({ error: "user context failed" });
       }
     },
   );

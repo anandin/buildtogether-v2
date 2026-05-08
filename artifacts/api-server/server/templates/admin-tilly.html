@@ -258,6 +258,37 @@
         </div>
         <div class="preview" id="sp-output">(Click to assemble.)</div>
       </div>
+
+      <div class="card">
+        <h2>User context — what Tilly is seeing right now</h2>
+        <p class="hint">For the given user, this dumps four things side by side: the actual current dossier JSON, the actual injected system prompt block (persona + tone + dossier), the most recent <em>chat</em> retrieval, and the most recent <em>analysis</em> retrieval. No LLM call — pulls straight from the latest stored rows.</p>
+        <div class="grid">
+          <div class="field">
+            <label>User ID</label>
+            <input id="uc-user-id" placeholder="paste a user id" />
+          </div>
+        </div>
+        <div class="row" style="margin-top: 12px;">
+          <button id="uc-btn">Load user context</button>
+          <span class="hint" id="uc-meta"></span>
+        </div>
+        <div style="margin-top: 14px;">
+          <div class="label" style="margin-bottom: 6px;">Current dossier (raw JSON)</div>
+          <div class="preview" id="uc-dossier">(no user loaded)</div>
+        </div>
+        <div style="margin-top: 14px;">
+          <div class="label" style="margin-bottom: 6px;">Injected system prompt</div>
+          <div class="preview" id="uc-prompt">(no user loaded)</div>
+        </div>
+        <div style="margin-top: 14px;">
+          <div class="label" style="margin-bottom: 6px;">Last chat retrieval</div>
+          <div class="preview" id="uc-chat">(no user loaded)</div>
+        </div>
+        <div style="margin-top: 14px;">
+          <div class="label" style="margin-bottom: 6px;">Last analysis retrieval</div>
+          <div class="preview" id="uc-analysis">(no user loaded)</div>
+        </div>
+      </div>
     </div>
 
     <div class="auth hide" id="auth-modal">
@@ -470,6 +501,61 @@
           out.textContent = r.systemPrompts.map((p, i) => "── BLOCK " + (i + 1) + " ──\n" + p).join("\n\n");
         } catch (err) {
           out.textContent = "Preview failed: " + (err && err.message ? err.message : "unknown");
+        }
+      });
+
+      function fmtRetrieval(r) {
+        if (!r) return "(no retrieval logged yet for this kind)";
+        const head =
+          "kind=" + r.kind +
+          " · strategy=" + r.strategy +
+          " · prompt=" + r.promptSize + " chars" +
+          " · " + (r.hits || []).length + " hits" +
+          " · at " + new Date(r.createdAt).toLocaleString();
+        if (!r.hits || !r.hits.length) return head + "\n(zero memories pulled)";
+        const body = r.hits.map((h) =>
+          "  [" + (h.score == null ? "—" : Number(h.score).toFixed(3)) + "] " +
+          "(" + h.kind + ", " + h.dateLabel + ") " + h.body
+        ).join("\n");
+        return head + "\n" + body;
+      }
+
+      $("uc-btn").addEventListener("click", async () => {
+        const uid = $("uc-user-id").value.trim();
+        const meta = $("uc-meta");
+        const dossierEl = $("uc-dossier");
+        const promptEl = $("uc-prompt");
+        const chatEl = $("uc-chat");
+        const anaEl = $("uc-analysis");
+        if (!uid) {
+          meta.textContent = "user id required";
+          return;
+        }
+        meta.textContent = "loading…";
+        dossierEl.textContent = promptEl.textContent = chatEl.textContent = anaEl.textContent = "loading…";
+        try {
+          const r = await api(
+            "GET",
+            "/api/admin/tilly/user-context?userId=" + encodeURIComponent(uid),
+          );
+          meta.textContent =
+            "tone=" + r.tone +
+            " · dossier=" + (r.dossier ? "yes" : "no") +
+            " · prompt=" + r.totalChars + " chars across " + r.systemPrompts.length + " blocks";
+          dossierEl.textContent = r.dossier
+            ? JSON.stringify(r.dossier.content, null, 2) +
+              "\n\n— generated " + new Date(r.dossier.generatedAt).toLocaleString() +
+              " from " + r.dossier.memoriesConsidered + " memories"
+            : "(no dossier on file yet)";
+          promptEl.textContent = r.systemPrompts
+            .map((p, i) => "── BLOCK " + (i + 1) + " ──\n" + p)
+            .join("\n\n");
+          chatEl.textContent = fmtRetrieval(r.lastChatRetrieval);
+          anaEl.textContent = fmtRetrieval(r.lastAnalysisRetrieval);
+        } catch (err) {
+          const msg = "Load failed: " + (err && err.message ? err.message : "unknown");
+          meta.textContent = msg;
+          dossierEl.textContent = promptEl.textContent = chatEl.textContent = anaEl.textContent = msg;
         }
       });
 
