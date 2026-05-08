@@ -653,6 +653,34 @@ export function mountTillyChatRoutes(app: Express): void {
           console.warn("[chat] recent-analysis context lookup failed:", err);
         }
 
+        // Task #23: surface up to 3 open sync-time questions in chat
+        // context so Tilly can naturally reference them ("oh, by the way,
+        // I noticed Frank Bistro keeps coming up — is that a regular
+        // spot?") instead of asking out of nowhere.
+        try {
+          const { tillyQuestions } = await import("../../../shared/schema");
+          const openQs = await db
+            .select()
+            .from(tillyQuestions)
+            .where(
+              and(
+                eq(tillyQuestions.householdId, householdId),
+                eq(tillyQuestions.status, "open"),
+              ),
+            )
+            .orderBy(desc(tillyQuestions.createdAt))
+            .limit(3);
+          if (openQs.length) {
+            sections.push(
+              `Open questions you've already queued for them (don't re-ask all of them, but you can naturally reference one if it fits):\n${openQs
+                .map((q) => `- [${q.kind}] ${q.body}`)
+                .join("\n")}`,
+            );
+          }
+        } catch (err) {
+          console.warn("[chat] open questions context lookup failed:", err);
+        }
+
         const extraSystem = sections.length ? sections.join("\n\n") : undefined;
 
         // Log the retrieval that fed this turn — admin transparency surface

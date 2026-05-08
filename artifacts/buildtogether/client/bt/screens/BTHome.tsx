@@ -31,6 +31,12 @@ import {
 } from "../atoms";
 import { BTFonts, BT_BREATHE_DURATION_MS, type BTTheme } from "../theme";
 import { useToday } from "../hooks/useToday";
+import {
+  useTillyQuestions,
+  useAnswerTillyQuestion,
+  useDismissTillyQuestion,
+} from "../hooks/useTillyQuestions";
+import type { TillyQuestion } from "../api/types";
 import { useDreams } from "../hooks/useDreams";
 import { useUser } from "../hooks/useUser";
 import { useExpenses } from "../hooks/useExpenses";
@@ -399,6 +405,11 @@ export function BTHome({ onNav }: Props) {
             </BTCard>
           </Pressable>
         ) : null}
+
+        {/* Task #23: Tilly's open questions strip — only renders when the
+            sync has surfaced something worth asking about. Tapping a chip
+            opens the chat so the user can answer in conversation. */}
+        <TillyQuestionsStrip t={t} onOpenChat={() => onNav?.("guardian")} />
 
         <Pressable
           onPress={() => onNav?.("guardian")}
@@ -927,5 +938,102 @@ function UpNextCard({ onNav }: { onNav?: (r: BTRoute) => void }) {
         ))}
       </View>
     </BTCard>
+  );
+}
+
+/**
+ * Task #23 — TillyQuestionsStrip
+ *
+ * Renders up to 3 question chips when Tilly has open questions queued
+ * from a recent sync. The chips are tap-to-dismiss; tapping the strip
+ * opens chat so the user can answer in conversation. Renders nothing
+ * when there are no open questions.
+ */
+function TillyQuestionsStrip({
+  t,
+  onOpenChat,
+}: {
+  t: BTTheme;
+  onOpenChat: () => void;
+}) {
+  const q = useTillyQuestions();
+  const dismiss = useDismissTillyQuestion();
+  const list: TillyQuestion[] = q.data?.questions ?? [];
+  if (!list.length) return null;
+  return (
+    <View
+      style={{
+        backgroundColor: t.surface,
+        borderWidth: 1,
+        borderColor: t.rule,
+        borderRadius: 16,
+        padding: 14,
+        gap: 10,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+        <Text
+          style={{
+            color: t.inkMute,
+            fontFamily: BTFonts.mono,
+            fontSize: 9,
+            letterSpacing: 0.8,
+            textTransform: "uppercase",
+            fontWeight: "700",
+            flex: 1,
+          }}
+        >
+          Tilly has {list.length === 1 ? "a question" : `${list.length} questions`}
+        </Text>
+      </View>
+      <View style={{ gap: 6 }}>
+        {list.map((qq) => (
+          <View
+            key={qq.id}
+            style={{
+              flexDirection: "row",
+              alignItems: "flex-start",
+              gap: 8,
+            }}
+          >
+            <Pressable
+              onPress={onOpenChat}
+              accessibilityRole="button"
+              accessibilityLabel={`Answer: ${qq.body}`}
+              style={({ pressed }) => ({
+                flex: 1,
+                paddingVertical: 9,
+                paddingHorizontal: 12,
+                borderRadius: 12,
+                backgroundColor: pressed ? t.chip : t.bg,
+                borderWidth: 1,
+                borderColor: t.rule,
+              })}
+            >
+              <Text
+                style={{
+                  color: t.ink,
+                  fontFamily: BTFonts.serifItalic,
+                  fontSize: 13.5,
+                  lineHeight: 19,
+                }}
+              >
+                {qq.body}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => dismiss.mutate(qq.id)}
+              disabled={dismiss.isPending}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss question"
+              hitSlop={8}
+              style={{ paddingVertical: 9, paddingHorizontal: 6 }}
+            >
+              <Text style={{ color: t.inkMute, fontSize: 16 }}>×</Text>
+            </Pressable>
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }

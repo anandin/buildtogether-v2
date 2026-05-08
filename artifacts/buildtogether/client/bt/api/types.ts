@@ -34,7 +34,36 @@ export type TodayBrief =
         target: number;
       };
       tillyInvite: string;
+      // Task #23: up to 3 open sync-time questions Tilly has queued for the
+      // user (unknown merchant / category spike / outsized tx). Optional —
+      // older API responses may omit it.
+      openQuestions?: TillyQuestion[];
     };
+
+export type TillyQuestion = {
+  id: string;
+  kind: "unknown_merchant" | "category_spike" | "outsized_tx" | string;
+  body: string;
+  payload?: Record<string, any>;
+};
+
+// Task #23: pending Plaid transactions grouped by merchant signature.
+export type PendingGroup = {
+  signature: string;
+  displayName: string;
+  count: number;
+  totalAmount: number;
+  minAmount: number;
+  maxAmount: number;
+  firstDate: string;
+  lastDate: string;
+  suggestedCategory: string | null;
+  suggestedTags: string[] | null;
+  suggestedNote: string | null;
+  ruleId: string | null;
+  sampleNames: string[];
+  txnIds: string[];
+};
 
 export type ScoutProposal = { query: string; reason: string };
 export type WaitProposal = { query: string; reason: string };

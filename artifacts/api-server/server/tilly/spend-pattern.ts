@@ -57,13 +57,24 @@ async function readAllTransactions(
       ),
   ]);
   const out: UnifiedTx[] = [];
+  // Task #23: when Plaid hasn't classified a transaction (category is empty,
+  // "other", or "Uncategorized") fall back to the merchant name so chat
+  // answers and weekly bars say "Starbucks $14" instead of bucketing it
+  // into a faceless "other".
+  const isVagueCat = (c: string) => {
+    const n = c.trim().toLowerCase();
+    return !n || n === "other" || n === "uncategorized";
+  };
   for (const t of plaidRows) {
+    const merchant = t.merchantName ?? t.name ?? undefined;
+    const rawCat = (t.ourCategory || "").trim();
+    const category = isVagueCat(rawCat) && merchant ? merchant : (rawCat || "Uncategorized");
     out.push({
       amount: t.amount,
       date: t.date,
-      category: (t.ourCategory || "Uncategorized").trim(),
+      category,
       source: "plaid",
-      who: t.merchantName ?? t.name ?? undefined,
+      who: merchant,
       createdAt: (t as any).createdAt
         ? new Date((t as any).createdAt as any).getTime()
         : 0,
@@ -71,12 +82,15 @@ async function readAllTransactions(
   }
   for (const e of manualRows) {
     if (e.source === "plaid") continue; // dedupe — Plaid copies use plaid source
+    const merchant = e.merchant ?? e.description;
+    const rawCat = (e.category || "").trim();
+    const category = isVagueCat(rawCat) && merchant ? merchant : (rawCat || "other");
     out.push({
       amount: e.amount,
       date: e.date,
-      category: (e.category || "other").trim(),
+      category,
       source: (e.source as UnifiedTx["source"]) ?? "manual_text",
-      who: e.merchant ?? e.description,
+      who: merchant,
       createdAt: (e as any).createdAt
         ? new Date((e as any).createdAt as any).getTime()
         : 0,

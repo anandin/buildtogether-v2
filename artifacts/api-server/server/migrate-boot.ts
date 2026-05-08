@@ -375,6 +375,48 @@ const CRITICAL_STATEMENTS: string[] = [
   `CREATE INDEX IF NOT EXISTS "tilly_llm_call_log_created_idx" ON "tilly_llm_call_log" ("created_at" DESC)`,
   `CREATE INDEX IF NOT EXISTS "tilly_llm_call_log_user_created_idx" ON "tilly_llm_call_log" ("user_id", "created_at" DESC)`,
   `CREATE INDEX IF NOT EXISTS "tilly_llm_call_log_route_created_idx" ON "tilly_llm_call_log" ("route", "created_at" DESC)`,
+
+  // Task #23: merchant rules + sync-time questions. The signature column +
+  // applied_rule_id breadcrumb on plaid_transactions let the pending queue
+  // group by merchant without recomputing, and let auditors trace which
+  // rule auto-accepted which row.
+  `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "signature" text`,
+  `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "applied_rule_id" varchar`,
+  `CREATE INDEX IF NOT EXISTS "plaid_transactions_couple_status_signature_idx"
+     ON "plaid_transactions" ("couple_id", "status", "signature")`,
+  `CREATE TABLE IF NOT EXISTS "merchant_rules" (
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "couple_id" varchar NOT NULL,
+    "signature" text NOT NULL,
+    "last_merchant" text NOT NULL,
+    "category" text,
+    "default_tags" jsonb,
+    "default_note" text,
+    "auto_accept" boolean NOT NULL DEFAULT false,
+    "auto_ignore" boolean NOT NULL DEFAULT false,
+    "hit_count" integer NOT NULL DEFAULT 0,
+    "ignore_count" integer NOT NULL DEFAULT 0,
+    "source" text NOT NULL DEFAULT 'learned',
+    "last_applied_at" timestamp,
+    "created_at" timestamp NOT NULL DEFAULT now(),
+    "updated_at" timestamp NOT NULL DEFAULT now()
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "merchant_rules_couple_signature_uniq"
+     ON "merchant_rules" ("couple_id", "signature")`,
+  `CREATE TABLE IF NOT EXISTS "tilly_questions" (
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "user_id" varchar NOT NULL,
+    "household_id" varchar NOT NULL,
+    "kind" text NOT NULL,
+    "body" text NOT NULL,
+    "payload" jsonb NOT NULL DEFAULT '{}'::jsonb,
+    "status" text NOT NULL DEFAULT 'open',
+    "answer" text,
+    "created_at" timestamp NOT NULL DEFAULT now(),
+    "answered_at" timestamp
+  )`,
+  `CREATE INDEX IF NOT EXISTS "tilly_questions_household_status_idx"
+     ON "tilly_questions" ("household_id", "status", "created_at" DESC)`,
 ];
 
 export async function applyBootMigrations(): Promise<{

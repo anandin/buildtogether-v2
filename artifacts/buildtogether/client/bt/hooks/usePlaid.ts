@@ -15,12 +15,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { btApi } from "../api/client";
 import { apiRequestRaw } from "@/lib/query-client";
 import { useUser } from "./useUser";
-import type { PlaidItem, PlaidPendingTransaction } from "../api/types";
+import type { PlaidItem, PlaidPendingTransaction, PendingGroup } from "../api/types";
 
 const QK = {
   status: ["/api/plaid/status"] as const,
   items: (couple: string) => ["/api/plaid/items", couple] as const,
   pending: (couple: string) => ["/api/plaid/pending", couple] as const,
+  pendingGrouped: (couple: string) =>
+    ["/api/plaid/pending-grouped", couple] as const,
 };
 
 export function usePlaidStatus() {
@@ -88,11 +90,45 @@ export function invalidatePlaid(
   if (couple) {
     qc.invalidateQueries({ queryKey: QK.items(couple) });
     qc.invalidateQueries({ queryKey: QK.pending(couple) });
+    qc.invalidateQueries({ queryKey: QK.pendingGrouped(couple) });
   }
   // Accepted Plaid transactions become expenses, which feeds Spend & Today.
   qc.invalidateQueries({ queryKey: ["/api/expenses"] });
   qc.invalidateQueries({ queryKey: ["/api/tilly/spend-pattern"] });
   qc.invalidateQueries({ queryKey: ["/api/tilly/today"] });
+  // Sync may have generated new questions.
+  qc.invalidateQueries({ queryKey: ["/api/tilly/questions"] });
+}
+
+/** Task #23: pending list grouped by merchant signature (for bulk accept). */
+export function usePlaidPendingGrouped(opts?: { silent?: boolean }) {
+  const { user } = useUser();
+  const couple = user?.householdId ?? null;
+  return useQuery({
+    queryKey: couple ? QK.pendingGrouped(couple) : ["/api/plaid/pending-grouped", "anon"],
+    queryFn: () => btApi.plaidPendingGrouped(couple as string),
+    enabled: !!couple,
+    staleTime: 30_000,
+  });
+}
+
+export function usePlaidPendingGroupAccept() {
+  const qc = useQueryClient();
+  const { user } = useUser();
+  const couple = user?.householdId ?? null;
+  return useMutation({
+    mutationFn: (input: {
+      signature: string;
+      category?: string | null;
+      tags?: string[] | null;
+      note?: string | null;
+      applyToFuture?: boolean;
+    }) => {
+      requireCouple(couple);
+      return btApi.plaidPendingGroupAccept({ ...input, coupleId: couple as string });
+    },
+    onSuccess: () => invalidatePlaid(qc, couple),
+  });
 }
 
 /**

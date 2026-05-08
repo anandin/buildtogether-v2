@@ -816,10 +816,74 @@ export const plaidTransactions = pgTable("plaid_transactions", {
   pending: boolean("pending").default(false),
   status: text("status").notNull().default("pending_review"), // pending_review | accepted | ignored
   expenseId: varchar("expense_id"), // set once accepted → links to expenses.id
+  // Task #23 — merchant signature + the merchant_rules row that learned
+  // (or auto-applied) this transaction's category/tags. Lets the pending
+  // queue group by signature without recomputing it, and gives audits a
+  // breadcrumb back to the rule that fired.
+  signature: text("signature"),
+  appliedRuleId: varchar("applied_rule_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export type PlaidTransaction = typeof plaidTransactions.$inferSelect;
+
+// ==================== Task #23: Merchant rules + sync questions ====================
+/**
+ * Learned per-merchant defaults. After the user accepts/ignores a Plaid
+ * transaction, we upsert a rule keyed on (couple_id, signature). After 2
+ * matching accepts of the same signature with consistent category/tags,
+ * we flip `auto_accept = true` and future Plaid imports for that merchant
+ * skip the pending queue and land directly in `expenses` with the learned
+ * tags/note. The user never has to retag the same coffee shop twice.
+ */
+export const merchantRules = pgTable("merchant_rules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  coupleId: varchar("couple_id").notNull(),
+  signature: text("signature").notNull(), // normalized merchant key
+  lastMerchant: text("last_merchant").notNull(), // human-readable display name
+  category: text("category"), // overrides plaid mapping when set
+  defaultTags: jsonb("default_tags"), // string[]
+  defaultNote: text("default_note"),
+  // Auto-accept on next sync: true once a confident pattern is established.
+  // Capped at amounts ≤ $5000 unless hit_count ≥ 5.
+  autoAccept: boolean("auto_accept").notNull().default(false),
+  // Auto-ignore on next sync: true if user has ignored this merchant ≥2 times
+  // and never accepted. Mutually exclusive with autoAccept.
+  autoIgnore: boolean("auto_ignore").notNull().default(false),
+  hitCount: integer("hit_count").notNull().default(0), // accepts that built/strengthened the rule
+  ignoreCount: integer("ignore_count").notNull().default(0),
+  source: text("source").notNull().default("learned"), // learned | asked | bulk
+  lastAppliedAt: timestamp("last_applied_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (t) => ({
+  coupleSigUniq: uniqueIndex("merchant_rules_couple_signature_uniq").on(t.coupleId, t.signature),
+}));
+
+export type MerchantRule = typeof merchantRules.$inferSelect;
+
+/**
+ * Proactive sync-time questions. Generated after each Plaid sync by the
+ * question-generator (recurring unknown merchant / category spike / single
+ * outsized tx). The user sees up to 3 OPEN questions on Today + chat. When
+ * answered, the answer can convert into a merchant_rules row so Tilly never
+ * asks again.
+ */
+export const tillyQuestions = pgTable("tilly_questions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  householdId: varchar("household_id").notNull(),
+  // unknown_merchant | category_spike | outsized_tx
+  kind: text("kind").notNull(),
+  body: text("body").notNull(), // user-facing question, in Tilly voice
+  payload: jsonb("payload").notNull().default(sql`'{}'::jsonb`), // signature, category, amounts, txn ids
+  status: text("status").notNull().default("open"), // open | answered | dismissed
+  answer: text("answer"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  answeredAt: timestamp("answered_at"),
+});
+
+export type TillyQuestion = typeof tillyQuestions.$inferSelect;
 
 // ==================== BuildTogether v2 (Tilly student-edition) ====================
 // Spec §5: Tilly's AI learning behavior. New tables introduced for the

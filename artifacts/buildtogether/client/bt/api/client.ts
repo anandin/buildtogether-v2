@@ -25,6 +25,8 @@ import type {
   PlaidStatus,
   PlaidItem,
   PlaidPendingTransaction,
+  PendingGroup,
+  TillyQuestion,
 } from "./types";
 import type { BTToneKey } from "../tones";
 
@@ -306,6 +308,39 @@ export const btApi = {
     }),
   plaidIgnore: (txnId: string) =>
     postJson<{ ok: true }>(`/api/plaid/pending/${txnId}/ignore`),
+  // Task #23
+  plaidPendingGrouped: (coupleId: string) =>
+    getJson<{ groups: PendingGroup[] }>(`/api/plaid/pending-grouped/${coupleId}`),
+  plaidPendingGroupAccept: (body: {
+    coupleId: string;
+    signature: string;
+    category?: string | null;
+    tags?: string[] | null;
+    note?: string | null;
+    applyToFuture?: boolean;
+  }) =>
+    postJson<{ accepted: number; total: number }>(
+      `/api/plaid/pending-group/accept`,
+      body,
+    ),
+  tillyQuestions: () =>
+    getJson<{ questions: TillyQuestion[] }>(`/api/tilly/questions`),
+  tillyQuestionAnswer: (
+    id: string,
+    body: {
+      answer?: string;
+      action?: "create_rule";
+      category?: string | null;
+      tags?: string[] | null;
+      note?: string | null;
+    },
+  ) =>
+    postJson<{ ok: true; ruleCreated?: boolean }>(
+      `/api/tilly/questions/${id}/answer`,
+      body,
+    ),
+  tillyQuestionDismiss: (id: string) =>
+    postJson<{ ok: true }>(`/api/tilly/questions/${id}/dismiss`, {}),
   plaidDisconnect: async (itemId: string) => {
     const res = await apiRequest("DELETE", `/api/plaid/items/${itemId}`);
     return (await res.json()) as { ok: true };

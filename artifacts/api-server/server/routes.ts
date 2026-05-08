@@ -43,6 +43,14 @@ import {
 import { detectPatterns, savePatterns, createNudgeFromPattern, getActivePatterns, getPendingNudges } from "./pattern-detection";
 import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt, buildQuickAddPrompt, buildGuardianCoachPrompt, buildGuardianIntentClassifierPrompt, type GuardianCoachContext } from "./prompts";
 import { getPlaidClient, getPlaidRedirectUri, isPlaidConfigured, mapPlaidCategory, shouldImportPlaidTransaction, shouldAutoAcceptPlaidTransaction } from "./plaid";
+import {
+  applyRuleToPlaidTx,
+  findRule,
+  merchantSignature,
+  upsertIgnoreRule,
+  upsertRuleFromAccept,
+} from "./tilly/merchant-rules";
+import { generateQuestionsForHousehold } from "./tilly/question-generator";
 import { verifyPlaidWebhook } from "./plaid-webhook-verify";
 
 const DEFAULT_CATEGORY_BUDGETS = [
@@ -198,17 +206,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!shouldImportPlaidTransaction(tx)) continue;
 
         const ourCat = mapPlaidCategory(tx.category, tx.personal_finance_category);
+        // Task #23: look up a learned merchant rule before deciding what
+        // to do. The rule overrides Plaid's heuristic in either direction:
+        // it can auto-accept (skip pending queue) OR auto-ignore (drop the
+        // row). Both branches still write a plaid_transactions row so
+        // future syncs dedupe correctly.
+        const sig = merchantSignature(tx);
+        const rule = !tx.pending ? await findRule(item.coupleId, sig) : null;
+        const ruleOutcome = applyRuleToPlaidTx(tx, rule);
+        // Pre-fill from the rule when present, otherwise fall back to Plaid mapping.
+        const ruleCategory =
+          ruleOutcome.kind === "auto_accept" || ruleOutcome.kind === "tag_only"
+            ? ruleOutcome.category ?? ourCat
+            : ourCat;
         // Never auto-accept while Plaid still says "pending" — the amount/merchant
         // can change when it posts, and Plaid may send a `removed` for the pending
         // id and a fresh `added` for the posted id. Waiting until post avoids
         // duplicate or stale expense rows.
-        const autoAccept = !tx.pending && shouldAutoAcceptPlaidTransaction(tx);
+        const autoAcceptByRule = ruleOutcome.kind === "auto_accept";
+        const autoIgnoreByRule = ruleOutcome.kind === "auto_ignore";
+        const autoAccept = !tx.pending && (autoAcceptByRule || shouldAutoAcceptPlaidTransaction(tx));
+        const ruleId =
+          ruleOutcome.kind === "auto_accept" ||
+          ruleOutcome.kind === "auto_ignore" ||
+          ruleOutcome.kind === "tag_only"
+            ? ruleOutcome.ruleId
+            : null;
+        const ruleTags =
+          ruleOutcome.kind === "auto_accept" || ruleOutcome.kind === "tag_only"
+            ? ruleOutcome.tags
+            : null;
+        const ruleNote =
+          ruleOutcome.kind === "auto_accept" || ruleOutcome.kind === "tag_only"
+            ? ruleOutcome.note
+            : null;
         try {
           // Insert the plaid_transactions row FIRST. Its unique
           // (plaid_transaction_id) constraint is our idempotency key — if a
           // resync replays the same tx, this throws and we never create a
           // duplicate expense. Then create the expense and link it back.
           await db.transaction(async (txn) => {
+            const initialStatus = autoIgnoreByRule
+              ? "ignored"
+              : autoAccept
+                ? "auto_accepting"
+                : "pending_review";
             const [inserted] = await txn.insert(plaidTransactions).values({
               coupleId: item.coupleId,
               plaidItemId: item.id,
@@ -219,26 +261,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
               merchantName: tx.merchant_name || null,
               name: tx.name || "Unknown",
               plaidCategory: tx.category || null,
-              ourCategory: ourCat,
+              ourCategory: ruleCategory,
               pending: tx.pending || false,
-              status: autoAccept ? "auto_accepting" : "pending_review",
+              status: initialStatus,
+              signature: sig,
+              appliedRuleId: ruleId,
             }).returning();
 
-            if (autoAccept) {
+            if (autoAccept && !autoIgnoreByRule) {
               const [expense] = await txn.insert(expenses).values({
                 coupleId: item.coupleId,
                 amount: tx.amount,
                 description: tx.merchant_name || tx.name || "Unknown",
                 merchant: tx.merchant_name || tx.name || null,
-                category: ourCat,
+                category: ruleCategory,
                 date: tx.date,
                 paidBy,
                 splitMethod: "joint",
                 source: "plaid",
+                tags: ruleTags as any,
+                note: ruleNote,
               }).returning();
               await txn.update(plaidTransactions)
                 .set({ status: "accepted", expenseId: expense.id })
                 .where(eq(plaidTransactions.id, inserted.id));
+              if (autoAcceptByRule) {
+                console.log(
+                  `[merchant-rules] auto-accepted "${tx.merchant_name || tx.name}" ` +
+                    `($${tx.amount}) via rule ${ruleId}`,
+                );
+              }
+            } else if (autoIgnoreByRule) {
+              console.log(
+                `[merchant-rules] auto-ignored "${tx.merchant_name || tx.name}" via rule ${ruleId}`,
+              );
             }
           });
           added++;
@@ -4727,7 +4783,19 @@ Return just the message text.`;
           results.push({ itemId: item.id, added: 0, modified: 0, error: err.message });
         }
       }
-      res.json({ synced: results });
+
+      // Task #23: after a sync completes, scan for proactive questions
+      // (unknown merchants, category spikes, outsized txs). Best-effort:
+      // any failure is logged but never blocks the sync response.
+      let questionsAdded = 0;
+      try {
+        const { inserted } = await generateQuestionsForHousehold(req.params.coupleId);
+        questionsAdded = inserted;
+      } catch (qErr) {
+        console.warn("[question-generator] sync hook failed:", qErr);
+      }
+
+      res.json({ synced: results, questionsAdded });
     } catch (error: any) {
       console.error("Plaid sync error:", error);
       res.status(500).json({ error: error.message });
@@ -4900,6 +4968,23 @@ Return just the message text.`;
         return row;
       });
 
+      // Task #23: learn from this accept. Fire-and-forget; never break the
+      // user-visible response if rule learning misbehaves.
+      try {
+        const rule = await upsertRuleFromAccept({
+          coupleId: ptx.coupleId,
+          plaidTx: ptx,
+          category: (overrides?.category ?? ptx.ourCategory) ?? null,
+          tags: cleanTags,
+          note: cleanNote,
+        });
+        await db.update(plaidTransactions)
+          .set({ signature: rule.signature, appliedRuleId: rule.id })
+          .where(eq(plaidTransactions.id, ptx.id));
+      } catch (ruleErr) {
+        console.warn("[merchant-rules] upsert from accept failed:", ruleErr);
+      }
+
       res.json({ expense });
     } catch (error: any) {
       if (error?.httpStatus === 409) {
@@ -4918,16 +5003,272 @@ Return just the message text.`;
         .limit(1);
       if (!ptx) return res.status(404).json({ error: "Pending transaction not found" });
       if (ptx.coupleId !== req.user?.coupleId) return res.status(403).json({ error: "Access denied" });
+      // Task #23 fix: never learn an ignore from a row that's already been
+      // accepted/ignored — that would inflate ignoreCount on a known-good
+      // merchant and could push a confirmed-safe rule into autoIgnore.
+      if (ptx.status !== "pending_review") {
+        return res.status(400).json({ error: "Already processed" });
+      }
 
       await db.update(plaidTransactions)
         .set({ status: "ignored" })
-        .where(eq(plaidTransactions.id, ptx.id));
+        .where(and(
+          eq(plaidTransactions.id, ptx.id),
+          eq(plaidTransactions.status, "pending_review"),
+        ));
+
+      // Task #23: learn the ignore so we stop offering this merchant.
+      try {
+        const rule = await upsertIgnoreRule(ptx.coupleId, ptx);
+        await db.update(plaidTransactions)
+          .set({ signature: rule.signature, appliedRuleId: rule.id })
+          .where(eq(plaidTransactions.id, ptx.id));
+      } catch (ruleErr) {
+        console.warn("[merchant-rules] upsert from ignore failed:", ruleErr);
+      }
+
       res.json({ ok: true });
     } catch (error: any) {
       console.error("Plaid ignore error:", error);
       res.status(500).json({ error: error.message });
     }
   });
+
+  // ─── Task #23: grouped pending queue + bulk accept ─────────────────────
+  // Group pending Plaid txs by merchant signature so the user can deal with
+  // "Spotify ×4 · $39.96" in one tap instead of accepting it four times.
+  app.get(
+    "/api/plaid/pending-grouped/:coupleId",
+    requireAuth,
+    requirePasskeyVerified,
+    requireCoupleAccess,
+    async (req, res) => {
+      try {
+        const coupleId = req.params.coupleId;
+        const rows = await db
+          .select()
+          .from(plaidTransactions)
+          .where(
+            and(
+              eq(plaidTransactions.coupleId, coupleId),
+              eq(plaidTransactions.status, "pending_review"),
+            ),
+          )
+          .orderBy(desc(plaidTransactions.date))
+          .limit(200);
+
+        type Group = {
+          signature: string;
+          displayName: string;
+          count: number;
+          totalAmount: number;
+          minAmount: number;
+          maxAmount: number;
+          firstDate: string;
+          lastDate: string;
+          suggestedCategory: string | null;
+          suggestedTags: string[] | null;
+          suggestedNote: string | null;
+          ruleId: string | null;
+          sampleNames: string[];
+          txnIds: string[];
+        };
+        const groups = new Map<string, Group>();
+        for (const r of rows) {
+          // Use stored signature when present (new rows) and recompute on
+          // the fly for legacy rows that predate this column.
+          const sig = r.signature ?? merchantSignature(r);
+          const display = r.merchantName || r.name;
+          const g = groups.get(sig);
+          if (!g) {
+            groups.set(sig, {
+              signature: sig,
+              displayName: display,
+              count: 1,
+              totalAmount: r.amount,
+              minAmount: r.amount,
+              maxAmount: r.amount,
+              firstDate: r.date,
+              lastDate: r.date,
+              suggestedCategory: r.ourCategory,
+              suggestedTags: null,
+              suggestedNote: null,
+              ruleId: r.appliedRuleId,
+              sampleNames: [display],
+              txnIds: [r.id],
+            });
+          } else {
+            g.count += 1;
+            g.totalAmount += r.amount;
+            g.minAmount = Math.min(g.minAmount, r.amount);
+            g.maxAmount = Math.max(g.maxAmount, r.amount);
+            if (r.date < g.firstDate) g.firstDate = r.date;
+            if (r.date > g.lastDate) g.lastDate = r.date;
+            if (g.sampleNames.length < 3 && !g.sampleNames.includes(display)) {
+              g.sampleNames.push(display);
+            }
+            g.txnIds.push(r.id);
+          }
+        }
+
+        // Hydrate from any saved rule so the client can render
+        // "Suggested: groceries (last time)" pre-filled chips.
+        const sigs = [...groups.keys()];
+        if (sigs.length > 0) {
+          const { findRules } = await import("./tilly/merchant-rules");
+          const ruleMap = await findRules(coupleId, sigs);
+          for (const [sig, g] of groups.entries()) {
+            const rule = ruleMap.get(sig);
+            if (!rule) continue;
+            if (rule.category) g.suggestedCategory = rule.category;
+            if (Array.isArray(rule.defaultTags)) g.suggestedTags = rule.defaultTags as string[];
+            if (rule.defaultNote) g.suggestedNote = rule.defaultNote;
+            if (rule.lastMerchant) g.displayName = rule.lastMerchant;
+            g.ruleId = rule.id;
+          }
+        }
+
+        res.json({
+          groups: [...groups.values()].sort((a, b) => b.totalAmount - a.totalAmount),
+        });
+      } catch (error: any) {
+        console.error("Plaid pending-grouped error:", error);
+        res.status(500).json({ error: error.message });
+      }
+    },
+  );
+
+  // Bulk accept every pending tx in one signature group with the same
+  // category/tags/note. If `applyToFuture` is set, also bumps the rule
+  // straight to auto_accept so the next sync skips the queue entirely.
+  app.post(
+    "/api/plaid/pending-group/accept",
+    requireAuth,
+    requirePasskeyVerified,
+    async (req, res) => {
+      try {
+        const { coupleId, signature, category, tags, note, applyToFuture } = req.body || {};
+        if (!coupleId || !signature) {
+          return res.status(400).json({ error: "coupleId and signature required" });
+        }
+        if (req.user?.coupleId !== coupleId) {
+          return res.status(403).json({ error: "Access denied" });
+        }
+
+        const cleanCat = typeof category === "string" && category.trim() ? category.trim() : null;
+        let cleanTags: string[] | null = null;
+        if (Array.isArray(tags)) {
+          const seen = new Set<string>();
+          const out: string[] = [];
+          for (const t of tags) {
+            if (typeof t !== "string") continue;
+            const v = t.trim().slice(0, 30);
+            if (!v || seen.has(v)) continue;
+            seen.add(v);
+            out.push(v);
+            if (out.length >= 8) break;
+          }
+          if (out.length) cleanTags = out;
+        }
+        let cleanNote: string | null = null;
+        if (typeof note === "string" && note.trim()) cleanNote = note.trim().slice(0, 240);
+
+        const rows = await db
+          .select()
+          .from(plaidTransactions)
+          .where(
+            and(
+              eq(plaidTransactions.coupleId, coupleId),
+              eq(plaidTransactions.status, "pending_review"),
+            ),
+          );
+        const inGroup = rows.filter((r) => (r.signature ?? merchantSignature(r)) === signature);
+        if (inGroup.length === 0) {
+          return res.status(404).json({ error: "No pending transactions in this group" });
+        }
+
+        const paidBy = req.user?.partnerRole || "partner1";
+        let acceptedCount = 0;
+        for (const ptx of inGroup) {
+          try {
+            await db.transaction(async (tx) => {
+              const claimed = await tx
+                .update(plaidTransactions)
+                .set({ status: "accepted" })
+                .where(
+                  and(
+                    eq(plaidTransactions.id, ptx.id),
+                    eq(plaidTransactions.status, "pending_review"),
+                  ),
+                )
+                .returning({ id: plaidTransactions.id });
+              if (claimed.length === 0) return;
+              const [row] = await tx
+                .insert(expenses)
+                .values({
+                  coupleId: ptx.coupleId,
+                  amount: ptx.amount,
+                  description: ptx.merchantName || ptx.name,
+                  merchant: ptx.merchantName || ptx.name,
+                  category: cleanCat ?? ptx.ourCategory ?? "other",
+                  date: ptx.date,
+                  paidBy,
+                  splitMethod: "joint",
+                  note: cleanNote,
+                  tags: cleanTags as any,
+                  source: "plaid",
+                })
+                .returning();
+              await tx
+                .update(plaidTransactions)
+                .set({ expenseId: row.id })
+                .where(eq(plaidTransactions.id, ptx.id));
+              acceptedCount += 1;
+            });
+          } catch (err: any) {
+            console.error("Plaid bulk-accept row failed:", err?.message ?? err);
+          }
+        }
+
+        // Upsert rule once for the whole group. If applyToFuture, force
+        // auto_accept to true regardless of hit count — the user said so.
+        try {
+          const sample = inGroup[0];
+          const rule = await upsertRuleFromAccept({
+            coupleId,
+            plaidTx: sample,
+            category: cleanCat,
+            tags: cleanTags,
+            note: cleanNote,
+            source: "bulk",
+          });
+          if (applyToFuture && !rule.autoAccept) {
+            const { merchantRules } = await import("../shared/schema");
+            await db
+              .update(merchantRules)
+              .set({ autoAccept: true, hitCount: Math.max(rule.hitCount, 2), updatedAt: new Date() })
+              .where(eq(merchantRules.id, rule.id));
+          }
+          await db
+            .update(plaidTransactions)
+            .set({ signature: rule.signature, appliedRuleId: rule.id })
+            .where(
+              and(
+                eq(plaidTransactions.coupleId, coupleId),
+                eq(plaidTransactions.signature, rule.signature),
+              ),
+            );
+        } catch (ruleErr) {
+          console.warn("[merchant-rules] bulk upsert failed:", ruleErr);
+        }
+
+        res.json({ accepted: acceptedCount, total: inGroup.length });
+      } catch (error: any) {
+        console.error("Plaid bulk-accept error:", error);
+        res.status(500).json({ error: error.message });
+      }
+    },
+  );
 
   // ==================== FEEDBACK ENDPOINTS ====================
 

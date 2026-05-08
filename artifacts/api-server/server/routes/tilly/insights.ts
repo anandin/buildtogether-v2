@@ -243,9 +243,31 @@ export function mountTillyInsightsRoutes(app: Express): void {
         brief = deterministicBrief(name, tone, numbers, dreamTile);
       }
 
+      // Task #23: surface up to 3 open sync-time questions on Today so the
+      // BTHome screen can render its "Tilly has questions" strip.
+      let openQuestions: Array<{
+        id: string;
+        kind: string;
+        body: string;
+        payload: any;
+      }> = [];
+      try {
+        const { listOpenQuestions } = await import("../../tilly/question-generator");
+        const rows = await listOpenQuestions(householdId, 3);
+        openQuestions = rows.map((q) => ({
+          id: q.id,
+          kind: q.kind,
+          body: q.body,
+          payload: q.payload,
+        }));
+      } catch (qErr) {
+        console.warn("/api/tilly/today openQuestions fallback:", qErr);
+      }
+
       res.json({
         ready: true,
         ...brief,
+        openQuestions,
       });
     } catch (err) {
       console.error("/api/tilly/today error:", err);

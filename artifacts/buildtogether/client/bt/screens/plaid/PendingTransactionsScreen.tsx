@@ -32,23 +32,39 @@ import {
   usePlaidIgnore,
   usePlaidSync,
   usePlaidItems,
+  usePlaidPendingGrouped,
+  usePlaidPendingGroupAccept,
 } from "../../hooks/usePlaid";
 import { PasskeyStaleBanner } from "./PasskeyStaleBanner";
 import { usePasskeyGate } from "@/context/PasskeyGateContext";
-import type { PlaidPendingTransaction } from "../../api/types";
+import type { PlaidPendingTransaction, PendingGroup } from "../../api/types";
 
 export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
   const { t } = useBT();
   const pending = usePlaidPending({ silent: true });
+  const grouped = usePlaidPendingGrouped();
   const items = usePlaidItems({ silent: true });
   const accept = usePlaidAccept();
   const ignore = usePlaidIgnore();
+  const groupAccept = usePlaidPendingGroupAccept();
   const sync = usePlaidSync();
   const passkeyGate = usePasskeyGate();
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [busyGroup, setBusyGroup] = useState<string | null>(null);
 
   const list = pending.data ?? [];
   const hasItems = (items.data ?? []).some((i) => i.status !== "disconnected");
+  // Task #23: split grouped data into "real" multi-item groups (≥2) and
+  // singletons. Multi groups render as bulk-accept cards; singletons fall
+  // through to the existing per-row PendingRow so single-tap accept still
+  // works. Falls back gracefully when the grouped endpoint is unavailable.
+  const groups = grouped.data?.groups ?? [];
+  const multiGroupSigs = new Set(groups.filter((g) => g.count >= 2).map((g) => g.signature));
+  const multiGroups = groups.filter((g) => multiGroupSigs.has(g.signature));
+  const singleRows = list.filter((row) => {
+    const sig = (row as any).signature ?? null;
+    return !sig || !multiGroupSigs.has(sig);
+  });
 
   const handleAccept = async (
     txn: PlaidPendingTransaction,
@@ -80,6 +96,26 @@ export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
   };
 
   const total = list.reduce((s, x) => s + x.amount, 0);
+
+  const handleGroupAccept = async (
+    g: PendingGroup,
+    ctx: { category: string | null; tags: string[] | null; note: string | null; applyToFuture: boolean },
+  ) => {
+    setBusyGroup(g.signature);
+    try {
+      await groupAccept.mutateAsync({
+        signature: g.signature,
+        category: ctx.category,
+        tags: ctx.tags,
+        note: ctx.note,
+        applyToFuture: ctx.applyToFuture,
+      });
+    } catch (err: any) {
+      Alert.alert("Couldn't accept group", err?.message ?? "Try again.");
+    } finally {
+      setBusyGroup(null);
+    }
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
@@ -187,7 +223,18 @@ export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
           <EmptyState t={t} hasItems={hasItems} onSync={() => sync.mutate()} syncing={sync.isPending} />
         ) : (
           <View style={{ gap: 10 }}>
-            {list.map((txn) => (
+            {/* Multi-item merchant groups first ("Spotify ×4 · $39.96") */}
+            {multiGroups.map((g) => (
+              <GroupCard
+                key={g.signature}
+                group={g}
+                t={t}
+                busy={busyGroup === g.signature}
+                onAccept={(ctx) => handleGroupAccept(g, ctx)}
+              />
+            ))}
+            {/* Then singletons via the existing per-row UI */}
+            {singleRows.map((txn) => (
               <PendingRow
                 key={txn.id}
                 txn={txn}
@@ -669,6 +716,302 @@ function PendingRow({
           </Text>
         </Pressable>
       </View>
+    </View>
+  );
+}
+
+/**
+ * GroupCard — Task #23
+ *
+ * One card representing N pending Plaid txs from the same merchant.
+ * The user picks tags/note ONCE, optionally toggles "always do this for
+ * <merchant>", and one tap accepts the entire group. Pre-fills from any
+ * learned rule on this merchant so a returning user doesn't re-tag.
+ */
+function GroupCard({
+  group,
+  t,
+  busy,
+  onAccept,
+}: {
+  group: PendingGroup;
+  t: BTTheme;
+  busy: boolean;
+  onAccept: (ctx: {
+    category: string | null;
+    tags: string[] | null;
+    note: string | null;
+    applyToFuture: boolean;
+  }) => void;
+}) {
+  const [showContext, setShowContext] = useState(false);
+  const [tags, setTags] = useState<string[]>(group.suggestedTags ?? []);
+  const [note, setNote] = useState<string>(group.suggestedNote ?? "");
+  const [applyToFuture, setApplyToFuture] = useState<boolean>(false);
+
+  const toggleTag = (tag: string) => {
+    setTags((prev) =>
+      prev.includes(tag) ? prev.filter((x) => x !== tag) : [...prev, tag],
+    );
+  };
+
+  const dateRange =
+    group.firstDate === group.lastDate
+      ? format(new Date(group.firstDate), "MMM d")
+      : `${format(new Date(group.firstDate), "MMM d")} – ${format(new Date(group.lastDate), "MMM d")}`;
+
+  return (
+    <View
+      style={{
+        backgroundColor: t.surface,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: t.accent,
+        padding: 14,
+        gap: 12,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
+        <View style={{ flex: 1, gap: 4 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text
+              style={{
+                color: t.ink,
+                fontFamily: BTFonts.sans,
+                fontWeight: "700",
+                fontSize: 15,
+              }}
+              numberOfLines={1}
+            >
+              {group.displayName}
+            </Text>
+            <View
+              style={{
+                paddingHorizontal: 7,
+                paddingVertical: 2,
+                borderRadius: 999,
+                backgroundColor: t.accent,
+              }}
+            >
+              <Text
+                style={{
+                  color: t.surface,
+                  fontFamily: BTFonts.mono,
+                  fontSize: 9,
+                  fontWeight: "700",
+                  letterSpacing: 0.6,
+                }}
+              >
+                ×{group.count}
+              </Text>
+            </View>
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Text
+              style={{
+                color: t.inkMute,
+                fontFamily: BTFonts.mono,
+                fontSize: 10,
+                letterSpacing: 0.8,
+                textTransform: "uppercase",
+              }}
+            >
+              {dateRange}
+            </Text>
+            {group.suggestedCategory ? (
+              <View
+                style={{
+                  paddingHorizontal: 7,
+                  paddingVertical: 2,
+                  borderRadius: 999,
+                  backgroundColor: t.chip,
+                }}
+              >
+                <Text
+                  style={{
+                    color: t.inkSoft,
+                    fontFamily: BTFonts.mono,
+                    fontSize: 9,
+                    letterSpacing: 0.8,
+                    textTransform: "uppercase",
+                    fontWeight: "600",
+                  }}
+                >
+                  {group.suggestedCategory}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </View>
+        <Text
+          style={{
+            color: t.ink,
+            fontFamily: BTFonts.serif,
+            fontSize: 22,
+            fontWeight: "500",
+            fontVariant: ["tabular-nums"],
+          }}
+        >
+          ${group.totalAmount.toFixed(2)}
+        </Text>
+      </View>
+
+      <Pressable
+        onPress={() => setShowContext((v) => !v)}
+        accessibilityRole="button"
+        accessibilityLabel={showContext ? "Hide details" : "Add note for Tilly"}
+        style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+      >
+        <Feather
+          name={showContext ? "chevron-up" : "plus"}
+          size={12}
+          color={t.accent}
+        />
+        <Text
+          style={{
+            color: t.accent,
+            fontFamily: BTFonts.sans,
+            fontWeight: "600",
+            fontSize: 12,
+          }}
+        >
+          {showContext ? "Hide details" : "Tag & teach Tilly"}
+        </Text>
+      </Pressable>
+
+      {showContext ? (
+        <View style={{ gap: 10 }}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+            {PRESET_TAGS.map((tag) => {
+              const on = tags.includes(tag);
+              return (
+                <Pressable
+                  key={tag}
+                  onPress={() => toggleTag(tag)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={`Tag ${tag}`}
+                  style={({ pressed }) => ({
+                    paddingHorizontal: 10,
+                    paddingVertical: 5,
+                    borderRadius: 999,
+                    borderWidth: 1,
+                    borderColor: on ? t.accent : t.rule,
+                    backgroundColor: on ? t.accentSoft : (pressed ? t.chip : "transparent"),
+                  })}
+                >
+                  <Text
+                    style={{
+                      color: on ? t.accent : t.inkSoft,
+                      fontFamily: BTFonts.sans,
+                      fontSize: 11,
+                      fontWeight: on ? "700" : "500",
+                    }}
+                  >
+                    {tag}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <TextInput
+            value={note}
+            onChangeText={setNote}
+            placeholder={`Why this spend? (optional, applies to all ${group.count})`}
+            placeholderTextColor={t.inkMute}
+            multiline
+            maxLength={240}
+            style={{
+              color: t.ink,
+              fontFamily: BTFonts.sans,
+              fontSize: 13,
+              padding: 10,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: t.rule,
+              backgroundColor: t.bg,
+              minHeight: 56,
+              textAlignVertical: "top",
+            }}
+          />
+          <Pressable
+            onPress={() => setApplyToFuture((v) => !v)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: applyToFuture }}
+            accessibilityLabel="Always do this for this merchant"
+            style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+          >
+            <View
+              style={{
+                width: 18,
+                height: 18,
+                borderRadius: 4,
+                borderWidth: 1.5,
+                borderColor: applyToFuture ? t.accent : t.rule,
+                backgroundColor: applyToFuture ? t.accent : "transparent",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              {applyToFuture ? (
+                <Feather name="check" size={12} color={t.surface} />
+              ) : null}
+            </View>
+            <Text
+              style={{
+                color: t.inkSoft,
+                fontFamily: BTFonts.sans,
+                fontSize: 12,
+                flex: 1,
+              }}
+            >
+              Always do this for {group.displayName} (skip pending next time)
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
+      <Pressable
+        onPress={() =>
+          onAccept({
+            category: group.suggestedCategory,
+            tags: tags.length > 0 ? tags : null,
+            note: note.trim() || null,
+            applyToFuture,
+          })
+        }
+        disabled={busy}
+        accessibilityRole="button"
+        accessibilityLabel={`Accept all ${group.count} ${group.displayName}`}
+        style={({ pressed }) => ({
+          paddingVertical: 11,
+          borderRadius: 999,
+          backgroundColor: t.ink,
+          alignItems: "center",
+          justifyContent: "center",
+          flexDirection: "row",
+          gap: 6,
+          opacity: pressed ? 0.85 : 1,
+        })}
+      >
+        {busy ? (
+          <ActivityIndicator size="small" color={t.surface} />
+        ) : (
+          <Feather name="check" size={13} color={t.surface} />
+        )}
+        <Text
+          style={{
+            color: t.surface,
+            fontFamily: BTFonts.sans,
+            fontWeight: "700",
+            fontSize: 12,
+          }}
+        >
+          {busy
+            ? "Accepting…"
+            : `Accept all ${group.count} · $${group.totalAmount.toFixed(2)}`}
+        </Text>
+      </Pressable>
     </View>
   );
 }
