@@ -401,6 +401,8 @@ ${merchantBlock}`,
           messages: [{ role: "user", content: userPromptText }],
           extraSystem,
           maxTokens: 600,
+          userId: req.user?.id ?? null,
+          route: "analyse",
         });
 
         const note = (reply.text || "").trim() ||

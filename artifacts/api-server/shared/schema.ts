@@ -1296,6 +1296,34 @@ export const tillyLifeContext = pgTable("tilly_life_context", {
 
 export type TillyLifeContext = typeof tillyLifeContext.$inferSelect;
 
+// ==================== LLM call cost log ====================
+// Every LLM/embedding call (chat, analysis, distill, dossier, scout,
+// reminder, brief, embedding, admin preview) appends one row here so
+// the /admin Cost tab can show per-user $ totals + per-route breakdown.
+// Fire-and-forget from the LLM clients — failures are swallowed so
+// telemetry never breaks a user-facing reply.
+export const tillyLlmCallLog = pgTable("tilly_llm_call_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id"), // null for cron / system / unattributed calls
+  // free-form so new routes can be added without a migration. Known values:
+  // chat | analyse | memory-write | reminder | dossier | distil | scout |
+  // wait-scout | brief | embedding | preview | expense-parse | unknown
+  route: text("route").notNull(),
+  provider: text("provider"),  // openrouter | anthropic | openai
+  model: text("model").notNull(),
+  promptTokens: integer("prompt_tokens").notNull().default(0),
+  completionTokens: integer("completion_tokens").notNull().default(0),
+  cacheReadTokens: integer("cache_read_tokens").notNull().default(0),
+  cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
+  costUsd: real("cost_usd").notNull().default(0),
+  latencyMs: integer("latency_ms").notNull().default(0),
+  ok: boolean("ok").notNull().default(true),
+  error: text("error"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export type TillyLlmCallLog = typeof tillyLlmCallLog.$inferSelect;
+
 // ==================== Legacy aliases ====================
 // Keep V1-name imports compiling during the Phase 1c route-splitting transition.
 // These re-exports point to the renamed tables. Do NOT use in new code.

@@ -68,6 +68,7 @@ export async function synthesizeScout(opts: {
   location?: string | null;
   searches: TavilySearchResponse[];
   modelId?: string;
+  userId?: string | null;
 }): Promise<ScoutResult> {
   // Compact serialization of all results so the LLM has the full set.
   const lines: string[] = [];
@@ -95,5 +96,6 @@ export async function synthesizeScout(opts: {
     schema: ScoutResultSchema,
     schemaName: "scout_result",
     maxTokens: 1500,
+    meta: { userId: opts.userId ?? null, route: "scout" },
   });
 }

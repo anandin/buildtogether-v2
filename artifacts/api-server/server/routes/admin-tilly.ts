@@ -32,7 +32,7 @@ import {
   DossierContentSchema,
 } from "../tilly/dossier-rewriter";
 import { hybridRetrieve } from "../tilly/retriever";
-import { tillyTonePref, tillyMemory, users } from "../../shared/schema";
+import { tillyTonePref, tillyMemory } from "../../shared/schema";
 import { buildFinancialStateSummary } from "../tilly/state-summary";
 // (`tillyConfig` is also imported above; we add `tillyMemory` here next to
 // the other tilly memory/dossier helpers so the user-context endpoint can
@@ -158,6 +158,7 @@ export function mountAdminTillyRoutes(app: Express): void {
           systemPrompts,
           messages: [{ role: "user", content: message }],
           maxTokens: 1024,
+          meta: { userId: req.user?.id ?? null, route: "preview" },
         });
         res.json({ reply: result.text, usage: result.usage, model: result.modelId });
       } catch (err: any) {
@@ -184,7 +185,7 @@ export function mountAdminTillyRoutes(app: Express): void {
 
         let updated = 0;
         for (const r of rows) {
-          const v = await embed(r.body);
+          const v = await embed(r.body, { userId: r.userId ?? null, route: "reembed" });
           if (!v) continue;
           await db
             .update(tillyMemory)

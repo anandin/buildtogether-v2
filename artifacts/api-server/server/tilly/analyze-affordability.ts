@@ -106,6 +106,8 @@ export type AffordabilityInput = {
   stateSummary?: string | null;
   tone: BTToneKey;
   recentMemorySnippets: string[];
+  /** Cost-tracking attribution forwarded to the LLM client. */
+  userId?: string | null;
 };
 
 function formatLedger(ledger: AffordabilityInput["ledger"]): string {
@@ -157,5 +159,6 @@ Compute the affordability ledger and return the structured analysis. Show your m
     messages: [{ role: "user", content: userContent }],
     schema: AffordabilityAnalysisSchema,
     schemaName: "affordability_analysis",
+    meta: { userId: input.userId ?? null, route: "analyse" },
   });
 }

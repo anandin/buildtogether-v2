@@ -11,6 +11,7 @@
  */
 import OpenAI from "openai";
 import { getTillyConfig } from "./llm/factory";
+import { recordLLMCall } from "./llm/cost-log";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
@@ -41,18 +42,48 @@ function client(): OpenAI {
 /**
  * Embed a single string. Returns null on failure — callers treat null as
  * "skip this memory" rather than blocking the chat reply.
+ *
+ * `meta` is optional cost-tracking attribution. Pass {userId, route} when
+ * the caller knows which user/operation prompted the embed; the row is
+ * appended to tilly_llm_call_log either way (route="embedding" by default).
  */
-export async function embed(text: string): Promise<number[] | null> {
+export async function embed(
+  text: string,
+  meta?: { userId?: string | null; route?: string },
+): Promise<number[] | null> {
+  const t0 = Date.now();
+  let modelId = "unknown";
   try {
     const config = await getTillyConfig();
+    modelId = config.embeddingModel;
     const resp = await client().embeddings.create({
       model: config.embeddingModel,
       input: text,
     });
     const vec = resp.data[0]?.embedding;
+    recordLLMCall({
+      userId: meta?.userId ?? null,
+      route: meta?.route ?? "embedding",
+      provider: "openrouter",
+      model: modelId,
+      promptTokens: (resp as any).usage?.prompt_tokens ?? 0,
+      completionTokens: 0,
+      latencyMs: Date.now() - t0,
+      ok: !!vec,
+      error: vec ? null : "no embedding returned",
+    });
     if (!vec || !Array.isArray(vec)) return null;
     return vec;
   } catch (err) {
+    recordLLMCall({
+      userId: meta?.userId ?? null,
+      route: meta?.route ?? "embedding",
+      provider: "openrouter",
+      model: modelId,
+      latencyMs: Date.now() - t0,
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    });
     console.error("embed failed:", err);
     return null;
   }

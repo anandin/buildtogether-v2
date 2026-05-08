@@ -24,14 +24,7 @@
         --bad: #b23a2c;
       }
       * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: "Inter", system-ui, sans-serif;
-        font-size: 14px;
-        color: var(--ink);
-        background: var(--bg);
-        line-height: 1.5;
-      }
+      body { margin: 0; font-family: "Inter", system-ui, sans-serif; font-size: 14px; color: var(--ink); background: var(--bg); line-height: 1.5; }
       .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 22px 80px; }
       h1 { font-family: "Instrument Serif", Georgia, serif; font-size: 36px; font-weight: 500; margin: 0 0 4px; }
       .accent { color: var(--accent); font-style: italic; }
@@ -45,18 +38,26 @@
       .btn-soft:hover { background: var(--accent-soft); }
       .btn-link { background: none; color: var(--ink-mute); padding: 4px 8px; font-size: 11px; }
       .btn-link:hover { color: var(--accent); background: none; }
+      .btn-tiny { padding: 4px 10px; font-size: 11px; border-radius: 6px; }
       .card { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
       .card h2 { font-family: "Instrument Serif", Georgia, serif; font-size: 22px; font-weight: 500; margin: 0 0 4px; }
       .card .hint { color: var(--ink-mute); font-size: 12px; margin: 0 0 14px; }
       .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
       .field label { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--ink-mute); }
-      .field input { padding: 10px 12px; border: 1px solid var(--rule); border-radius: 10px; font-family: "Inter"; font-size: 14px; background: var(--surface); }
+      .field input, .field textarea, .field select { padding: 10px 12px; border: 1px solid var(--rule); border-radius: 10px; font-family: "Inter"; font-size: 14px; background: var(--surface); }
+      .field textarea { font-family: "JetBrains Mono", Menlo, monospace; font-size: 12px; min-height: 90px; resize: vertical; }
       .row { display: flex; gap: 10px; align-items: center; }
       .err { color: var(--bad); font-size: 12px; margin-top: 8px; min-height: 16px; }
-      /* login */
       .login-shell { min-height: calc(100vh - 56px); display: flex; align-items: center; justify-content: center; padding: 24px; }
       .login-card { background: var(--surface); border: 1px solid var(--rule); border-radius: 16px; padding: 28px; width: 100%; max-width: 380px; }
       .login-card h1 { font-size: 30px; margin-bottom: 18px; }
+      /* tabs */
+      .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--rule); margin-bottom: 18px; flex-wrap: wrap; }
+      .tab { background: none; border: 0; padding: 10px 16px; font-family: "Inter"; font-size: 13px; font-weight: 600; color: var(--ink-mute); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+      .tab:hover { color: var(--ink); }
+      .tab.active { color: var(--ink); border-bottom-color: var(--accent); }
+      .tab-pane { display: none; }
+      .tab-pane.active { display: block; }
       /* user picker */
       .user-list { max-height: 260px; overflow: auto; border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); }
       .user-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--rule); }
@@ -71,6 +72,8 @@
       .badge.distilled { background: rgba(180,143,185,0.22); color: #7a4f80; }
       .badge.raw-only { background: var(--surface-alt); color: var(--ink-soft); }
       .badge.archived { background: rgba(178,58,44,0.15); color: var(--bad); }
+      .badge.ok { background: rgba(31,122,74,0.15); color: var(--good); }
+      .badge.fail { background: rgba(178,58,44,0.15); color: var(--bad); }
       .layer-legend { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; }
       .layer-pill { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10px; font-weight: 700; letter-spacing: 1px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); cursor: pointer; }
       .layer-pill.active { background: var(--ink); color: var(--surface); border-color: var(--ink); }
@@ -82,13 +85,22 @@
       .mem-kind { font-family: "JetBrains Mono", Menlo, monospace; font-size: 9.5px; font-weight: 700; letter-spacing: 1.2px; padding: 2px 7px; border-radius: 5px; background: var(--accent-soft); color: var(--ink); margin-right: 8px; }
       .mem-body { font-size: 13px; }
       .mem-meta { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10.5px; color: var(--ink-mute); margin-top: 4px; }
-      /* preview blocks */
       .preview { white-space: pre-wrap; font-family: "JetBrains Mono", Menlo, monospace; font-size: 11.5px; line-height: 1.5; background: var(--bg); padding: 12px; border-radius: 8px; max-height: 280px; overflow: auto; }
       .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
       @media (max-width: 760px) { .two-col { grid-template-columns: 1fr; } }
       .empty { color: var(--ink-mute); font-style: italic; padding: 12px; text-align: center; }
       .ret-row { padding: 8px 10px; border-radius: 6px; background: var(--surface-alt); margin-bottom: 6px; }
       .ret-score { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10.5px; color: var(--accent); font-weight: 700; margin-right: 8px; }
+      /* tables */
+      table { width: 100%; border-collapse: collapse; }
+      th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); font-size: 12.5px; vertical-align: top; }
+      th { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10px; letter-spacing: 1.1px; text-transform: uppercase; color: var(--ink-mute); }
+      tr:hover td { background: var(--surface-alt); }
+      .num { font-family: "JetBrains Mono", Menlo, monospace; text-align: right; }
+      .totals { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 14px; }
+      .total-tile { background: var(--bg); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; }
+      .total-tile .l { font-family: "JetBrains Mono", Menlo, monospace; font-size: 9.5px; letter-spacing: 1.1px; text-transform: uppercase; color: var(--ink-mute); }
+      .total-tile .v { font-family: "Instrument Serif", Georgia, serif; font-size: 26px; margin-top: 4px; }
     </style>
   </head>
   <body>
@@ -97,14 +109,8 @@
       <div class="login-card">
         <h1>Tilly <span class="accent">admin</span></h1>
         <p class="hint" style="margin-top:-4px;">Sign in with your admin email and password.</p>
-        <div class="field">
-          <label>Email</label>
-          <input id="login-email" type="email" autocomplete="username" placeholder="admin@buildtogether.local" />
-        </div>
-        <div class="field">
-          <label>Password</label>
-          <input id="login-password" type="password" autocomplete="current-password" />
-        </div>
+        <div class="field"><label>Email</label><input id="login-email" type="email" autocomplete="username" placeholder="admin@buildtogether.local" /></div>
+        <div class="field"><label>Password</label><input id="login-password" type="password" autocomplete="current-password" /></div>
         <button class="btn" id="login-btn" style="width:100%;">Sign in</button>
         <div class="err" id="login-err"></div>
       </div>
@@ -115,7 +121,7 @@
       <div class="topbar">
         <div>
           <h1>Tilly <span class="accent">admin</span></h1>
-          <p class="subhead">Memory inspector + Tilly internals, in one place.</p>
+          <p class="subhead">Memory, internals, people, banking, and cost — in one place.</p>
         </div>
         <div>
           <span class="who" id="me"></span>
@@ -123,45 +129,125 @@
         </div>
       </div>
 
-      <div class="card">
-        <h2>Choose a user</h2>
-        <p class="hint">Click a user to load their dossier, raw memory, and the last things Tilly retrieved for them.</p>
-        <div class="user-list" id="user-list"><div class="empty">Loading…</div></div>
+      <div class="tabs" id="tabs">
+        <button class="tab" data-tab="memory">Memory</button>
+        <button class="tab" data-tab="tilly">Tilly</button>
+        <button class="tab" data-tab="people">People</button>
+        <button class="tab" data-tab="plaid">Plaid</button>
+        <button class="tab" data-tab="cost">Cost</button>
       </div>
 
-      <div id="snapshot" style="display:none;">
+      <!-- MEMORY TAB -->
+      <div class="tab-pane" id="pane-memory">
         <div class="card">
-          <h2>Dossier <span class="badge in-dossier" style="font-size:10px;">L4</span></h2>
-          <p class="hint">Sonnet rewrites this nightly from the user's distilled memory. Injected into every chat turn.</p>
-          <div class="preview" id="dossier-body">(loading)</div>
+          <h2>Choose a user</h2>
+          <p class="hint">Click a user to load their dossier, raw memory, and the last things Tilly retrieved for them.</p>
+          <div class="user-list" id="mem-user-list"><div class="empty">Loading…</div></div>
         </div>
-
-        <div class="card">
-          <h2>Raw memory</h2>
-          <p class="hint">Every L0 row. Click a layer pill to filter.</p>
-          <div class="layer-legend" id="raw-legend"></div>
-          <div id="raw-body"><div class="empty">(loading)</div></div>
+        <div id="mem-snapshot" style="display:none;">
+          <div class="card">
+            <h2>Dossier <span class="badge in-dossier" style="font-size:10px;">L4</span></h2>
+            <p class="hint">Sonnet rewrites this nightly from the user's distilled memory. Injected into every chat turn.</p>
+            <div class="preview" id="dossier-body">(loading)</div>
+          </div>
+          <div class="card">
+            <h2>Raw memory</h2>
+            <p class="hint">Every L0 row. Click a layer pill to filter.</p>
+            <div class="layer-legend" id="raw-legend"></div>
+            <div id="raw-body"><div class="empty">(loading)</div></div>
+          </div>
+          <div class="card">
+            <h2>What Tilly just pulled</h2>
+            <p class="hint">The retrieval log for this user's most recent chat turn and most recent analysis run, side by side.</p>
+            <div class="two-col">
+              <div><div class="hint" style="margin-bottom:6px;">Last <b>chat</b> retrieval</div><div id="ret-chat"><div class="empty">(none yet)</div></div></div>
+              <div><div class="hint" style="margin-bottom:6px;">Last <b>analysis</b> retrieval</div><div id="ret-analysis"><div class="empty">(none yet)</div></div></div>
+            </div>
+          </div>
+          <div class="card">
+            <h2>Injected system prompt</h2>
+            <p class="hint">The exact system prompt block Tilly would see for this user's next turn. Read-only, no LLM call.</p>
+            <div class="preview" id="uc-prompt">(loading)</div>
+          </div>
         </div>
+      </div>
 
+      <!-- TILLY TAB -->
+      <div class="tab-pane" id="pane-tilly">
         <div class="card">
-          <h2>What Tilly just pulled</h2>
-          <p class="hint">The retrieval log for this user's most recent chat turn and most recent analysis run, side by side.</p>
-          <div class="two-col">
-            <div>
-              <div class="hint" style="margin-bottom:6px;">Last <b>chat</b> retrieval</div>
-              <div id="ret-chat"><div class="empty">(none yet)</div></div>
-            </div>
-            <div>
-              <div class="hint" style="margin-bottom:6px;">Last <b>analysis</b> retrieval</div>
-              <div id="ret-analysis"><div class="empty">(none yet)</div></div>
-            </div>
+          <h2>Live config</h2>
+          <p class="hint">Saved to <code>tilly_config</code>. Updates take effect on next call.</p>
+          <div id="cfg-body"><div class="empty">Loading…</div></div>
+          <div class="row" style="margin-top:14px;">
+            <button class="btn" id="cfg-save">Save</button>
+            <button class="btn btn-soft" id="cfg-reload">Reload</button>
+            <button class="btn btn-soft" id="cfg-reembed">Re-embed all memories</button>
+            <span class="err" id="cfg-err"></span>
           </div>
         </div>
 
         <div class="card">
-          <h2>Injected system prompt</h2>
-          <p class="hint">The exact system prompt block (persona + tone + dossier + financial state + last-chat retrieval) Tilly would see for this user's next turn. Read-only, no LLM call.</p>
-          <div class="preview" id="uc-prompt">(loading)</div>
+          <h2>Preview</h2>
+          <p class="hint">Send a message through the saved config. No chat or memory side-effects.</p>
+          <div class="field">
+            <label>Tone</label>
+            <select id="prev-tone"><option value="sibling">sibling</option><option value="coach">coach</option><option value="quiet">quiet</option></select>
+          </div>
+          <div class="field"><label>Message</label><textarea id="prev-msg">Quick test — say hi in your current voice.</textarea></div>
+          <div class="row"><button class="btn" id="prev-go">Send</button><span class="mem-meta" id="prev-meta"></span></div>
+          <div class="preview" id="prev-out" style="margin-top:12px;">(no preview yet)</div>
+        </div>
+      </div>
+
+      <!-- PEOPLE TAB -->
+      <div class="tab-pane" id="pane-people">
+        <div class="card">
+          <h2>Users</h2>
+          <p class="hint">Every account on the system. Toggle admin to grant or revoke access to this dashboard.</p>
+          <div id="people-body"><div class="empty">Loading…</div></div>
+        </div>
+      </div>
+
+      <!-- PLAID TAB -->
+      <div class="tab-pane" id="pane-plaid">
+        <div class="card">
+          <h2>Connected items</h2>
+          <p class="hint">Each Plaid item connected by a user. Click an item to load that user's recent transactions.</p>
+          <div id="plaid-items"><div class="empty">Loading…</div></div>
+        </div>
+        <div class="card" id="plaid-txn-card" style="display:none;">
+          <h2>Transactions for <span id="plaid-txn-user" class="accent"></span></h2>
+          <p class="hint">Most recent 50 mirrored from <code>plaid_transactions</code> for this user's household.</p>
+          <div id="plaid-txns"><div class="empty">Loading…</div></div>
+        </div>
+      </div>
+
+      <!-- COST TAB -->
+      <div class="tab-pane" id="pane-cost">
+        <div class="card">
+          <div class="row" style="justify-content:space-between;">
+            <div><h2 style="margin:0;">LLM cost</h2><p class="hint" style="margin-top:4px;">Every LLM and embedding call is logged into <code>tilly_llm_call_log</code>.</p></div>
+            <div class="row">
+              <label class="who" for="cost-window">window</label>
+              <select id="cost-window" style="padding:6px 10px;border-radius:8px;border:1px solid var(--rule);background:var(--surface);">
+                <option value="1">last 24h</option>
+                <option value="7" selected>last 7d</option>
+                <option value="30">last 30d</option>
+                <option value="90">last 90d</option>
+              </select>
+            </div>
+          </div>
+          <div class="totals" id="cost-totals"></div>
+        </div>
+        <div class="two-col">
+          <div class="card"><h2>By user</h2><div id="cost-by-user"><div class="empty">Loading…</div></div></div>
+          <div class="card"><h2>By route</h2><div id="cost-by-route"><div class="empty">Loading…</div></div></div>
+        </div>
+        <div class="card"><h2>By model</h2><div id="cost-by-model"><div class="empty">Loading…</div></div></div>
+        <div class="card">
+          <h2>Recent calls</h2>
+          <p class="hint">Most recent 100 across all users. Failures show in red.</p>
+          <div id="cost-recent"><div class="empty">Loading…</div></div>
         </div>
       </div>
     </div>
@@ -190,6 +276,9 @@
       }
       function clearEl(n) { while (n.firstChild) n.removeChild(n.firstChild); }
       function shortDate(iso) { return iso ? new Date(iso).toLocaleString() : "—"; }
+      function shortDateOnly(iso) { return iso ? new Date(iso).toLocaleDateString() : "—"; }
+      function money(n) { return "$" + (Number(n) || 0).toFixed(4); }
+      function moneyShort(n) { return "$" + (Number(n) || 0).toFixed(2); }
 
       async function api(path, opts) {
         const token = getToken();
@@ -234,17 +323,35 @@
           if (!r.ok || !j.token) { err.textContent = j.error || "Sign-in failed."; return; }
           setToken(j.token);
           await bootstrap();
-        } catch (e) {
-          err.textContent = "Network error: " + e.message;
-        }
+        } catch (e) { err.textContent = "Network error: " + e.message; }
       }
-
       $("logout-btn").addEventListener("click", () => { clearToken(); location.reload(); });
+
+      // ── tabs ────────────────────────────────────────────────────────────
+      const TABS = ["memory", "tilly", "people", "plaid", "cost"];
+      const tabLoaders = {};
+
+      function activateTab(name) {
+        if (!TABS.includes(name)) name = "memory";
+        document.querySelectorAll("#tabs .tab").forEach((b) => {
+          b.classList.toggle("active", b.dataset.tab === name);
+        });
+        document.querySelectorAll(".tab-pane").forEach((p) => {
+          p.classList.toggle("active", p.id === "pane-" + name);
+        });
+        if (location.hash !== "#" + name) {
+          history.replaceState(null, "", "#" + name);
+        }
+        if (tabLoaders[name]) tabLoaders[name]();
+      }
+      document.querySelectorAll("#tabs .tab").forEach((b) => {
+        b.addEventListener("click", () => activateTab(b.dataset.tab));
+      });
+      window.addEventListener("hashchange", () => activateTab(location.hash.slice(1) || "memory"));
 
       // ── bootstrap ──────────────────────────────────────────────────────
       async function bootstrap() {
         if (!getToken()) { showLogin(); return; }
-        // Quick admin check via the same endpoint admin-tilly uses.
         let me;
         try { me = await api("/api/admin/tilly/whoami"); } catch (e) { showLogin(); return; }
         if (!me.ok) {
@@ -256,31 +363,39 @@
         meNode.appendChild(document.createTextNode("signed in as "));
         meNode.appendChild(el("b", { text: me.user.email || me.user.id.slice(0,8) }));
         showDash();
-        await loadUsers();
-        // Deep-link ?userId=…
-        const uid = new URLSearchParams(location.search).get("userId");
-        if (uid) selectUser(uid);
+        const initial = (location.hash || "#memory").slice(1);
+        activateTab(TABS.includes(initial) ? initial : "memory");
       }
 
-      // ── user picker ────────────────────────────────────────────────────
+      // ────────────────────────────────────────────────────────────────────
+      // MEMORY TAB
+      // ────────────────────────────────────────────────────────────────────
+      let memUsersLoaded = false;
       let activeUserId = "";
-      async function loadUsers() {
-        const list = $("user-list");
+      let rawLayerFilter = null;
+
+      tabLoaders.memory = async () => {
+        if (memUsersLoaded) return;
+        memUsersLoaded = true;
+        await loadMemUsers();
+        const uid = new URLSearchParams(location.search).get("userId");
+        if (uid) selectMemUser(uid);
+      };
+
+      async function loadMemUsers() {
+        const list = $("mem-user-list");
         clearEl(list);
         list.appendChild(el("div", { cls: "empty", text: "Loading users…" }));
         try {
           const j = await api("/api/admin/memory/users");
           clearEl(list);
-          if (!j.users || !j.users.length) {
-            list.appendChild(el("div", { cls: "empty", text: "No users." }));
-            return;
-          }
+          if (!j.users || !j.users.length) { list.appendChild(el("div", { cls: "empty", text: "No users." })); return; }
           for (const u of j.users) {
             const last = u.lastEventAt ? shortDate(u.lastEventAt) : "no events";
             const row = el("div", {
               cls: "user-row",
               attrs: { "data-id": u.id },
-              on: { click: () => selectUser(u.id) },
+              on: { click: () => selectMemUser(u.id) },
             }, [
               el("div", null, [
                 el("div", { cls: "who-name", text: (u.name || u.email || u.id.slice(0,8)) + (u.isAdmin ? " · admin" : "") }),
@@ -290,25 +405,19 @@
             ]);
             list.appendChild(row);
           }
-        } catch (e) {
-          clearEl(list);
-          list.appendChild(el("div", { cls: "empty", text: "Failed to load users (" + e.message + ")." }));
-        }
+        } catch (e) { clearEl(list); list.appendChild(el("div", { cls: "empty", text: "Failed to load users (" + e.message + ")." })); }
       }
 
-      let rawLayerFilter = null;
-
-      async function selectUser(id) {
+      async function selectMemUser(id) {
         activeUserId = id;
         rawLayerFilter = null;
-        document.querySelectorAll("#user-list .user-row").forEach(r => r.classList.remove("active"));
-        const row = document.querySelector('#user-list .user-row[data-id="' + id + '"]');
+        document.querySelectorAll("#mem-user-list .user-row").forEach(r => r.classList.remove("active"));
+        const row = document.querySelector('#mem-user-list .user-row[data-id="' + id + '"]');
         if (row) row.classList.add("active");
-        $("snapshot").style.display = "block";
+        $("mem-snapshot").style.display = "block";
         await Promise.all([loadDossier(id), loadRaw(id), loadUserContext(id)]);
       }
 
-      // ── dossier ────────────────────────────────────────────────────────
       async function loadDossier(id) {
         const body = $("dossier-body");
         body.textContent = "(loading)";
@@ -316,12 +425,9 @@
           const j = await api("/api/admin/memory/users/" + id);
           if (!j.dossier) { body.textContent = "(no dossier yet)"; return; }
           body.textContent = JSON.stringify(j.dossier.content, null, 2);
-        } catch (e) {
-          body.textContent = "Failed: " + e.message;
-        }
+        } catch (e) { body.textContent = "Failed: " + e.message; }
       }
 
-      // ── raw memory + layer legend ──────────────────────────────────────
       function renderLegend(counts) {
         const legend = $("raw-legend");
         clearEl(legend);
@@ -350,10 +456,7 @@
           const j = await api("/api/admin/memory/users/" + id + "/raw-memory" + q);
           renderLegend(j.counts || { raw: 0, inDossier: 0, distilled: 0, archived: 0 });
           clearEl(body);
-          if (!j.memories || !j.memories.length) {
-            body.appendChild(el("div", { cls: "empty", text: "No memories at this layer." }));
-            return;
-          }
+          if (!j.memories || !j.memories.length) { body.appendChild(el("div", { cls: "empty", text: "No memories at this layer." })); return; }
           for (const m of j.memories) {
             const row = el("div", { cls: "mem-row" }, [
               el("div", null, [
@@ -365,23 +468,14 @@
             ]);
             body.appendChild(row);
           }
-          if (j.total > j.memories.length) {
-            body.appendChild(el("div", { cls: "empty", text: "Showing " + j.memories.length + " of " + j.total + " (filtered)." }));
-          }
-        } catch (e) {
-          clearEl(body);
-          body.appendChild(el("div", { cls: "empty", text: "Failed: " + e.message }));
-        }
+          if (j.total > j.memories.length) body.appendChild(el("div", { cls: "empty", text: "Showing " + j.memories.length + " of " + j.total + " (filtered)." }));
+        } catch (e) { clearEl(body); body.appendChild(el("div", { cls: "empty", text: "Failed: " + e.message })); }
       }
 
-      // ── user context: prompt + last retrievals ─────────────────────────
       function renderHits(target, log) {
         const node = $(target);
         clearEl(node);
-        if (!log || !log.hits || !log.hits.length) {
-          node.appendChild(el("div", { cls: "empty", text: "(none yet)" }));
-          return;
-        }
+        if (!log || !log.hits || !log.hits.length) { node.appendChild(el("div", { cls: "empty", text: "(none yet)" })); return; }
         node.appendChild(el("div", { cls: "mem-meta", text: shortDate(log.createdAt) + " · " + log.strategy + " · prompt " + log.promptSize + " ch" }));
         for (const h of log.hits) {
           const row = el("div", { cls: "ret-row" }, [
@@ -403,12 +497,314 @@
           $("uc-prompt").textContent = (j.systemPrompts || []).join("\n\n────────────────\n\n") || "(no prompt context)";
           renderHits("ret-chat", j.lastChatRetrieval);
           renderHits("ret-analysis", j.lastAnalysisRetrieval);
+        } catch (e) { $("uc-prompt").textContent = "Failed: " + e.message; }
+      }
+
+      // ────────────────────────────────────────────────────────────────────
+      // TILLY TAB
+      // ────────────────────────────────────────────────────────────────────
+      let tillyLoaded = false;
+      let cfgInputs = {};
+
+      tabLoaders.tilly = async () => {
+        if (tillyLoaded) return;
+        tillyLoaded = true;
+        await loadCfg();
+      };
+
+      $("cfg-reload").addEventListener("click", loadCfg);
+      $("cfg-save").addEventListener("click", saveCfg);
+      $("cfg-reembed").addEventListener("click", reembed);
+      $("prev-go").addEventListener("click", runPreview);
+
+      const CFG_FIELDS = [
+        { key: "model", label: "Chat model", type: "text" },
+        { key: "embeddingModel", label: "Embedding model", type: "text" },
+        { key: "maxTokens", label: "Max tokens", type: "number" },
+        { key: "retrievalTopK", label: "Retrieval top-K", type: "number" },
+        { key: "similarityThreshold", label: "Similarity threshold", type: "number", step: "0.01" },
+        { key: "recencyHalfLifeHours", label: "Recency half-life (h)", type: "number" },
+        { key: "retrievalStrategy", label: "Retrieval strategy", type: "text" },
+        { key: "personaPrompt", label: "Persona prompt", type: "textarea" },
+        { key: "siblingPrompt", label: "Sibling tone prompt", type: "textarea" },
+        { key: "coachPrompt", label: "Coach tone prompt", type: "textarea" },
+        { key: "quietPrompt", label: "Quiet tone prompt", type: "textarea" },
+      ];
+
+      async function loadCfg() {
+        const body = $("cfg-body");
+        clearEl(body);
+        body.appendChild(el("div", { cls: "empty", text: "Loading…" }));
+        try {
+          const j = await api("/api/admin/tilly/config");
+          const cfg = j.config || {};
+          clearEl(body);
+          cfgInputs = {};
+          for (const f of CFG_FIELDS) {
+            if (!(f.key in cfg)) continue;
+            const wrap = el("div", { cls: "field" });
+            wrap.appendChild(el("label", { text: f.label }));
+            let inp;
+            if (f.type === "textarea") {
+              inp = el("textarea");
+            } else {
+              inp = el("input");
+              inp.type = f.type;
+              if (f.step) inp.step = f.step;
+            }
+            inp.value = cfg[f.key] == null ? "" : String(cfg[f.key]);
+            wrap.appendChild(inp);
+            cfgInputs[f.key] = inp;
+            body.appendChild(wrap);
+          }
+        } catch (e) { clearEl(body); body.appendChild(el("div", { cls: "empty", text: "Failed: " + e.message })); }
+      }
+
+      async function saveCfg() {
+        const errEl = $("cfg-err");
+        errEl.textContent = "";
+        const updates = {};
+        for (const k in cfgInputs) updates[k] = cfgInputs[k].value;
+        try {
+          await api("/api/admin/tilly/config", { method: "PUT", body: updates });
+          errEl.textContent = "Saved.";
+          errEl.style.color = "var(--good)";
+          setTimeout(() => { errEl.textContent = ""; errEl.style.color = ""; }, 2000);
+        } catch (e) { errEl.textContent = "Save failed: " + e.message; errEl.style.color = ""; }
+      }
+
+      async function reembed() {
+        const errEl = $("cfg-err");
+        errEl.textContent = "Re-embedding…";
+        try {
+          const j = await api("/api/admin/tilly/reembed", { method: "POST", body: {} });
+          errEl.textContent = "Re-embedded " + j.updated + " of " + j.scanned + ".";
+          errEl.style.color = "var(--good)";
+        } catch (e) { errEl.textContent = "Re-embed failed: " + e.message; errEl.style.color = ""; }
+      }
+
+      async function runPreview() {
+        const out = $("prev-out");
+        const meta = $("prev-meta");
+        meta.textContent = "Sending…";
+        out.textContent = "(waiting)";
+        try {
+          const j = await api("/api/admin/tilly/preview", {
+            method: "POST",
+            body: { tone: $("prev-tone").value, message: $("prev-msg").value },
+          });
+          out.textContent = j.reply || "(empty reply)";
+          const u = j.usage || {};
+          meta.textContent = j.model + " · " + (u.inputTokens || 0) + " in / " + (u.outputTokens || 0) + " out";
+        } catch (e) { meta.textContent = ""; out.textContent = "Failed: " + e.message; }
+      }
+
+      // ────────────────────────────────────────────────────────────────────
+      // PEOPLE TAB
+      // ────────────────────────────────────────────────────────────────────
+      let peopleLoaded = false;
+      tabLoaders.people = async () => { peopleLoaded = true; await loadPeople(); };
+
+      async function loadPeople() {
+        const body = $("people-body");
+        clearEl(body);
+        body.appendChild(el("div", { cls: "empty", text: "Loading…" }));
+        try {
+          const j = await api("/api/admin/users");
+          clearEl(body);
+          if (!j.users || !j.users.length) { body.appendChild(el("div", { cls: "empty", text: "No users." })); return; }
+          const tbl = el("table");
+          const thead = el("thead", null, [el("tr", null, [
+            el("th", { text: "Name" }), el("th", { text: "Email" }),
+            el("th", { text: "Joined" }), el("th", { text: "Last activity" }),
+            el("th", { text: "Admin" }), el("th", { text: "" }),
+          ])]);
+          tbl.appendChild(thead);
+          const tb = el("tbody");
+          for (const u of j.users) {
+            const tr = el("tr", null, [
+              el("td", { text: u.name || "—" }),
+              el("td", { text: u.email || "—" }),
+              el("td", { text: shortDateOnly(u.createdAt) }),
+              el("td", { text: u.lastEventAt ? shortDate(u.lastEventAt) : "—" }),
+              el("td", null, [el("span", { cls: "badge " + (u.isAdmin ? "ok" : "raw-only"), text: u.isAdmin ? "ADMIN" : "USER" })]),
+            ]);
+            const action = el("td");
+            const btn = el("button", {
+              cls: "btn btn-tiny " + (u.isAdmin ? "btn-soft" : ""),
+              text: u.isAdmin ? "Revoke admin" : "Make admin",
+              on: { click: async () => {
+                btn.disabled = true;
+                try {
+                  await api("/api/admin/users/" + u.id + "/admin", {
+                    method: "POST", body: { isAdmin: !u.isAdmin },
+                  });
+                  await loadPeople();
+                } catch (e) { btn.disabled = false; alert("Failed: " + e.message); }
+              } },
+            });
+            action.appendChild(btn);
+            tr.appendChild(action);
+            tb.appendChild(tr);
+          }
+          tbl.appendChild(tb);
+          body.appendChild(tbl);
+        } catch (e) { clearEl(body); body.appendChild(el("div", { cls: "empty", text: "Failed: " + e.message })); }
+      }
+
+      // ────────────────────────────────────────────────────────────────────
+      // PLAID TAB
+      // ────────────────────────────────────────────────────────────────────
+      let plaidLoaded = false;
+      tabLoaders.plaid = async () => { plaidLoaded = true; await loadPlaidItems(); };
+
+      async function loadPlaidItems() {
+        const body = $("plaid-items");
+        clearEl(body);
+        body.appendChild(el("div", { cls: "empty", text: "Loading…" }));
+        try {
+          const j = await api("/api/admin/plaid/items");
+          clearEl(body);
+          if (!j.items || !j.items.length) { body.appendChild(el("div", { cls: "empty", text: "No connected items." })); return; }
+          const tbl = el("table");
+          tbl.appendChild(el("thead", null, [el("tr", null, [
+            el("th", { text: "User" }), el("th", { text: "Institution" }),
+            el("th", { text: "Status" }), el("th", { text: "Txns" }),
+            el("th", { text: "Last sync" }), el("th", { text: "Last error" }), el("th", { text: "" }),
+          ])]));
+          const tb = el("tbody");
+          for (const it of j.items) {
+            const tr = el("tr", null, [
+              el("td", { text: it.name || it.email || (it.userId || "").slice(0, 8) }),
+              el("td", { text: it.institutionName || it.institutionId || "—" }),
+              el("td", null, [el("span", { cls: "badge " + (it.status === "active" ? "ok" : "fail"), text: (it.status || "?").toUpperCase() })]),
+              el("td", { cls: "num", text: String(it.txnCount || 0) }),
+              el("td", { text: shortDate(it.lastSyncAt) }),
+              el("td", { text: it.lastError || "—" }),
+            ]);
+            const act = el("td");
+            const btn = el("button", {
+              cls: "btn btn-tiny btn-soft", text: "View txns",
+              on: { click: () => loadPlaidTxns(it.userId, it.email || it.name || it.userId.slice(0, 8)) },
+            });
+            act.appendChild(btn);
+            tr.appendChild(act);
+            tb.appendChild(tr);
+          }
+          tbl.appendChild(tb);
+          body.appendChild(tbl);
+        } catch (e) { clearEl(body); body.appendChild(el("div", { cls: "empty", text: "Failed: " + e.message })); }
+      }
+
+      async function loadPlaidTxns(userId, label) {
+        $("plaid-txn-card").style.display = "block";
+        $("plaid-txn-user").textContent = label;
+        const body = $("plaid-txns");
+        clearEl(body);
+        body.appendChild(el("div", { cls: "empty", text: "Loading…" }));
+        try {
+          const j = await api("/api/admin/plaid/users/" + userId + "/transactions?limit=50");
+          clearEl(body);
+          if (!j.transactions || !j.transactions.length) { body.appendChild(el("div", { cls: "empty", text: "No transactions." })); return; }
+          const tbl = el("table");
+          tbl.appendChild(el("thead", null, [el("tr", null, [
+            el("th", { text: "Date" }), el("th", { text: "Merchant" }),
+            el("th", { text: "Amount" }), el("th", { text: "Category" }), el("th", { text: "Status" }),
+          ])]));
+          const tb = el("tbody");
+          for (const t of j.transactions) {
+            tb.appendChild(el("tr", null, [
+              el("td", { text: t.date }),
+              el("td", { text: t.merchantName || t.name }),
+              el("td", { cls: "num", text: moneyShort(t.amount) }),
+              el("td", { text: t.ourCategory || "—" }),
+              el("td", { text: t.status }),
+            ]));
+          }
+          tbl.appendChild(tb);
+          body.appendChild(tbl);
+        } catch (e) { clearEl(body); body.appendChild(el("div", { cls: "empty", text: "Failed: " + e.message })); }
+      }
+
+      // ────────────────────────────────────────────────────────────────────
+      // COST TAB
+      // ────────────────────────────────────────────────────────────────────
+      let costLoadedOnce = false;
+      tabLoaders.cost = async () => {
+        if (costLoadedOnce) return; costLoadedOnce = true;
+        $("cost-window").addEventListener("change", () => loadCost());
+        await loadCost();
+      };
+
+      async function loadCost() {
+        const days = Number($("cost-window").value) || 7;
+        const totalsEl = $("cost-totals");
+        clearEl(totalsEl);
+        totalsEl.appendChild(el("div", { cls: "total-tile" }, [el("div", { cls: "l", text: "Loading…" })]));
+        try {
+          const [s, recent] = await Promise.all([
+            api("/api/admin/cost/summary?days=" + days),
+            api("/api/admin/cost/recent?limit=100"),
+          ]);
+          // Totals
+          clearEl(totalsEl);
+          const t = s.totals || {};
+          const tiles = [
+            { l: "Total spend", v: moneyShort(t.totalUsd) },
+            { l: "Calls", v: String(t.totalCalls || 0) },
+            { l: "Success rate", v: t.totalCalls ? Math.round(100 * (t.okCalls / t.totalCalls)) + "%" : "—" },
+            { l: "Prompt tokens", v: Number(t.promptTokens || 0).toLocaleString() },
+            { l: "Completion tokens", v: Number(t.completionTokens || 0).toLocaleString() },
+          ];
+          for (const T of tiles) totalsEl.appendChild(el("div", { cls: "total-tile" }, [el("div", { cls: "l", text: T.l }), el("div", { cls: "v", text: T.v })]));
+          renderCostTable("cost-by-user", s.byUser, [
+            { h: "User", get: (r) => r.email || r.name || (r.userId ? r.userId.slice(0,8) : "(unattributed)") },
+            { h: "Calls", get: (r) => String(r.calls), num: true },
+            { h: "Spend", get: (r) => moneyShort(r.usd), num: true },
+          ]);
+          renderCostTable("cost-by-route", s.byRoute, [
+            { h: "Route", get: (r) => r.route },
+            { h: "Calls", get: (r) => String(r.calls), num: true },
+            { h: "Spend", get: (r) => moneyShort(r.usd), num: true },
+          ]);
+          renderCostTable("cost-by-model", s.byModel, [
+            { h: "Model", get: (r) => r.model },
+            { h: "Calls", get: (r) => String(r.calls), num: true },
+            { h: "Spend", get: (r) => moneyShort(r.usd), num: true },
+          ]);
+          renderCostTable("cost-recent", recent.rows, [
+            { h: "When", get: (r) => shortDate(r.createdAt) },
+            { h: "User", get: (r) => r.email || (r.userId ? r.userId.slice(0,8) : "—") },
+            { h: "Route", get: (r) => r.route },
+            { h: "Model", get: (r) => r.model },
+            { h: "In", get: (r) => String(r.promptTokens), num: true },
+            { h: "Out", get: (r) => String(r.completionTokens), num: true },
+            { h: "Cost", get: (r) => money(r.costUsd), num: true },
+            { h: "ms", get: (r) => String(r.latencyMs), num: true },
+            { h: "Status", get: (r) => r.ok ? "OK" : ("FAIL: " + (r.error || "").slice(0, 60)) },
+          ]);
         } catch (e) {
-          $("uc-prompt").textContent = "Failed: " + e.message;
+          clearEl(totalsEl);
+          totalsEl.appendChild(el("div", { cls: "total-tile" }, [el("div", { cls: "l", text: "Failed: " + e.message })]));
         }
       }
 
-      // boot
+      function renderCostTable(targetId, rows, cols) {
+        const body = $(targetId);
+        clearEl(body);
+        if (!rows || !rows.length) { body.appendChild(el("div", { cls: "empty", text: "No data in this window." })); return; }
+        const tbl = el("table");
+        tbl.appendChild(el("thead", null, [el("tr", null, cols.map((c) => el("th", { text: c.h, cls: c.num ? "num" : "" })))]));
+        const tb = el("tbody");
+        for (const r of rows) {
+          const tr = el("tr", null, cols.map((c) => el("td", { cls: c.num ? "num" : "", text: c.get(r) })));
+          if (r.ok === false) tr.style.color = "var(--bad)";
+          tb.appendChild(tr);
+        }
+        tbl.appendChild(tb);
+        body.appendChild(tbl);
+      }
+
       bootstrap();
     </script>
   </body>

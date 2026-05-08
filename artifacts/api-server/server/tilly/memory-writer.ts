@@ -128,6 +128,7 @@ Extract 0–3 memories worth keeping. Empty array if nothing here is durable.`;
       messages: [{ role: "user", content: userContent }],
       schema: MemoryExtractionSchema,
       schemaName: "memory_extraction",
+      meta: { userId: input.userId, route: "memory-write" },
     });
     return result.extract;
   } catch (err: any) {

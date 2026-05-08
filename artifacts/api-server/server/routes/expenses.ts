@@ -134,7 +134,7 @@ function categorize(text: string): ParsedExpense["category"] {
  * parses, returns amount=0 so the row still saves and the user can edit
  * it on the spend tab.
  */
-async function parseToExpense(raw: string): Promise<ParsedExpense> {
+async function parseToExpense(raw: string, userId?: string | null): Promise<ParsedExpense> {
   const trimmed = raw.trim();
   const lc = trimmed.toLowerCase();
 
@@ -190,7 +190,8 @@ async function parseToExpense(raw: string): Promise<ParsedExpense> {
       messages: [{ role: "user", content: trimmed }],
       schema: ParsedExpenseSchema,
       schemaName: "expense_parse",
-    });
+      meta: { userId: userId ?? null, route: "expense-parse" },
+    } as any);
   } catch (err) {
     console.warn("[expenses] LLM parse fell back to stub:", err);
     return {
@@ -319,7 +320,7 @@ export function mountExpensesRoutes(app: Express): void {
           isRecurring: false,
         };
       } else if (body.raw) {
-        parsed = await parseToExpense(body.raw);
+        parsed = await parseToExpense(body.raw, req.user?.id ?? null);
       } else {
         return res.status(400).json({ error: "missing_input" });
       }
@@ -370,7 +371,7 @@ export function mountExpensesRoutes(app: Express): void {
       const transcript = (req.body?.transcript ?? "").toString().trim();
       if (!transcript) return res.status(400).json({ error: "missing_transcript" });
       try {
-        const parsed = await parseToExpense(transcript);
+        const parsed = await parseToExpense(transcript, req.user?.id ?? null);
         const today = new Date().toISOString().slice(0, 10);
         const [row] = await db
           .insert(expenses)

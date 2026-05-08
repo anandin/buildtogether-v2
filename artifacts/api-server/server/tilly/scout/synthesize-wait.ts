@@ -86,6 +86,7 @@ export async function synthesizeWaitAdvice(opts: {
   location?: string | null;
   searches: TavilySearchResponse[];
   modelId?: string;
+  userId?: string | null;
 }): Promise<WaitAdvice> {
   const lines: string[] = [];
   for (const s of opts.searches) {
@@ -112,5 +113,6 @@ export async function synthesizeWaitAdvice(opts: {
     schema: WaitAdviceSchema,
     schemaName: "wait_advice",
     maxTokens: 1500,
+    meta: { userId: opts.userId ?? null, route: "wait-scout" },
   });
 }

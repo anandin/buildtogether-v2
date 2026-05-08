@@ -167,6 +167,7 @@ Return the updated dossier JSON per the schema.`;
       schema: DossierContentSchema,
       schemaName: "tilly_dossier",
       maxTokens: 1500,
+      meta: { userId: input.userId, route: "dossier" },
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

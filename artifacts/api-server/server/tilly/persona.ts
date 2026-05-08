@@ -142,6 +142,10 @@ export async function callTilly(opts: {
   /** Extra system content (e.g. retrieved memories) appended after persona+tone. */
   extraSystem?: string;
   maxTokens?: number;
+  /** Cost-tracking attribution. Forwarded to the LLM client. */
+  userId?: string | null;
+  /** Logical caller name for the cost log. Defaults to "chat". */
+  route?: string;
 }): Promise<LLMTextResult> {
   const llm = await getLLM();
   const systemPrompts = await buildSystemPrompts(
@@ -153,6 +157,7 @@ export async function callTilly(opts: {
     systemPrompts,
     messages: opts.messages,
     maxTokens: opts.maxTokens,
+    meta: { userId: opts.userId ?? null, route: opts.route ?? "chat" },
   });
 }
 

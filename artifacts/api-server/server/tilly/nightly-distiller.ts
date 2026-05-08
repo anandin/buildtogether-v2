@@ -178,6 +178,7 @@ export async function distillUser(
       schema: DistillSchema,
       schemaName: "memory_distill",
       maxTokens: 1500,
+      meta: { userId: input.userId, route: "distil" },
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

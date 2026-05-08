@@ -486,6 +486,7 @@ export function mountTillyChatRoutes(app: Express): void {
             stateSummary: state.hasData ? state.text : null,
             tone,
             recentMemorySnippets: await retrieveContextSnippets(userId, message),
+            userId,
           });
         } catch (err) {
           // Surface the error so we can diagnose, but don't crash — the
@@ -670,13 +671,15 @@ export function mountTillyChatRoutes(app: Express): void {
           toneKey: tone,
           messages: history,
           extraSystem,
+          userId,
+          route: "chat",
         });
         const text = response.text;
         // Detect whether Tilly promised a follow-up — Haiku 4.5 classifier
         // (~1-2s, ~250 tok). Inline so the row exists by the time we return,
         // and the client can refetch reminders on the same mutation success.
         try {
-          const draft = await extractReminderFromReply(text, message);
+          const draft = await extractReminderFromReply(text, message, { userId });
           if (draft) {
             // Dedup before insert. The classifier was caught firing on
             // the same intent across multiple turns ("Call your landlord
@@ -811,7 +814,9 @@ export function mountTillyChatRoutes(app: Express): void {
             // memories on the next chat turn. embed() returns null on failure
             // — we still save the memory, just without an embedding (the
             // retriever will fall back to recency for those rows).
-            const embeddings = await Promise.all(drafts.map((d) => embed(d.body)));
+            const embeddings = await Promise.all(
+              drafts.map((d) => embed(d.body, { userId, route: "embedding" })),
+            );
 
             await db.transaction(async (tx) => {
               await tx

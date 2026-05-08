@@ -110,6 +110,7 @@ When there is no reminder, return:
 export async function extractReminderFromReply(
   tillyReply: string,
   userMessage: string,
+  meta?: { userId?: string | null },
 ): Promise<ReminderDraft | null> {
   if (!tillyReply.trim()) return null;
   // Cheap pre-filter — if the reply has no reminder-shaped phrases, skip the
@@ -135,6 +136,7 @@ export async function extractReminderFromReply(
       schema: ReminderDraftSchema,
       schemaName: "reminder_draft",
       maxTokens: 200,
+      meta: { userId: meta?.userId ?? null, route: "reminder" },
     });
     if (!result.hasReminder || !result.fireAtIso || !result.label) return null;
     const fireAt = new Date(result.fireAtIso);

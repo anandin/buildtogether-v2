@@ -26,6 +26,7 @@ import type {
   LLMStructuredOpts,
 } from "./types";
 import { DEFAULT_MODELS } from "./types";
+import { recordLLMCall } from "./cost-log";
 
 let _client: Anthropic | null = null;
 function client(): Anthropic {
@@ -84,63 +85,125 @@ export class AnthropicDirectLLM implements LLMClient {
   }
 
   async textReply(opts: LLMTextOpts): Promise<LLMTextResult> {
-    const resp = await client().messages.create({
-      model: this.modelId,
-      max_tokens: opts.maxTokens ?? 4096,
-      system: this.buildSystem(opts),
-      messages: this.buildMessages(opts),
-    });
-    const text = resp.content
-      .filter((b: any) => b.type === "text")
-      .map((b: any) => b.text)
-      .join("");
-    return {
-      text,
-      modelId: this.modelId,
-      usage: {
-        inputTokens: resp.usage?.input_tokens ?? 0,
-        outputTokens: resp.usage?.output_tokens ?? 0,
-        cacheReadTokens: (resp.usage as any)?.cache_read_input_tokens ?? 0,
-        cacheWriteTokens: (resp.usage as any)?.cache_creation_input_tokens ?? 0,
-      },
-    };
+    const t0 = Date.now();
+    try {
+      const resp = await client().messages.create({
+        model: this.modelId,
+        max_tokens: opts.maxTokens ?? 4096,
+        system: this.buildSystem(opts),
+        messages: this.buildMessages(opts),
+      });
+      const text = resp.content
+        .filter((b: any) => b.type === "text")
+        .map((b: any) => b.text)
+        .join("");
+      const cacheRead = (resp.usage as any)?.cache_read_input_tokens ?? 0;
+      const cacheWrite = (resp.usage as any)?.cache_creation_input_tokens ?? 0;
+      recordLLMCall({
+        userId: opts.meta?.userId ?? null,
+        route: opts.meta?.route ?? "unknown",
+        provider: this.providerName,
+        model: this.modelId,
+        promptTokens: resp.usage?.input_tokens ?? 0,
+        completionTokens: resp.usage?.output_tokens ?? 0,
+        cacheReadTokens: cacheRead,
+        cacheWriteTokens: cacheWrite,
+        latencyMs: Date.now() - t0,
+        ok: true,
+      });
+      return {
+        text,
+        modelId: this.modelId,
+        usage: {
+          inputTokens: resp.usage?.input_tokens ?? 0,
+          outputTokens: resp.usage?.output_tokens ?? 0,
+          cacheReadTokens: cacheRead,
+          cacheWriteTokens: cacheWrite,
+        },
+      };
+    } catch (err) {
+      recordLLMCall({
+        userId: opts.meta?.userId ?? null,
+        route: opts.meta?.route ?? "unknown",
+        provider: this.providerName,
+        model: this.modelId,
+        latencyMs: Date.now() - t0,
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
   }
 
   async structuredOutput<T>(opts: LLMStructuredOpts<T>): Promise<T> {
     const inputSchema = zodToJsonSchemaSafe(opts.schema, opts.schemaName);
     const toolName = opts.schemaName.replace(/[^a-zA-Z0-9_]/g, "_").slice(0, 64);
 
-    const resp = await client().messages.create({
-      model: this.modelId,
-      max_tokens: opts.maxTokens ?? 4096,
-      system: this.buildSystem(opts),
-      messages: this.buildMessages(opts),
-      tools: [
-        {
-          name: toolName,
-          description:
-            opts.schemaDescription ??
-            `Return a structured result conforming to the ${opts.schemaName} schema.`,
-          input_schema: inputSchema as any,
-        },
-      ],
-      tool_choice: { type: "tool", name: toolName } as any,
-    });
+    const t0 = Date.now();
+    let resp: Awaited<ReturnType<ReturnType<typeof client>["messages"]["create"]>>;
+    try {
+      resp = await client().messages.create({
+        model: this.modelId,
+        max_tokens: opts.maxTokens ?? 4096,
+        system: this.buildSystem(opts),
+        messages: this.buildMessages(opts),
+        tools: [
+          {
+            name: toolName,
+            description:
+              opts.schemaDescription ??
+              `Return a structured result conforming to the ${opts.schemaName} schema.`,
+            input_schema: inputSchema as any,
+          },
+        ],
+        tool_choice: { type: "tool", name: toolName } as any,
+      });
+    } catch (err) {
+      recordLLMCall({
+        userId: opts.meta?.userId ?? null,
+        route: opts.meta?.route ?? "unknown",
+        provider: this.providerName,
+        model: this.modelId,
+        latencyMs: Date.now() - t0,
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
+    const cacheRead = (resp.usage as any)?.cache_read_input_tokens ?? 0;
+    const cacheWrite = (resp.usage as any)?.cache_creation_input_tokens ?? 0;
+    const logResult = (ok: boolean, error?: string) =>
+      recordLLMCall({
+        userId: opts.meta?.userId ?? null,
+        route: opts.meta?.route ?? "unknown",
+        provider: this.providerName,
+        model: this.modelId,
+        promptTokens: resp.usage?.input_tokens ?? 0,
+        completionTokens: resp.usage?.output_tokens ?? 0,
+        cacheReadTokens: cacheRead,
+        cacheWriteTokens: cacheWrite,
+        latencyMs: Date.now() - t0,
+        ok,
+        error,
+      });
 
     const toolUse = resp.content.find((b: any) => b.type === "tool_use") as
       | { type: "tool_use"; input: unknown }
       | undefined;
     if (!toolUse) {
+      logResult(false, "no tool_use block");
       throw new Error(
         `AnthropicDirectLLM.structuredOutput: model did not emit a tool_use block for ${this.modelId}`,
       );
     }
     const validated = (opts.schema as ZodType).safeParse(toolUse.input);
     if (!validated.success) {
+      logResult(false, `schema validation failed: ${validated.error.message}`);
       throw new Error(
         `AnthropicDirectLLM.structuredOutput: schema validation failed: ${validated.error.message}`,
       );
     }
+    logResult(true);
     return validated.data as T;
   }
 }

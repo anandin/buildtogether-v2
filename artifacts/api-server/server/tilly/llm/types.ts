@@ -29,6 +29,14 @@ export type LLMTextOpts = {
   maxTokens?: number;
   /** Provider-specific extras forwarded as-is (e.g. `temperature` on legacy models). */
   extra?: Record<string, unknown>;
+  /**
+   * Cost-tracking attribution. Plumbed by callers so the LLM client can
+   * record one row per call into `tilly_llm_call_log` (admin Cost tab).
+   * `userId` is nullable for cron / system calls that have no end-user.
+   * `route` is the logical caller name (chat | analyse | dossier | …).
+   * Omitted by callers that don't yet plumb it; logged as route="unknown".
+   */
+  meta?: { userId?: string | null; route: string };
 };
 
 export type LLMStructuredOpts<T> = LLMTextOpts & {

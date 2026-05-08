@@ -24,6 +24,7 @@ import type {
   ChatMessage,
 } from "./types";
 import { DEFAULT_MODELS } from "./types";
+import { recordLLMCall } from "./cost-log";
 
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
@@ -221,15 +222,39 @@ export class OpenRouterLLM implements LLMClient {
 
   async textReply(opts: LLMTextOpts): Promise<LLMTextResult> {
     const body = this.buildBody(opts);
-    const { text, usage } = await callOpenRouter(body);
-    return {
-      text,
-      modelId: this.modelId,
-      usage: {
-        inputTokens: usage.prompt_tokens ?? 0,
-        outputTokens: usage.completion_tokens ?? 0,
-      },
-    };
+    const t0 = Date.now();
+    try {
+      const { text, usage } = await callOpenRouter(body);
+      recordLLMCall({
+        userId: opts.meta?.userId ?? null,
+        route: opts.meta?.route ?? "unknown",
+        provider: this.providerName,
+        model: this.modelId,
+        promptTokens: usage.prompt_tokens ?? 0,
+        completionTokens: usage.completion_tokens ?? 0,
+        latencyMs: Date.now() - t0,
+        ok: true,
+      });
+      return {
+        text,
+        modelId: this.modelId,
+        usage: {
+          inputTokens: usage.prompt_tokens ?? 0,
+          outputTokens: usage.completion_tokens ?? 0,
+        },
+      };
+    } catch (err) {
+      recordLLMCall({
+        userId: opts.meta?.userId ?? null,
+        route: opts.meta?.route ?? "unknown",
+        provider: this.providerName,
+        model: this.modelId,
+        latencyMs: Date.now() - t0,
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
   }
 
   async structuredOutput<T>(opts: LLMStructuredOpts<T>): Promise<T> {
@@ -239,7 +264,39 @@ export class OpenRouterLLM implements LLMClient {
       json_schema: zodToJsonSchemaSafe(opts.schema, opts.schemaName),
     };
 
-    const { text } = await callOpenRouter(body);
+    const t0 = Date.now();
+    let usage: { prompt_tokens?: number; completion_tokens?: number } = {};
+    let text: string;
+    try {
+      const r = await callOpenRouter(body);
+      text = r.text;
+      usage = r.usage;
+    } catch (err) {
+      recordLLMCall({
+        userId: opts.meta?.userId ?? null,
+        route: opts.meta?.route ?? "unknown",
+        provider: this.providerName,
+        model: this.modelId,
+        latencyMs: Date.now() - t0,
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
+    // Always log the row — we got billed for the tokens even if parsing
+    // fails downstream. The validation throw below propagates as before.
+    const logResult = (ok: boolean, error?: string) =>
+      recordLLMCall({
+        userId: opts.meta?.userId ?? null,
+        route: opts.meta?.route ?? "unknown",
+        provider: this.providerName,
+        model: this.modelId,
+        promptTokens: usage.prompt_tokens ?? 0,
+        completionTokens: usage.completion_tokens ?? 0,
+        latencyMs: Date.now() - t0,
+        ok,
+        error,
+      });
     if (process.env.DEBUG_LLM) {
       console.log(
         `[openrouter.structuredOutput] ${this.modelId} raw text:`,
@@ -251,6 +308,7 @@ export class OpenRouterLLM implements LLMClient {
       );
     }
     if (!text) {
+      logResult(false, "empty response");
       throw new Error(
         `OpenRouterLLM.structuredOutput: empty response from ${this.modelId}`,
       );
@@ -266,6 +324,7 @@ export class OpenRouterLLM implements LLMClient {
     try {
       parsed = JSON.parse(cleaned);
     } catch (err) {
+      logResult(false, "non-JSON content");
       throw new Error(
         `OpenRouterLLM.structuredOutput: model returned non-JSON content: ${text.slice(0, 200)}`,
       );
@@ -290,10 +349,12 @@ export class OpenRouterLLM implements LLMClient {
       // failures are debuggable from logs alone (the raw text is also
       // usually fine but parsed makes the shape mismatch obvious).
       const snapshot = JSON.stringify(parsed).slice(0, 300);
+      logResult(false, `schema validation failed: ${validated.error.message}`);
       throw new Error(
         `OpenRouterLLM.structuredOutput: schema validation failed: ${validated.error.message} | parsed: ${snapshot}`,
       );
     }
+    logResult(true);
     return validated.data as T;
   }
 }

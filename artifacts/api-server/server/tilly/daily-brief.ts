@@ -111,6 +111,7 @@ Return three fields:
     messages: [{ role: "user", content: userContent }],
     schema: PhrasingSchema,
     schemaName: "home_phrasing",
+    meta: { userId: input.userId, route: "brief" },
   });
 
   return {
