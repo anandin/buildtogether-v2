@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Tilly · admin</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap"
+    />
+    <style>
+      :root {
+        --bg: #f4efe6;
+        --surface: #fbf7ef;
+        --surface-alt: #efe7d7;
+        --ink: #1c1a17;
+        --ink-soft: #4a4640;
+        --ink-mute: #8a8378;
+        --rule: rgba(28, 26, 23, 0.1);
+        --accent: #d8602b;
+        --accent-soft: #f0dac6;
+        --good: #1f7a4a;
+        --bad: #b23a2c;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Inter", system-ui, sans-serif;
+        font-size: 14px;
+        color: var(--ink);
+        background: var(--bg);
+        line-height: 1.5;
+      }
+      .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 22px 80px; }
+      h1 { font-family: "Instrument Serif", Georgia, serif; font-size: 36px; font-weight: 500; margin: 0 0 4px; }
+      .accent { color: var(--accent); font-style: italic; }
+      .subhead { font-family: "Instrument Serif", Georgia, serif; font-size: 16px; color: var(--ink-soft); margin: 4px 0 22px; font-style: italic; }
+      .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+      .who { font-family: "JetBrains Mono", Menlo, monospace; font-size: 11px; color: var(--ink-mute); }
+      .who b { color: var(--ink); font-weight: 700; }
+      .btn { background: var(--ink); color: var(--surface); border: 0; border-radius: 10px; padding: 9px 16px; font-family: "Inter"; font-size: 13px; font-weight: 600; cursor: pointer; }
+      .btn:hover { background: var(--accent); }
+      .btn-soft { background: var(--surface-alt); color: var(--ink); }
+      .btn-soft:hover { background: var(--accent-soft); }
+      .btn-link { background: none; color: var(--ink-mute); padding: 4px 8px; font-size: 11px; }
+      .btn-link:hover { color: var(--accent); background: none; }
+      .card { background: var(--surface); border: 1px solid var(--rule); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+      .card h2 { font-family: "Instrument Serif", Georgia, serif; font-size: 22px; font-weight: 500; margin: 0 0 4px; }
+      .card .hint { color: var(--ink-mute); font-size: 12px; margin: 0 0 14px; }
+      .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+      .field label { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--ink-mute); }
+      .field input { padding: 10px 12px; border: 1px solid var(--rule); border-radius: 10px; font-family: "Inter"; font-size: 14px; background: var(--surface); }
+      .row { display: flex; gap: 10px; align-items: center; }
+      .err { color: var(--bad); font-size: 12px; margin-top: 8px; min-height: 16px; }
+      /* login */
+      .login-shell { min-height: calc(100vh - 56px); display: flex; align-items: center; justify-content: center; padding: 24px; }
+      .login-card { background: var(--surface); border: 1px solid var(--rule); border-radius: 16px; padding: 28px; width: 100%; max-width: 380px; }
+      .login-card h1 { font-size: 30px; margin-bottom: 18px; }
+      /* user picker */
+      .user-list { max-height: 260px; overflow: auto; border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); }
+      .user-row { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--rule); }
+      .user-row:last-child { border-bottom: 0; }
+      .user-row:hover { background: var(--surface-alt); }
+      .user-row.active { background: var(--accent-soft); }
+      .user-row .who-name { font-weight: 600; }
+      .user-row .who-meta { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10px; color: var(--ink-mute); }
+      /* badges + pills */
+      .badge { display: inline-block; font-family: "JetBrains Mono", Menlo, monospace; font-size: 9.5px; font-weight: 700; letter-spacing: 1px; padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
+      .badge.in-dossier { background: rgba(216,96,43,0.18); color: var(--accent); }
+      .badge.distilled { background: rgba(180,143,185,0.22); color: #7a4f80; }
+      .badge.raw-only { background: var(--surface-alt); color: var(--ink-soft); }
+      .badge.archived { background: rgba(178,58,44,0.15); color: var(--bad); }
+      .layer-legend { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 12px; }
+      .layer-pill { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10px; font-weight: 700; letter-spacing: 1px; padding: 5px 10px; border-radius: 999px; border: 1px solid var(--rule); background: var(--surface); color: var(--ink); cursor: pointer; }
+      .layer-pill.active { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+      .layer-pill .n { color: var(--ink-mute); margin-left: 6px; font-weight: 500; }
+      .layer-pill.active .n { color: rgba(255,255,255,0.7); }
+      /* memory rows */
+      .mem-row { padding: 9px 12px; border-bottom: 1px solid var(--rule); }
+      .mem-row:last-child { border-bottom: 0; }
+      .mem-kind { font-family: "JetBrains Mono", Menlo, monospace; font-size: 9.5px; font-weight: 700; letter-spacing: 1.2px; padding: 2px 7px; border-radius: 5px; background: var(--accent-soft); color: var(--ink); margin-right: 8px; }
+      .mem-body { font-size: 13px; }
+      .mem-meta { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10.5px; color: var(--ink-mute); margin-top: 4px; }
+      /* preview blocks */
+      .preview { white-space: pre-wrap; font-family: "JetBrains Mono", Menlo, monospace; font-size: 11.5px; line-height: 1.5; background: var(--bg); padding: 12px; border-radius: 8px; max-height: 280px; overflow: auto; }
+      .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+      @media (max-width: 760px) { .two-col { grid-template-columns: 1fr; } }
+      .empty { color: var(--ink-mute); font-style: italic; padding: 12px; text-align: center; }
+      .ret-row { padding: 8px 10px; border-radius: 6px; background: var(--surface-alt); margin-bottom: 6px; }
+      .ret-score { font-family: "JetBrains Mono", Menlo, monospace; font-size: 10.5px; color: var(--accent); font-weight: 700; margin-right: 8px; }
+    </style>
+  </head>
+  <body>
+    <!-- LOGIN -->
+    <div id="login" class="login-shell">
+      <div class="login-card">
+        <h1>Tilly <span class="accent">admin</span></h1>
+        <p class="hint" style="margin-top:-4px;">Sign in with your admin email and password.</p>
+        <div class="field">
+          <label>Email</label>
+          <input id="login-email" type="email" autocomplete="username" placeholder="admin@buildtogether.local" />
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input id="login-password" type="password" autocomplete="current-password" />
+        </div>
+        <button class="btn" id="login-btn" style="width:100%;">Sign in</button>
+        <div class="err" id="login-err"></div>
+      </div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div id="dash" class="wrap" style="display:none;">
+      <div class="topbar">
+        <div>
+          <h1>Tilly <span class="accent">admin</span></h1>
+          <p class="subhead">Memory inspector + Tilly internals, in one place.</p>
+        </div>
+        <div>
+          <span class="who" id="me"></span>
+          <button class="btn-link btn" id="logout-btn">sign out</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Choose a user</h2>
+        <p class="hint">Click a user to load their dossier, raw memory, and the last things Tilly retrieved for them.</p>
+        <div class="user-list" id="user-list"><div class="empty">Loading…</div></div>
+      </div>
+
+      <div id="snapshot" style="display:none;">
+        <div class="card">
+          <h2>Dossier <span class="badge in-dossier" style="font-size:10px;">L4</span></h2>
+          <p class="hint">Sonnet rewrites this nightly from the user's distilled memory. Injected into every chat turn.</p>
+          <div class="preview" id="dossier-body">(loading)</div>
+        </div>
+
+        <div class="card">
+          <h2>Raw memory</h2>
+          <p class="hint">Every L0 row. Click a layer pill to filter.</p>
+          <div class="layer-legend" id="raw-legend"></div>
+          <div id="raw-body"><div class="empty">(loading)</div></div>
+        </div>
+
+        <div class="card">
+          <h2>What Tilly just pulled</h2>
+          <p class="hint">The retrieval log for this user's most recent chat turn and most recent analysis run, side by side.</p>
+          <div class="two-col">
+            <div>
+              <div class="hint" style="margin-bottom:6px;">Last <b>chat</b> retrieval</div>
+              <div id="ret-chat"><div class="empty">(none yet)</div></div>
+            </div>
+            <div>
+              <div class="hint" style="margin-bottom:6px;">Last <b>analysis</b> retrieval</div>
+              <div id="ret-analysis"><div class="empty">(none yet)</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Injected system prompt</h2>
+          <p class="hint">The exact system prompt block (persona + tone + dossier + financial state + last-chat retrieval) Tilly would see for this user's next turn. Read-only, no LLM call.</p>
+          <div class="preview" id="uc-prompt">(loading)</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const TOKEN_KEY = "build_together_auth_token";
+      const $ = (id) => document.getElementById(id);
+      const getToken = () => localStorage.getItem(TOKEN_KEY);
+      const setToken = (t) => localStorage.setItem(TOKEN_KEY, t);
+      const clearToken = () => localStorage.removeItem(TOKEN_KEY);
+
+      function el(tag, props, children) {
+        const n = document.createElement(tag);
+        if (props) {
+          if (props.text != null) n.textContent = String(props.text);
+          if (props.cls) n.className = props.cls;
+          if (props.style) for (const k in props.style) n.style[k] = props.style[k];
+          if (props.attrs) for (const k in props.attrs) n.setAttribute(k, String(props.attrs[k]));
+          if (props.on) for (const k in props.on) n.addEventListener(k, props.on[k]);
+        }
+        if (children) for (const c of children) {
+          if (c == null) continue;
+          n.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+        }
+        return n;
+      }
+      function clearEl(n) { while (n.firstChild) n.removeChild(n.firstChild); }
+      function shortDate(iso) { return iso ? new Date(iso).toLocaleString() : "—"; }
+
+      async function api(path, opts) {
+        const token = getToken();
+        const r = await fetch(path, {
+          method: (opts && opts.method) || "GET",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: "Bearer " + token } : {}),
+          },
+          body: opts && opts.body ? JSON.stringify(opts.body) : undefined,
+        });
+        if (r.status === 401 || r.status === 403) {
+          clearToken();
+          showLogin();
+          throw new Error("not authorised");
+        }
+        if (!r.ok) throw new Error(path + " -> " + r.status);
+        return r.json();
+      }
+
+      function showLogin() { $("login").style.display = "flex"; $("dash").style.display = "none"; }
+      function showDash() { $("login").style.display = "none"; $("dash").style.display = "block"; }
+
+      // ── login ──────────────────────────────────────────────────────────
+      $("login-btn").addEventListener("click", doLogin);
+      $("login-password").addEventListener("keydown", (e) => { if (e.key === "Enter") doLogin(); });
+      $("login-email").addEventListener("keydown", (e) => { if (e.key === "Enter") $("login-password").focus(); });
+
+      async function doLogin() {
+        const email = $("login-email").value.trim();
+        const password = $("login-password").value;
+        const err = $("login-err");
+        err.textContent = "";
+        if (!email || !password) { err.textContent = "Email and password required."; return; }
+        try {
+          const r = await fetch("/api/auth/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password }),
+          });
+          const j = await r.json();
+          if (!r.ok || !j.token) { err.textContent = j.error || "Sign-in failed."; return; }
+          setToken(j.token);
+          await bootstrap();
+        } catch (e) {
+          err.textContent = "Network error: " + e.message;
+        }
+      }
+
+      $("logout-btn").addEventListener("click", () => { clearToken(); location.reload(); });
+
+      // ── bootstrap ──────────────────────────────────────────────────────
+      async function bootstrap() {
+        if (!getToken()) { showLogin(); return; }
+        // Quick admin check via the same endpoint admin-tilly uses.
+        let me;
+        try { me = await api("/api/admin/tilly/whoami"); } catch (e) { showLogin(); return; }
+        if (!me.ok) {
+          $("login-err").textContent = "This account is not an admin.";
+          clearToken(); showLogin(); return;
+        }
+        const meNode = $("me");
+        clearEl(meNode);
+        meNode.appendChild(document.createTextNode("signed in as "));
+        meNode.appendChild(el("b", { text: me.user.email || me.user.id.slice(0,8) }));
+        showDash();
+        await loadUsers();
+        // Deep-link ?userId=…
+        const uid = new URLSearchParams(location.search).get("userId");
+        if (uid) selectUser(uid);
+      }
+
+      // ── user picker ────────────────────────────────────────────────────
+      let activeUserId = "";
+      async function loadUsers() {
+        const list = $("user-list");
+        clearEl(list);
+        list.appendChild(el("div", { cls: "empty", text: "Loading users…" }));
+        try {
+          const j = await api("/api/admin/memory/users");
+          clearEl(list);
+          if (!j.users || !j.users.length) {
+            list.appendChild(el("div", { cls: "empty", text: "No users." }));
+            return;
+          }
+          for (const u of j.users) {
+            const last = u.lastEventAt ? shortDate(u.lastEventAt) : "no events";
+            const row = el("div", {
+              cls: "user-row",
+              attrs: { "data-id": u.id },
+              on: { click: () => selectUser(u.id) },
+            }, [
+              el("div", null, [
+                el("div", { cls: "who-name", text: (u.name || u.email || u.id.slice(0,8)) + (u.isAdmin ? " · admin" : "") }),
+                el("div", { cls: "who-meta", text: u.email || u.id.slice(0,8) }),
+              ]),
+              el("div", { cls: "who-meta", text: u.totalEvents + " ev · " + last }),
+            ]);
+            list.appendChild(row);
+          }
+        } catch (e) {
+          clearEl(list);
+          list.appendChild(el("div", { cls: "empty", text: "Failed to load users (" + e.message + ")." }));
+        }
+      }
+
+      let rawLayerFilter = null;
+
+      async function selectUser(id) {
+        activeUserId = id;
+        rawLayerFilter = null;
+        document.querySelectorAll("#user-list .user-row").forEach(r => r.classList.remove("active"));
+        const row = document.querySelector('#user-list .user-row[data-id="' + id + '"]');
+        if (row) row.classList.add("active");
+        $("snapshot").style.display = "block";
+        await Promise.all([loadDossier(id), loadRaw(id), loadUserContext(id)]);
+      }
+
+      // ── dossier ────────────────────────────────────────────────────────
+      async function loadDossier(id) {
+        const body = $("dossier-body");
+        body.textContent = "(loading)";
+        try {
+          const j = await api("/api/admin/memory/users/" + id);
+          if (!j.dossier) { body.textContent = "(no dossier yet)"; return; }
+          body.textContent = JSON.stringify(j.dossier.content, null, 2);
+        } catch (e) {
+          body.textContent = "Failed: " + e.message;
+        }
+      }
+
+      // ── raw memory + layer legend ──────────────────────────────────────
+      function renderLegend(counts) {
+        const legend = $("raw-legend");
+        clearEl(legend);
+        const layers = [
+          { key: null, label: "ALL", n: counts.raw },
+          { key: "in-dossier", label: "IN-DOSSIER", n: counts.inDossier },
+          { key: "distilled", label: "DISTILLED", n: counts.distilled },
+          { key: "raw-only", label: "RAW-ONLY", n: Math.max(0, counts.raw - counts.inDossier - counts.distilled - counts.archived) },
+          { key: "archived", label: "ARCHIVED", n: counts.archived },
+        ];
+        for (const L of layers) {
+          const pill = el("button", {
+            cls: "layer-pill" + (rawLayerFilter === L.key ? " active" : ""),
+            on: { click: () => { rawLayerFilter = L.key; loadRaw(activeUserId); } },
+          }, [L.label, el("span", { cls: "n", text: L.n })]);
+          legend.appendChild(pill);
+        }
+      }
+
+      async function loadRaw(id) {
+        const body = $("raw-body");
+        clearEl(body);
+        body.appendChild(el("div", { cls: "empty", text: "Loading…" }));
+        try {
+          const q = "?limit=200" + (rawLayerFilter ? "&layer=" + rawLayerFilter : "");
+          const j = await api("/api/admin/memory/users/" + id + "/raw-memory" + q);
+          renderLegend(j.counts || { raw: 0, inDossier: 0, distilled: 0, archived: 0 });
+          clearEl(body);
+          if (!j.memories || !j.memories.length) {
+            body.appendChild(el("div", { cls: "empty", text: "No memories at this layer." }));
+            return;
+          }
+          for (const m of j.memories) {
+            const row = el("div", { cls: "mem-row" }, [
+              el("div", null, [
+                el("span", { cls: "mem-kind", text: m.kind }),
+                el("span", { cls: "mem-body", text: m.body }),
+                el("span", { cls: "badge " + m.layer, text: m.layer.toUpperCase() }),
+              ]),
+              el("div", { cls: "mem-meta", text: shortDate(m.noticedAt) + " · " + m.dateLabel }),
+            ]);
+            body.appendChild(row);
+          }
+          if (j.total > j.memories.length) {
+            body.appendChild(el("div", { cls: "empty", text: "Showing " + j.memories.length + " of " + j.total + " (filtered)." }));
+          }
+        } catch (e) {
+          clearEl(body);
+          body.appendChild(el("div", { cls: "empty", text: "Failed: " + e.message }));
+        }
+      }
+
+      // ── user context: prompt + last retrievals ─────────────────────────
+      function renderHits(target, log) {
+        const node = $(target);
+        clearEl(node);
+        if (!log || !log.hits || !log.hits.length) {
+          node.appendChild(el("div", { cls: "empty", text: "(none yet)" }));
+          return;
+        }
+        node.appendChild(el("div", { cls: "mem-meta", text: shortDate(log.createdAt) + " · " + log.strategy + " · prompt " + log.promptSize + " ch" }));
+        for (const h of log.hits) {
+          const row = el("div", { cls: "ret-row" }, [
+            el("div", null, [
+              el("span", { cls: "ret-score", text: h.score == null ? "—" : Number(h.score).toFixed(3) }),
+              el("span", { cls: "mem-kind", text: h.kind }),
+              el("span", { cls: "mem-body", text: h.body }),
+            ]),
+            el("div", { cls: "mem-meta", text: h.dateLabel }),
+          ]);
+          node.appendChild(row);
+        }
+      }
+
+      async function loadUserContext(id) {
+        $("uc-prompt").textContent = "(loading)";
+        try {
+          const j = await api("/api/admin/tilly/user-context?userId=" + encodeURIComponent(id));
+          $("uc-prompt").textContent = (j.systemPrompts || []).join("\n\n────────────────\n\n") || "(no prompt context)";
+          renderHits("ret-chat", j.lastChatRetrieval);
+          renderHits("ret-analysis", j.lastAnalysisRetrieval);
+        } catch (e) {
+          $("uc-prompt").textContent = "Failed: " + e.message;
+        }
+      }
+
+      // boot
+      bootstrap();
+    </script>
+  </body>
+</html>

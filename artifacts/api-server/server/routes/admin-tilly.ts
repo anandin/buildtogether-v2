@@ -17,7 +17,7 @@ import { eq, isNull, isNotNull, and } from "drizzle-orm";
 import { requireAuth } from "../middleware/auth";
 import { requireAdmin } from "../middleware/admin";
 import { db } from "../db";
-import { tillyConfig } from "../../shared/schema";
+import { tillyConfig, users } from "../../shared/schema";
 import {
   getTillyConfig,
   invalidateLLMCache,
@@ -72,7 +72,7 @@ export function mountAdminTillyRoutes(app: Express): void {
       // requireAdmin not used here so the page can show a sensible error
       // when a non-admin tries to load /admin/tilly.
       const u = await db.query.users.findFirst({
-        where: eq(req.user!.id ? (req.user!.id as any) : ("" as any), req.user!.id),
+        where: eq(users.id, req.user!.id),
         columns: { id: true, email: true, name: true, isAdmin: true },
       });
       res.json({ user: u ?? null, ok: !!u?.isAdmin });

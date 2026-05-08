@@ -34,8 +34,10 @@ export function mountAdminPage(app: Express): void {
     res.status(200).send(loadHtml("admin-memory.html"));
   });
 
-  // Convenience landing redirect.
+  // Single combined admin page with built-in email/password sign-in.
+  // The legacy /admin/memory and /admin/tilly remain mounted above.
   app.get("/admin", (_req: Request, res: Response) => {
-    res.redirect("/admin/tilly");
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.status(200).send(loadHtml("admin.html"));
   });
 }
