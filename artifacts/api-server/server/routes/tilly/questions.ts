@@ -63,8 +63,23 @@ export function mountTillyQuestionsRoutes(app: Express): void {
       })
       .where(eq(tillyQuestions.id, q.id));
 
+    // Round-5 architect fix: an unknown_merchant question that gets *any*
+    // textual answer should default to creating a rule — otherwise the
+    // generator will surface the same "what is Frank Bistro?" again next
+    // sync once the cooldown lapses. The user's free-text answer becomes
+    // the rule's defaultNote so Tilly remembers WHY it's recurring. The
+    // explicit `action: "create_rule"` path still wins when the client
+    // supplies category/tags, but absence of action no longer means
+    // "skip rule".
+    const effectiveAction =
+      action === "create_rule"
+        ? "create_rule"
+        : (q.kind === "unknown_merchant" && typeof answer === "string" && answer.trim()
+            ? "create_rule"
+            : null);
+
     let ruleCreated = false;
-    if (action === "create_rule") {
+    if (effectiveAction === "create_rule") {
       try {
         // Pick a representative tx for signature/display info. Prefer one of
         // the ids the generator captured in payload; otherwise look up one
@@ -94,12 +109,22 @@ export function mountTillyQuestionsRoutes(app: Express): void {
           plaidTx = row ?? null;
         }
         if (plaidTx && req.user.coupleId) {
+          // Default the rule's note to the user's free-text answer when
+          // the client didn't pass an explicit note — this keeps the
+          // "Frank Bistro = our weekly Friday lunch" context attached
+          // to the rule so future Plaid rows pre-fill correctly.
+          const fallbackNote =
+            typeof note === "string" && note.trim()
+              ? note
+              : typeof answer === "string" && answer.trim()
+                ? answer.trim().slice(0, 240)
+                : null;
           await upsertRuleFromAccept({
             coupleId: req.user.coupleId,
             plaidTx,
             category: typeof category === "string" ? category : null,
             tags: Array.isArray(tags) ? tags : null,
-            note: typeof note === "string" ? note : null,
+            note: fallbackNote,
             source: "asked",
           });
           ruleCreated = true;
@@ -109,6 +134,8 @@ export function mountTillyQuestionsRoutes(app: Express): void {
       }
     }
 
+    // (Note: when ruleCreated, the rule itself is the persistence; we
+    // skip the memory write to avoid double-recording.)
     // Task #23 fix: persist non-rule answers to tillyMemory so the
     // assistant remembers the user's response next time they chat ("you
     // told me Frank Bistro is your weekly Friday lunch spot"). Without

@@ -83,7 +83,7 @@ export async function generateQuestionsForHousehold(householdId: string): Promis
     );
 
     // How many open questions does this household already have?
-    const existing = await tx
+    const openExisting = await tx
       .select()
       .from(tillyQuestions)
       .where(
@@ -92,12 +92,28 @@ export async function generateQuestionsForHousehold(householdId: string): Promis
           eq(tillyQuestions.status, "open"),
         ),
       );
-    const slots = MAX_OPEN_QUESTIONS - existing.length;
+    const slots = MAX_OPEN_QUESTIONS - openExisting.length;
     if (slots <= 0) return { inserted: 0, considered: 0 };
 
-  // Build the dedupe key set so we don't re-ask the same thing.
+  // Build the dedupe key set so we don't re-ask the same thing. Per
+  // architect (round 5): include answered AND dismissed questions, not
+  // just open ones — otherwise a closed "what is Frank Bistro?" can be
+  // regenerated on the next sync, defeating the "only ask once" goal.
+  // Cooldown: 60 days; after that we'll allow asking again in case the
+  // merchant pattern materially changed.
+  const cooldownCutoff = new Date();
+  cooldownCutoff.setDate(cooldownCutoff.getDate() - 60);
+  const allRecent = await tx
+    .select()
+    .from(tillyQuestions)
+    .where(
+      and(
+        eq(tillyQuestions.householdId, householdId),
+        gte(tillyQuestions.createdAt, cooldownCutoff),
+      ),
+    );
   const seenKey = new Set<string>();
-  for (const q of existing) {
+  for (const q of allRecent) {
     const p = (q.payload ?? {}) as Record<string, unknown>;
     const key = `${q.kind}::${(p.signature as string) ?? (p.category as string) ?? ""}`;
     seenKey.add(key);

@@ -63,8 +63,23 @@ export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
   const groups = grouped.data?.groups ?? [];
   const multiGroupSigs = new Set(groups.filter((g) => g.count >= 2).map((g) => g.signature));
   const multiGroups = groups.filter((g) => multiGroupSigs.has(g.signature));
+  // Client-side signature fallback that mirrors the server's normalizer
+  // for legacy pending rows where `signature` was never written to the DB
+  // (pre-#23). Without this fallback, a legacy Spotify row with null
+  // signature could render BOTH inside the Spotify group card AND as a
+  // singleton row below it — the server groups it (computing the sig on
+  // the fly) but the client only sees null and falls through.
+  const computeClientSig = (row: PlaidPendingTransaction): string => {
+    const raw = (row.merchantName ?? row.name ?? "").toString().toLowerCase();
+    return raw
+      .replace(/https?:\/\/\S+/g, "")
+      .replace(/\b\d+\b/g, "")
+      .replace(/[^a-z\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim() || raw.trim();
+  };
   const singleRows = list.filter((row) => {
-    const sig = row.signature;
+    const sig = row.signature ?? computeClientSig(row);
     return !sig || !multiGroupSigs.has(sig);
   });
 

@@ -249,7 +249,7 @@ export function mountTillyInsightsRoutes(app: Express): void {
         id: string;
         kind: string;
         body: string;
-        payload: any;
+        payload: Record<string, unknown>;
       }> = [];
       try {
         const { listOpenQuestions } = await import("../../tilly/question-generator");
@@ -258,7 +258,7 @@ export function mountTillyInsightsRoutes(app: Express): void {
           id: q.id,
           kind: q.kind,
           body: q.body,
-          payload: q.payload,
+          payload: (q.payload ?? {}) as Record<string, unknown>,
         }));
       } catch (qErr) {
         console.warn("/api/tilly/today openQuestions fallback:", qErr);
