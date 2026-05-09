@@ -5172,6 +5172,42 @@ Return just the message text.`;
     }
   });
 
+  // TEMP debug: invoke classifyTransaction directly with a known input and
+  // return the result + any error. Lets us figure out why the classifier
+  // is producing null on real Plaid syncs (every pending row currently
+  // shows ourCategory='other' with no AI suggestion).
+  app.get("/api/plaid/classify-debug", async (_req, res) => {
+    const input = {
+      coupleId: "debug",
+      signature: "lincoln afs apy",
+      merchant: "LINCOLN AFS CA APY",
+      amount: 725.73,
+      plaidLegacyCategory: null,
+      pfCategory: { primary: "LOAN_PAYMENTS", detailed: "LOAN_PAYMENTS_CAR_PAYMENT" },
+    };
+    try {
+      const result = await classifyTransaction(input);
+      res.json({
+        input,
+        result,
+        envChecks: {
+          OPENROUTER_API_KEY: !!process.env.OPENROUTER_API_KEY,
+          TILLY_CLASSIFIER_MODEL: process.env.TILLY_CLASSIFIER_MODEL ?? null,
+        },
+      });
+    } catch (e: any) {
+      res.json({
+        input,
+        error: e?.message,
+        stack: (e?.stack || "").split("\n").slice(0, 6),
+        envChecks: {
+          OPENROUTER_API_KEY: !!process.env.OPENROUTER_API_KEY,
+          TILLY_CLASSIFIER_MODEL: process.env.TILLY_CLASSIFIER_MODEL ?? null,
+        },
+      });
+    }
+  });
+
   // ─── Task #23: grouped pending queue + bulk accept ─────────────────────
   // Group pending Plaid txs by merchant signature so the user can deal with
   // "Spotify ×4 · $39.96" in one tap instead of accepting it four times.
