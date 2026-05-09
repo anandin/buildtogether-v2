@@ -12,7 +12,7 @@
  * but `name` carries store numbers, dates, and processor noise we have to
  * strip before two transactions from the same merchant collide.
  */
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../db";
 import { merchantRules, type MerchantRule } from "../../shared/schema";
 
@@ -258,13 +258,18 @@ export async function findRules(
   signatures: string[],
 ): Promise<Map<string, MerchantRule>> {
   if (signatures.length === 0) return new Map();
+  // Drizzle's template `sql` tag serialises a JS array into a single comma-
+  // joined string, which Postgres can't cast to text[] — the query 500s
+  // for any couple that has even one pending signature, which is the entire
+  // pending-grouped pipeline. Switching to drizzle's typed `inArray` helper
+  // emits a proper IN list with each value as its own parameter.
   const rows = await db
     .select()
     .from(merchantRules)
     .where(
       and(
         eq(merchantRules.coupleId, coupleId),
-        sql`${merchantRules.signature} = ANY(${signatures}::text[])`,
+        inArray(merchantRules.signature, signatures),
       ),
     );
   return new Map(rows.map((r) => [r.signature, r]));
