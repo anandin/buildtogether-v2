@@ -1,4 +1,5 @@
 import * as path from "path";
+import * as fs from "fs";
 import { fileURLToPath } from "url";
 
 function findArtifactsRoot(): string {
@@ -9,13 +10,17 @@ function findArtifactsRoot(): string {
       return dir;
     }
     const parent = path.dirname(dir);
-    if (parent === dir) {
-      throw new Error(
-        `Unable to locate 'artifacts' directory walking up from ${here}`,
-      );
-    }
+    if (parent === dir) break;
     dir = parent;
   }
+  // Vercel runtime: function is bundled into /var/task/api/, not under
+  // artifacts/. The artifacts/ tree is shipped via vercel.json includeFiles
+  // and lands at process.cwd()/artifacts.
+  const fromCwd = path.resolve(process.cwd(), "artifacts");
+  if (fs.existsSync(fromCwd)) return fromCwd;
+  throw new Error(
+    `Unable to locate 'artifacts' directory walking up from ${here} or at ${fromCwd}`,
+  );
 }
 
 const artifactsRoot = findArtifactsRoot();

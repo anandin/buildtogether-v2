@@ -12,7 +12,7 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/REPLACE_WITH_EAS_PROJECT_ID",
+      "url": "https://u.expo.dev/6b8c8df5-f5a1-45a7-8045-87f335fbdb85",
       "fallbackToCacheTimeout": 0
     },
     "splash": {
@@ -22,10 +22,11 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.tilly.app",
+      "bundleIdentifier": "com.anandin.tilly",
       "usesAppleSignIn": true,
       "infoPlist": {
-        "NSFaceIDUsageDescription": "Tilly uses Face ID as a second factor to protect your bank connection. Your face data never leaves the device."
+        "NSFaceIDUsageDescription": "Tilly uses Face ID as a second factor to protect your bank connection. Your face data never leaves the device.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -34,7 +35,11 @@
         "foregroundImage": "./assets/images/icon.png"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.tilly.app"
+      "package": "com.anandin.tilly",
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "web": {
       "output": "single",
@@ -51,6 +56,12 @@
       ],
       "expo-secure-store",
       "expo-apple-authentication"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "6b8c8df5-f5a1-45a7-8045-87f335fbdb85"
+      }
+    },
+    "owner": "anandin"
   }
 }
