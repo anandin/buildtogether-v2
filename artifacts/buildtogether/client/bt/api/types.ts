@@ -44,7 +44,7 @@ export type TillyQuestion = {
   id: string;
   kind: "unknown_merchant" | "category_spike" | "outsized_tx" | string;
   body: string;
-  payload?: Record<string, any>;
+  payload?: Record<string, unknown>;
 };
 
 // Task #23: pending Plaid transactions grouped by merchant signature.

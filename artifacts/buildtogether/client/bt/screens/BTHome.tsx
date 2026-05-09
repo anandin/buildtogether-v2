@@ -16,8 +16,8 @@
  * users, and showing them with mock content would re-introduce Maya's
  * hardcoded life. They're placeholders behind the connected-bank gate.
  */
-import React, { useEffect, useRef } from "react";
-import { Animated, Easing, Pressable, ScrollView, View } from "react-native";
+import React, { useEffect, useRef, useState } from "react";
+import { Alert, Animated, Easing, Pressable, ScrollView, TextInput, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { useBT } from "../BTContext";
@@ -958,8 +958,28 @@ function TillyQuestionsStrip({
 }) {
   const q = useTillyQuestions();
   const dismiss = useDismissTillyQuestion();
+  const answer = useAnswerTillyQuestion();
   const list: TillyQuestion[] = q.data?.questions ?? [];
+  // Inline answer composer state: which question is open + the draft.
+  // Tap a question to expand → type → submit fires the answer endpoint
+  // and the question disappears from the strip on next refetch.
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<string>("");
+
   if (!list.length) return null;
+
+  const submit = async (qq: TillyQuestion) => {
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    try {
+      await answer.mutateAsync({ id: qq.id, answer: trimmed });
+      setOpenId(null);
+      setDraft("");
+    } catch (err: any) {
+      Alert.alert("Couldn't save your answer", err?.message ?? "Try again.");
+    }
+  };
+
   return (
     <View
       style={{
@@ -985,54 +1005,130 @@ function TillyQuestionsStrip({
         >
           Tilly has {list.length === 1 ? "a question" : `${list.length} questions`}
         </Text>
-      </View>
-      <View style={{ gap: 6 }}>
-        {list.map((qq) => (
-          <View
-            key={qq.id}
+        <Pressable
+          onPress={onOpenChat}
+          accessibilityRole="button"
+          accessibilityLabel="Open chat to answer"
+          hitSlop={6}
+        >
+          <Text
             style={{
-              flexDirection: "row",
-              alignItems: "flex-start",
-              gap: 8,
+              color: t.accent,
+              fontFamily: BTFonts.sans,
+              fontSize: 11,
+              fontWeight: "600",
             }}
           >
-            <Pressable
-              onPress={onOpenChat}
-              accessibilityRole="button"
-              accessibilityLabel={`Answer: ${qq.body}`}
-              style={({ pressed }) => ({
-                flex: 1,
-                paddingVertical: 9,
-                paddingHorizontal: 12,
-                borderRadius: 12,
-                backgroundColor: pressed ? t.chip : t.bg,
-                borderWidth: 1,
-                borderColor: t.rule,
-              })}
-            >
-              <Text
+            Chat
+          </Text>
+        </Pressable>
+      </View>
+      <View style={{ gap: 6 }}>
+        {list.map((qq) => {
+          const expanded = openId === qq.id;
+          return (
+            <View key={qq.id} style={{ gap: 6 }}>
+              <View
                 style={{
-                  color: t.ink,
-                  fontFamily: BTFonts.serifItalic,
-                  fontSize: 13.5,
-                  lineHeight: 19,
+                  flexDirection: "row",
+                  alignItems: "flex-start",
+                  gap: 8,
                 }}
               >
-                {qq.body}
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => dismiss.mutate(qq.id)}
-              disabled={dismiss.isPending}
-              accessibilityRole="button"
-              accessibilityLabel="Dismiss question"
-              hitSlop={8}
-              style={{ paddingVertical: 9, paddingHorizontal: 6 }}
-            >
-              <Text style={{ color: t.inkMute, fontSize: 16 }}>×</Text>
-            </Pressable>
-          </View>
-        ))}
+                <Pressable
+                  onPress={() => {
+                    setDraft("");
+                    setOpenId(expanded ? null : qq.id);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded }}
+                  accessibilityLabel={`Answer: ${qq.body}`}
+                  style={({ pressed }) => ({
+                    flex: 1,
+                    paddingVertical: 9,
+                    paddingHorizontal: 12,
+                    borderRadius: 12,
+                    backgroundColor: pressed ? t.chip : t.bg,
+                    borderWidth: 1,
+                    borderColor: expanded ? t.accent : t.rule,
+                  })}
+                >
+                  <Text
+                    style={{
+                      color: t.ink,
+                      fontFamily: BTFonts.serifItalic,
+                      fontSize: 13.5,
+                      lineHeight: 19,
+                    }}
+                  >
+                    {qq.body}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => dismiss.mutate(qq.id)}
+                  disabled={dismiss.isPending}
+                  accessibilityRole="button"
+                  accessibilityLabel="Dismiss question"
+                  hitSlop={8}
+                  style={{ paddingVertical: 9, paddingHorizontal: 6 }}
+                >
+                  <Text style={{ color: t.inkMute, fontSize: 16 }}>×</Text>
+                </Pressable>
+              </View>
+              {expanded ? (
+                <View style={{ flexDirection: "row", gap: 6, alignItems: "flex-end" }}>
+                  <TextInput
+                    value={draft}
+                    onChangeText={setDraft}
+                    placeholder="Type a quick answer…"
+                    placeholderTextColor={t.inkMute}
+                    multiline
+                    maxLength={500}
+                    autoFocus
+                    style={{
+                      flex: 1,
+                      color: t.ink,
+                      fontFamily: BTFonts.sans,
+                      fontSize: 13,
+                      paddingHorizontal: 10,
+                      paddingVertical: 8,
+                      borderRadius: 10,
+                      borderWidth: 1,
+                      borderColor: t.rule,
+                      backgroundColor: t.bg,
+                      minHeight: 40,
+                      textAlignVertical: "top",
+                    }}
+                  />
+                  <Pressable
+                    onPress={() => submit(qq)}
+                    disabled={!draft.trim() || answer.isPending}
+                    accessibilityRole="button"
+                    accessibilityLabel="Save answer"
+                    style={({ pressed }) => ({
+                      paddingVertical: 10,
+                      paddingHorizontal: 14,
+                      borderRadius: 999,
+                      backgroundColor: t.ink,
+                      opacity: !draft.trim() || answer.isPending ? 0.5 : pressed ? 0.85 : 1,
+                    })}
+                  >
+                    <Text
+                      style={{
+                        color: t.surface,
+                        fontFamily: BTFonts.sans,
+                        fontSize: 12,
+                        fontWeight: "700",
+                      }}
+                    >
+                      {answer.isPending ? "Saving…" : "Save"}
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+          );
+        })}
       </View>
     </View>
   );

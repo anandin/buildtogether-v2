@@ -28,6 +28,7 @@ import { Tilly } from "../Tilly";
 import { BTCard, BTLabel, BTRule, BTSerif } from "../atoms";
 import { BTFonts } from "../theme";
 import { useTilly as useTillyChat } from "../hooks/useTilly";
+import { useTillyQuestions, useAnswerTillyQuestion } from "../hooks/useTillyQuestions";
 import { useUser } from "../hooks/useUser";
 import { MemoryInspector } from "../MemoryInspector";
 import type { TillyMessage } from "../api/types";
@@ -143,6 +144,14 @@ export function BTGuardian() {
   const tilly = useTillyChat();
   const [draft, setDraft] = useState("");
   const [memoryOpen, setMemoryOpen] = useState(false);
+  // Task #23 — when the user taps an open Tilly question chip, we stash
+  // its id here so the next composer submit ALSO posts the typed reply
+  // to /api/tilly/questions/:id/answer (closing the question + writing
+  // it to tillyMemory). Cleared on submit or when the user changes
+  // course (composer cleared without sending).
+  const [pendingQuestionId, setPendingQuestionId] = useState<string | null>(null);
+  const openQuestions = useTillyQuestions();
+  const answerQuestion = useAnswerTillyQuestion();
   const scrollRef = useRef<ScrollView>(null);
 
   // First-time UX: when the conversation is empty, render Tilly's actual
@@ -182,8 +191,24 @@ export function BTGuardian() {
   const send = (text: string) => {
     const trimmed = text.trim();
     if (!trimmed) return;
+    // Task #23 — if this submit is in response to a tapped open question,
+    // close the question on the server first (writes to tillyMemory so
+    // Tilly remembers the answer next sync). Best-effort: a network blip
+    // shouldn't block the actual chat send.
+    if (pendingQuestionId) {
+      answerQuestion.mutate({ id: pendingQuestionId, answer: trimmed });
+      setPendingQuestionId(null);
+    }
     setDraft("");
     tilly.send(trimmed);
+  };
+
+  // Map the strings we already render in the bubble's "Still wondering"
+  // section back to question ids from the live questions list, so a tap
+  // can bind to a real /api/tilly/questions/:id.
+  const findQuestionIdByBody = (body: string): string | null => {
+    const list = openQuestions.data?.questions ?? [];
+    return list.find((q) => q.body === body)?.id ?? null;
   };
 
   const tillyState: "idle" | "think" = thinking ? "think" : "idle";
@@ -256,7 +281,10 @@ export function BTGuardian() {
             scouting={tilly.isScouting}
             askingWait={tilly.isAskingWait}
             confirmedReminder={tilly.confirmedReminders[m.id] ?? null}
-            onPrefillCompose={(seed) => setDraft(`About "${seed}" — `)}
+            onPrefillCompose={(seed) => {
+              setDraft(`About "${seed}" — `);
+              setPendingQuestionId(findQuestionIdByBody(seed));
+            }}
           />
         ))}
         {thinking ? <TypingBubble /> : null}
