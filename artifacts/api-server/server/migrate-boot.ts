@@ -403,6 +403,18 @@ const CRITICAL_STATEMENTS: string[] = [
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "merchant_rules_couple_signature_uniq"
      ON "merchant_rules" ("couple_id", "signature")`,
+  // Lightweight debug-trace table. Survives Vercel Fluid instance recycling
+  // so we can correlate "what the iPhone got" against UI behavior. Cleaned
+  // up automatically on a 24-hour TTL window inside the audit endpoint.
+  `CREATE TABLE IF NOT EXISTS "debug_audit_log" (
+    "id" bigserial PRIMARY KEY,
+    "kind" text NOT NULL,
+    "couple_id" varchar,
+    "data" jsonb NOT NULL,
+    "created_at" timestamp NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS "debug_audit_log_created_idx"
+     ON "debug_audit_log" ("created_at" DESC)`,
   `CREATE TABLE IF NOT EXISTS "tilly_questions" (
     "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
     "user_id" varchar NOT NULL,

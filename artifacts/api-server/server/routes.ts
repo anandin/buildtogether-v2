@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import OpenAI from "openai";
 import bcrypt from "bcryptjs";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { requireAuth, requireCoupleAccess } from "./middleware/auth";
 import { requirePasskeyVerified, PASSKEY_FRESHNESS_MS } from "./routes/passkey";
 import { userCredentials } from "../shared/schema";
@@ -5172,20 +5172,25 @@ Return just the message text.`;
     }
   });
 
-  // Tiny ring buffer of the last 10 /pending-grouped responses, for debug.
-  // Captures what the auth-gated endpoint sent to the iOS client so we can
-  // diagnose client-side rendering issues without intercepting the device's
-  // network. Memory-only (resets on cold start), no PII beyond what the
-  // user already sees in their own pending queue.
-  const groupedAuditLog: Array<{
-    at: string;
-    coupleId: string;
-    groupCount: number;
-    multiGroupCount: number;
-    summary: { signature: string; count: number; ruleId: string | null }[];
-  }> = [];
-  app.get("/api/plaid/pending-grouped-audit", (_req, res) => {
-    res.json({ entries: groupedAuditLog });
+  // DB-backed audit of /pending-grouped responses. Survives Vercel Fluid
+  // instance recycling so we can read what the iPhone got after the fact.
+  // Inserts happen inline in the handler below. We keep it minimal — no
+  // PII beyond what the user sees in their own queue.
+  app.get("/api/plaid/pending-grouped-audit", async (_req, res) => {
+    try {
+      const rows = await db.execute(
+        sql`SELECT id, couple_id, data, created_at FROM debug_audit_log
+            WHERE kind = 'pending_grouped'
+            ORDER BY created_at DESC LIMIT 20`,
+      );
+      // Drizzle's execute() returns { rows: ... } on neon-serverless and the
+      // raw array on pg — handle both shapes defensively.
+      const list = Array.isArray((rows as any).rows) ? (rows as any).rows : (rows as any);
+      res.json({ entries: list });
+    } catch (error: any) {
+      console.error("pending-grouped-audit read error:", error);
+      res.status(500).json({ error: error.message });
+    }
   });
 
   // Debug: dump raw pending rows + their live signatures so we can see why
@@ -5418,22 +5423,24 @@ Return just the message text.`;
         }
 
         const sortedGroups = [...groups.values()].sort((a, b) => b.totalAmount - a.totalAmount);
-        // Capture audit BEFORE responding so the user can debug from a
-        // separate request even if the device sees this response.
-        try {
-          groupedAuditLog.unshift({
-            at: new Date().toISOString(),
-            coupleId,
-            groupCount: sortedGroups.length,
-            multiGroupCount: sortedGroups.filter((g) => g.count >= 2).length,
-            summary: sortedGroups.map((g) => ({
-              signature: g.signature,
-              count: g.count,
-              ruleId: g.ruleId,
-            })),
-          });
-          if (groupedAuditLog.length > 10) groupedAuditLog.length = 10;
-        } catch {}
+        // Persist a small audit row to DB so it survives Vercel Fluid
+        // instance recycling. Read back via /api/plaid/pending-grouped-audit
+        // for client-side debug. Best-effort: never block the user response
+        // on logging.
+        const auditPayload = {
+          groupCount: sortedGroups.length,
+          multiGroupCount: sortedGroups.filter((g) => g.count >= 2).length,
+          summary: sortedGroups.map((g) => ({
+            signature: g.signature,
+            count: g.count,
+            ruleId: g.ruleId,
+          })),
+          userAgent: req.header("user-agent")?.slice(0, 120) ?? null,
+        };
+        db.execute(
+          sql`INSERT INTO debug_audit_log (kind, couple_id, data)
+              VALUES ('pending_grouped', ${coupleId}, ${JSON.stringify(auditPayload)}::jsonb)`,
+        ).catch((err) => console.warn("audit log insert failed:", err?.message));
         res.json({ groups: sortedGroups });
       } catch (error: any) {
         console.error("Plaid pending-grouped error:", error);
