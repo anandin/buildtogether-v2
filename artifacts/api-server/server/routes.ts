@@ -5242,11 +5242,22 @@ Return just the message text.`;
             note: cleanNote,
             source: "bulk",
           });
-          if (applyToFuture && !rule.autoAccept) {
+          // Bulk accept = N confirmations in one tap. Bump hitCount by the
+          // group size so a "Spotify ×4 accept all" promotes the rule to
+          // high-confidence (≥5 hits → no $5k cap) without making the user
+          // wait until the 5th sync. If applyToFuture is on, also force
+          // autoAccept regardless of count.
+          {
             const { merchantRules } = await import("../shared/schema");
+            const bumpedHits = rule.hitCount + Math.max(0, inGroup.length - 1);
+            const setFields: Record<string, unknown> = {
+              hitCount: bumpedHits,
+              updatedAt: new Date(),
+            };
+            if (applyToFuture && !rule.autoAccept) setFields.autoAccept = true;
             await db
               .update(merchantRules)
-              .set({ autoAccept: true, hitCount: Math.max(rule.hitCount, 2), updatedAt: new Date() })
+              .set(setFields)
               .where(eq(merchantRules.id, rule.id));
           }
           await db

@@ -18,13 +18,15 @@ import { merchantRules, type MerchantRule } from "../../shared/schema";
 
 /**
  * Auto-accept safety cap (per task spec): trust up to $5,000 per tx after
- * we've seen the same merchant accepted with the same category at least
- * twice. Anything bigger falls through to pending with the rule's tags
- * pre-filled (tag_only) so the user explicitly confirms a large charge.
- * The cap intentionally stops Plaid from silently writing huge expenses
- * even after a rule is learned.
+ * a rule is learned (≥2 consistent accepts). Anything bigger falls through
+ * to pending with the rule's tags pre-filled (tag_only) so the user
+ * explicitly confirms a large charge — UNLESS the rule has been confirmed
+ * ≥5 times, at which point we trust the merchant for any amount (e.g.
+ * the user accepts mortgage / rent through Plaid and doesn't want it
+ * appearing in pending forever).
  */
 const AUTO_ACCEPT_AMOUNT_CAP = 5000;
+const AUTO_ACCEPT_HIGH_CONFIDENCE_HITS = 5;
 
 export type PlaidTxLike = {
   amount: number;
@@ -215,7 +217,8 @@ export function applyRuleToPlaidTx(plaidTx: PlaidTxLike, rule: MerchantRule | nu
   if (rule.autoIgnore) return { kind: "auto_ignore", ruleId: rule.id };
   if (rule.autoAccept) {
     const amt = Math.abs(plaidTx.amount);
-    if (amt <= AUTO_ACCEPT_AMOUNT_CAP) {
+    const trustAnyAmount = rule.hitCount >= AUTO_ACCEPT_HIGH_CONFIDENCE_HITS;
+    if (trustAnyAmount || amt <= AUTO_ACCEPT_AMOUNT_CAP) {
       return {
         kind: "auto_accept",
         category: rule.category ?? "other",

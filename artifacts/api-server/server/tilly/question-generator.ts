@@ -146,9 +146,13 @@ export async function generateQuestionsForHousehold(householdId: string): Promis
     bySig.set(sig, b);
   }
 
-  // Filter to unknown signatures (no rule yet) with ≥3 hits & at least one pending row.
+  // Filter to unknown signatures (no rule yet) with ≥3 unaccepted (pending
+  // or ignored) rows. Per task spec: counting all rows would let an already-
+  // accepted recurring merchant trigger a redundant question whenever a new
+  // pending row arrives. We only want to surface signatures the user
+  // genuinely hasn't decided about yet.
   const unknownCandidates = [...bySig.values()].filter(
-    (b) => b.count >= 3 && b.hasPending,
+    (b) => b.pendingIds.length >= 3,
   );
   if (unknownCandidates.length > 0) {
     const sigs = unknownCandidates.map((b) => b.signature);
