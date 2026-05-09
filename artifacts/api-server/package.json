@@ -7,7 +7,9 @@
     "dev": "export NODE_ENV=development && tsx server/index.ts",
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "scripts:reclassify-pending": "tsx scripts/reclassify-pending.ts",
+    "scripts:invalidate-non-prod": "tsx scripts/invalidate-non-prod-items.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.91.1",
