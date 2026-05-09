@@ -124,12 +124,24 @@ export function mapPlaidCategory(
   pfCategory?: { primary?: string; detailed?: string } | null,
   hints?: { name?: string | null; merchantName?: string | null } | null,
 ): string {
-  // Name-keyword override for tax remittance — Plaid sometimes returns
-  // these with PFC=null or a generic GOVERNMENT category, but the user
-  // recognizes them as taxes regardless of PFC noise.
+  // Name-keyword overrides for stuff Plaid frequently mis-PFC's.
   const haystack = `${hints?.merchantName ?? ""} ${hints?.name ?? ""}`.toLowerCase();
-  if (haystack && /\b(cra|irs|tax(es|cdn)?|txd|hst remit|gst remit|property tax|bramptax)/.test(haystack)) {
-    return "taxes";
+  if (haystack) {
+    // Tax remittance — sometimes PFC=null or a generic GOVERNMENT category,
+    // but user recognizes as taxes regardless.
+    if (/\b(cra|irs|tax(es|cdn)?|txd|hst remit|gst remit|property tax|bramptax)/.test(haystack)) {
+      return "taxes";
+    }
+    // Charge cards & credit-card payment names. Diners Club, Amex, etc.
+    // sometimes come back as GENERAL_SERVICES (→ subscriptions) when
+    // they're really credit-card pay-downs. The user's Diners Club $4091
+    // landed in subscriptions instead of loans, dominating Monday's bar.
+    if (
+      /\b(diners club|amex(?!\s*statement)|charge card)\b/.test(haystack) ||
+      /\b(visa|mastercard|m\/?card)\s+(pmt|payment|preauth|w[a-z0-9]+)\b/.test(haystack)
+    ) {
+      return "loans";
+    }
   }
 
   // Prefer the new personal_finance_category when Plaid provides it.
