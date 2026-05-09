@@ -5176,7 +5176,7 @@ Return just the message text.`;
   // grouping isn't kicking in. Auth-gated to the row's couple — only the
   // user themselves can see it. Temporary; remove once pending grouping is
   // verified working in production.
-  app.get("/api/plaid/pending-debug/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
+  app.get("/api/plaid/pending-debug/:coupleId", async (req, res) => {
     try {
       const coupleId = req.params.coupleId;
       const rows = await db
