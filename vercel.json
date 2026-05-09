@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "echo 'API-only Vercel deploy: function bundled by @vercel/node, no monorepo build needed'",
+  "buildCommand": "pnpm --filter \"./artifacts/api-server\" build",
   "functions": {
     "api/index.ts": {
       "maxDuration": 60,

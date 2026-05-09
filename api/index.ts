@@ -1,12 +1,12 @@
-// Vercel serverless entry. Wraps the Express app from the api-server
-// workspace artifact so all matched routes (see vercel.json `rewrites`)
-// flow through one Fluid Compute function.
+// Vercel serverless entry. Imports from the api-server's prebuilt esbuild
+// bundle (`dist/index.mjs`) — that bundle is produced by the buildCommand
+// in vercel.json. Importing the bundled .mjs (rather than the .ts source)
+// keeps @vercel/node's TypeScript checker from chasing into the workspace
+// where the api-server's `moduleResolution: "bundler"` tsconfig disagrees
+// with @vercel/node's default (NodeNext) setup.
 //
-// Types are intentionally `any` to avoid pulling @types/node and
-// @types/express into the root package — those types live with the
-// api-server artifact, and @vercel/node typechecks this file against
-// the workspace root.
-import { getApp } from "../artifacts/api-server/server/index";
+// @ts-ignore — bundled artifact, no .d.mts shipped
+import { getApp } from "../artifacts/api-server/dist/index.mjs";
 
 let cachedApp: any = null;
 
