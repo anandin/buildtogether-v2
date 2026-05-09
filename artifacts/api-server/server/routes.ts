@@ -5176,6 +5176,55 @@ Return just the message text.`;
   // grouping isn't kicking in. Auth-gated to the row's couple — only the
   // user themselves can see it. Temporary; remove once pending grouping is
   // verified working in production.
+  // No-arg variant: returns pending-debug for the most recently created
+  // couple. Convenient when there's exactly one user in prod (early
+  // beta) and we want to debug without coordinating UUIDs.
+  app.get("/api/plaid/pending-debug-latest", async (_req, res) => {
+    try {
+      const recent = await db
+        .select()
+        .from(plaidTransactions)
+        .where(eq(plaidTransactions.status, "pending_review"))
+        .orderBy(desc(plaidTransactions.date))
+        .limit(1);
+      if (recent.length === 0) return res.json({ rows: [], signatureCounts: [] });
+      const coupleId = recent[0].coupleId;
+      const rows = await db
+        .select()
+        .from(plaidTransactions)
+        .where(
+          and(
+            eq(plaidTransactions.coupleId, coupleId),
+            eq(plaidTransactions.status, "pending_review"),
+          ),
+        )
+        .orderBy(desc(plaidTransactions.date))
+        .limit(200);
+      const out = rows.map((r) => ({
+        id: r.id,
+        date: r.date,
+        amount: r.amount,
+        merchantName: r.merchantName,
+        name: r.name,
+        ourCategory: r.ourCategory,
+        storedSignature: r.signature,
+        liveSignature: merchantSignature(r),
+      }));
+      const sigCounts = new Map<string, number>();
+      for (const r of out) sigCounts.set(r.liveSignature, (sigCounts.get(r.liveSignature) || 0) + 1);
+      res.json({
+        coupleId,
+        rows: out,
+        signatureCounts: [...sigCounts.entries()]
+          .map(([sig, count]) => ({ sig, count }))
+          .sort((a, b) => b.count - a.count),
+      });
+    } catch (error: any) {
+      console.error("Plaid pending-debug-latest error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   app.get("/api/plaid/pending-debug/:coupleId", async (req, res) => {
     try {
       const coupleId = req.params.coupleId;
