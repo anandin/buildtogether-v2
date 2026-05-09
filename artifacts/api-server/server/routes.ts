@@ -5172,6 +5172,46 @@ Return just the message text.`;
     }
   });
 
+  // TEMP debug: dump ai_suggested fields for the most recent couple's pending
+  app.get("/api/plaid/ai-fields-debug", async (_req, res) => {
+    try {
+      const recent = await db
+        .select({ coupleId: plaidTransactions.coupleId })
+        .from(plaidTransactions)
+        .where(eq(plaidTransactions.status, "pending_review"))
+        .orderBy(desc(plaidTransactions.date))
+        .limit(1);
+      if (recent.length === 0) return res.json({ rows: [] });
+      const coupleId = recent[0].coupleId;
+      const rows = await db
+        .select({
+          id: plaidTransactions.id,
+          name: plaidTransactions.name,
+          merchantName: plaidTransactions.merchantName,
+          ourCategory: plaidTransactions.ourCategory,
+          aiSuggestedCategory: plaidTransactions.aiSuggestedCategory,
+          aiSuggestedTags: plaidTransactions.aiSuggestedTags,
+          aiSuggestedConfidence: plaidTransactions.aiSuggestedConfidence,
+          plaidCategory: plaidTransactions.plaidCategory,
+          personalFinanceCategory: plaidTransactions.personalFinanceCategory,
+          pending: plaidTransactions.pending,
+          createdAt: plaidTransactions.createdAt,
+        })
+        .from(plaidTransactions)
+        .where(
+          and(
+            eq(plaidTransactions.coupleId, coupleId),
+            eq(plaidTransactions.status, "pending_review"),
+          ),
+        )
+        .orderBy(desc(plaidTransactions.date))
+        .limit(50);
+      res.json({ coupleId, rows });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
   // TEMP debug: invoke classifyTransaction directly with a known input and
   // return the result + any error. Lets us figure out why the classifier
   // is producing null on real Plaid syncs (every pending row currently
