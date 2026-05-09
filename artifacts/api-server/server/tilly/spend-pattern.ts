@@ -39,6 +39,13 @@ async function readAllTransactions(
       .where(
         and(
           eq(plaidTransactions.coupleId, householdId),
+          // Only accepted rows count as spend. Without this filter,
+          // status='ignored' (user dismissed the row), 'pending_review'
+          // (still in the inbox), and 'auto_accepting' (transient race
+          // window) all leaked into the Spend totals — Canada Txd was
+          // appearing twice for this user (one accepted as taxes,
+          // one ignored, both summed).
+          eq(plaidTransactions.status, "accepted"),
           sql`${plaidTransactions.date} >= ${sinceIso}`,
           sql`${plaidTransactions.amount} > 0`,
         ),
