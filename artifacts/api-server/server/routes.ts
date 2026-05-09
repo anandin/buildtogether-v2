@@ -5202,16 +5202,21 @@ Return just the message text.`;
   // backfill once for the production user before they're forced to
   // re-authenticate the iPhone session. Removed once the backfill has
   // run successfully.
-  app.post("/api/plaid/reclassify-pending-latest", async (_req, res) => {
+  app.post("/api/plaid/reclassify-pending-latest", async (req, res) => {
     try {
-      const recent = await db
-        .select({ coupleId: plaidTransactions.coupleId })
-        .from(plaidTransactions)
-        .where(eq(plaidTransactions.status, "pending_review"))
-        .orderBy(desc(plaidTransactions.date))
-        .limit(1);
-      if (recent.length === 0) return res.json({ scanned: 0, touched: 0 });
-      const coupleId = recent[0].coupleId;
+      // Optional explicit override — useful when sandbox/test couples have
+      // newer rows than the prod user we actually want to reclassify.
+      let coupleId = (req.query.coupleId as string | undefined)?.trim() || null;
+      if (!coupleId) {
+        const recent = await db
+          .select({ coupleId: plaidTransactions.coupleId })
+          .from(plaidTransactions)
+          .where(eq(plaidTransactions.status, "pending_review"))
+          .orderBy(desc(plaidTransactions.date))
+          .limit(1);
+        if (recent.length === 0) return res.json({ scanned: 0, touched: 0 });
+        coupleId = recent[0].coupleId;
+      }
       // Inline body — same logic as the auth-gated endpoint below, just
       // skipping the auth check and reading coupleId from the latest row.
       const rows = await db
