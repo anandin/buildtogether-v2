@@ -21,8 +21,11 @@ export const BT_TONES: Record<BTToneKey, BTTone> = {
     label: "Sibling",
     voice: "calm, wise, plainspoken",
     greeting: (name) => `Hey ${name}.`,
+    // Tone-illustrative sample, NOT an empty-state cue. The previous
+    // "connect a bank when you're ready" line stuck around even after
+    // banks were synced and made the YOU page feel broken.
     sample:
-      "Glad you're here. Connect a bank when you're ready and I'll start showing you the patterns — until then, ask me anything.",
+      "Wednesday's the soft spot again — DoorDash twice in two weeks. Want to lock $25 ceiling for Wed nights?",
   },
   coach: {
     key: "coach",
@@ -30,7 +33,7 @@ export const BT_TONES: Record<BTToneKey, BTTone> = {
     voice: "warm, direct, future-focused",
     greeting: (name) => `Morning, ${name}.`,
     sample:
-      "Good first move. Once your bank's connected I'll spot the small wins; for now, tell me one money thing on your mind.",
+      "Two no-spend days in. One more puts you back in the green for the week. Coffee at home tomorrow?",
   },
   quiet: {
     key: "quiet",
@@ -38,7 +41,7 @@ export const BT_TONES: Record<BTToneKey, BTTone> = {
     voice: "minimal, observational, no nudging",
     greeting: (name) => `${name},`,
     sample:
-      "I'm here. I'll watch quietly once your bank's connected. No nudges unless you ask.",
+      "Three subscriptions you haven't touched in 60 days. Nothing urgent. Just wanted you to know.",
   },
 };
 

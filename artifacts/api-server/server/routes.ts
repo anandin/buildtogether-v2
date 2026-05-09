@@ -5460,6 +5460,51 @@ Return just the message text.`;
     },
   );
 
+  // TEMP debug: dump every Canada-Txd-like row across plaid_tx + expense
+  app.get("/api/plaid/canada-txd-debug", async (_req, res) => {
+    try {
+      const recent = await db
+        .select({ coupleId: plaidTransactions.coupleId })
+        .from(plaidTransactions)
+        .orderBy(desc(plaidTransactions.date))
+        .limit(1);
+      if (recent.length === 0) return res.json({ rows: [] });
+      const coupleId = recent[0].coupleId;
+      const rows = await db
+        .select({
+          ptx: plaidTransactions,
+          exp: expenses,
+        })
+        .from(plaidTransactions)
+        .leftJoin(expenses, eq(expenses.id, plaidTransactions.expenseId))
+        .where(eq(plaidTransactions.coupleId, coupleId))
+        .limit(500);
+      const matches = rows.filter((r) =>
+        ((r.ptx.merchantName || "") + " " + (r.ptx.name || ""))
+          .toLowerCase()
+          .match(/\b(txd|tax|cra)\b/),
+      );
+      res.json({
+        coupleId,
+        matches: matches.map((m) => ({
+          ptxId: m.ptx.id,
+          merchantName: m.ptx.merchantName,
+          name: m.ptx.name,
+          date: m.ptx.date,
+          amount: m.ptx.amount,
+          status: m.ptx.status,
+          ourCategory: m.ptx.ourCategory,
+          plaidCategory: m.ptx.plaidCategory,
+          pfc: m.ptx.personalFinanceCategory,
+          expenseId: m.ptx.expenseId,
+          expenseCategory: m.exp?.category,
+        })),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
   // TEMP debug: dump ai_suggested fields for the most recent couple's pending
   app.get("/api/plaid/ai-fields-debug", async (_req, res) => {
     try {
