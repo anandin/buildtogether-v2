@@ -5001,7 +5001,14 @@ Return just the message text.`;
         ))
         .orderBy(desc(plaidTransactions.date))
         .limit(100);
-      res.json(rows);
+      // Return the LIVE-computed signature so the mobile UI's "is this row
+      // in a multi-row group?" filter agrees with /pending-grouped (which
+      // also recomputes). When merchantSignature() evolves — e.g. adding
+      // Canadian provinces to the strip list — rows synced under the old
+      // normalizer have stale `signature` columns. Without this overwrite,
+      // a Lincoln × 2 group on the server side still shows as two
+      // singleton cards on the client side.
+      res.json(rows.map((r) => ({ ...r, signature: merchantSignature(r) })));
     } catch (error: any) {
       console.error("Plaid pending list error:", error);
       res.status(500).json({ error: error.message });
