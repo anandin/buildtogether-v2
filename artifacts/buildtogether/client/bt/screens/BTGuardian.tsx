@@ -35,9 +35,24 @@ import type { TillyMessage } from "../api/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { btApi } from "../api/client";
 
+type DreamPreview = {
+  kind: "dream_created";
+  dreamId: string;
+  name: string;
+  targetAmount: number;
+  monthlyContribution: number;
+  emoji: string;
+};
+
 type Msg =
   | { id: string; role: "user"; kind: "text"; body: string }
-  | { id: string; role: "tilly"; kind: "text"; body: string }
+  | {
+      id: string;
+      role: "tilly";
+      kind: "text";
+      body: string;
+      toolResult?: DreamPreview;
+    }
   | { id: string; role: "tilly"; kind: "typing" }
   | {
       id: string;
@@ -135,7 +150,13 @@ function toLocal(m: TillyMessage): Msg {
       errorText: m.errorText,
     };
   }
-  return { id: m.id, role: "tilly", kind: "text", body: m.body };
+  return {
+    id: m.id,
+    role: "tilly",
+    kind: "text",
+    body: m.body,
+    toolResult: (m as any).toolResult as DreamPreview | undefined,
+  };
 }
 
 export function BTGuardian() {
@@ -734,6 +755,62 @@ function Bubble({
         {confirmedReminder ? (
           <ReminderConfirmationChip reminder={confirmedReminder} />
         ) : null}
+        {/* Tool result preview — dream Tilly just created via the
+            extract-dream-create classifier. Renders inline so the user
+            sees the new dream below her bubble without leaving chat. */}
+        {m.kind === "text" && m.toolResult?.kind === "dream_created" ? (
+          <DreamPreviewCard dream={m.toolResult} />
+        ) : null}
+      </View>
+    </View>
+  );
+}
+
+function DreamPreviewCard({ dream }: { dream: DreamPreview }) {
+  const { t } = useBT();
+  return (
+    <View
+      style={{
+        marginTop: 8,
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        paddingVertical: 10,
+        paddingHorizontal: 14,
+        backgroundColor: t.accentSoft,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: t.accent,
+        maxWidth: "100%",
+      }}
+    >
+      <Text style={{ fontSize: 22 }}>{dream.emoji || "✺"}</Text>
+      <View style={{ flex: 1 }}>
+        <Text
+          style={{
+            fontFamily: BTFonts.serif,
+            fontSize: 14,
+            fontWeight: "600",
+            color: t.ink,
+          }}
+        >
+          {dream.name}
+        </Text>
+        <Text
+          style={{
+            fontFamily: BTFonts.sans,
+            fontSize: 11,
+            color: t.inkSoft,
+            marginTop: 2,
+          }}
+        >
+          ${dream.targetAmount.toFixed(0)} target
+          {dream.monthlyContribution > 0
+            ? ` · $${dream.monthlyContribution.toFixed(0)}/mo`
+            : ""}
+          {" "}
+          · saved as a Dream
+        </Text>
       </View>
     </View>
   );

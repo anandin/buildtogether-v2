@@ -28,7 +28,9 @@ import {
   tillyNudges,
   tillyScoutJobs,
   users,
+  goals,
 } from "../../../shared/schema";
+import { extractDreamCreate } from "../../tilly/extract-dream-create";
 import { enqueueScout } from "../../tilly/scout/orchestrator";
 import { distillUser } from "../../tilly/nightly-distiller";
 import {
@@ -122,9 +124,32 @@ type ScoutWireOption = {
 };
 type WaitWireSource = { source: string; url: string; evidence: string };
 
+/**
+ * Tool result attached to a Tilly turn. When the chat post-classifier
+ * detects the user asked Tilly to take an action she now actually CAN
+ * (e.g. createDream), the server runs the action and ships the resulting
+ * payload alongside the text reply. The client renders an inline preview
+ * card so the user sees the new dream/setting/etc. without leaving chat.
+ */
+type ToolResult = {
+  kind: "dream_created";
+  dreamId: string;
+  name: string;
+  targetAmount: number;
+  monthlyContribution: number;
+  emoji: string;
+};
+
 type WireMessage =
   | { id: string; role: "user"; kind: "text"; body: string; createdAt: string }
-  | { id: string; role: "tilly"; kind: "text"; body: string; createdAt: string }
+  | {
+      id: string;
+      role: "tilly";
+      kind: "text";
+      body: string;
+      createdAt: string;
+      toolResult?: ToolResult;
+    }
   | {
       id: string;
       role: "tilly";
@@ -790,6 +815,55 @@ export function mountTillyChatRoutes(app: Express): void {
           console.warn("[chat] reminder persist failed:", err);
         }
 
+        // Tool-extraction pass: did the user just ask Tilly to create a
+        // savings goal? If so, run the actual goal insert so the chat reply
+        // is backed by a real DB row, not a hallucinated promise. Same
+        // post-classifier shape as the reminder extractor above.
+        let toolResult:
+          | {
+              kind: "dream_created";
+              dreamId: string;
+              name: string;
+              targetAmount: number;
+              monthlyContribution: number;
+              emoji: string;
+            }
+          | null = null;
+        try {
+          const extracted = await extractDreamCreate({
+            userMessage: message,
+            tillyReply: text,
+            meta: { userId },
+          });
+          if (extracted) {
+            const weekly = extracted.monthlyContribution
+              ? Math.round((extracted.monthlyContribution / 4.33) * 100) / 100
+              : 0;
+            const [goalRow] = await db
+              .insert(goals)
+              .values({
+                coupleId: householdId,
+                name: extracted.name,
+                targetAmount: extracted.targetAmount,
+                savedAmount: 0,
+                emoji: extracted.emoji || "✺",
+                color: "#7C3AED",
+                weeklyAuto: weekly > 0 ? weekly : null,
+              })
+              .returning();
+            toolResult = {
+              kind: "dream_created",
+              dreamId: goalRow.id,
+              name: goalRow.name,
+              targetAmount: goalRow.targetAmount,
+              monthlyContribution: extracted.monthlyContribution,
+              emoji: goalRow.emoji,
+            };
+          }
+        } catch (toolErr) {
+          console.warn("[chat] dream-create extractor failed:", toolErr);
+        }
+
         const [tillyRow] = await db
           .insert(guardianConversations)
           .values({
@@ -806,6 +880,7 @@ export function mountTillyChatRoutes(app: Express): void {
           kind: "text",
           body: text,
           createdAt: tillyRow.createdAt.toISOString(),
+          toolResult: toolResult ?? undefined,
         };
         emitEventAsync({
           userId,

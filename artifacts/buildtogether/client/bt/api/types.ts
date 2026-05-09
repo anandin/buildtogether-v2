@@ -80,9 +80,31 @@ export type WaitSource = { source: string; url: string; evidence: string };
 export type ScoutStatus = "queued" | "running" | "done" | "failed";
 export type WaitConfidence = "low" | "medium" | "high";
 
+/**
+ * Tool execution result attached to a Tilly turn. The server runs an
+ * extract-then-execute pass after generating Tilly's text reply; when a
+ * tool fires (e.g. createDream), the resulting payload comes back here so
+ * the chat surface can render an inline preview card below the bubble.
+ */
+export type TillyToolResult = {
+  kind: "dream_created";
+  dreamId: string;
+  name: string;
+  targetAmount: number;
+  monthlyContribution: number;
+  emoji: string;
+};
+
 export type TillyMessage =
   | { id: string; role: "user"; kind: "text"; body: string; createdAt: string }
-  | { id: string; role: "tilly"; kind: "text"; body: string; createdAt: string }
+  | {
+      id: string;
+      role: "tilly";
+      kind: "text";
+      body: string;
+      createdAt: string;
+      toolResult?: TillyToolResult;
+    }
   | { id: string; role: "tilly"; kind: "typing" }
   | {
       id: string;
