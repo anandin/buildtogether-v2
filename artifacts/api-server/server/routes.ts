@@ -279,7 +279,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 paidBy,
                 splitMethod: "joint",
                 source: "plaid",
-                tags: ruleTags as any,
+                tags: ruleTags,
                 note: ruleNote,
               }).returning();
               await txn.update(plaidTransactions)
@@ -5215,7 +5215,7 @@ Return just the message text.`;
                   paidBy,
                   splitMethod: "joint",
                   note: cleanNote,
-                  tags: cleanTags as any,
+                  tags: cleanTags,
                   source: "plaid",
                 })
                 .returning();

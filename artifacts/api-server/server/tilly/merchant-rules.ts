@@ -17,17 +17,14 @@ import { db } from "../db";
 import { merchantRules, type MerchantRule } from "../../shared/schema";
 
 /**
- * Auto-accept safety cap. Two accepts is enough confidence for the small,
- * recurring stuff this is meant to handle (Spotify, Starbucks, transit) but
- * NOT for broad merchants where a learned coffee category could swallow a
- * surprise $400 marketplace splurge. So we keep the per-tx cap conservative
- * ($250) until the rule has proven itself across 5 consistent accepts;
- * after that we trust it up to $5,000. Anything bigger always falls through
- * to the pending queue with the rule's tags pre-filled (tag_only).
+ * Auto-accept safety cap (per task spec): trust up to $5,000 per tx after
+ * we've seen the same merchant accepted with the same category at least
+ * twice. Anything bigger falls through to pending with the rule's tags
+ * pre-filled (tag_only) so the user explicitly confirms a large charge.
+ * The cap intentionally stops Plaid from silently writing huge expenses
+ * even after a rule is learned.
  */
-const AUTO_ACCEPT_AMOUNT_CAP_LOW = 250;
-const AUTO_ACCEPT_AMOUNT_CAP_HIGH = 5000;
-const AUTO_ACCEPT_AMOUNT_CAP_LIFT_AFTER = 5;
+const AUTO_ACCEPT_AMOUNT_CAP = 5000;
 
 export type PlaidTxLike = {
   amount: number;
@@ -218,10 +215,7 @@ export function applyRuleToPlaidTx(plaidTx: PlaidTxLike, rule: MerchantRule | nu
   if (rule.autoIgnore) return { kind: "auto_ignore", ruleId: rule.id };
   if (rule.autoAccept) {
     const amt = Math.abs(plaidTx.amount);
-    const cap = rule.hitCount >= AUTO_ACCEPT_AMOUNT_CAP_LIFT_AFTER
-      ? AUTO_ACCEPT_AMOUNT_CAP_HIGH
-      : AUTO_ACCEPT_AMOUNT_CAP_LOW;
-    if (amt <= cap) {
+    if (amt <= AUTO_ACCEPT_AMOUNT_CAP) {
       return {
         kind: "auto_accept",
         category: rule.category ?? "other",

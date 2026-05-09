@@ -442,6 +442,20 @@ function EmptyState({
 // Preset tags offered as quick chips. Free-text note covers anything else.
 // Kept short so it fits without scrolling; users can still type custom context
 // in the note field.
+// Task #23 — common expense categories shown as chips on grouped pending
+// cards so the user can override Plaid's suggestion before bulk-accepting.
+const GROUP_CATEGORIES = [
+  "groceries",
+  "dining",
+  "transport",
+  "utilities",
+  "entertainment",
+  "shopping",
+  "health",
+  "subscriptions",
+  "other",
+];
+
 const PRESET_TAGS = [
   "one-off",
   "gift",
@@ -767,6 +781,11 @@ function GroupCard({
   const [tags, setTags] = useState<string[]>(group.suggestedTags ?? []);
   const [note, setNote] = useState<string>(group.suggestedNote ?? "");
   const [applyToFuture, setApplyToFuture] = useState<boolean>(false);
+  // Task #23 — let the user override the suggested category before
+  // bulk-accepting. This drives the "Accept-as-X" requirement: pick a
+  // category once and it both writes the expense rows and (with the
+  // toggle) teaches the merchant rule to use it next time.
+  const [category, setCategory] = useState<string | null>(group.suggestedCategory ?? null);
 
   const toggleTag = (tag: string) => {
     setTags((prev) =>
@@ -900,6 +919,53 @@ function GroupCard({
 
       {showContext ? (
         <View style={{ gap: 10 }}>
+          <View style={{ gap: 4 }}>
+            <Text
+              style={{
+                color: t.inkMute,
+                fontFamily: BTFonts.mono,
+                fontSize: 9,
+                letterSpacing: 0.8,
+                textTransform: "uppercase",
+              }}
+            >
+              Accept all as
+            </Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+              {GROUP_CATEGORIES.map((cat) => {
+                const on = category === cat;
+                return (
+                  <Pressable
+                    key={cat}
+                    onPress={() => setCategory(on ? null : cat)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: on }}
+                    accessibilityLabel={`Category ${cat}`}
+                    style={({ pressed }) => ({
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                      borderRadius: 999,
+                      borderWidth: 1,
+                      borderColor: on ? t.ink : t.rule,
+                      backgroundColor: on ? t.ink : (pressed ? t.chip : "transparent"),
+                    })}
+                  >
+                    <Text
+                      style={{
+                        color: on ? t.surface : t.inkSoft,
+                        fontFamily: BTFonts.sans,
+                        fontSize: 11,
+                        fontWeight: on ? "700" : "500",
+                        textTransform: "capitalize",
+                      }}
+                    >
+                      {cat}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
             {PRESET_TAGS.map((tag) => {
               const on = tags.includes(tag);
@@ -994,7 +1060,7 @@ function GroupCard({
         <Pressable
           onPress={() =>
             onAccept({
-              category: group.suggestedCategory,
+              category,
               tags: tags.length > 0 ? tags : null,
               note: note.trim() || null,
               applyToFuture,

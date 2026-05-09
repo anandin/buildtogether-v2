@@ -146,7 +146,7 @@ export const expenses = pgTable("expenses", {
   // Free-form strings — UI offers a preset list but accepts custom too.
   // Read by Tilly when she summarizes spend patterns so she can say things like
   // "most of last month's bumps were tagged 'gift'".
-  tags: jsonb("tags"),
+  tags: jsonb("tags").$type<string[] | null>(),
   isRecurring: boolean("is_recurring").default(false),
   recurringFrequency: text("recurring_frequency"),
   receiptImage: text("receipt_image"),

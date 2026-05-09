@@ -256,6 +256,7 @@ export function BTGuardian() {
             scouting={tilly.isScouting}
             askingWait={tilly.isAskingWait}
             confirmedReminder={tilly.confirmedReminders[m.id] ?? null}
+            onPrefillCompose={(seed) => setDraft(`About "${seed}" — `)}
           />
         ))}
         {thinking ? <TypingBubble /> : null}
@@ -412,6 +413,7 @@ function Bubble({
   scouting,
   askingWait,
   confirmedReminder,
+  onPrefillCompose,
 }: {
   m: Msg;
   onScout: (query: string) => void;
@@ -419,6 +421,9 @@ function Bubble({
   scouting: boolean;
   askingWait: boolean;
   confirmedReminder: { label: string; fireAt: string } | null;
+  // Task #23 — tap an open Tilly question to prefill the composer with
+  // the user's reply seed so they can answer inline without leaving chat.
+  onPrefillCompose?: (seed: string) => void;
 }) {
   const { t } = useBT();
 
@@ -561,15 +566,29 @@ function Bubble({
             </View>
           ) : null}
           {m.openQuestions && m.openQuestions.length > 0 ? (
-            <View style={{ gap: 4 }}>
-              <BTLabel color={t.inkMute} size={10}>Still wondering</BTLabel>
+            <View style={{ gap: 6 }}>
+              <BTLabel color={t.inkMute} size={10}>Still wondering — tap to answer below</BTLabel>
               {m.openQuestions.map((q, i) => (
-                <Text
+                <Pressable
                   key={`q${i}`}
-                  style={{ fontFamily: BTFonts.serif, fontSize: 14, color: t.inkSoft, fontStyle: "italic" }}
+                  onPress={() => onPrefillCompose?.(q)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Answer: ${q}`}
+                  style={({ pressed }) => ({
+                    paddingVertical: 6,
+                    paddingHorizontal: 10,
+                    borderRadius: 10,
+                    borderWidth: 1,
+                    borderColor: t.rule,
+                    backgroundColor: pressed ? t.chip : "transparent",
+                  })}
                 >
-                  — {q}
-                </Text>
+                  <Text
+                    style={{ fontFamily: BTFonts.serif, fontSize: 14, color: t.inkSoft, fontStyle: "italic" }}
+                  >
+                    — {q}
+                  </Text>
+                </Pressable>
               ))}
             </View>
           ) : null}
