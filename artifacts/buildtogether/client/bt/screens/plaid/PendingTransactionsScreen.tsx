@@ -493,6 +493,11 @@ const GROUP_CATEGORIES = [
   "shopping",
   "health",
   "subscriptions",
+  // New buckets that used to all collapse into "other" — visible to the
+  // user as chips so the override path matches what Tilly auto-picks.
+  "loans",
+  "fees",
+  "education",
   "other",
 ];
 
@@ -621,11 +626,15 @@ function PendingRow({
         </Text>
       </View>
 
-      {/* Tilly's category guess — only shown when the row has no merchant
-          rule yet AND Plaid couldn't confidently categorize it. Confirming
-          here trains a merchant rule so we never ask again. Disagreeing in
-          the note expander is logged to ai_corrections for tuning. */}
-      {txn.aiSuggestedCategory && !txn.ourCategory ? (
+      {/* Tilly's category guess — show whenever the AI ran, even when we
+          already have an ourCategory from Plaid mapping. This is what makes
+          the row feel "AI-categorized" instead of a row that defaulted to
+          OTHER. Hide only when AI's guess matches ourCategory exactly (no
+          new info to surface) or AI didn't run at all. Confirming trains a
+          merchant rule; disagreeing in the note expander is logged to
+          ai_corrections for prompt tuning. */}
+      {txn.aiSuggestedCategory &&
+      txn.aiSuggestedCategory !== txn.ourCategory ? (
         <View
           style={{
             flexDirection: "row",

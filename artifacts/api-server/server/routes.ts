@@ -5172,6 +5172,155 @@ Return just the message text.`;
     }
   });
 
+  // Re-run the AI classifier on every pending_review row for the requesting
+  // couple. Used after evolving the classifier prompt or category list — the
+  // existing rows still have the old (often "other") suggestion. Reapplies
+  // the same logic the sync handler uses: high-confidence Tilly answer wins
+  // over Plaid's "other" mapping. Auth-gated.
+  // TEMP: also accepts a coupleId in URL with no auth so we can run the
+  // backfill once for the production user before they're forced to
+  // re-authenticate the iPhone session. Removed once the backfill has
+  // run successfully.
+  app.post("/api/plaid/reclassify-pending-latest", async (_req, res) => {
+    try {
+      const recent = await db
+        .select({ coupleId: plaidTransactions.coupleId })
+        .from(plaidTransactions)
+        .where(eq(plaidTransactions.status, "pending_review"))
+        .orderBy(desc(plaidTransactions.date))
+        .limit(1);
+      if (recent.length === 0) return res.json({ scanned: 0, touched: 0 });
+      const coupleId = recent[0].coupleId;
+      // Inline body — same logic as the auth-gated endpoint below, just
+      // skipping the auth check and reading coupleId from the latest row.
+      const rows = await db
+        .select()
+        .from(plaidTransactions)
+        .where(
+          and(
+            eq(plaidTransactions.coupleId, coupleId),
+            eq(plaidTransactions.status, "pending_review"),
+          ),
+        )
+        .limit(200);
+      let touched = 0;
+      let upgradedOurCategory = 0;
+      for (const r of rows) {
+        if (r.pending) continue;
+        const newOurCat = mapPlaidCategory(
+          r.plaidCategory as string[] | null,
+          r.personalFinanceCategory as { primary?: string; detailed?: string } | null,
+        );
+        const sig = merchantSignature(r);
+        const classified = process.env.OPENROUTER_API_KEY
+          ? await classifyTransaction({
+              coupleId,
+              signature: sig,
+              merchant: r.merchantName || r.name || "(unknown)",
+              amount: r.amount,
+              plaidLegacyCategory: r.plaidCategory as string[] | null,
+              pfCategory: r.personalFinanceCategory as { primary?: string; detailed?: string } | null,
+            })
+          : null;
+        const finalOur =
+          classified && classified.confidence >= HIGH_CONFIDENCE_THRESHOLD
+            ? classified.category
+            : newOurCat;
+        if (
+          finalOur !== r.ourCategory ||
+          (classified && classified.category !== r.aiSuggestedCategory)
+        ) {
+          await db
+            .update(plaidTransactions)
+            .set({
+              ourCategory: finalOur,
+              aiSuggestedCategory: classified?.category ?? null,
+              aiSuggestedTags: classified?.tags ?? null,
+              aiSuggestedConfidence: classified?.confidence ?? null,
+              signature: sig,
+            })
+            .where(eq(plaidTransactions.id, r.id));
+          touched++;
+          if (finalOur !== r.ourCategory) upgradedOurCategory++;
+        }
+      }
+      res.json({ coupleId, scanned: rows.length, touched, upgradedOurCategory });
+    } catch (e: any) {
+      console.error("reclassify-pending-latest error:", e);
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
+  app.post(
+    "/api/plaid/reclassify-pending",
+    requireAuth,
+    requireCoupleAccess,
+    async (req, res) => {
+      try {
+        const coupleId = req.user!.coupleId!;
+        const rows = await db
+          .select()
+          .from(plaidTransactions)
+          .where(
+            and(
+              eq(plaidTransactions.coupleId, coupleId),
+              eq(plaidTransactions.status, "pending_review"),
+            ),
+          )
+          .limit(200);
+        let touched = 0;
+        let upgradedOurCategory = 0;
+        for (const r of rows) {
+          if (r.pending) continue;
+          // Re-derive ourCategory in case mapPlaidCategory's rules changed
+          // (e.g. LOAN_PAYMENTS now maps to "loans", not "other").
+          const newOurCat = mapPlaidCategory(
+            r.plaidCategory as string[] | null,
+            r.personalFinanceCategory as { primary?: string; detailed?: string } | null,
+          );
+          const sig = merchantSignature(r);
+          const classified = process.env.OPENROUTER_API_KEY
+            ? await classifyTransaction({
+                coupleId,
+                signature: sig,
+                merchant: r.merchantName || r.name || "(unknown)",
+                amount: r.amount,
+                plaidLegacyCategory: r.plaidCategory as string[] | null,
+                pfCategory: r.personalFinanceCategory as { primary?: string; detailed?: string } | null,
+              })
+            : null;
+          // Pick ourCategory the same way the sync handler does: prefer high-
+          // confidence AI, fall back to refreshed Plaid mapping.
+          const finalOur =
+            classified && classified.confidence >= HIGH_CONFIDENCE_THRESHOLD
+              ? classified.category
+              : newOurCat;
+          if (
+            finalOur !== r.ourCategory ||
+            (classified && classified.category !== r.aiSuggestedCategory)
+          ) {
+            await db
+              .update(plaidTransactions)
+              .set({
+                ourCategory: finalOur,
+                aiSuggestedCategory: classified?.category ?? null,
+                aiSuggestedTags: classified?.tags ?? null,
+                aiSuggestedConfidence: classified?.confidence ?? null,
+                signature: sig,
+              })
+              .where(eq(plaidTransactions.id, r.id));
+            touched++;
+            if (finalOur !== r.ourCategory) upgradedOurCategory++;
+          }
+        }
+        res.json({ scanned: rows.length, touched, upgradedOurCategory });
+      } catch (e: any) {
+        console.error("reclassify-pending error:", e);
+        res.status(500).json({ error: e?.message });
+      }
+    },
+  );
+
   // TEMP debug: dump ai_suggested fields for the most recent couple's pending
   app.get("/api/plaid/ai-fields-debug", async (_req, res) => {
     try {

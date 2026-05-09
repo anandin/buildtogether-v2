@@ -141,9 +141,13 @@ export function mapPlaidCategory(
     if (primary === "HOME_IMPROVEMENT") return "shopping";
     if (primary === "GENERAL_SERVICES") return "subscriptions";
     if (primary === "GOVERNMENT_AND_NON_PROFIT") return "other";
-    if (primary === "LOAN_PAYMENTS") return "other";
+    // Loan payments are real spend from the user's POV — car loans, student
+    // loans, credit-card pay-downs all reduce the bank balance. Show them
+    // under their own bucket instead of dumping into "other".
+    if (primary === "LOAN_PAYMENTS") return "loans";
     if (primary === "TRANSFER_IN" || primary === "TRANSFER_OUT") return "other";
-    if (primary === "BANK_FEES") return "other";
+    // Bank/account fees are tiny but worth tracking — students notice them.
+    if (primary === "BANK_FEES") return "fees";
     if (primary === "INCOME") return "other";
   }
 
