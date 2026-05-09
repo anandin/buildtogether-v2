@@ -836,21 +836,38 @@ export function mountTillyChatRoutes(app: Express): void {
             meta: { userId },
           });
           if (extracted) {
-            const weekly = extracted.monthlyContribution
-              ? Math.round((extracted.monthlyContribution / 4.33) * 100) / 100
-              : 0;
-            const [goalRow] = await db
-              .insert(goals)
-              .values({
-                coupleId: householdId,
-                name: extracted.name,
-                targetAmount: extracted.targetAmount,
-                savedAmount: 0,
-                emoji: extracted.emoji || "✺",
-                color: "#7C3AED",
-                weeklyAuto: weekly > 0 ? weekly : null,
-              })
-              .returning();
+            // Idempotency: if a goal with the same lowercased name already
+            // exists for this couple, surface it as the toolResult instead
+            // of inserting a duplicate. The user asked for "Switch 2" three
+            // times in three turns — they should see the same dream each
+            // time, not three identical entries cluttering the Dreams tab.
+            const existing = await db
+              .select()
+              .from(goals)
+              .where(eq(goals.coupleId, householdId))
+              .limit(50);
+            const normalizedNew = extracted.name.trim().toLowerCase();
+            const matched = existing.find(
+              (g) => g.name.trim().toLowerCase() === normalizedNew,
+            );
+            const goalRow =
+              matched ??
+              (
+                await db
+                  .insert(goals)
+                  .values({
+                    coupleId: householdId,
+                    name: extracted.name,
+                    targetAmount: extracted.targetAmount,
+                    savedAmount: 0,
+                    emoji: extracted.emoji || "✺",
+                    color: "#7C3AED",
+                    weeklyAuto: extracted.monthlyContribution
+                      ? Math.round((extracted.monthlyContribution / 4.33) * 100) / 100
+                      : null,
+                  })
+                  .returning()
+              )[0];
             toolResult = {
               kind: "dream_created",
               dreamId: goalRow.id,

@@ -5460,6 +5460,35 @@ Return just the message text.`;
     },
   );
 
+  // TEMP debug: list all goals + run dream-extractor against a sample input
+  app.get("/api/tilly/dreams-debug", async (req, res) => {
+    try {
+      const coupleId = (req.query.coupleId as string | undefined)?.trim();
+      if (!coupleId) return res.status(400).json({ error: "coupleId required" });
+      const goalRows = await db
+        .select()
+        .from(goals)
+        .where(eq(goals.coupleId, coupleId))
+        .orderBy(desc(goals.createdAt));
+      const userMsg = (req.query.user as string) || "Create a dream to track the switch 2";
+      const tillyReply = (req.query.tilly as string) || "Already done — I set up the Switch 2 dream a moment ago.";
+      const { extractDreamCreate } = await import("./tilly/extract-dream-create");
+      const extracted = await extractDreamCreate({
+        userMessage: userMsg,
+        tillyReply,
+        meta: {},
+      });
+      res.json({
+        coupleId,
+        goalCount: goalRows.length,
+        goals: goalRows.map((g) => ({ id: g.id, name: g.name, target: g.targetAmount, createdAt: g.createdAt })),
+        extractorTest: { userMsg, tillyReply, extracted },
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
   // TEMP debug: dump every Canada-Txd-like row across plaid_tx + expense
   app.get("/api/plaid/canada-txd-debug", async (req, res) => {
     try {
