@@ -626,15 +626,43 @@ function PendingRow({
         </Text>
       </View>
 
-      {/* Tilly's category guess — show whenever the AI ran, even when we
-          already have an ourCategory from Plaid mapping. This is what makes
-          the row feel "AI-categorized" instead of a row that defaulted to
-          OTHER. Hide only when AI's guess matches ourCategory exactly (no
-          new info to surface) or AI didn't run at all. Confirming trains a
-          merchant rule; disagreeing in the note expander is logged to
-          ai_corrections for prompt tuning. */}
-      {txn.aiSuggestedCategory &&
-      txn.aiSuggestedCategory !== txn.ourCategory ? (
+      {/* Tilly's reasoning — render whenever the classifier left us a
+          rationale string. This is what makes the row feel AI-native:
+          the LOANS / FEES / RESTAURANTS badge already shows the answer,
+          this line shows the thinking ("monthly Lincoln auto-finance —
+          looks like a car loan"). When confidence is below the
+          high-conf threshold we add the % so the user knows to confirm.
+          Older rows synced before reasoning was persisted fall through
+          to the generic "Tilly thinks…" line. */}
+      {txn.aiSuggestedReasoning ? (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "flex-start",
+            gap: 8,
+            paddingTop: 4,
+          }}
+        >
+          <Text style={{ fontSize: 14, lineHeight: 18 }}>{"✨"}</Text>
+          <Text
+            style={{
+              flex: 1,
+              color: t.inkSoft,
+              fontFamily: BTFonts.sans,
+              fontSize: 12,
+              lineHeight: 16,
+            }}
+            numberOfLines={3}
+          >
+            {txn.aiSuggestedReasoning}
+            {typeof txn.aiSuggestedConfidence === "number" &&
+            txn.aiSuggestedConfidence < 0.85
+              ? ` · ${Math.round(txn.aiSuggestedConfidence * 100)}% sure — confirm?`
+              : ""}
+          </Text>
+        </View>
+      ) : txn.aiSuggestedCategory &&
+        txn.aiSuggestedCategory !== txn.ourCategory ? (
         <View
           style={{
             flexDirection: "row",
@@ -661,7 +689,7 @@ function PendingRow({
             {typeof txn.aiSuggestedConfidence === "number"
               ? ` (${Math.round(txn.aiSuggestedConfidence * 100)}% sure)`
               : ""}
-            . Tap Accept to confirm, or open Add note to change it.
+            .
           </Text>
         </View>
       ) : null}

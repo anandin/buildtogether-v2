@@ -295,4 +295,8 @@ export type PlaidPendingTransaction = {
   aiSuggestedCategory: string | null;
   aiSuggestedTags: string[] | null;
   aiSuggestedConfidence: number | null;
+  // One-sentence rationale Tilly returns alongside the category. Renders
+  // verbatim on the Pending card so LOANS/FEES badges feel reasoned, not
+  // silently assigned. Null when classification was skipped/failed/older.
+  aiSuggestedReasoning: string | null;
 };

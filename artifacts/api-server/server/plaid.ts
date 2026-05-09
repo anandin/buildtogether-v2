@@ -216,6 +216,32 @@ export const AUTO_ACCEPT_AMOUNT_CAP = 500;
  * Otherwise auto-accept. Caller should already have run
  * shouldImportPlaidTransaction() first to filter out income/refunds.
  */
+/**
+ * Complementary path to shouldAutoAcceptPlaidTransaction: when Tilly's
+ * classifier returns a very-high-confidence answer on a tiny or fee-shaped
+ * row, skip the Pending queue entirely. The user said it explicitly: "Annual
+ * Fee at 0.95 confidence, Withdrawal Fees at 0.95 — these don't need user
+ * review." Bigger or lower-confidence rows still hit Pending so the user can
+ * eyeball them.
+ *
+ * Returns true for:
+ *   - confidence ≥ 0.9 AND amount < $30, OR
+ *   - confidence ≥ 0.9 AND PFC primary = BANK_FEES
+ *
+ * Caller MUST also confirm the row isn't pending (Plaid still shaping it)
+ * before honouring this. Same `tx.pending` guard the rule path uses.
+ */
+export function shouldAutoAcceptByAI(
+  aiConfidence: number | null | undefined,
+  tx: { amount: number; personal_finance_category?: any },
+): boolean {
+  if (typeof aiConfidence !== "number" || aiConfidence < 0.9) return false;
+  const primary = (tx.personal_finance_category?.primary || "").toUpperCase();
+  if (primary === "BANK_FEES") return true;
+  if (Math.abs(tx.amount) < 30) return true;
+  return false;
+}
+
 export function shouldAutoAcceptPlaidTransaction(
   tx: { amount: number; name?: string | null; merchant_name?: string | null; category?: string[] | null; personal_finance_category?: any },
 ): boolean {

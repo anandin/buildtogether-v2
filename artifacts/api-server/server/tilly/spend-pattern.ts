@@ -171,7 +171,15 @@ function categoryHue(name: string): SpendCategory["hue"] {
   if (n.includes("coffee") || n.includes("cafe")) return "accent";
   if (n.includes("food") || n.includes("restaurant") || n.includes("doordash")) return "good";
   if (n.includes("groceries")) return "accent2";
-  if (n.includes("school") || n.includes("textbook")) return "warn";
+  if (n.includes("school") || n.includes("textbook") || n === "education") return "warn";
+  // Fixed-cost commitments (car/student/CC loans) — surface with the
+  // alternate accent so they read as distinct from discretionary spend
+  // and don't disappear into the inkSoft default.
+  if (n === "loans" || n.includes("loan")) return "accent2";
+  // Recurring small drains (account fees, NSF, ATM) — flag as warn so a
+  // student who's accumulating $40/mo in TD fees actually notices.
+  if (n === "fees" || n.includes("fee")) return "warn";
+  if (n === "transport" || n.includes("transit")) return "good";
   return "inkSoft";
 }
 

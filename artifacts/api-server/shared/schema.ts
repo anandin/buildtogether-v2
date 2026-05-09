@@ -833,6 +833,11 @@ export const plaidTransactions = pgTable("plaid_transactions", {
   aiSuggestedCategory: text("ai_suggested_category"),
   aiSuggestedTags: jsonb("ai_suggested_tags").$type<string[] | null>(),
   aiSuggestedConfidence: real("ai_suggested_confidence"),
+  // One-sentence rationale the classifier returns alongside its category
+  // pick — e.g. "monthly Lincoln auto-finance — looks like a car loan".
+  // Surfaced in the Pending card so the row doesn't just say LOANS, it
+  // says LOANS *because*, which is what makes Tilly feel AI-native.
+  aiSuggestedReasoning: text("ai_suggested_reasoning"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

@@ -19,6 +19,7 @@ import {
   users,
   households,
   plaidItems,
+  plaidTransactions,
   tillyMemory,
   tillyTonePref,
   goals,
@@ -222,6 +223,53 @@ export function mountTillyInsightsRoutes(app: Express): void {
           : "Connect a bank to see your weekly room",
       };
 
+      // Pass a pending-queue summary to the LLM so the home screen invite
+      // can reference something concrete ("Want to talk about your $4K in
+      // loan payments?") instead of the generic "Anything you want to
+      // think through?" — that's what makes the page feel personal rather
+      // than templated. Computed lazily; failure is non-fatal.
+      let pendingSummary: {
+        count: number;
+        totalAmount: number;
+        topCategories: Array<{ category: string; count: number; amount: number }>;
+      } | null = null;
+      try {
+        const pendingRows = await db
+          .select({
+            amount: plaidTransactions.amount,
+            category: plaidTransactions.ourCategory,
+          })
+          .from(plaidTransactions)
+          .where(
+            and(
+              eq(plaidTransactions.coupleId, householdId),
+              eq(plaidTransactions.status, "pending_review"),
+            ),
+          )
+          .limit(200);
+        if (pendingRows.length > 0) {
+          const byCat = new Map<string, { count: number; amount: number }>();
+          let total = 0;
+          for (const r of pendingRows) {
+            total += r.amount;
+            const cat = r.category || "other";
+            const c = byCat.get(cat) ?? { count: 0, amount: 0 };
+            c.count += 1;
+            c.amount += r.amount;
+            byCat.set(cat, c);
+          }
+          pendingSummary = {
+            count: pendingRows.length,
+            totalAmount: total,
+            topCategories: [...byCat.entries()]
+              .map(([category, v]) => ({ category, ...v }))
+              .sort((a, b) => b.amount - a.amount),
+          };
+        }
+      } catch (pendingErr) {
+        console.warn("/api/tilly/today pending summary fallback:", pendingErr);
+      }
+
       // Try LLM-generated copy. When it fails (no key, rate-limit, transient
       // upstream error) we degrade to a deterministic greeting+invite so the
       // user always sees a coherent home, never a 500. The screen treats
@@ -237,6 +285,7 @@ export function mountTillyInsightsRoutes(app: Express): void {
           numbers,
           dreamTile,
           recentMemorySnippets: snippets,
+          pendingSummary,
         });
       } catch (llmErr) {
         console.warn("/api/tilly/today llm fallback:", llmErr);

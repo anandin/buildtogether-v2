@@ -382,6 +382,7 @@ const CRITICAL_STATEMENTS: string[] = [
   // rule auto-accepted which row.
   `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "signature" text`,
   `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "applied_rule_id" varchar`,
+  `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "ai_suggested_reasoning" text`,
   `CREATE INDEX IF NOT EXISTS "plaid_transactions_couple_status_signature_idx"
      ON "plaid_transactions" ("couple_id", "status", "signature")`,
   `CREATE TABLE IF NOT EXISTS "merchant_rules" (

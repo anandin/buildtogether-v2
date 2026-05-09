@@ -43,7 +43,7 @@ import {
 } from "../shared/schema";
 import { detectPatterns, savePatterns, createNudgeFromPattern, getActivePatterns, getPendingNudges } from "./pattern-detection";
 import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt, buildQuickAddPrompt, buildGuardianCoachPrompt, buildGuardianIntentClassifierPrompt, type GuardianCoachContext } from "./prompts";
-import { getPlaidClient, getPlaidRedirectUri, isPlaidConfigured, mapPlaidCategory, shouldImportPlaidTransaction, shouldAutoAcceptPlaidTransaction } from "./plaid";
+import { getPlaidClient, getPlaidRedirectUri, isPlaidConfigured, mapPlaidCategory, shouldImportPlaidTransaction, shouldAutoAcceptPlaidTransaction, shouldAutoAcceptByAI } from "./plaid";
 import {
   applyRuleToPlaidTx,
   findRule,
@@ -222,7 +222,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // silently and become a real category in the spend feed; lower
         // confidence falls through into pending_review with the
         // suggestion attached so the user confirms in one tap.
-        let aiSuggestion: { category: string; tags: string[]; confidence: number } | null = null;
+        let aiSuggestion: {
+          category: string;
+          tags: string[];
+          confidence: number;
+          reasoning: string;
+        } | null = null;
         if (
           ruleOutcome.kind === "none" &&
           (ourCat === "other" || !ourCat) &&
@@ -242,6 +247,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               category: classified.category,
               tags: classified.tags,
               confidence: classified.confidence,
+              reasoning: classified.reasoning,
             };
           }
         }
@@ -260,7 +266,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // duplicate or stale expense rows.
         const autoAcceptByRule = ruleOutcome.kind === "auto_accept";
         const autoIgnoreByRule = ruleOutcome.kind === "auto_ignore";
-        const autoAccept = !tx.pending && (autoAcceptByRule || shouldAutoAcceptPlaidTransaction(tx));
+        const autoAcceptByAI = shouldAutoAcceptByAI(
+          aiSuggestion?.confidence ?? null,
+          tx,
+        );
+        const autoAccept =
+          !tx.pending &&
+          (autoAcceptByRule ||
+            shouldAutoAcceptPlaidTransaction(tx) ||
+            autoAcceptByAI);
         const ruleId =
           ruleOutcome.kind === "auto_accept" ||
           ruleOutcome.kind === "auto_ignore" ||
@@ -305,6 +319,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               aiSuggestedCategory: aiSuggestion?.category ?? null,
               aiSuggestedTags: aiSuggestion?.tags ?? null,
               aiSuggestedConfidence: aiSuggestion?.confidence ?? null,
+              aiSuggestedReasoning: aiSuggestion?.reasoning ?? null,
             }).returning();
 
             if (autoAccept && !autoIgnoreByRule) {
@@ -4955,7 +4970,13 @@ Return just the message text.`;
             category: (ptx.plaidCategory as string[] | null) || null,
             personal_finance_category: (ptx.personalFinanceCategory as { primary?: string; detailed?: string } | null) || null,
           };
-          if (!shouldAutoAcceptPlaidTransaction(txShape)) continue;
+          // Either path qualifies: Plaid's conservative auto-accept (real
+          // spend categorized cleanly), OR Tilly's AI is very confident on
+          // a tiny / fee-shaped row that the user said they don't want to
+          // review.
+          const okPlaid = shouldAutoAcceptPlaidTransaction(txShape);
+          const okAI = shouldAutoAcceptByAI(ptx.aiSuggestedConfidence ?? null, txShape);
+          if (!okPlaid && !okAI) continue;
 
           const paidBy = roleByItem.get(ptx.plaidItemId) || "partner1";
 
@@ -5237,6 +5258,7 @@ Return just the message text.`;
               aiSuggestedCategory: classified?.category ?? null,
               aiSuggestedTags: classified?.tags ?? null,
               aiSuggestedConfidence: classified?.confidence ?? null,
+              aiSuggestedReasoning: classified?.reasoning ?? null,
               signature: sig,
             })
             .where(eq(plaidTransactions.id, r.id));
@@ -5306,6 +5328,7 @@ Return just the message text.`;
                 aiSuggestedCategory: classified?.category ?? null,
                 aiSuggestedTags: classified?.tags ?? null,
                 aiSuggestedConfidence: classified?.confidence ?? null,
+                aiSuggestedReasoning: classified?.reasoning ?? null,
                 signature: sig,
               })
               .where(eq(plaidTransactions.id, r.id));
