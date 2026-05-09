@@ -5202,6 +5202,91 @@ Return just the message text.`;
   // backfill once for the production user before they're forced to
   // re-authenticate the iPhone session. Removed once the backfill has
   // run successfully.
+  // Backfill historical accepted expenses with current categorization rules.
+  // Walks every expense with source='plaid' for the given couple, looks up
+  // the original plaid_transaction, re-derives ourCategory + ai suggestion
+  // through the current mapPlaidCategory + classifier, and updates BOTH the
+  // expense row and the plaid_transaction row when the category changes.
+  // No-auth so I can run it once for the production user; will be removed.
+  app.post("/api/plaid/reclassify-expenses", async (req, res) => {
+    try {
+      const coupleId = (req.query.coupleId as string | undefined)?.trim();
+      if (!coupleId) return res.status(400).json({ error: "coupleId required" });
+      // Join plaid_tx to expense via expense_id link (plaid_transactions.expense_id)
+      const rows = await db
+        .select({
+          ptx: plaidTransactions,
+        })
+        .from(plaidTransactions)
+        .where(
+          and(
+            eq(plaidTransactions.coupleId, coupleId),
+            eq(plaidTransactions.status, "accepted"),
+          ),
+        )
+        .limit(500);
+      let touched = 0;
+      let categoryChanged = 0;
+      for (const r of rows) {
+        const ptx = r.ptx;
+        if (!ptx.expenseId) continue;
+        const newOurCat = mapPlaidCategory(
+          ptx.plaidCategory as string[] | null,
+          ptx.personalFinanceCategory as { primary?: string; detailed?: string } | null,
+        );
+        const sig = merchantSignature(ptx);
+        // Skip the LLM call when stored ourCategory already matches new
+        // mapping output AND we have a stored AI suggestion — saves
+        // 100s of Haiku calls on the historical sweep.
+        const needsLLM =
+          newOurCat === "other" && !ptx.aiSuggestedCategory;
+        const classified =
+          needsLLM && process.env.OPENROUTER_API_KEY
+            ? await classifyTransaction({
+                coupleId,
+                signature: sig,
+                merchant: ptx.merchantName || ptx.name || "(unknown)",
+                amount: ptx.amount,
+                plaidLegacyCategory: ptx.plaidCategory as string[] | null,
+                pfCategory: ptx.personalFinanceCategory as { primary?: string; detailed?: string } | null,
+              })
+            : null;
+        const finalCat =
+          classified && classified.confidence >= HIGH_CONFIDENCE_THRESHOLD
+            ? classified.category
+            : newOurCat;
+        if (finalCat !== ptx.ourCategory) {
+          await db.transaction(async (tx) => {
+            await tx
+              .update(plaidTransactions)
+              .set({
+                ourCategory: finalCat,
+                ...(classified
+                  ? {
+                      aiSuggestedCategory: classified.category,
+                      aiSuggestedTags: classified.tags,
+                      aiSuggestedConfidence: classified.confidence,
+                      aiSuggestedReasoning: classified.reasoning,
+                    }
+                  : {}),
+              })
+              .where(eq(plaidTransactions.id, ptx.id));
+            await tx
+              .update(expenses)
+              .set({ category: finalCat })
+              .where(eq(expenses.id, ptx.expenseId!));
+          });
+          categoryChanged++;
+        }
+        touched++;
+      }
+      res.json({ coupleId, scanned: rows.length, touched, categoryChanged });
+    } catch (e: any) {
+      console.error("reclassify-expenses error:", e);
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
   app.post("/api/plaid/reclassify-pending-latest", async (req, res) => {
     try {
       // Optional explicit override — useful when sandbox/test couples have
