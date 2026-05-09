@@ -207,7 +207,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const tx of data.added || []) {
         if (!shouldImportPlaidTransaction(tx)) continue;
 
-        const ourCat = mapPlaidCategory(tx.category, tx.personal_finance_category);
+        const ourCat = mapPlaidCategory(tx.category, tx.personal_finance_category, {
+          name: tx.name ?? null,
+          merchantName: tx.merchant_name ?? null,
+        });
         // Task #23: look up a learned merchant rule before deciding what
         // to do. The rule overrides Plaid's heuristic in either direction:
         // it can auto-accept (skip pending queue) OR auto-ignore (drop the
@@ -5240,6 +5243,7 @@ Return just the message text.`;
         const newOurCat = mapPlaidCategory(
           ptx.plaidCategory as string[] | null,
           ptx.personalFinanceCategory as { primary?: string; detailed?: string } | null,
+          { name: ptx.name, merchantName: ptx.merchantName },
         );
         const sig = merchantSignature(ptx);
         const needsLLM =
@@ -5337,6 +5341,7 @@ Return just the message text.`;
         const newOurCat = mapPlaidCategory(
           r.plaidCategory as string[] | null,
           r.personalFinanceCategory as { primary?: string; detailed?: string } | null,
+          { name: r.name, merchantName: r.merchantName },
         );
         const sig = merchantSignature(r);
         const classified = process.env.OPENROUTER_API_KEY
@@ -5409,6 +5414,7 @@ Return just the message text.`;
           const newOurCat = mapPlaidCategory(
             r.plaidCategory as string[] | null,
             r.personalFinanceCategory as { primary?: string; detailed?: string } | null,
+            { name: r.name, merchantName: r.merchantName },
           );
           const sig = merchantSignature(r);
           const classified = process.env.OPENROUTER_API_KEY

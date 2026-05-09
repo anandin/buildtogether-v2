@@ -227,11 +227,19 @@ export async function buildWeeklyPattern(
   if (txRows.length === 0) return null;
 
   // ─── Bars: this week's daily totals ─────────────────────────────────────
+  // Loans, taxes, and transfers are fixed obligations / debt service / money
+  // moved between own accounts — they're not discretionary spending and a
+  // single $5K loan payment on Monday otherwise dwarfs every other bar to a
+  // sliver. The bar chart is supposed to surface "where did your discretionary
+  // money go this week" — exclude the fixed-obligation buckets so the picture
+  // is informative.
+  const FIXED_OBLIGATION_CATS = new Set(["loans", "taxes", "transfers"]);
   const weekStartIso = weekStart.toISOString().slice(0, 10);
   const todayIdx = dayOfWeekIndex(now.toISOString().slice(0, 10));
   const dailyTotals = new Array(7).fill(0);
   const thisWeekTx = txRows.filter((t) => t.date >= weekStartIso);
   for (const t of thisWeekTx) {
+    if (FIXED_OBLIGATION_CATS.has((t.category || "").toLowerCase())) continue;
     const di = dayOfWeekIndex(t.date);
     dailyTotals[di] += t.amount;
   }

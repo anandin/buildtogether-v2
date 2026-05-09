@@ -122,7 +122,16 @@ export function getPlaidClient(): PlaidApi | null {
 export function mapPlaidCategory(
   legacyCategory?: string[] | null,
   pfCategory?: { primary?: string; detailed?: string } | null,
+  hints?: { name?: string | null; merchantName?: string | null } | null,
 ): string {
+  // Name-keyword override for tax remittance — Plaid sometimes returns
+  // these with PFC=null or a generic GOVERNMENT category, but the user
+  // recognizes them as taxes regardless of PFC noise.
+  const haystack = `${hints?.merchantName ?? ""} ${hints?.name ?? ""}`.toLowerCase();
+  if (haystack && /\b(cra|irs|tax(es|cdn)?|txd|hst remit|gst remit|property tax|bramptax)/.test(haystack)) {
+    return "taxes";
+  }
+
   // Prefer the new personal_finance_category when Plaid provides it.
   if (pfCategory?.detailed || pfCategory?.primary) {
     const detailed = (pfCategory.detailed || "").toUpperCase();
