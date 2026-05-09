@@ -43,6 +43,8 @@ const ALLOWED_CATEGORIES = [
   // shrugging at half the rows.
   "loans",
   "fees",
+  "taxes",
+  "transfers",
   "other",
 ] as const;
 
@@ -75,8 +77,10 @@ Categories:
 - groceries, restaurants, transport, entertainment, utilities, subscriptions, shopping, health, personal, education, kids, travel, loans, fees, other.
 
 How to choose:
-- "loans" = car loans (LOAN_PAYMENTS_CAR_PAYMENT), student loans (OSAP, Nelnet), credit-card pay-downs (LOAN_PAYMENTS_CREDIT_CARD_PAYMENT), mortgage. The user wants to SEE these in their categorization, not bury them.
+- "loans" = car loans (LOAN_PAYMENTS_CAR_PAYMENT), student loans (OSAP, Nelnet), credit-card pay-downs (LOAN_PAYMENTS_CREDIT_CARD_PAYMENT), mortgage. The user wants to SEE these in their categorization, not bury them. Tag CC payments with "cc-payment" so the chat layer can call out double-count risk.
 - "fees" = bank fees, account fees, NSF, ATM fees, annual card fees (BANK_FEES). Small individually but the user notices them.
+- "taxes" = CRA payments, IRS payments, property tax (Bramptaxes-style), HST/sales tax remittance. Anything labeled GOVERNMENT_AND_NON_PROFIT in PFC. Confidence 0.95 when name contains "txd"/"tax"/"cra"/"irs".
+- "transfers" = money the user moved to themselves: savings deposits, e-transfers to self, between-account moves (TRANSFER_OUT). Conceptually not spending, but the user wants to see where it went rather than vanish into "other".
 - "transport" = gas, transit (Presto, MTA, TTC), rideshare (Uber, Lyft), parking. NOT car-loan payments — those are "loans".
 - "subscriptions" = recurring monthly software/streaming (Netflix, Spotify, ChatGPT, Adobe). NOT one-off SaaS purchases — those are "shopping".
 - "utilities" = rent, hydro, water, internet, phone bill.

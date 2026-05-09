@@ -497,6 +497,8 @@ const GROUP_CATEGORIES = [
   // user as chips so the override path matches what Tilly auto-picks.
   "loans",
   "fees",
+  "taxes",
+  "transfers",
   "education",
   "other",
 ];

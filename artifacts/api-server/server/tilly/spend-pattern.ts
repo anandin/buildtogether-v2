@@ -179,6 +179,8 @@ function categoryHue(name: string): SpendCategory["hue"] {
   // Recurring small drains (account fees, NSF, ATM) — flag as warn so a
   // student who's accumulating $40/mo in TD fees actually notices.
   if (n === "fees" || n.includes("fee")) return "warn";
+  // Tax & transfer rows are factual — neutral grey is right, no alarm.
+  if (n === "taxes" || n === "transfers") return "inkSoft";
   if (n === "transport" || n.includes("transit")) return "good";
   return "inkSoft";
 }

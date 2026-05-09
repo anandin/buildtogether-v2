@@ -19,6 +19,8 @@ import {
   guardianConversations,
   expenses,
   plaidTransactions,
+  households,
+  members,
 } from "../../../shared/schema";
 import {
   getLatestDossier,
@@ -344,14 +346,50 @@ export function mountTillyAnalyseRoutes(app: Express): void {
 
         // 1. Gather data in parallel.
         const config = await getTillyConfig();
-        const [spend, dossierRow, retrieved] = await Promise.all([
-          gather90DaySpend(householdId),
-          getLatestDossier(userId),
-          hybridRetrieve(userId, "money flow spending patterns last 90 days"),
-        ]);
+        const [spend, dossierRow, retrieved, householdRow, memberRows] =
+          await Promise.all([
+            gather90DaySpend(householdId),
+            getLatestDossier(userId),
+            hybridRetrieve(userId, "money flow spending patterns last 90 days"),
+            db.query.households.findFirst({
+              where: eq(households.id, householdId),
+            }),
+            db.select().from(members).where(eq(members.coupleId, householdId)),
+          ]);
 
         // 2. Build the system context block.
         const sections: string[] = [];
+
+        // Household context — supports N people, who they are. Lets Tilly
+        // frame "$8K/mo" against household size rather than analyzing in a
+        // vacuum. When unset, we tell the LLM explicitly so it can ask.
+        const partner1 = householdRow?.partner1Name?.trim() || null;
+        const partner2 = householdRow?.partner2Name?.trim() || null;
+        const additionalMembers = (memberRows ?? []).filter(
+          (m) =>
+            m.role !== "owner" && // skip the user themselves
+            (m.name?.trim() ?? "") !== "",
+        );
+        const householdLines: string[] = [];
+        if (partner1 || partner2) {
+          const folks = [partner1, partner2].filter(Boolean).join(" + ");
+          householdLines.push(`Primary owner(s) on the account: ${folks}`);
+        }
+        if (additionalMembers.length > 0) {
+          householdLines.push(
+            `Additional people in the household: ${additionalMembers
+              .map((m) => `${m.name}${m.role ? ` (${m.role})` : ""}`)
+              .join(", ")}`,
+          );
+        }
+        if (householdLines.length > 0) {
+          sections.push(`Household context:\n${householdLines.join("\n")}`);
+        } else {
+          sections.push(
+            `Household context: NOT YET CAPTURED. The user has not yet told Tilly how many people they support, whether they're splitting with roommates / a partner, or what their role is. If their spending pattern obviously suggests a multi-person household (rent, groceries scaled up, multiple subscriptions, frequent eating-out for many), it is worth one short sentence in your suggestion to ask: "How many people are you supporting? — knowing that changes how I read these numbers."`,
+          );
+        }
+
         if (dossierRow) {
           const parsed = DossierContentSchema.safeParse(dossierRow.content);
           if (parsed.success) sections.push(formatDossierForPrompt(parsed.data));
@@ -389,7 +427,13 @@ ${merchantBlock}`,
           );
         }
         sections.push(
-          `TASK: Write a short editorial paragraph (2-3 sentences) that summarizes their last 90 days of money flow. Reference one concrete pattern you see (a category, a merchant, a habit shift) and tie it to something you remember about them when relevant. Then ONE specific suggestion they could try this week. No bullet points. No headers. No markdown. No emoji. Plain serif paragraph in your usual voice. Keep it under 90 words. Do NOT repeat the numbers — the card already shows them.`,
+          `IMPORTANT framing rules for this user:
+- "loans" with cc-payment tag (or top merchants like "TD VISA PREAUTH PYMT" / "Scotialn Vsa") are credit-card payments. They are NOT new spending — they are paying down a card. The actual spending happened earlier on the card itself. If those rows are a big % of the picture, mention briefly: "Roughly $X went to credit-card payments — that's debt service, not new spend. To see what you actually bought, you'd need to connect your <card> as a separate bank in Tilly." Don't lecture about it; one short sentence is enough.
+- "transfers" are money the user moved to themselves (savings, e-transfers to self). Don't count them as spending in your narrative.
+- "taxes" is tax remittance. Acknowledge as a fixed obligation, don't call it a habit to fix.
+- If household context is provided in the snippet block (supports N people, role, etc.), frame the dollar amounts against that — "$2.8K/mo on subscriptions for a household of 4" lands differently than the same number for a solo student. If household context is NOT yet provided, the user hasn't told you yet — your suggestion can be to ask in chat.
+
+TASK: Write a short editorial paragraph (2-3 sentences) that summarizes their last 90 days of money flow. Reference one concrete pattern you see (a category, a merchant, a habit shift) and tie it to something you remember about them when relevant — including household size if you have it. Then ONE specific suggestion they could try this week. No bullet points. No headers. No markdown. No emoji. Plain serif paragraph in your usual voice. Keep it under 110 words. Do NOT repeat the numbers — the card already shows them.`,
         );
 
         const extraSystem = sections.join("\n\n");
