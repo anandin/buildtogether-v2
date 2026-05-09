@@ -5213,11 +5213,16 @@ Return just the message text.`;
       const coupleId = (req.query.coupleId as string | undefined)?.trim();
       if (!coupleId) return res.status(400).json({ error: "coupleId required" });
       // Join plaid_tx to expense via expense_id link (plaid_transactions.expense_id)
+      // Pull both the plaid_tx and its linked expense in one go, so we can
+      // detect drift where one row was reclassified but the other still
+      // carries the old category.
       const rows = await db
         .select({
           ptx: plaidTransactions,
+          exp: expenses,
         })
         .from(plaidTransactions)
+        .leftJoin(expenses, eq(expenses.id, plaidTransactions.expenseId))
         .where(
           and(
             eq(plaidTransactions.coupleId, coupleId),
@@ -5227,17 +5232,16 @@ Return just the message text.`;
         .limit(500);
       let touched = 0;
       let categoryChanged = 0;
+      let driftFixed = 0;
       for (const r of rows) {
         const ptx = r.ptx;
+        const exp = r.exp;
         if (!ptx.expenseId) continue;
         const newOurCat = mapPlaidCategory(
           ptx.plaidCategory as string[] | null,
           ptx.personalFinanceCategory as { primary?: string; detailed?: string } | null,
         );
         const sig = merchantSignature(ptx);
-        // Skip the LLM call when stored ourCategory already matches new
-        // mapping output AND we have a stored AI suggestion — saves
-        // 100s of Haiku calls on the historical sweep.
         const needsLLM =
           newOurCat === "other" && !ptx.aiSuggestedCategory;
         const classified =
@@ -5255,32 +5259,44 @@ Return just the message text.`;
           classified && classified.confidence >= HIGH_CONFIDENCE_THRESHOLD
             ? classified.category
             : newOurCat;
-        if (finalCat !== ptx.ourCategory) {
+        const ptxNeedsUpdate = finalCat !== ptx.ourCategory;
+        const expNeedsUpdate = exp && exp.category !== finalCat;
+        if (ptxNeedsUpdate || expNeedsUpdate) {
           await db.transaction(async (tx) => {
-            await tx
-              .update(plaidTransactions)
-              .set({
-                ourCategory: finalCat,
-                ...(classified
-                  ? {
-                      aiSuggestedCategory: classified.category,
-                      aiSuggestedTags: classified.tags,
-                      aiSuggestedConfidence: classified.confidence,
-                      aiSuggestedReasoning: classified.reasoning,
-                    }
-                  : {}),
-              })
-              .where(eq(plaidTransactions.id, ptx.id));
+            if (ptxNeedsUpdate) {
+              await tx
+                .update(plaidTransactions)
+                .set({
+                  ourCategory: finalCat,
+                  ...(classified
+                    ? {
+                        aiSuggestedCategory: classified.category,
+                        aiSuggestedTags: classified.tags,
+                        aiSuggestedConfidence: classified.confidence,
+                        aiSuggestedReasoning: classified.reasoning,
+                      }
+                    : {}),
+                })
+                .where(eq(plaidTransactions.id, ptx.id));
+              categoryChanged++;
+            } else if (expNeedsUpdate) {
+              driftFixed++;
+            }
             await tx
               .update(expenses)
               .set({ category: finalCat })
               .where(eq(expenses.id, ptx.expenseId!));
           });
-          categoryChanged++;
         }
         touched++;
       }
-      res.json({ coupleId, scanned: rows.length, touched, categoryChanged });
+      res.json({
+        coupleId,
+        scanned: rows.length,
+        touched,
+        categoryChanged,
+        driftFixed,
+      });
     } catch (e: any) {
       console.error("reclassify-expenses error:", e);
       res.status(500).json({ error: e?.message });
