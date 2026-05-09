@@ -2,7 +2,20 @@
 // trivial handler at all. If /api/diag works but /api/* doesn't, the
 // problem is in the api-server bundle. If /api/diag also fails, the
 // issue is environmental (env vars, runtime, paths).
-export default function handler(_req: any, res: any) {
+export default async function handler(_req: any, res: any) {
+  let importErr: any = null;
+  let appReadyErr: any = null;
+  try {
+    // @ts-ignore
+    const mod = await import("../artifacts/api-server/dist/index.mjs");
+    try {
+      await (mod as any).getApp();
+    } catch (e: any) {
+      appReadyErr = { message: e?.message, stack: (e?.stack || "").split("\n").slice(0, 8).join("\n") };
+    }
+  } catch (e: any) {
+    importErr = { message: e?.message, stack: (e?.stack || "").split("\n").slice(0, 8).join("\n") };
+  }
   const cwd = (globalThis as any).process?.cwd?.() ?? "?";
   let listing: any = "?";
   let recursiveArtifacts: any = "?";
@@ -40,6 +53,8 @@ export default function handler(_req: any, res: any) {
       hasArtifacts,
       listing,
       foundDirs: recursiveArtifacts,
+      importErr,
+      appReadyErr,
       node: (globalThis as any).process?.version,
       vercelEnv: (globalThis as any).process?.env?.VERCEL_ENV ?? null,
       requiredEnvPresent: {
