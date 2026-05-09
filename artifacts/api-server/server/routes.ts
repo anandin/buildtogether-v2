@@ -5172,6 +5172,50 @@ Return just the message text.`;
     }
   });
 
+  // Debug: dump raw pending rows + their live signatures so we can see why
+  // grouping isn't kicking in. Auth-gated to the row's couple — only the
+  // user themselves can see it. Temporary; remove once pending grouping is
+  // verified working in production.
+  app.get("/api/plaid/pending-debug/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
+    try {
+      const coupleId = req.params.coupleId;
+      const rows = await db
+        .select()
+        .from(plaidTransactions)
+        .where(
+          and(
+            eq(plaidTransactions.coupleId, coupleId),
+            eq(plaidTransactions.status, "pending_review"),
+          ),
+        )
+        .orderBy(desc(plaidTransactions.date))
+        .limit(200);
+      const out = rows.map((r) => ({
+        id: r.id,
+        date: r.date,
+        amount: r.amount,
+        merchantName: r.merchantName,
+        name: r.name,
+        ourCategory: r.ourCategory,
+        storedSignature: r.signature,
+        liveSignature: merchantSignature(r),
+        pending: r.pending,
+        appliedRuleId: r.appliedRuleId,
+      }));
+      const sigCounts = new Map<string, number>();
+      for (const r of out) sigCounts.set(r.liveSignature, (sigCounts.get(r.liveSignature) || 0) + 1);
+      res.json({
+        rows: out,
+        signatureCounts: [...sigCounts.entries()]
+          .map(([sig, count]) => ({ sig, count }))
+          .sort((a, b) => b.count - a.count),
+      });
+    } catch (error: any) {
+      console.error("Plaid pending-debug error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // ─── Task #23: grouped pending queue + bulk accept ─────────────────────
   // Group pending Plaid txs by merchant signature so the user can deal with
   // "Spotify ×4 · $39.96" in one tap instead of accepting it four times.
