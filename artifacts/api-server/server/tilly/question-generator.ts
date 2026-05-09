@@ -143,7 +143,7 @@ export async function generateQuestionsForHousehold(householdId: string): Promis
   };
   const bySig = new Map<string, Bucket>();
   for (const r of recent) {
-    const sig = r.signature ?? merchantSignature(r);
+    const sig = merchantSignature(r);
     const display = r.merchantName || r.name;
     const b = bySig.get(sig) ?? {
       signature: sig,
@@ -259,7 +259,7 @@ export async function generateQuestionsForHousehold(householdId: string): Promis
     const med = median(b.amounts);
     if (med <= 0) continue;
     const recentBig = recent.find(
-      (r) => (r.signature ?? merchantSignature(r)) === sig && r.date >= since7 && r.amount >= med * 2 && r.amount >= 50,
+      (r) => (merchantSignature(r)) === sig && r.date >= since7 && r.amount >= med * 2 && r.amount >= 50,
     );
     if (recentBig) {
       candidates.push({

@@ -55,12 +55,17 @@ export function merchantSignature(tx: PlaidTxLike): string {
   // Drop dates / times that sometimes ride in the descriptor
   s = s.replace(/\b\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?\b/g, " ");
   s = s.replace(/\b\d{1,2}:\d{2}(?::\d{2})?\b/g, " ");
-  // Drop standalone state codes ("ca", "wa", "ny") — but only when surrounded
-  // by spaces, so "Walmart" still keeps its "wa". Two-letter US state list
-  // covers the common Plaid noise.
-  s = s.replace(/\b(al|ak|az|ar|ca|co|ct|de|fl|ga|hi|id|il|in|ia|ks|ky|la|me|md|ma|mi|mn|ms|mo|mt|ne|nv|nh|nj|nm|ny|nc|nd|oh|ok|or|pa|ri|sc|sd|tn|tx|ut|vt|va|wa|wv|wi|wy)\b/g, " ");
-  // Drop common processor prefixes
-  s = s.replace(/\b(sq|sq\*|tst\*|paypal\s*\*|pp\*|ach|pos|debit|credit|purchase|payment|deposit|withdrawal|atm|chk|chq|fee)\b\s*/g, " ");
+  // Drop standalone state / province codes — but only when surrounded by
+  // spaces, so "Walmart" still keeps its "wa". Covers US states + Canadian
+  // provinces. Without the CA provinces, "LINCOLN PMT WATERLOO ON" and
+  // "LINCOLN PMT TORONTO ON" hash to different signatures and never group
+  // (Tilly's beachhead is Canada — provinces in the descriptor are the
+  // norm, not the exception).
+  s = s.replace(/\b(al|ak|az|ar|ca|co|ct|de|fl|ga|hi|id|il|in|ia|ks|ky|la|me|md|ma|mi|mn|ms|mo|mt|ne|nv|nh|nj|nm|ny|nc|nd|oh|ok|or|pa|ri|sc|sd|tn|tx|ut|vt|va|wa|wv|wi|wy|on|qc|bc|ab|mb|sk|ns|nb|nl|nf|pe|pei|yt|nt|nu)\b/g, " ");
+  // Drop common processor prefixes + Canadian payment-rail abbreviations.
+  // INTERAC / ETFR / E-TFR appear constantly on TD/RBC/CIBC descriptors;
+  // PMT / PYMT / PURCH are the bank's own short forms.
+  s = s.replace(/\b(sq|sq\*|tst\*|paypal\s*\*|pp\*|ach|pos|debit|credit|purchase|payment|deposit|withdrawal|atm|chk|chq|fee|pmt|pymt|purch|interac|etfr|e-tfr|xfer|cdn|cad)\b\s*/g, " ");
   // Strip punctuation, collapse whitespace, drop trailing digits
   s = s.replace(/[^a-z0-9\s]+/g, " ");
   s = s.replace(/\s+\d+\s*$/g, " ");

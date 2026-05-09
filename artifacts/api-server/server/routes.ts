@@ -5206,9 +5206,12 @@ Return just the message text.`;
         };
         const groups = new Map<string, Group>();
         for (const r of rows) {
-          // Use stored signature when present (new rows) and recompute on
-          // the fly for legacy rows that predate this column.
-          const sig = r.signature ?? merchantSignature(r);
+          // Always recompute. The stored r.signature was set at sync time;
+          // when we evolve merchantSignature() (e.g. add Canadian provinces
+          // to the strip list), already-stored signatures lag behind and
+          // legitimately-grouped rows show up as singletons. Computing on
+          // read is a couple of regex passes on a short string — cheap.
+          const sig = merchantSignature(r);
           const display = r.merchantName || r.name;
           const g = groups.get(sig);
           if (!g) {
@@ -5313,7 +5316,7 @@ Return just the message text.`;
               eq(plaidTransactions.status, "pending_review"),
             ),
           );
-        const inGroup = rows.filter((r) => (r.signature ?? merchantSignature(r)) === signature);
+        const inGroup = rows.filter((r) => (merchantSignature(r)) === signature);
         if (inGroup.length === 0) {
           return res.status(404).json({ error: "No pending transactions in this group" });
         }
@@ -5439,7 +5442,7 @@ Return just the message text.`;
               eq(plaidTransactions.status, "pending_review"),
             ),
           );
-        const inGroup = rows.filter((r) => (r.signature ?? merchantSignature(r)) === signature);
+        const inGroup = rows.filter((r) => (merchantSignature(r)) === signature);
         if (inGroup.length === 0) {
           return res.status(404).json({ error: "No pending transactions in this group" });
         }
