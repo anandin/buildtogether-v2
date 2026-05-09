@@ -5172,6 +5172,22 @@ Return just the message text.`;
     }
   });
 
+  // Tiny ring buffer of the last 10 /pending-grouped responses, for debug.
+  // Captures what the auth-gated endpoint sent to the iOS client so we can
+  // diagnose client-side rendering issues without intercepting the device's
+  // network. Memory-only (resets on cold start), no PII beyond what the
+  // user already sees in their own pending queue.
+  const groupedAuditLog: Array<{
+    at: string;
+    coupleId: string;
+    groupCount: number;
+    multiGroupCount: number;
+    summary: { signature: string; count: number; ruleId: string | null }[];
+  }> = [];
+  app.get("/api/plaid/pending-grouped-audit", (_req, res) => {
+    res.json({ entries: groupedAuditLog });
+  });
+
   // Debug: dump raw pending rows + their live signatures so we can see why
   // grouping isn't kicking in. Auth-gated to the row's couple — only the
   // user themselves can see it. Temporary; remove once pending grouping is
@@ -5401,9 +5417,24 @@ Return just the message text.`;
           }
         }
 
-        res.json({
-          groups: [...groups.values()].sort((a, b) => b.totalAmount - a.totalAmount),
-        });
+        const sortedGroups = [...groups.values()].sort((a, b) => b.totalAmount - a.totalAmount);
+        // Capture audit BEFORE responding so the user can debug from a
+        // separate request even if the device sees this response.
+        try {
+          groupedAuditLog.unshift({
+            at: new Date().toISOString(),
+            coupleId,
+            groupCount: sortedGroups.length,
+            multiGroupCount: sortedGroups.filter((g) => g.count >= 2).length,
+            summary: sortedGroups.map((g) => ({
+              signature: g.signature,
+              count: g.count,
+              ruleId: g.ruleId,
+            })),
+          });
+          if (groupedAuditLog.length > 10) groupedAuditLog.length = 10;
+        } catch {}
+        res.json({ groups: sortedGroups });
       } catch (error: any) {
         console.error("Plaid pending-grouped error:", error);
         res.status(500).json({ error: error.message });
