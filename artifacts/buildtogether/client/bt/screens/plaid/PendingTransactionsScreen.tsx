@@ -36,9 +36,14 @@ import {
   usePlaidPendingGroupAccept,
   usePlaidPendingGroupIgnore,
 } from "../../hooks/usePlaid";
+import {
+  useTillyQuestions,
+  useAnswerTillyQuestion,
+  useDismissTillyQuestion,
+} from "../../hooks/useTillyQuestions";
 import { PasskeyStaleBanner } from "./PasskeyStaleBanner";
 import { usePasskeyGate } from "@/context/PasskeyGateContext";
-import type { PlaidPendingTransaction, PendingGroup } from "../../api/types";
+import type { PlaidPendingTransaction, PendingGroup, TillyQuestion } from "../../api/types";
 
 export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
   const { t } = useBT();
@@ -51,8 +56,12 @@ export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
   const groupIgnore = usePlaidPendingGroupIgnore();
   const sync = usePlaidSync();
   const passkeyGate = usePasskeyGate();
+  const tillyQuestions = useTillyQuestions();
+  const answerQuestion = useAnswerTillyQuestion();
+  const dismissQuestion = useDismissTillyQuestion();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [busyGroup, setBusyGroup] = useState<string | null>(null);
+  const openQuestions = tillyQuestions.data?.questions ?? [];
 
   const list = pending.data ?? [];
   const hasItems = (items.data ?? []).some((i) => i.status !== "disconnected");
@@ -218,6 +227,22 @@ export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
             </Text>
           ) : null}
         </View>
+
+        {/* Tilly's anomaly questions — only what genuinely needs the user's
+            input (unknown merchant seen 3+ times, category spike, outsized
+            charge). Quiet by default; renders nothing when there's nothing
+            to ask. */}
+        {openQuestions.length > 0 ? (
+          <TillyQuestionsPanel
+            t={t}
+            questions={openQuestions}
+            onAnswer={(id, answer) =>
+              answerQuestion.mutateAsync({ id, answer }).catch(() => undefined)
+            }
+            onDismiss={(id) => dismissQuestion.mutate(id)}
+            busy={answerQuestion.isPending || dismissQuestion.isPending}
+          />
+        ) : null}
 
         {/* Face ID re-prompt banner — visible when the user dismissed
             the shared PasskeyGate after a 403 PASSKEY_STALE. */}
@@ -595,6 +620,42 @@ function PendingRow({
           ${txn.amount.toFixed(2)}
         </Text>
       </View>
+
+      {/* Tilly's category guess — only shown when the row has no merchant
+          rule yet AND Plaid couldn't confidently categorize it. Confirming
+          here trains a merchant rule so we never ask again. Disagreeing in
+          the note expander is logged to ai_corrections for tuning. */}
+      {txn.aiSuggestedCategory && !txn.ourCategory ? (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+            paddingTop: 4,
+          }}
+        >
+          <Text style={{ fontSize: 14 }}>{"✨"}</Text>
+          <Text
+            style={{
+              flex: 1,
+              color: t.inkSoft,
+              fontFamily: BTFonts.sans,
+              fontSize: 12,
+              lineHeight: 16,
+            }}
+            numberOfLines={2}
+          >
+            Tilly thinks this is{" "}
+            <Text style={{ fontWeight: "700", color: t.ink }}>
+              {txn.aiSuggestedCategory}
+            </Text>
+            {typeof txn.aiSuggestedConfidence === "number"
+              ? ` (${Math.round(txn.aiSuggestedConfidence * 100)}% sure)`
+              : ""}
+            . Tap Accept to confirm, or open Add note to change it.
+          </Text>
+        </View>
+      ) : null}
 
       {/* Add-context expander. Hidden by default so one-tap accept stays fast. */}
       <Pressable
@@ -1157,6 +1218,240 @@ function GroupCard({
           </Text>
         </Pressable>
       </View>
+    </View>
+  );
+}
+
+/**
+ * TillyQuestionsPanel — surfaces the at-most-3 anomaly questions Tilly has
+ * generated for this household. Free-text answer auto-creates a merchant
+ * rule for unknown_merchant questions (server side), so once the user types
+ * "it's our weekly Friday lunch" Tilly stops asking and starts auto-tagging
+ * the same merchant as a restaurant in the future.
+ */
+function TillyQuestionsPanel({
+  t,
+  questions,
+  onAnswer,
+  onDismiss,
+  busy,
+}: {
+  t: BTTheme;
+  questions: TillyQuestion[];
+  onAnswer: (id: string, answer: string) => void;
+  onDismiss: (id: string) => void;
+  busy: boolean;
+}) {
+  return (
+    <View
+      style={{
+        backgroundColor: t.accentSoft,
+        borderRadius: 16,
+        padding: 14,
+        gap: 10,
+        borderWidth: 1,
+        borderColor: t.rule,
+      }}
+    >
+      <Text
+        style={{
+          color: t.accent,
+          fontFamily: BTFonts.mono,
+          fontSize: 10,
+          letterSpacing: 0.8,
+          textTransform: "uppercase",
+          fontWeight: "700",
+        }}
+      >
+        Tilly has {questions.length} {questions.length === 1 ? "question" : "questions"}
+      </Text>
+      {questions.map((q) => (
+        <TillyQuestionCard
+          key={q.id}
+          t={t}
+          question={q}
+          busy={busy}
+          onAnswer={(answer) => onAnswer(q.id, answer)}
+          onDismiss={() => onDismiss(q.id)}
+        />
+      ))}
+    </View>
+  );
+}
+
+function TillyQuestionCard({
+  t,
+  question,
+  busy,
+  onAnswer,
+  onDismiss,
+}: {
+  t: BTTheme;
+  question: TillyQuestion;
+  busy: boolean;
+  onAnswer: (answer: string) => void;
+  onDismiss: () => void;
+}) {
+  const [answer, setAnswer] = useState("");
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <View
+      style={{
+        backgroundColor: t.surface,
+        borderRadius: 12,
+        padding: 12,
+        gap: 8,
+        borderWidth: 1,
+        borderColor: t.rule,
+      }}
+    >
+      <Text
+        style={{
+          color: t.ink,
+          fontFamily: BTFonts.sans,
+          fontSize: 13,
+          lineHeight: 19,
+          fontWeight: "500",
+        }}
+      >
+        {question.body}
+      </Text>
+      {expanded ? (
+        <View style={{ gap: 8 }}>
+          <TextInput
+            value={answer}
+            onChangeText={setAnswer}
+            placeholder="Tell Tilly (e.g. 'our Friday lunch spot')"
+            placeholderTextColor={t.inkMute}
+            multiline
+            maxLength={240}
+            style={{
+              color: t.ink,
+              fontFamily: BTFonts.sans,
+              fontSize: 13,
+              padding: 10,
+              borderRadius: 10,
+              borderWidth: 1,
+              borderColor: t.rule,
+              backgroundColor: t.bg,
+              minHeight: 50,
+              textAlignVertical: "top",
+            }}
+          />
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            <Pressable
+              onPress={() => {
+                setExpanded(false);
+                setAnswer("");
+              }}
+              disabled={busy}
+              style={({ pressed }) => ({
+                paddingHorizontal: 14,
+                paddingVertical: 8,
+                borderRadius: 999,
+                borderWidth: 1,
+                borderColor: t.rule,
+                backgroundColor: pressed ? t.chip : "transparent",
+              })}
+            >
+              <Text
+                style={{
+                  color: t.inkSoft,
+                  fontFamily: BTFonts.sans,
+                  fontWeight: "600",
+                  fontSize: 12,
+                }}
+              >
+                Cancel
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                const trimmed = answer.trim();
+                if (!trimmed) return;
+                onAnswer(trimmed);
+                setExpanded(false);
+                setAnswer("");
+              }}
+              disabled={busy || !answer.trim()}
+              style={({ pressed }) => ({
+                flex: 1,
+                paddingVertical: 8,
+                borderRadius: 999,
+                backgroundColor: t.ink,
+                alignItems: "center",
+                opacity: busy || !answer.trim() ? 0.5 : pressed ? 0.85 : 1,
+              })}
+            >
+              <Text
+                style={{
+                  color: t.surface,
+                  fontFamily: BTFonts.sans,
+                  fontWeight: "700",
+                  fontSize: 12,
+                }}
+              >
+                Send to Tilly
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      ) : (
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <Pressable
+            onPress={onDismiss}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss"
+            style={({ pressed }) => ({
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: t.rule,
+              backgroundColor: pressed ? t.chip : "transparent",
+            })}
+          >
+            <Text
+              style={{
+                color: t.inkSoft,
+                fontFamily: BTFonts.sans,
+                fontWeight: "600",
+                fontSize: 11,
+              }}
+            >
+              Dismiss
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setExpanded(true)}
+            disabled={busy}
+            accessibilityRole="button"
+            accessibilityLabel="Answer"
+            style={({ pressed }) => ({
+              flex: 1,
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+              borderRadius: 999,
+              backgroundColor: t.ink,
+              alignItems: "center",
+              opacity: pressed ? 0.85 : 1,
+            })}
+          >
+            <Text
+              style={{
+                color: t.surface,
+                fontFamily: BTFonts.sans,
+                fontWeight: "700",
+                fontSize: 11,
+              }}
+            >
+              Answer
+            </Text>
+          </Pressable>
+        </View>
+      )}
     </View>
   );
 }

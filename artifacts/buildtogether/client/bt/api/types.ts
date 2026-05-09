@@ -289,4 +289,10 @@ export type PlaidPendingTransaction = {
   // Task #23 — normalized merchant key written by the sync hook. Older rows
   // (pre-#23) may not have this; clients should treat null as "no group".
   signature: string | null;
+  // Phase 3 — Tilly's category guess written at sync time when no merchant
+  // rule existed yet. UI surfaces "Tilly thinks: dining" with one-tap confirm.
+  // Null when classification was skipped or failed.
+  aiSuggestedCategory: string | null;
+  aiSuggestedTags: string[] | null;
+  aiSuggestedConfidence: number | null;
 };

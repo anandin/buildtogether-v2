@@ -39,6 +39,7 @@ import {
   guardianConversations,
   plaidItems,
   plaidTransactions,
+  aiCorrections,
 } from "../shared/schema";
 import { detectPatterns, savePatterns, createNudgeFromPattern, getActivePatterns, getPendingNudges } from "./pattern-detection";
 import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt, buildQuickAddPrompt, buildGuardianCoachPrompt, buildGuardianIntentClassifierPrompt, type GuardianCoachContext } from "./prompts";
@@ -51,6 +52,7 @@ import {
   upsertRuleFromAccept,
 } from "./tilly/merchant-rules";
 import { generateQuestionsForHousehold } from "./tilly/question-generator";
+import { classifyTransaction, HIGH_CONFIDENCE_THRESHOLD } from "./tilly/category-classifier";
 import { verifyPlaidWebhook } from "./plaid-webhook-verify";
 
 const DEFAULT_CATEGORY_BUDGETS = [
@@ -214,11 +216,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const sig = merchantSignature(tx);
         const rule = !tx.pending ? await findRule(item.coupleId, sig) : null;
         const ruleOutcome = applyRuleToPlaidTx(tx, rule);
-        // Pre-fill from the rule when present, otherwise fall back to Plaid mapping.
+
+        // Phase 3: when no rule exists yet AND Plaid's mapping landed on
+        // "other", ask Tilly. High-confidence answers replace ourCat
+        // silently and become a real category in the spend feed; lower
+        // confidence falls through into pending_review with the
+        // suggestion attached so the user confirms in one tap.
+        let aiSuggestion: { category: string; tags: string[]; confidence: number } | null = null;
+        if (
+          ruleOutcome.kind === "none" &&
+          (ourCat === "other" || !ourCat) &&
+          !tx.pending &&
+          process.env.OPENROUTER_API_KEY
+        ) {
+          const classified = await classifyTransaction({
+            coupleId: item.coupleId,
+            signature: sig,
+            merchant: tx.merchant_name || tx.name || "(unknown)",
+            amount: tx.amount,
+            plaidLegacyCategory: tx.category ?? null,
+            pfCategory: tx.personal_finance_category ?? null,
+          });
+          if (classified) {
+            aiSuggestion = {
+              category: classified.category,
+              tags: classified.tags,
+              confidence: classified.confidence,
+            };
+          }
+        }
+
+        // Pre-fill from the rule when present, otherwise fall back to Plaid mapping
+        // OR a high-confidence Tilly classification.
         const ruleCategory =
           ruleOutcome.kind === "auto_accept" || ruleOutcome.kind === "tag_only"
             ? ruleOutcome.category ?? ourCat
-            : ourCat;
+            : aiSuggestion && aiSuggestion.confidence >= HIGH_CONFIDENCE_THRESHOLD
+              ? aiSuggestion.category
+              : ourCat;
         // Never auto-accept while Plaid still says "pending" — the amount/merchant
         // can change when it posts, and Plaid may send a `removed` for the pending
         // id and a fresh `added` for the posted id. Waiting until post avoids
@@ -261,11 +296,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
               merchantName: tx.merchant_name || null,
               name: tx.name || "Unknown",
               plaidCategory: tx.category || null,
+              personalFinanceCategory: tx.personal_finance_category || null,
               ourCategory: ruleCategory,
               pending: tx.pending || false,
               status: initialStatus,
               signature: sig,
               appliedRuleId: ruleId,
+              aiSuggestedCategory: aiSuggestion?.category ?? null,
+              aiSuggestedTags: aiSuggestion?.tags ?? null,
+              aiSuggestedConfidence: aiSuggestion?.confidence ?? null,
             }).returning();
 
             if (autoAccept && !autoIgnoreByRule) {
@@ -4766,6 +4805,69 @@ Return just the message text.`;
     }
   });
 
+  // Reconcile stale `pending=true` rows by asking Plaid /transactions/get
+  // for the same id. Plaid normally swaps pending → posted via the next
+  // /transactions/sync, but if the user never re-syncs (or Plaid silently
+  // drops the swap) we get rows stuck in pending forever, which the auto-
+  // accept backfill explicitly skips. This endpoint fetches the last 30
+  // days of posted transactions and flips matching rows so the next call
+  // to /api/plaid/pending/:coupleId can auto-accept them.
+  app.post("/api/plaid/reconcile/:coupleId", requireAuth, requirePasskeyVerified, requireCoupleAccess, async (req, res) => {
+    try {
+      const plaid = getPlaidClient();
+      if (!plaid) return res.status(503).json({ error: "Plaid not configured" });
+
+      const items = await db.select().from(plaidItems)
+        .where(and(
+          eq(plaidItems.coupleId, req.params.coupleId),
+          eq(plaidItems.status, "active"),
+        ));
+
+      let flipped = 0;
+      const start = new Date();
+      start.setDate(start.getDate() - 30);
+      const startDate = start.toISOString().slice(0, 10);
+      const endDate = new Date().toISOString().slice(0, 10);
+
+      for (const item of items) {
+        try {
+          const resp: any = await plaid.transactionsGet({
+            access_token: item.accessToken,
+            start_date: startDate,
+            end_date: endDate,
+            options: { include_personal_finance_category: true } as any,
+          });
+          const postedIds = new Set(
+            (resp.data?.transactions ?? [])
+              .filter((t: any) => !t.pending)
+              .map((t: any) => t.transaction_id),
+          );
+          if (postedIds.size === 0) continue;
+
+          const stalePending = await db.select().from(plaidTransactions)
+            .where(and(
+              eq(plaidTransactions.plaidItemId, item.id),
+              eq(plaidTransactions.pending, true),
+            ));
+          for (const row of stalePending) {
+            if (!postedIds.has(row.plaidTransactionId)) continue;
+            await db.update(plaidTransactions)
+              .set({ pending: false })
+              .where(eq(plaidTransactions.id, row.id));
+            flipped++;
+          }
+        } catch (err: any) {
+          console.error("Plaid reconcile failed for item", item.id, err?.response?.data || err.message);
+        }
+      }
+
+      res.json({ flipped, items: items.length });
+    } catch (error: any) {
+      console.error("Plaid reconcile error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // Pull fresh transactions for all the couple's connected banks
   app.post("/api/plaid/sync/:coupleId", requireAuth, requirePasskeyVerified, requireCoupleAccess, async (req, res) => {
     try {
@@ -4837,14 +4939,21 @@ Return just the message text.`;
         for (const ptx of queue) {
           // Skip rows still marked pending — wait until they post so we don't
           // double-count when Plaid swaps the pending id for the posted id.
+          // Note: stale pending=true rows are reconciled separately by
+          // /api/plaid/reconcile/:coupleId, which re-fetches Plaid and flips
+          // the flag for rows that have actually posted in the bank.
           if (ptx.pending) continue;
 
+          // Pull the stored personal_finance_category through so the PFC-based
+          // filters in shouldAutoAcceptPlaidTransaction (BANK_FEES, LOAN_PAYMENTS,
+          // TRANSFER_OUT, etc.) actually fire on backfill. Pre-PFC rows still
+          // have null here and fall back to the legacy hierarchy + name keywords.
           const txShape = {
             amount: ptx.amount,
             name: ptx.name,
             merchant_name: ptx.merchantName,
             category: (ptx.plaidCategory as string[] | null) || null,
-            personal_finance_category: null,
+            personal_finance_category: (ptx.personalFinanceCategory as { primary?: string; detailed?: string } | null) || null,
           };
           if (!shouldAutoAcceptPlaidTransaction(txShape)) continue;
 
@@ -4983,6 +5092,28 @@ Return just the message text.`;
           .where(eq(plaidTransactions.id, ptx.id));
       } catch (ruleErr) {
         console.warn("[merchant-rules] upsert from accept failed:", ruleErr);
+      }
+
+      // Phase 3: log a row to ai_corrections when the user's chosen category
+      // differs from Tilly's suggestion. This becomes the eval set for tuning
+      // the classifier prompt later. Fire-and-forget; failure is non-fatal.
+      const finalCategory = overrides?.category ?? ptx.ourCategory ?? null;
+      if (
+        ptx.aiSuggestedCategory &&
+        finalCategory &&
+        finalCategory !== ptx.aiSuggestedCategory
+      ) {
+        try {
+          await db.insert(aiCorrections).values({
+            coupleId: ptx.coupleId,
+            expenseId: expense.id,
+            originalCategory: ptx.aiSuggestedCategory,
+            correctedCategory: finalCategory,
+            aiConfidence: ptx.aiSuggestedConfidence ?? null,
+          });
+        } catch (corrErr) {
+          console.warn("[ai-corrections] insert failed:", corrErr);
+        }
       }
 
       res.json({ expense });

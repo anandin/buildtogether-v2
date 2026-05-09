@@ -812,6 +812,10 @@ export const plaidTransactions = pgTable("plaid_transactions", {
   merchantName: text("merchant_name"),
   name: text("name").notNull(),
   plaidCategory: jsonb("plaid_category"), // hierarchy array from Plaid
+  // Plaid's newer taxonomy: { primary, detailed, confidence_level }. Stored
+  // alongside the legacy hierarchy so the auto-accept classifier can reject
+  // transfers/fees on backfill (those rules key off PFC primary).
+  personalFinanceCategory: jsonb("personal_finance_category"),
   ourCategory: text("our_category"), // mapped to our ExpenseCategory
   pending: boolean("pending").default(false),
   status: text("status").notNull().default("pending_review"), // pending_review | accepted | ignored
@@ -822,6 +826,13 @@ export const plaidTransactions = pgTable("plaid_transactions", {
   // breadcrumb back to the rule that fired.
   signature: text("signature"),
   appliedRuleId: varchar("applied_rule_id"),
+  // LLM-suggested category/tags written at sync time when no merchant rule
+  // exists yet. The pending UI shows these as "Tilly thinks: …" with one-tap
+  // confirm; if the user picks something else, the disagreement is logged
+  // to `ai_corrections` for tuning.
+  aiSuggestedCategory: text("ai_suggested_category"),
+  aiSuggestedTags: jsonb("ai_suggested_tags").$type<string[] | null>(),
+  aiSuggestedConfidence: real("ai_suggested_confidence"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

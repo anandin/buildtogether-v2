@@ -417,6 +417,16 @@ const CRITICAL_STATEMENTS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS "tilly_questions_household_status_idx"
      ON "tilly_questions" ("household_id", "status", "created_at" DESC)`,
+
+  // Phase 3: LLM-aided categorization. The PFC column unblocks the backfill
+  // loop in /api/plaid/pending — it was passing personal_finance_category=null
+  // and so the PFC-based filters in shouldAutoAcceptPlaidTransaction never
+  // fired, leaving transfers/CC payments stranded. ai_suggested_* columns
+  // are populated by the classifier when no merchant rule exists yet.
+  `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "personal_finance_category" jsonb`,
+  `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "ai_suggested_category" text`,
+  `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "ai_suggested_tags" jsonb`,
+  `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "ai_suggested_confidence" real`,
 ];
 
 export async function applyBootMigrations(): Promise<{
