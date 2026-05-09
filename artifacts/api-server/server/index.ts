@@ -333,7 +333,15 @@ export async function getApp(): Promise<express.Application> {
     } catch (err) {
       console.error("[boot] migration runner errored (non-fatal):", err);
     }
-    configureExpoAndLanding(app);
+    // configureExpoAndLanding reads landing-page.html + serves static
+    // assets from the artifacts/ tree. On Vercel the function bundle is
+    // self-contained at /var/task/api/* — no artifacts/ tree, no
+    // templates. Skip it there; the mobile/web clients don't hit `/`,
+    // `/manifest`, `/_expo`, or `/assets/*` in a way that depends on
+    // those handlers.
+    if (!process.env.VERCEL) {
+      configureExpoAndLanding(app);
+    }
     registerAdminRoutes(app);
     // Tilly student-edition routers MUST mount before the legacy V1 routes:
     // V1 declares `app.post("/api/expenses/:coupleId")` which Express

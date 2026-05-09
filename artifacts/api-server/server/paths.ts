@@ -13,14 +13,14 @@ function findArtifactsRoot(): string {
     if (parent === dir) break;
     dir = parent;
   }
-  // Vercel runtime: function is bundled into /var/task/api/, not under
-  // artifacts/. The artifacts/ tree is shipped via vercel.json includeFiles
-  // and lands at process.cwd()/artifacts.
-  const fromCwd = path.resolve(process.cwd(), "artifacts");
-  if (fs.existsSync(fromCwd)) return fromCwd;
-  throw new Error(
-    `Unable to locate 'artifacts' directory walking up from ${here} or at ${fromCwd}`,
-  );
+  // Optional fallback for runtimes that ship the artifacts/ tree alongside
+  // the bundled function (e.g. via vercel.json includeFiles). Returns the
+  // path even when it doesn't exist — callers (configureExpoAndLanding,
+  // serveExpoManifest, registerAdminRoutes) already guard with existsSync
+  // and skip when the target is missing. This means modules can safely
+  // import { apiServerDir } from "./paths" at top level without crashing
+  // a Vercel cold start where artifacts/ is absent.
+  return path.resolve(process.cwd(), "artifacts");
 }
 
 const artifactsRoot = findArtifactsRoot();
