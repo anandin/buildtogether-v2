@@ -5461,15 +5461,28 @@ Return just the message text.`;
   );
 
   // TEMP debug: dump every Canada-Txd-like row across plaid_tx + expense
-  app.get("/api/plaid/canada-txd-debug", async (_req, res) => {
+  app.get("/api/plaid/canada-txd-debug", async (req, res) => {
     try {
-      const recent = await db
-        .select({ coupleId: plaidTransactions.coupleId })
-        .from(plaidTransactions)
-        .orderBy(desc(plaidTransactions.date))
-        .limit(1);
+      const explicitCouple = (req.query.coupleId as string | undefined)?.trim();
+      const recent = explicitCouple
+        ? [{ coupleId: explicitCouple }]
+        : await db
+            .select({ coupleId: plaidTransactions.coupleId })
+            .from(plaidTransactions)
+            .orderBy(desc(plaidTransactions.date))
+            .limit(1);
       if (recent.length === 0) return res.json({ rows: [] });
       const coupleId = recent[0].coupleId;
+      const expRows = await db
+        .select()
+        .from(expenses)
+        .where(eq(expenses.coupleId, coupleId))
+        .limit(500);
+      const expMatches = expRows.filter((e) =>
+        ((e.merchant || "") + " " + (e.description || ""))
+          .toLowerCase()
+          .match(/\b(txd|tax|cra)\b/),
+      );
       const rows = await db
         .select({
           ptx: plaidTransactions,
@@ -5486,7 +5499,7 @@ Return just the message text.`;
       );
       res.json({
         coupleId,
-        matches: matches.map((m) => ({
+        plaidMatches: matches.map((m) => ({
           ptxId: m.ptx.id,
           merchantName: m.ptx.merchantName,
           name: m.ptx.name,
@@ -5494,10 +5507,17 @@ Return just the message text.`;
           amount: m.ptx.amount,
           status: m.ptx.status,
           ourCategory: m.ptx.ourCategory,
-          plaidCategory: m.ptx.plaidCategory,
-          pfc: m.ptx.personalFinanceCategory,
           expenseId: m.ptx.expenseId,
           expenseCategory: m.exp?.category,
+        })),
+        expenseMatches: expMatches.map((e) => ({
+          id: e.id,
+          merchant: e.merchant,
+          description: e.description,
+          date: e.date,
+          amount: e.amount,
+          category: e.category,
+          source: e.source,
         })),
       });
     } catch (e: any) {
