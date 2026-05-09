@@ -5247,9 +5247,13 @@ Return just the message text.`;
           classified && classified.confidence >= HIGH_CONFIDENCE_THRESHOLD
             ? classified.category
             : newOurCat;
+        const reasoningChanged =
+          classified && classified.reasoning &&
+          classified.reasoning !== (r as any).aiSuggestedReasoning;
         if (
           finalOur !== r.ourCategory ||
-          (classified && classified.category !== r.aiSuggestedCategory)
+          (classified && classified.category !== r.aiSuggestedCategory) ||
+          reasoningChanged
         ) {
           await db
             .update(plaidTransactions)
