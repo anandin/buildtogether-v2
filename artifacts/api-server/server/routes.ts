@@ -5176,6 +5176,45 @@ Return just the message text.`;
   // grouping isn't kicking in. Auth-gated to the row's couple — only the
   // user themselves can see it. Temporary; remove once pending grouping is
   // verified working in production.
+  // No-arg debug: mirror what /api/plaid/pending-grouped returns for the
+  // newest couple, without auth. Lets us verify the grouping pipeline
+  // independently of the iOS app's React Query state.
+  app.get("/api/plaid/pending-grouped-debug-latest", async (_req, res) => {
+    try {
+      const recent = await db
+        .select({ coupleId: plaidTransactions.coupleId })
+        .from(plaidTransactions)
+        .where(eq(plaidTransactions.status, "pending_review"))
+        .orderBy(desc(plaidTransactions.date))
+        .limit(1);
+      if (recent.length === 0) return res.json({ groups: [] });
+      const coupleId = recent[0].coupleId;
+      const rows = await db
+        .select()
+        .from(plaidTransactions)
+        .where(
+          and(
+            eq(plaidTransactions.coupleId, coupleId),
+            eq(plaidTransactions.status, "pending_review"),
+          ),
+        )
+        .orderBy(desc(plaidTransactions.date))
+        .limit(200);
+      const groups = new Map<string, { signature: string; displayName: string; count: number; total: number }>();
+      for (const r of rows) {
+        const sig = merchantSignature(r);
+        const display = r.merchantName || r.name;
+        const g = groups.get(sig);
+        if (!g) groups.set(sig, { signature: sig, displayName: display, count: 1, total: r.amount });
+        else { g.count += 1; g.total += r.amount; }
+      }
+      res.json({ coupleId, groups: [...groups.values()].sort((a, b) => b.count - a.count) });
+    } catch (error: any) {
+      console.error("pending-grouped-debug-latest error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
+
   // No-arg variant: returns pending-debug for the most recently created
   // couple. Convenient when there's exactly one user in prod (early
   // beta) and we want to debug without coordinating UUIDs.
