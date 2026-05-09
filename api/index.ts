@@ -1,18 +1,18 @@
-// Vercel serverless entry. Imports from the api-server's prebuilt esbuild
-// bundle (`dist/index.mjs`) — that bundle is produced by the buildCommand
-// in vercel.json. Importing the bundled .mjs (rather than the .ts source)
-// keeps @vercel/node's TypeScript checker from chasing into the workspace
-// where the api-server's `moduleResolution: "bundler"` tsconfig disagrees
-// with @vercel/node's default (NodeNext) setup.
-//
-// @ts-ignore — bundled artifact, no .d.mts shipped
-import { getApp } from "../artifacts/api-server/dist/index.mjs";
+// Vercel serverless entry. Lazily imports the api-server's prebuilt
+// esbuild bundle (`dist/index.mjs`) on first invocation. Static
+// `import { getApp } from ...` triggers the bundle's banner code at
+// module-evaluation time, which empirically blows up the cold start
+// (FUNCTION_INVOCATION_FAILED with no logged error). Dynamic import
+// inside the handler defers that work to a context where errors
+// surface normally.
 
 let cachedApp: any = null;
 
 export default async function handler(req: any, res: any) {
   if (!cachedApp) {
-    cachedApp = await getApp();
+    // @ts-ignore — bundled artifact, no .d.mts shipped
+    const mod = await import("../artifacts/api-server/dist/index.mjs");
+    cachedApp = await (mod as any).getApp();
   }
   return cachedApp(req, res);
 }
