@@ -74,6 +74,14 @@ export function useTilly() {
       // — so the new reminder appears without a manual reload.
       qc.invalidateQueries({ queryKey: ["/api/tilly/reminders"] });
       qc.invalidateQueries({ queryKey: ["/api/tilly/reminders/today"] });
+      // Tool-result side effects: when the dream-create extractor fires,
+      // a goals row was just inserted server-side. Invalidate the dreams
+      // query so the Dreams tab picks up the new card without a manual
+      // pull-to-refresh. Future tools (setBudget, pinToHome, etc.) will
+      // each invalidate their own query keys here.
+      if (data.reply && (data.reply as any).toolResult?.kind === "dream_created") {
+        qc.invalidateQueries({ queryKey: ["/api/dreams"] });
+      }
       // Bind the inline confirmation chip to this specific reply.
       if (data.createdReminder && data.reply?.id) {
         setConfirmedReminders((prev) => ({
