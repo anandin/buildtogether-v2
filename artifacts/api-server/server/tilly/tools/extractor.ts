@@ -121,8 +121,12 @@ export async function extractToolCalls(input: {
   meta?: { userId?: string | null };
 }): Promise<ExtractedToolCall[]> {
   try {
+    // gpt-4o-mini is empirically faster than Haiku 4.5 for this schema
+    // shape (5 tool variants × 12-field args object). Both produce
+    // equivalent extraction quality on the test prompts. Override with
+    // TILLY_TOOL_EXTRACTOR_MODEL when needed.
     const llm = new OpenRouterLLM(
-      process.env.TILLY_TOOL_EXTRACTOR_MODEL || "anthropic/claude-haiku-4.5",
+      process.env.TILLY_TOOL_EXTRACTOR_MODEL || "openai/gpt-4o-mini",
     );
     const result = await llm.structuredOutput<{ toolCalls: ExtractedToolCall[] }>({
       systemPrompts: [SYSTEM_PROMPT],
@@ -134,7 +138,7 @@ export async function extractToolCalls(input: {
       ],
       schema: ResultSchema,
       schemaName: "TillyToolCalls",
-      maxTokens: 512,
+      maxTokens: 384,
       meta: { route: "tilly:tool-extractor", userId: input.meta?.userId ?? null },
     });
     return Array.isArray(result?.toolCalls) ? result.toolCalls : [];
