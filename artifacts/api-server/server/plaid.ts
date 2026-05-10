@@ -142,6 +142,18 @@ export function mapPlaidCategory(
     ) {
       return "loans";
     }
+    // Insurance carriers — Plaid frequently lands these under
+    // GENERAL_SERVICES (→ subscriptions) which makes the spend page
+    // misleading. The user's Pembridge auto policy was the trigger;
+    // these are the most common Canadian + US carriers.
+    if (
+      /\b(pembridge|allstate|state farm|geico|progressive|travelers|nationwide|liberty mutual|farmers|aviva|intact|manulife|sun ?life|td insurance|belairdirect|economical|the co-?operators|desjardins insurance|wawanesa|gore mutual|primerica)\b/.test(
+        haystack,
+      ) ||
+      /\binsurance\b/.test(haystack)
+    ) {
+      return "insurance";
+    }
   }
 
   // Prefer the new personal_finance_category when Plaid provides it.
@@ -160,6 +172,10 @@ export function mapPlaidCategory(
     if (primary === "PERSONAL_CARE") return "personal";
     if (primary === "GENERAL_MERCHANDISE") return "shopping";
     if (primary === "HOME_IMPROVEMENT") return "shopping";
+    // Insurance has its own detailed PFC; map it before the broader
+    // GENERAL_SERVICES → subscriptions catch-all so auto/home/health
+    // policies don't pollute the subscriptions bucket.
+    if (detailed.includes("INSURANCE")) return "insurance";
     if (primary === "GENERAL_SERVICES") return "subscriptions";
     // CRA, IRS, property tax (Bramptaxes etc.) — was disappearing into
     // "other". Peeling out so the user sees "$5K to tax this quarter"

@@ -411,6 +411,70 @@ export function mountTillyInsightsRoutes(app: Express): void {
     }
   });
 
+  // GET /api/tilly/categories/:name/merchants — every merchant whose
+  // ourCategory matches the requested name, with month total + count.
+  // Powers the drill-in on the Categorize spend screen so the user can
+  // tap a merchant and move it without going through chat.
+  app.get(
+    "/api/tilly/categories/:name/merchants",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const householdId = req.user.coupleId;
+      if (!householdId) return res.json({ merchants: [] });
+      const cat = String(req.params.name).toLowerCase();
+      try {
+        const monthAgo = new Date();
+        monthAgo.setDate(monthAgo.getDate() - 30);
+        const monthAgoIso = monthAgo.toISOString().slice(0, 10);
+        const filtered = await db
+          .select()
+          .from(plaidTransactions)
+          .where(
+            and(
+              eq(plaidTransactions.coupleId, householdId),
+              gte(plaidTransactions.date, monthAgoIso),
+              eq(plaidTransactions.ourCategory, cat),
+            ),
+          );
+        const out = new Map<
+          string,
+          { signature: string; displayName: string; monthTotal: number; count: number; lastDate: string }
+        >();
+        for (const r of filtered) {
+          if (typeof r.amount !== "number" || r.amount <= 0) continue;
+          const sig = (r.signature || "").trim().toLowerCase();
+          if (!sig) continue;
+          const display =
+            (r.merchantName && r.merchantName.trim()) ||
+            (r.name && r.name.trim()) ||
+            sig;
+          const existing = out.get(sig);
+          if (existing) {
+            existing.monthTotal += r.amount;
+            existing.count += 1;
+            if (r.date > existing.lastDate) existing.lastDate = r.date;
+          } else {
+            out.set(sig, {
+              signature: sig,
+              displayName: display,
+              monthTotal: r.amount,
+              count: 1,
+              lastDate: r.date,
+            });
+          }
+        }
+        const merchants = Array.from(out.values())
+          .map((m) => ({ ...m, monthTotal: Math.round(m.monthTotal * 100) / 100 }))
+          .sort((a, b) => b.monthTotal - a.monthTotal);
+        res.json({ category: cat, merchants });
+      } catch (err) {
+        console.warn("/api/tilly/categories/:name/merchants error:", err);
+        res.status(500).json({ error: "merchants failed" });
+      }
+    },
+  );
+
   // POST /api/tilly/tools/:name — run any registered tool through the
   // same dispatcher chat uses. Lets the Categories screen and other
   // mutating UI surfaces fire setCategoryInclusion (and future tools)

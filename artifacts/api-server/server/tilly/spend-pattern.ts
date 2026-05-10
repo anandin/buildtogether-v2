@@ -253,6 +253,9 @@ function categoryHue(name: string): SpendCategory["hue"] {
   if (n === "fees" || n.includes("fee")) return "warn";
   // Tax & transfer rows are factual — neutral grey is right, no alarm.
   if (n === "taxes" || n === "transfers") return "inkSoft";
+  // Insurance — recurring fixed cost, but unlike loans/fees it's a
+  // protection the user signed up for. Treat it as neutral.
+  if (n === "insurance" || n.includes("insur")) return "inkSoft";
   if (n === "transport" || n.includes("transit")) return "good";
   return "inkSoft";
 }

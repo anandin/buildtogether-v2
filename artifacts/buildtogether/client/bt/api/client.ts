@@ -81,6 +81,17 @@ export const btApi = {
     }>("/api/tilly/categories"),
   runTool: (name: string, args: unknown) =>
     postJson<{ result: any }>(`/api/tilly/tools/${name}`, args),
+  categoryMerchants: (category: string) =>
+    getJson<{
+      category: string;
+      merchants: Array<{
+        signature: string;
+        displayName: string;
+        monthTotal: number;
+        count: number;
+        lastDate: string;
+      }>;
+    }>(`/api/tilly/categories/${encodeURIComponent(category)}/merchants`),
 
   // ── Tilly chat ───────────────────────────────────────────────────────────
   chatHistory: () => getJson<ChatHistory>("/api/tilly/chat/history"),
