@@ -521,18 +521,22 @@ async function runScoutLike(
   console.log(
     `[tool:${mode === "wait" ? "predictSalePrice" : "findOptions"}] enqueue userId=${ctx.userId} query="${args.query.trim().slice(0, 80)}" location=${location ?? "null"}`,
   );
-  const jobId = await enqueueScout(
-    {
-      userId: ctx.userId,
-      householdId: ctx.householdId,
-      query: args.query.trim(),
-      location,
-      mode,
-    },
-    { awaitCompletion: false },
-  );
+  // Block until the scout finishes. Earlier attempt used
+  // awaitCompletion=false (fire-and-forget) but Vercel shut down the
+  // function instance the moment the HTTP response returned — the
+  // processScoutJob promise never ran. Default true matches the
+  // existing user-tap scout endpoint (mountChatScoutLike). Chat reply
+  // takes 10-25s now but the scout card lands populated, and the
+  // assistant's final text reply references real results.
+  const jobId = await enqueueScout({
+    userId: ctx.userId,
+    householdId: ctx.householdId,
+    query: args.query.trim(),
+    location,
+    mode,
+  });
   console.log(
-    `[tool:${mode === "wait" ? "predictSalePrice" : "findOptions"}] jobId=${jobId} (background)`,
+    `[tool:${mode === "wait" ? "predictSalePrice" : "findOptions"}] jobId=${jobId} (awaited)`,
   );
   // Insert the conversation row that the mobile history renderer turns
   // into a scout/wait card. Same shape as the user-initiated POST
