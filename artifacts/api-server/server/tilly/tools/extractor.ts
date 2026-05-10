@@ -17,9 +17,32 @@
 import { z } from "zod";
 import { OpenRouterLLM } from "../llm/openrouter";
 
-// Open shape — args are validated per-tool by the registry's zod schemas.
-// We can't pre-strict args here because the union would explode the JSON
-// schema and confuse the model.
+// Args schema lists every field used by ANY tool, all optional. Why not a
+// discriminated union: OpenRouter's JSON Schema serializer empirically
+// drops nested-union args (Claude returns args:{}). With every field
+// enumerated optional, Claude fills the relevant ones for each tool name.
+// Per-tool strict validation still runs in the dispatcher, so unrelated
+// fields aren't a correctness risk.
+const ToolArgsSchema = z.object({
+  // createDream
+  name: z.string().optional(),
+  targetAmount: z.number().optional(),
+  monthlyContribution: z.number().optional(),
+  emoji: z.string().optional(),
+  // markPaymentToOwnCard
+  merchantSignature: z.string().optional(),
+  cardName: z.string().optional(),
+  // hideCategoryFromSpend
+  category: z.string().optional(),
+  // pinToHome
+  tileKind: z.string().optional(),
+  // setOnboardingField
+  field: z.string().optional(),
+  value: z.union([z.string(), z.number()]).optional(),
+  // Cross-tool
+  reason: z.string().optional(),
+});
+
 const ToolCallSchema = z.object({
   name: z.enum([
     "createDream",
@@ -28,9 +51,7 @@ const ToolCallSchema = z.object({
     "pinToHome",
     "setOnboardingField",
   ]),
-  // Free-form jsonb-shaped args. Per-tool zod validation runs in the
-  // dispatcher; bad args from Haiku just yield a no-op (logged warning).
-  args: z.record(z.unknown()),
+  args: ToolArgsSchema,
 });
 
 const ResultSchema = z.object({
