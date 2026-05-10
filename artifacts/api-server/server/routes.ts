@@ -5301,6 +5301,56 @@ Return just the message text.`;
 
 
 
+  // TEMP debug — diagnose tool-fire failures. Reads the latest
+  // user→tilly turn from guardian_conversations + runs the extractor
+  // against it + dumps current user_preferences. Remove after the
+  // tool surface stabilises.
+  app.get("/api/tilly/last-turn-debug", async (req, res) => {
+    try {
+      const coupleId = (req.query.coupleId as string | undefined)?.trim();
+      if (!coupleId) return res.status(400).json({ error: "coupleId required" });
+      const turns = await db
+        .select()
+        .from(guardianConversations)
+        .where(eq(guardianConversations.coupleId, coupleId))
+        .orderBy(desc(guardianConversations.createdAt))
+        .limit(10);
+      let userMsg: string | null = null;
+      let tillyReply: string | null = null;
+      for (const r of turns) {
+        if (r.role === "guardian" && tillyReply == null) tillyReply = r.content;
+        if (r.role === "user" && userMsg == null) userMsg = r.content;
+        if (userMsg && tillyReply) break;
+      }
+      const { extractToolCalls } = await import("./tilly/tools/extractor");
+      const calls =
+        userMsg && tillyReply
+          ? await extractToolCalls({ userMessage: userMsg, tillyReply })
+          : [];
+      const userRow = (
+        await db.select().from(users).where(eq(users.coupleId, coupleId)).limit(1)
+      )[0];
+      const prefs = userRow
+        ? await db
+            .select()
+            .from(userPreferences)
+            .where(eq(userPreferences.userId, userRow.id))
+        : [];
+      res.json({
+        coupleId,
+        lastTurn: { userMsg, tillyReply },
+        extractorOutput: calls,
+        prefsCount: prefs.length,
+        prefs: prefs.map((p) => ({ scope: p.scope, key: p.key, value: p.value })),
+      });
+    } catch (e: any) {
+      res.status(500).json({
+        error: e?.message,
+        stack: (e?.stack || "").split("\n").slice(0, 5),
+      });
+    }
+  });
+
   // ─── Task #23: grouped pending queue + bulk accept ─────────────────────
   // Group pending Plaid txs by merchant signature so the user can deal with
   // "Spotify ×4 · $39.96" in one tap instead of accepting it four times.
