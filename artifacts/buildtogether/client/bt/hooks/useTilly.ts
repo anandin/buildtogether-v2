@@ -74,13 +74,39 @@ export function useTilly() {
       // — so the new reminder appears without a manual reload.
       qc.invalidateQueries({ queryKey: ["/api/tilly/reminders"] });
       qc.invalidateQueries({ queryKey: ["/api/tilly/reminders/today"] });
-      // Tool-result side effects: when the dream-create extractor fires,
-      // a goals row was just inserted server-side. Invalidate the dreams
-      // query so the Dreams tab picks up the new card without a manual
-      // pull-to-refresh. Future tools (setBudget, pinToHome, etc.) will
-      // each invalidate their own query keys here.
-      if (data.reply && (data.reply as any).toolResult?.kind === "dream_created") {
+      // Tool-result side effects: each detected tool result on this turn
+      // points at the queries that need refetching so the relevant screens
+      // pick up the change without a manual pull-to-refresh.
+      const reply = data.reply as any;
+      const results: Array<{ kind: string }> = Array.isArray(reply?.toolResults)
+        ? reply.toolResults
+        : reply?.toolResult
+          ? [reply.toolResult]
+          : [];
+      const seen = new Set(results.map((r) => r.kind));
+      if (seen.has("dream_created")) {
         qc.invalidateQueries({ queryKey: ["/api/dreams"] });
+      }
+      if (seen.has("payment_to_card_aliased")) {
+        // Spend totals + 90-day analyse + plaid pending all need refetch
+        // since past plaid_transactions just got reclassified to transfers.
+        qc.invalidateQueries({ queryKey: ["/api/expenses"] });
+        qc.invalidateQueries({ queryKey: ["/api/tilly/spend-pattern"] });
+        qc.invalidateQueries({ queryKey: ["/api/tilly/today"] });
+        qc.invalidateQueries({ queryKey: ["/api/plaid/pending"] });
+        qc.invalidateQueries({ queryKey: ["/api/plaid/pending-grouped"] });
+      }
+      if (
+        seen.has("category_hidden") ||
+        seen.has("home_tile_pinned") ||
+        seen.has("onboarding_field_set")
+      ) {
+        // All preference writes invalidate the prefs query; downstream
+        // screens (Spend filtering, Today tiles, Settings) re-render.
+        qc.invalidateQueries({ queryKey: ["/api/user-prefs"] });
+      }
+      if (seen.has("onboarding_field_set")) {
+        qc.invalidateQueries({ queryKey: ["/api/tilly/me/life-context"] });
       }
       // Bind the inline confirmation chip to this specific reply.
       if (data.createdReminder && data.reply?.id) {

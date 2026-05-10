@@ -35,14 +35,40 @@ import type { TillyMessage } from "../api/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { btApi } from "../api/client";
 
-type DreamPreview = {
-  kind: "dream_created";
-  dreamId: string;
-  name: string;
-  targetAmount: number;
-  monthlyContribution: number;
-  emoji: string;
-};
+type ToolPreview =
+  | {
+      kind: "dream_created";
+      dreamId: string;
+      name: string;
+      targetAmount: number;
+      monthlyContribution: number;
+      emoji: string;
+    }
+  | {
+      kind: "payment_to_card_aliased";
+      merchantSignature: string;
+      cardName: string;
+      reclassifiedCount: number;
+      reclassifiedAmount: number;
+    }
+  | {
+      kind: "category_hidden";
+      category: string;
+      reason: string;
+    }
+  | {
+      kind: "home_tile_pinned";
+      tileKind: string;
+      label: string;
+    }
+  | {
+      kind: "onboarding_field_set";
+      field: string;
+      value: string;
+    };
+
+// Backward-compat alias for the existing single-tool field.
+type DreamPreview = Extract<ToolPreview, { kind: "dream_created" }>;
 
 type Msg =
   | { id: string; role: "user"; kind: "text"; body: string }
@@ -51,7 +77,8 @@ type Msg =
       role: "tilly";
       kind: "text";
       body: string;
-      toolResult?: DreamPreview;
+      toolResult?: ToolPreview;
+      toolResults?: ToolPreview[];
     }
   | { id: string; role: "tilly"; kind: "typing" }
   | {
@@ -155,7 +182,8 @@ function toLocal(m: TillyMessage): Msg {
     role: "tilly",
     kind: "text",
     body: m.body,
-    toolResult: (m as any).toolResult as DreamPreview | undefined,
+    toolResult: (m as any).toolResult as ToolPreview | undefined,
+    toolResults: (m as any).toolResults as ToolPreview[] | undefined,
   };
 }
 
@@ -755,65 +783,195 @@ function Bubble({
         {confirmedReminder ? (
           <ReminderConfirmationChip reminder={confirmedReminder} />
         ) : null}
-        {/* Tool result preview — dream Tilly just created via the
-            extract-dream-create classifier. Renders inline so the user
-            sees the new dream below her bubble without leaving chat. */}
-        {m.kind === "text" && m.toolResult?.kind === "dream_created" ? (
-          <DreamPreviewCard dream={m.toolResult} />
-        ) : null}
+        {/* Tool result previews — one inline card per tool the unified
+            extractor fired this turn. Multi-tool turns ("I'm 38, support
+            4, in Toronto") render multiple cards stacked. Falls back to
+            the legacy single `toolResult` when only one fired (older
+            client field). */}
+        {m.kind === "text"
+          ? renderToolPreviews(m.toolResults, m.toolResult, t)
+          : null}
       </View>
     </View>
   );
 }
 
-function DreamPreviewCard({ dream }: { dream: DreamPreview }) {
-  const { t } = useBT();
+function renderToolPreviews(
+  toolResults: ToolPreview[] | undefined,
+  legacy: ToolPreview | undefined,
+  t: ReturnType<typeof useBT>["t"],
+) {
+  const results = toolResults && toolResults.length > 0
+    ? toolResults
+    : legacy
+      ? [legacy]
+      : [];
+  if (results.length === 0) return null;
   return (
-    <View
-      style={{
-        marginTop: 8,
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 12,
-        paddingVertical: 10,
-        paddingHorizontal: 14,
-        backgroundColor: t.accentSoft,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: t.accent,
-        maxWidth: "100%",
-      }}
-    >
-      <Text style={{ fontSize: 22 }}>{dream.emoji || "✺"}</Text>
-      <View style={{ flex: 1 }}>
+    <View style={{ marginTop: 8, gap: 6 }}>
+      {results.map((r, i) => (
+        <ToolPreviewCard key={`${r.kind}-${i}`} result={r} t={t} />
+      ))}
+    </View>
+  );
+}
+
+function ToolPreviewCard({
+  result,
+  t,
+}: {
+  result: ToolPreview;
+  t: ReturnType<typeof useBT>["t"];
+}) {
+  const baseStyle = {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    backgroundColor: t.accentSoft,
+    borderColor: t.accent,
+  };
+
+  if (result.kind === "dream_created") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 22 }}>{result.emoji || "✺"}</Text>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={{
+              fontFamily: BTFonts.serif,
+              fontSize: 14,
+              fontWeight: "600",
+              color: t.ink,
+            }}
+          >
+            {result.name}
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 11,
+              color: t.inkSoft,
+              marginTop: 2,
+            }}
+          >
+            ${result.targetAmount.toFixed(0)} target
+            {result.monthlyContribution > 0
+              ? ` · $${result.monthlyContribution.toFixed(0)}/mo`
+              : ""}{" "}
+            · saved as a Dream
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (result.kind === "payment_to_card_aliased") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>💳</Text>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={{
+              fontFamily: BTFonts.serif,
+              fontSize: 13,
+              fontWeight: "600",
+              color: t.ink,
+            }}
+          >
+            Stopped counting {result.cardName} as spending
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 11,
+              color: t.inkSoft,
+              marginTop: 2,
+            }}
+          >
+            {result.reclassifiedCount} past charge
+            {result.reclassifiedCount === 1 ? "" : "s"} · $
+            {Math.round(result.reclassifiedAmount).toLocaleString()} moved out
+            of loans
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (result.kind === "category_hidden") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>🙈</Text>
         <Text
           style={{
-            fontFamily: BTFonts.serif,
-            fontSize: 14,
-            fontWeight: "600",
+            flex: 1,
+            fontFamily: BTFonts.sans,
+            fontSize: 12,
             color: t.ink,
           }}
         >
-          {dream.name}
-        </Text>
-        <Text
-          style={{
-            fontFamily: BTFonts.sans,
-            fontSize: 11,
-            color: t.inkSoft,
-            marginTop: 2,
-          }}
-        >
-          ${dream.targetAmount.toFixed(0)} target
-          {dream.monthlyContribution > 0
-            ? ` · $${dream.monthlyContribution.toFixed(0)}/mo`
-            : ""}
-          {" "}
-          · saved as a Dream
+          Hidden <Text style={{ fontWeight: "700" }}>{result.category}</Text>{" "}
+          from your Spend page. Tell me to bring it back anytime.
         </Text>
       </View>
-    </View>
-  );
+    );
+  }
+
+  if (result.kind === "home_tile_pinned") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>📌</Text>
+        <Text
+          style={{
+            flex: 1,
+            fontFamily: BTFonts.sans,
+            fontSize: 12,
+            color: t.ink,
+          }}
+        >
+          Pinned <Text style={{ fontWeight: "700" }}>{result.label}</Text> to
+          your Today screen.
+        </Text>
+      </View>
+    );
+  }
+
+  if (result.kind === "onboarding_field_set") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>📝</Text>
+        <Text
+          style={{
+            flex: 1,
+            fontFamily: BTFonts.sans,
+            fontSize: 12,
+            color: t.ink,
+          }}
+        >
+          Noted: {humanizeOnboardingField(result.field)} ={" "}
+          <Text style={{ fontWeight: "700" }}>{result.value}</Text>
+        </Text>
+      </View>
+    );
+  }
+
+  return null;
+}
+
+function humanizeOnboardingField(field: string): string {
+  const map: Record<string, string> = {
+    employmentType: "work",
+    ageBand: "age",
+    city: "city",
+    dependents: "people you support",
+    supportNote: "context",
+    schoolName: "school",
+  };
+  return map[field] ?? field;
 }
 
 /**

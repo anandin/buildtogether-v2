@@ -21,6 +21,7 @@ import { BTCard, BTChip, BTLabel, BTNum, BTSerif } from "../atoms";
 import { useSpend } from "../hooks/useSpend";
 import { useExpenses } from "../hooks/useExpenses";
 import { useSubscriptions } from "../hooks/useSubscriptions";
+import { useUserPrefs } from "../hooks/useUserPrefs";
 import { AddExpenseModal } from "../AddExpenseModal";
 import { SplitModal } from "../SplitModal";
 import { btApi } from "../api/client";
@@ -209,6 +210,9 @@ export function BTSpend() {
   const { spent, italicSpan, bars, categories } = live;
   const todayLedger = "today" in live ? live.today : [];
   const paycheck = "paycheck" in live ? live.paycheck : null;
+  // Tilly-driven category filter — chat sends a hideCategoryFromSpend
+  // tool, server writes the pref, this screen reads it and filters.
+  const { hiddenCategories } = useUserPrefs();
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
@@ -242,9 +246,24 @@ export function BTSpend() {
 
         <View style={{ gap: 10 }}>
           <BTLabel color={t.inkMute}>Where it goes</BTLabel>
-          {categories.map((c) => (
-            <CategoryRow key={c.id} c={c} t={t} />
-          ))}
+          {categories
+            .filter((c) => !hiddenCategories.includes(c.name.toLowerCase()))
+            .map((c) => (
+              <CategoryRow key={c.id} c={c} t={t} />
+            ))}
+          {hiddenCategories.length > 0 ? (
+            <Text
+              style={{
+                color: t.inkMute,
+                fontFamily: BTFonts.sans,
+                fontSize: 11,
+                fontStyle: "italic",
+                marginTop: 4,
+              }}
+            >
+              Hiding: {hiddenCategories.join(", ")}. Tell Tilly to bring back.
+            </Text>
+          ) : null}
         </View>
 
         {activeSubs.length > 0 ? (

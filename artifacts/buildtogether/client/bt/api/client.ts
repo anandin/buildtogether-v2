@@ -134,6 +134,11 @@ export const btApi = {
     return res.json() as Promise<{ ok: true }>;
   },
 
+  // ── User preferences (read by every screen, written by Tilly tools) ──
+  userPrefs: () => getJson<import("./types").UserPrefsResponse>("/api/user-prefs"),
+  setUserPref: (scope: string, key: string, value: unknown) =>
+    postJson<{ ok: true }>("/api/user-prefs", { scope, key, value }),
+
   // ── Subscriptions ───────────────────────────────────────────────────────
   subscriptions: () => getJson<SubscriptionsList>("/api/subscriptions"),
   pauseSubscription: (id: string) =>

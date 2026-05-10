@@ -81,18 +81,48 @@ export type ScoutStatus = "queued" | "running" | "done" | "failed";
 export type WaitConfidence = "low" | "medium" | "high";
 
 /**
- * Tool execution result attached to a Tilly turn. The server runs an
- * extract-then-execute pass after generating Tilly's text reply; when a
- * tool fires (e.g. createDream), the resulting payload comes back here so
- * the chat surface can render an inline preview card below the bubble.
+ * Tool execution results attached to a Tilly turn. The server runs an
+ * extract-then-execute pass after generating Tilly's text reply; each
+ * detected tool call produces one result here. The chat surface renders
+ * an inline preview card per result. Multi-tool turns are common
+ * ("I'm 38, support 4 people in Toronto" → 3 onboarding_field_set
+ * results).
  */
-export type TillyToolResult = {
-  kind: "dream_created";
-  dreamId: string;
-  name: string;
-  targetAmount: number;
-  monthlyContribution: number;
-  emoji: string;
+export type TillyToolResult =
+  | {
+      kind: "dream_created";
+      dreamId: string;
+      name: string;
+      targetAmount: number;
+      monthlyContribution: number;
+      emoji: string;
+    }
+  | {
+      kind: "payment_to_card_aliased";
+      merchantSignature: string;
+      cardName: string;
+      reclassifiedCount: number;
+      reclassifiedAmount: number;
+    }
+  | {
+      kind: "category_hidden";
+      category: string;
+      reason: string;
+    }
+  | {
+      kind: "home_tile_pinned";
+      tileKind: string;
+      label: string;
+    }
+  | {
+      kind: "onboarding_field_set";
+      field: string;
+      value: string;
+    };
+
+export type UserPrefsResponse = {
+  prefs: Record<string, Record<string, unknown>>;
+  count: number;
 };
 
 export type TillyMessage =
@@ -103,7 +133,11 @@ export type TillyMessage =
       kind: "text";
       body: string;
       createdAt: string;
+      // Backward-compat single-tool field.
       toolResult?: TillyToolResult;
+      // New: array of all tool results. Server populates both fields when
+      // exactly one tool fired; only `toolResults` when multiple did.
+      toolResults?: TillyToolResult[];
     }
   | { id: string; role: "tilly"; kind: "typing" }
   | {
