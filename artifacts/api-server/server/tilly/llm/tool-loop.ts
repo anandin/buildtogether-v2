@@ -94,11 +94,17 @@ export async function runWithTools(opts: RunWithToolsOpts): Promise<RunWithTools
       tool_calls: reply.toolCalls,
     });
 
-    // Execute every tool call sequentially. We append a `role:"tool"`
-    // turn per call (success or error) so the model sees them all in the
-    // same context window before its final text reply.
-    for (const call of reply.toolCalls) {
-      const toolTurn = await runOneToolCall(call, opts.ctx);
+    // Execute every tool call IN PARALLEL. Most tools are independent
+    // (writes to different prefs / inserts). The scout tools are
+    // particularly important to parallelize because each one blocks on
+    // Tavily + Gemini synthesis (~15s). Sequential was making
+    // multi-scout turns take >30s, which exceeded the mobile-side
+    // patience window. Promise.all preserves order so the `tool` turns
+    // we push back to the model match the tool_calls array order.
+    const settled = await Promise.all(
+      reply.toolCalls.map((call) => runOneToolCall(call, opts.ctx)),
+    );
+    for (const toolTurn of settled) {
       turns.push(toolTurn.turn);
       if (toolTurn.result) toolResults.push(toolTurn.result);
     }
