@@ -208,58 +208,90 @@ async function runMarkPaymentToOwnCard(
   args: z.infer<typeof markPaymentToOwnCardSchema>,
   ctx: ToolContext,
 ): Promise<ToolResult> {
-  // Tilly may pass a partially-normalized signature OR the raw display
-  // name ("Scotialn Vsa"). Run it through merchantSignature to land on
-  // the same canonical form the sync handler uses, so retroactive +
-  // prospective matches agree.
-  const targetSig = merchantSignature({
+  // Tilly's extraction frequently grabs wording from her OWN reply
+  // (e.g. "TD→Scotia VISA" with the arrow) rather than the actual
+  // merchant string from the user's plaid_transactions ("Scotialn Vsa").
+  // Strict signature equality misses these cases. We need fuzzy
+  // matching: find the actual merchants in the user's data whose names
+  // overlap with the cardName keywords, derive their canonical
+  // signatures, and write an alias pref for each one.
+  const explicitSig = merchantSignature({
     merchantName: args.merchantSignature,
     name: args.merchantSignature,
     amount: 0,
   });
+  const cardKeywords = args.cardName
+    .toLowerCase()
+    .split(/[\s\-_]+/)
+    .map((w) => w.replace(/[^a-z0-9]/g, ""))
+    .filter((w) => w.length >= 3 && !["the", "and", "card", "visa", "vsa"].includes(w));
+  // Note: 'visa' and 'vsa' are excluded from required keywords because they
+  // appear on too many merchants; we need at least one distinctive name
+  // (Scotia, Diners, Amex, etc.) AND optionally a card descriptor.
 
-  // 1. Persist the alias preference. Future sync handler reads this and
-  //    auto-classifies matching transactions as "transfers" before they
-  //    even hit the pending queue.
-  await db
-    .insert(userPreferences)
-    .values({
-      userId: ctx.userId,
-      scope: "plaid",
-      key: `alias_payment_to_card:${targetSig}`,
-      value: {
-        cardName: args.cardName,
-        reason: args.reason ?? "user-confirmed CC payment",
-        since: new Date().toISOString(),
-      },
-    })
-    .onConflictDoUpdate({
-      target: [userPreferences.userId, userPreferences.scope, userPreferences.key],
-      set: {
-        value: {
-          cardName: args.cardName,
-          reason: args.reason ?? "user-confirmed CC payment",
-          since: new Date().toISOString(),
-        },
-        updatedAt: new Date(),
-      },
-    });
-
-  // 2. Retroactive fix: scan all plaid_transactions for this couple,
-  //    find any whose live signature matches, flip ourCategory to
-  //    "transfers", and (when linked to an expense) update the
-  //    expense category too.
+  // Scan plaid_transactions to find candidate matches.
   const txs = await db
     .select()
     .from(plaidTransactions)
     .where(eq(plaidTransactions.coupleId, ctx.householdId))
     .limit(500);
+  const candidateSigs = new Set<string>();
+  if (explicitSig) candidateSigs.add(explicitSig);
+  for (const tx of txs) {
+    const sig = merchantSignature(tx);
+    const haystack = `${tx.merchantName ?? ""} ${tx.name ?? ""}`.toLowerCase();
+    // Match if every cardKeyword appears in the merchant name. With
+    // cardName="Scotia VISA" → keywords=["scotia"] (visa/vsa excluded
+    // above). "Scotialn Vsa" haystack contains "scotialn" — does that
+    // contain "scotia"? Yes (substring). Match.
+    if (cardKeywords.length === 0) continue;
+    const allMatch = cardKeywords.every((kw) => haystack.includes(kw));
+    if (allMatch) candidateSigs.add(sig);
+  }
+
+  // Persist alias prefs for every candidate signature so future syncs
+  // route them all to "transfers".
+  for (const sig of candidateSigs) {
+    await db
+      .insert(userPreferences)
+      .values({
+        userId: ctx.userId,
+        scope: "plaid",
+        key: `alias_payment_to_card:${sig}`,
+        value: {
+          cardName: args.cardName,
+          reason: args.reason ?? "user-confirmed CC payment",
+          since: new Date().toISOString(),
+        },
+      })
+      .onConflictDoUpdate({
+        target: [userPreferences.userId, userPreferences.scope, userPreferences.key],
+        set: {
+          value: {
+            cardName: args.cardName,
+            reason: args.reason ?? "user-confirmed CC payment",
+            since: new Date().toISOString(),
+          },
+          updatedAt: new Date(),
+        },
+      });
+  }
+
+  // Retroactive fix: any tx whose signature is in the candidate set OR
+  // whose merchant name matches the cardKeywords gets flipped to
+  // transfers. This catches both the "explicit signature" path and
+  // future-stranger-named rows that nonetheless are clearly CC payments.
   let reclassifiedCount = 0;
   let reclassifiedAmount = 0;
   for (const tx of txs) {
+    if (tx.ourCategory === "transfers") continue;
     const sig = merchantSignature(tx);
-    if (sig !== targetSig) continue;
-    if (tx.ourCategory === "transfers") continue; // already done
+    const haystack = `${tx.merchantName ?? ""} ${tx.name ?? ""}`.toLowerCase();
+    const sigMatch = candidateSigs.has(sig);
+    const nameMatch =
+      cardKeywords.length > 0 &&
+      cardKeywords.every((kw) => haystack.includes(kw));
+    if (!sigMatch && !nameMatch) continue;
     await db.transaction(async (txn) => {
       await txn
         .update(plaidTransactions)
@@ -278,7 +310,7 @@ async function runMarkPaymentToOwnCard(
 
   return {
     kind: "payment_to_card_aliased",
-    merchantSignature: targetSig,
+    merchantSignature: [...candidateSigs].join(", ") || explicitSig,
     cardName: args.cardName,
     reclassifiedCount,
     reclassifiedAmount,
