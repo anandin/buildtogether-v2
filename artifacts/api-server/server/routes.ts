@@ -40,6 +40,7 @@ import {
   plaidItems,
   plaidTransactions,
   aiCorrections,
+  userPreferences,
 } from "../shared/schema";
 import { detectPatterns, savePatterns, createNudgeFromPattern, getActivePatterns, getPendingNudges } from "./pattern-detection";
 import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt, buildQuickAddPrompt, buildGuardianCoachPrompt, buildGuardianIntentClassifierPrompt, type GuardianCoachContext } from "./prompts";
@@ -197,6 +198,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const [connector] = await db.select().from(users).where(eq(users.id, item.userId)).limit(1);
     const paidBy = connector?.partnerRole || "partner1";
 
+    // Pre-load alias_payment_to_card prefs for the connecting user so we
+    // can route matching merchants to "transfers" before they hit the
+    // pending queue. Tilly sets these via chat ("Scotia under loans is
+    // my credit card bill"); we honour them at sync time.
+    const aliasPrefs = await db
+      .select()
+      .from(userPreferences)
+      .where(
+        and(
+          eq(userPreferences.userId, item.userId),
+          eq(userPreferences.scope, "plaid"),
+        ),
+      );
+    const aliasedSignatures = new Set(
+      aliasPrefs
+        .map((p) => p.key)
+        .filter((k) => k.startsWith("alias_payment_to_card:"))
+        .map((k) => k.slice("alias_payment_to_card:".length)),
+    );
+
     while (hasMore) {
       const resp: any = await plaid.transactionsSync({
         access_token: item.accessToken,
@@ -207,16 +228,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const tx of data.added || []) {
         if (!shouldImportPlaidTransaction(tx)) continue;
 
-        const ourCat = mapPlaidCategory(tx.category, tx.personal_finance_category, {
-          name: tx.name ?? null,
-          merchantName: tx.merchant_name ?? null,
-        });
+        // Compute signature first so we can check alias_payment_to_card
+        // before letting mapPlaidCategory run its keyword + PFC chain.
+        const sig = merchantSignature(tx);
+        const isAliasedToOwnCard = aliasedSignatures.has(sig);
+        const ourCat = isAliasedToOwnCard
+          ? "transfers"
+          : mapPlaidCategory(tx.category, tx.personal_finance_category, {
+              name: tx.name ?? null,
+              merchantName: tx.merchant_name ?? null,
+            });
         // Task #23: look up a learned merchant rule before deciding what
         // to do. The rule overrides Plaid's heuristic in either direction:
         // it can auto-accept (skip pending queue) OR auto-ignore (drop the
         // row). Both branches still write a plaid_transactions row so
         // future syncs dedupe correctly.
-        const sig = merchantSignature(tx);
         const rule = !tx.pending ? await findRule(item.coupleId, sig) : null;
         const ruleOutcome = applyRuleToPlaidTx(tx, rule);
 

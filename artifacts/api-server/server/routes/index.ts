@@ -30,6 +30,7 @@ import { mountAdminUsersRoutes } from "./admin-users";
 import { mountAdminPlaidRoutes } from "./admin-plaid";
 import { mountCronRoutes } from "./cron";
 import { mountSplitsRoutes } from "./splits";
+import { registerUserPrefsRoutes } from "./user-prefs";
 import { mountPushRoutes } from "./push";
 import { mountExpensesRoutes } from "./expenses";
 import { mountInvitesRoutes } from "./invites";
@@ -56,6 +57,7 @@ export function registerTillyRoutes(app: Express): void {
   mountAdminPage(app);
   mountCronRoutes(app);
   mountSplitsRoutes(app);
+  registerUserPrefsRoutes(app);
   mountPushRoutes(app);
   mountExpensesRoutes(app);
   mountInvitesRoutes(app);

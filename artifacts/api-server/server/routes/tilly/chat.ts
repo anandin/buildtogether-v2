@@ -30,7 +30,8 @@ import {
   users,
   goals,
 } from "../../../shared/schema";
-import { extractDreamCreate } from "../../tilly/extract-dream-create";
+import { extractToolCalls } from "../../tilly/tools/extractor";
+import { executeTool, type ToolResult } from "../../tilly/tools/registry";
 import { enqueueScout } from "../../tilly/scout/orchestrator";
 import { distillUser } from "../../tilly/nightly-distiller";
 import {
@@ -125,21 +126,13 @@ type ScoutWireOption = {
 type WaitWireSource = { source: string; url: string; evidence: string };
 
 /**
- * Tool result attached to a Tilly turn. When the chat post-classifier
- * detects the user asked Tilly to take an action she now actually CAN
- * (e.g. createDream), the server runs the action and ships the resulting
- * payload alongside the text reply. The client renders an inline preview
- * card so the user sees the new dream/setting/etc. without leaving chat.
+ * Tool results attached to a Tilly turn. The post-extractor finds 0..N
+ * tool calls in the user's message; each gets dispatched (registry.ts)
+ * and the results travel back to the client which renders one inline
+ * preview card per result. Single-tool turns are most common, but
+ * multi-tool ones (e.g. "I support 4 people in Toronto, also create a
+ * dream for X") are supported.
  */
-type ToolResult = {
-  kind: "dream_created";
-  dreamId: string;
-  name: string;
-  targetAmount: number;
-  monthlyContribution: number;
-  emoji: string;
-};
-
 type WireMessage =
   | { id: string; role: "user"; kind: "text"; body: string; createdAt: string }
   | {
@@ -148,7 +141,10 @@ type WireMessage =
       kind: "text";
       body: string;
       createdAt: string;
+      // Backward-compatible single-tool field (legacy clients).
       toolResult?: ToolResult;
+      // New: array of all tool results from this turn.
+      toolResults?: ToolResult[];
     }
   | {
       id: string;
@@ -815,71 +811,31 @@ export function mountTillyChatRoutes(app: Express): void {
           console.warn("[chat] reminder persist failed:", err);
         }
 
-        // Tool-extraction pass: did the user just ask Tilly to create a
-        // savings goal? If so, run the actual goal insert so the chat reply
-        // is backed by a real DB row, not a hallucinated promise. Same
-        // post-classifier shape as the reminder extractor above.
-        let toolResult:
-          | {
-              kind: "dream_created";
-              dreamId: string;
-              name: string;
-              targetAmount: number;
-              monthlyContribution: number;
-              emoji: string;
-            }
-          | null = null;
+        // Unified tool-extraction pass: detect 0..N tool calls in this
+        // turn, dispatch each through the registry. Replaces the
+        // single-purpose extract-dream-create extractor with a single
+        // Haiku call that knows the full tool surface.
+        let toolResults: ToolResult[] = [];
         try {
-          const extracted = await extractDreamCreate({
+          const calls = await extractToolCalls({
             userMessage: message,
             tillyReply: text,
             meta: { userId },
           });
-          if (extracted) {
-            // Idempotency: if a goal with the same lowercased name already
-            // exists for this couple, surface it as the toolResult instead
-            // of inserting a duplicate. The user asked for "Switch 2" three
-            // times in three turns — they should see the same dream each
-            // time, not three identical entries cluttering the Dreams tab.
-            const existing = await db
-              .select()
-              .from(goals)
-              .where(eq(goals.coupleId, householdId))
-              .limit(50);
-            const normalizedNew = extracted.name.trim().toLowerCase();
-            const matched = existing.find(
-              (g) => g.name.trim().toLowerCase() === normalizedNew,
-            );
-            const goalRow =
-              matched ??
-              (
-                await db
-                  .insert(goals)
-                  .values({
-                    coupleId: householdId,
-                    name: extracted.name,
-                    targetAmount: extracted.targetAmount,
-                    savedAmount: 0,
-                    emoji: extracted.emoji || "✺",
-                    color: "#7C3AED",
-                    weeklyAuto: extracted.monthlyContribution
-                      ? Math.round((extracted.monthlyContribution / 4.33) * 100) / 100
-                      : null,
-                  })
-                  .returning()
-              )[0];
-            toolResult = {
-              kind: "dream_created",
-              dreamId: goalRow.id,
-              name: goalRow.name,
-              targetAmount: goalRow.targetAmount,
-              monthlyContribution: extracted.monthlyContribution,
-              emoji: goalRow.emoji,
-            };
+          for (const call of calls) {
+            const result = await executeTool(call.name, call.args, {
+              userId,
+              householdId,
+            });
+            if (result) toolResults.push(result);
           }
         } catch (toolErr) {
-          console.warn("[chat] dream-create extractor failed:", toolErr);
+          console.warn("[chat] tool extractor/dispatch failed:", toolErr);
         }
+        // Legacy single-tool field: keep populated when exactly one
+        // tool fired so old clients still render the dream preview card.
+        const legacySingleToolResult =
+          toolResults.length === 1 ? toolResults[0] : undefined;
 
         const [tillyRow] = await db
           .insert(guardianConversations)
@@ -897,7 +853,8 @@ export function mountTillyChatRoutes(app: Express): void {
           kind: "text",
           body: text,
           createdAt: tillyRow.createdAt.toISOString(),
-          toolResult: toolResult ?? undefined,
+          toolResult: legacySingleToolResult,
+          toolResults: toolResults.length > 0 ? toolResults : undefined,
         };
         emitEventAsync({
           userId,

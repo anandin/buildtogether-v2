@@ -383,6 +383,14 @@ const CRITICAL_STATEMENTS: string[] = [
   `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "signature" text`,
   `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "applied_rule_id" varchar`,
   `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "ai_suggested_reasoning" text`,
+  `CREATE TABLE IF NOT EXISTS "user_preferences" (
+    "user_id" varchar NOT NULL,
+    "scope" text NOT NULL,
+    "key" text NOT NULL,
+    "value" jsonb NOT NULL,
+    "updated_at" timestamp NOT NULL DEFAULT now(),
+    PRIMARY KEY ("user_id", "scope", "key")
+  )`,
   `CREATE INDEX IF NOT EXISTS "plaid_transactions_couple_status_signature_idx"
      ON "plaid_transactions" ("couple_id", "status", "signature")`,
   `CREATE TABLE IF NOT EXISTS "merchant_rules" (
