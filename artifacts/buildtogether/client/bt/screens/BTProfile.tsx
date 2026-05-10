@@ -312,6 +312,56 @@ function BTProfileMain({
         </View>
       </View>
 
+      {/* Manage — promoted to the top so the most-used drill-downs are
+          one tap from landing on YOU. Each entry leads with the action
+          (verb-first label) and a one-line description so the surface
+          is self-explanatory without needing to tap-and-discover. */}
+      <View style={{ gap: 8 }}>
+        <BTLabel color={t.inkMute}>Manage</BTLabel>
+        <View
+          style={{
+            backgroundColor: t.surface,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: t.rule,
+            overflow: "hidden",
+          }}
+        >
+          <SettingsEntry
+            t={t}
+            icon="link-2"
+            label="Bank connections"
+            description="Connect or disconnect accounts via Plaid."
+            onPress={onOpenBanks}
+          />
+          <BTRule color={t.rule} />
+          <SettingsEntry
+            t={t}
+            icon="inbox"
+            label="Pending review"
+            description="Confirm transactions Tilly couldn't auto-categorize."
+            badge={pendingCount > 0 ? pendingCount : undefined}
+            onPress={onOpenPending}
+          />
+          <BTRule color={t.rule} />
+          <SettingsEntry
+            t={t}
+            icon="tag"
+            label="Categorize spend"
+            description="Pick which categories count toward your monthly spend total — Lincoln car loan, Scotia transfers, etc."
+            onPress={onOpenCategories}
+          />
+          <BTRule color={t.rule} />
+          <SettingsEntry
+            t={t}
+            icon="settings"
+            label="App settings"
+            description="Notifications, privacy, sign-out."
+            onPress={onOpenAppSettings}
+          />
+        </View>
+      </View>
+
       {lifeContext &&
       (lifeContext.employmentType ||
         lifeContext.ageBand ||
@@ -359,9 +409,21 @@ function BTProfileMain({
         </View>
       ) : null}
 
-      {/* What I've learned about you */}
-      <View style={{ gap: 14 }}>
-        <BTLabel color={t.inkMute}>What I've learned</BTLabel>
+      {/* What I've learned about you — collapsed by default. The
+          memory timeline can run dozens of rows long; promoting the
+          first impression to a count + last note gets the user to the
+          rest of the page without paying the scroll cost. */}
+      <Collapsible
+        t={t}
+        title="What I've learned"
+        summary={
+          memoryItems.length === 0
+            ? "Once we've talked a bit, I'll start writing things down here."
+            : `${memoryItems.length} ${memoryItems.length === 1 ? "note" : "notes"} · most recent: "${
+                (memoryItems[0]?.body ?? "").slice(0, 90)
+              }${(memoryItems[0]?.body ?? "").length > 90 ? "…" : ""}"`
+        }
+      >
         {memoryItems.length > 0 ? (
           <>
             <BTSerif size={24} color={t.ink} weight="500">
@@ -372,19 +434,8 @@ function BTProfileMain({
             </BTSerif>
             <Timeline t={t} items={memoryItems} />
           </>
-        ) : (
-          <Text
-            style={{
-              color: t.inkSoft,
-              fontFamily: BTFonts.serifItalic,
-              fontSize: 16,
-              lineHeight: 24,
-            }}
-          >
-            Once we've talked a bit, I'll start writing down what matters here.
-          </Text>
-        )}
-      </View>
+        ) : null}
+      </Collapsible>
 
       {/* Your reminders — full management surface for Tilly's promised
           follow-ups. Today's compact view lives on Home; this is the
@@ -527,9 +578,14 @@ function BTProfileMain({
         </Text>
       </Pressable>
 
-      {/* Quiet settings */}
-      <View style={{ gap: 8 }}>
-        <BTLabel color={t.inkMute}>Quiet settings</BTLabel>
+      {/* Quiet settings — five niche prefs (quiet hours, big-purchase
+          alert, sub scan, phishing watch, memory retention). Most users
+          take the defaults; collapse to keep the YOU tab calm. */}
+      <Collapsible
+        t={t}
+        title="Quiet settings"
+        summary={`Quiet hours ${quietValue(QUIET_ROWS[0], quiet.data)} · ${QUIET_ROWS.length - 1} more`}
+      >
         <View
           style={{
             backgroundColor: t.surface,
@@ -586,52 +642,7 @@ function BTProfileMain({
             );
           })}
         </View>
-      </View>
-
-      {/* Settings entries — drill-down rows for the deeper bank- and
-          app-level surfaces. Kept as a small grouped card so it reads
-          like one row "More" rather than three separate sections. */}
-      <View style={{ gap: 8 }}>
-        <BTLabel color={t.inkMute}>More</BTLabel>
-        <View
-          style={{
-            backgroundColor: t.surface,
-            borderRadius: 16,
-            borderWidth: 1,
-            borderColor: t.rule,
-            overflow: "hidden",
-          }}
-        >
-          <SettingsEntry
-            t={t}
-            icon="link-2"
-            label="Bank connections"
-            onPress={onOpenBanks}
-          />
-          <BTRule color={t.rule} />
-          <SettingsEntry
-            t={t}
-            icon="inbox"
-            label="Pending review"
-            badge={pendingCount > 0 ? pendingCount : undefined}
-            onPress={onOpenPending}
-          />
-          <BTRule color={t.rule} />
-          <SettingsEntry
-            t={t}
-            icon="grid"
-            label="Categories"
-            onPress={onOpenCategories}
-          />
-          <BTRule color={t.rule} />
-          <SettingsEntry
-            t={t}
-            icon="settings"
-            label="App settings"
-            onPress={onOpenAppSettings}
-          />
-        </View>
-      </View>
+      </Collapsible>
     </ScrollView>
   );
 }
@@ -645,12 +656,14 @@ function SettingsEntry({
   t,
   icon,
   label,
+  description,
   badge,
   onPress,
 }: {
   t: BTTheme;
   icon: React.ComponentProps<typeof Feather>["name"];
   label: string;
+  description?: string;
   badge?: number;
   onPress: () => void;
 }) {
@@ -679,17 +692,31 @@ function SettingsEntry({
       >
         <Feather name={icon} size={15} color={t.ink} />
       </View>
-      <Text
-        style={{
-          flex: 1,
-          color: t.ink,
-          fontFamily: BTFonts.sans,
-          fontWeight: "600",
-          fontSize: 13,
-        }}
-      >
-        {label}
-      </Text>
+      <View style={{ flex: 1 }}>
+        <Text
+          style={{
+            color: t.ink,
+            fontFamily: BTFonts.sans,
+            fontWeight: "600",
+            fontSize: 13,
+          }}
+        >
+          {label}
+        </Text>
+        {description ? (
+          <Text
+            style={{
+              color: t.inkSoft,
+              fontFamily: BTFonts.sans,
+              fontSize: 11,
+              marginTop: 2,
+            }}
+            numberOfLines={2}
+          >
+            {description}
+          </Text>
+        ) : null}
+      </View>
       {badge ? (
         <View
           style={{
@@ -1154,6 +1181,74 @@ function YourReminders() {
           {fired.map((r) => renderRow(r, { canMark: false, muted: true }))}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * Collapsible — a section header that toggles its body. Used on YOU
+ * to keep "What I've learned" (potentially dozens of memory rows) and
+ * "Quiet settings" (5 niche prefs) closed by default. The header
+ * shows a one-line summary so the user knows there's content to expand
+ * into without having to open it.
+ */
+function Collapsible({
+  t,
+  title,
+  summary,
+  defaultOpen,
+  children,
+}: {
+  t: BTTheme;
+  title: string;
+  summary: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(!!defaultOpen);
+  return (
+    <View style={{ gap: open ? 14 : 0 }}>
+      <Pressable
+        onPress={() => setOpen((v) => !v)}
+        accessibilityRole="button"
+        accessibilityLabel={`${open ? "Collapse" : "Expand"} ${title}`}
+        accessibilityState={{ expanded: open }}
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingVertical: 6,
+          gap: 10,
+        }}
+      >
+        <View style={{ flex: 1 }}>
+          <BTLabel color={t.inkMute}>{title}</BTLabel>
+          {!open && summary ? (
+            <Text
+              style={{
+                color: t.inkSoft,
+                fontFamily: BTFonts.serifItalic,
+                fontSize: 14,
+                lineHeight: 20,
+                marginTop: 4,
+              }}
+            >
+              {summary}
+            </Text>
+          ) : null}
+        </View>
+        <Text
+          style={{
+            color: t.inkMute,
+            fontFamily: BTFonts.mono,
+            fontSize: 11,
+            letterSpacing: 1,
+          }}
+        >
+          {open ? "HIDE" : "SHOW"}
+        </Text>
+      </Pressable>
+      {open ? children : null}
     </View>
   );
 }
