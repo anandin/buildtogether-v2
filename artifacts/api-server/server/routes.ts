@@ -5515,6 +5515,19 @@ Return just the message text.`;
     }
   });
 
+  // TEMP debug: run the unified tool extractor against arbitrary input
+  app.get("/api/tilly/extractor-debug", async (req, res) => {
+    try {
+      const userMsg = (req.query.user as string) || "Create a dream for AirPods at $250";
+      const tillyReply = (req.query.tilly as string) || "Done. I added an AirPods dream.";
+      const { extractToolCalls } = await import("./tilly/tools/extractor");
+      const calls = await extractToolCalls({ userMessage: userMsg, tillyReply });
+      res.json({ userMsg, tillyReply, calls });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message, stack: (e?.stack || "").split("\n").slice(0, 5) });
+    }
+  });
+
   // TEMP debug: dump every Canada-Txd-like row across plaid_tx + expense
   app.get("/api/plaid/canada-txd-debug", async (req, res) => {
     try {
