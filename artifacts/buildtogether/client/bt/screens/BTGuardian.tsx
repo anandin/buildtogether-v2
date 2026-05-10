@@ -1785,9 +1785,10 @@ function ScoutBubble({
               <Text
                 style={{
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
-                  letterSpacing: 0.6,
+                  fontSize: 11,
+                  letterSpacing: 0.8,
                   textTransform: "uppercase",
+                  fontWeight: "700",
                   color: t.accent,
                 }}
                 numberOfLines={1}
@@ -1811,8 +1812,11 @@ function ScoutBubble({
             <Text
               style={{
                 fontFamily: BTFonts.sans,
-                fontSize: 13,
+                fontSize: 15,
+                fontWeight: "600",
                 color: t.ink,
+                lineHeight: 21,
+                marginTop: 2,
               }}
               numberOfLines={2}
             >
@@ -1820,11 +1824,12 @@ function ScoutBubble({
             </Text>
             <Text
               style={{
-                fontFamily: BTFonts.serifItalic,
-                fontSize: 12,
+                fontFamily: BTFonts.serif,
+                fontSize: 14,
                 color: t.inkSoft,
+                lineHeight: 20,
               }}
-              numberOfLines={2}
+              numberOfLines={3}
             >
               {opt.why}
             </Text>
@@ -1910,9 +1915,10 @@ function WaitBubble({ m }: { m: Extract<Msg, { kind: "wait" }> }) {
               <Text
                 style={{
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
-                  letterSpacing: 0.6,
+                  fontSize: 11,
+                  letterSpacing: 0.8,
                   textTransform: "uppercase",
+                  fontWeight: "700",
                   color: t.inkSoft,
                 }}
               >
@@ -1934,9 +1940,10 @@ function WaitBubble({ m }: { m: Extract<Msg, { kind: "wait" }> }) {
               <Text
                 style={{
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
-                  letterSpacing: 0.6,
+                  fontSize: 11,
+                  letterSpacing: 0.8,
                   textTransform: "uppercase",
+                  fontWeight: "700",
                   color: t.inkSoft,
                 }}
               >
@@ -1959,9 +1966,10 @@ function WaitBubble({ m }: { m: Extract<Msg, { kind: "wait" }> }) {
               <Text
                 style={{
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
-                  letterSpacing: 0.6,
+                  fontSize: 11,
+                  letterSpacing: 0.8,
                   textTransform: "uppercase",
+                  fontWeight: "700",
                   color: t.inkSoft,
                 }}
               >
@@ -1997,9 +2005,10 @@ function WaitBubble({ m }: { m: Extract<Msg, { kind: "wait" }> }) {
               <Text
                 style={{
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
-                  letterSpacing: 0.6,
+                  fontSize: 11,
+                  letterSpacing: 0.8,
                   textTransform: "uppercase",
+                  fontWeight: "700",
                   color: t.accent,
                 }}
                 numberOfLines={1}
@@ -2008,11 +2017,13 @@ function WaitBubble({ m }: { m: Extract<Msg, { kind: "wait" }> }) {
               </Text>
               <Text
                 style={{
-                  fontFamily: BTFonts.serifItalic,
-                  fontSize: 12,
-                  color: t.inkSoft,
+                  fontFamily: BTFonts.serif,
+                  fontSize: 14,
+                  color: t.ink,
+                  lineHeight: 20,
+                  marginTop: 4,
                 }}
-                numberOfLines={3}
+                numberOfLines={4}
               >
                 {s.evidence}
               </Text>
