@@ -749,6 +749,22 @@ export function mountTillyChatRoutes(app: Express): void {
           });
           text = out.text;
           toolResults = out.toolResults;
+          // Hallucination sentinel: if Tilly's text claims a scout is in
+          // flight but no scout/wait tool actually fired, log loudly so
+          // we catch the regression in production. Pure observability —
+          // does not block or rewrite the response.
+          const claimsScout =
+            /\b(scouts? are running|i'?ll check|let me look (that |it )?up|i'?m looking (into|up)|i'?ll find|looking up sale history|i'?ll scout)\b/i.test(
+              out.text,
+            );
+          const firedScout = out.toolResults.some(
+            (r) => r.kind === "scout_started" || r.kind === "wait_started",
+          );
+          if (claimsScout && !firedScout) {
+            console.warn(
+              `[chat] HALLUCINATION: reply claims scout in flight but no findOptions/predictSalePrice fired. userId=${userId} userMsg="${message.slice(0, 120)}" reply="${out.text.slice(0, 200)}"`,
+            );
+          }
         } catch (err) {
           // If tool_use fails (model doesn't support it, transient
           // OpenRouter error, etc.), fall back to plain text reply.

@@ -71,10 +71,18 @@ export async function runWithTools(opts: RunWithToolsOpts): Promise<RunWithTools
       meta: opts.meta,
     });
     lastText = reply.text;
+    console.log(
+      `[tool-loop] iter=${iter} userId=${opts.meta.userId ?? "anon"} toolCalls=${reply.toolCalls.length} textLen=${reply.text.length}`,
+    );
 
     if (!reply.toolCalls.length) {
       // Plain reply — done.
       return { text: reply.text, toolResults, iterations: iter };
+    }
+    for (const call of reply.toolCalls) {
+      console.log(
+        `[tool-loop] iter=${iter} firing tool=${call.name} args=${call.arguments.slice(0, 200)}`,
+      );
     }
 
     // Append assistant turn w/ tool_calls so the next round_trip sees the

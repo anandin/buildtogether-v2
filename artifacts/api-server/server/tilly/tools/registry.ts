@@ -518,6 +518,9 @@ async function runScoutLike(
   mode: "find" | "wait",
 ): Promise<ToolResult> {
   const location = args.location?.trim() || null;
+  console.log(
+    `[tool:${mode === "wait" ? "predictSalePrice" : "findOptions"}] enqueue userId=${ctx.userId} query="${args.query.trim().slice(0, 80)}" location=${location ?? "null"}`,
+  );
   const jobId = await enqueueScout(
     {
       userId: ctx.userId,
@@ -527,6 +530,9 @@ async function runScoutLike(
       mode,
     },
     { awaitCompletion: false },
+  );
+  console.log(
+    `[tool:${mode === "wait" ? "predictSalePrice" : "findOptions"}] jobId=${jobId} (background)`,
   );
   // Insert the conversation row that the mobile history renderer turns
   // into a scout/wait card. Same shape as the user-initiated POST
