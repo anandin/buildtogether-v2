@@ -31,3 +31,25 @@ export function useContributeDream() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/dreams"] }),
   });
 }
+
+export function useUpdateDream() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      body,
+    }: {
+      id: string;
+      body: Parameters<typeof btApi.updateDream>[1];
+    }) => btApi.updateDream(id, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/dreams"] }),
+  });
+}
+
+export function useDeleteDream() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => btApi.deleteDream(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["/api/dreams"] }),
+  });
+}

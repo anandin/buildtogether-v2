@@ -118,6 +118,21 @@ export const btApi = {
   }) => postJson<{ dream: import("./types").Dream }>("/api/dreams", body),
   contributeDream: (id: string, amount: number) =>
     postJson<{ ok: true }>(`/api/dreams/${id}/contribute`, { amount }),
+  updateDream: (
+    id: string,
+    body: {
+      name?: string;
+      target?: number;
+      glyph?: string;
+      weeklyAuto?: number;
+      loc?: string;
+      dueLabel?: string;
+    },
+  ) => putJson<{ dream: import("./types").Dream }>(`/api/dreams/${id}`, body),
+  deleteDream: async (id: string) => {
+    const res = await apiRequest("DELETE", `/api/dreams/${id}`);
+    return res.json() as Promise<{ ok: true }>;
+  },
 
   // ── Subscriptions ───────────────────────────────────────────────────────
   subscriptions: () => getJson<SubscriptionsList>("/api/subscriptions"),
