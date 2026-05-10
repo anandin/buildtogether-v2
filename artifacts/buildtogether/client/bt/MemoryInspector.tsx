@@ -401,15 +401,22 @@ function buildSettingsRows(
     });
   }
 
-  // 3. Plaid card aliases — one row per alias_payment_to_card:* pref.
+  // 3. Plaid card aliases — dedupe by cardName so multiple merchant
+  // signatures pointing at the same card render as ONE row. The undo
+  // tool already operates on cardName (fuzzy keyword match) and removes
+  // every signature aliased to that card in one shot.
   const plaid = (prefs.plaid ?? {}) as Record<string, unknown>;
+  const seenCards = new Set<string>();
   for (const key of Object.keys(plaid)) {
     if (!key.startsWith("alias_payment_to_card:")) continue;
     const v = plaid[key] as { cardName?: string } | null;
     const cardName = (v && typeof v.cardName === "string" && v.cardName) ||
       key.replace("alias_payment_to_card:", "");
+    const dedupeKey = cardName.toLowerCase();
+    if (seenCards.has(dedupeKey)) continue;
+    seenCards.add(dedupeKey);
     rows.push({
-      id: `plaid.${key}`,
+      id: `plaid.alias_payment_to_card.${dedupeKey}`,
       glyph: "💳",
       label: "Treated as card payment",
       value: cardName,

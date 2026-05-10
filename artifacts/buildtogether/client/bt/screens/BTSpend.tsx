@@ -25,6 +25,7 @@ import { useUserPrefs } from "../hooks/useUserPrefs";
 import { AddExpenseModal } from "../AddExpenseModal";
 import { SplitModal } from "../SplitModal";
 import { MemoryInspector } from "../MemoryInspector";
+import { useTilly } from "../hooks/useTilly";
 import { btApi } from "../api/client";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { Linking } from "react-native";
@@ -47,6 +48,8 @@ export function BTSpend() {
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitPrefill, setSplitPrefill] = useState<{ amount?: number; label?: string }>({});
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [undoToast, setUndoToast] = useState<string | null>(null);
+  const tilly = useTilly();
   const live = spend.data && spend.data.ready === true ? spend.data : null;
   const recent = expenses.data?.expenses ?? [];
 
@@ -470,7 +473,44 @@ export function BTSpend() {
         visible={memoryOpen}
         onClose={() => setMemoryOpen(false)}
         initialTab="settings"
+        onPrefillCompose={(seed) => {
+          // Spend lives on a different tab from Tilly's chat composer,
+          // so we can't stage the seed in a visible composer the way
+          // BTGuardian does. Send it directly through the chat path —
+          // the inverse tool fires, /api/user-prefs invalidates, and
+          // the Spend page rerenders without the user. Toast confirms.
+          setMemoryOpen(false);
+          tilly.send(seed);
+          setUndoToast("Asked Tilly to undo. Watch the Spend page update.");
+          setTimeout(() => setUndoToast(null), 3500);
+        }}
       />
+      {undoToast ? (
+        <View
+          style={{
+            position: "absolute",
+            bottom: 90,
+            left: 22,
+            right: 22,
+            backgroundColor: t.ink,
+            borderRadius: 14,
+            padding: 14,
+          }}
+          pointerEvents="none"
+        >
+          <Text
+            style={{
+              color: t.bg,
+              fontFamily: BTFonts.sans,
+              fontSize: 13,
+              fontWeight: "600",
+              textAlign: "center",
+            }}
+          >
+            {undoToast}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
