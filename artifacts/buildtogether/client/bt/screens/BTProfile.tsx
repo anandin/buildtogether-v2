@@ -34,8 +34,9 @@ import { BankConnectionsScreen } from "./plaid/BankConnectionsScreen";
 import { PendingTransactionsScreen } from "./plaid/PendingTransactionsScreen";
 import { AppSettingsScreen } from "./AppSettingsScreen";
 import { PasskeySecurityScreen } from "./PasskeySecurityScreen";
+import { BTCategories } from "./BTCategories";
 
-type ProfileRoute = null | "banks" | "pending" | "settings" | "security";
+type ProfileRoute = null | "banks" | "pending" | "settings" | "security" | "categories";
 
 /**
  * Public BTProfile entry — owns sub-route state so the You tab can drill
@@ -50,6 +51,7 @@ export function BTProfile() {
   if (route === "banks") return <BankConnectionsScreen onBack={back} />;
   if (route === "pending") return <PendingTransactionsScreen onBack={back} />;
   if (route === "security") return <PasskeySecurityScreen onBack={back} />;
+  if (route === "categories") return <BTCategories onBack={back} />;
   if (route === "settings")
     return (
       <AppSettingsScreen
@@ -64,6 +66,7 @@ export function BTProfile() {
       onOpenPending={() => setRoute("pending")}
       onOpenAppSettings={() => setRoute("settings")}
       onOpenSecurity={() => setRoute("security")}
+      onOpenCategories={() => setRoute("categories")}
     />
   );
 }
@@ -126,11 +129,13 @@ function BTProfileMain({
   onOpenPending,
   onOpenAppSettings,
   onOpenSecurity,
+  onOpenCategories,
 }: {
   onOpenBanks: () => void;
   onOpenPending: () => void;
   onOpenAppSettings: () => void;
   onOpenSecurity: () => void;
+  onOpenCategories: () => void;
 }) {
   const { t, tone, setTone } = useBT();
   const memory = useMemory();
@@ -610,6 +615,13 @@ function BTProfileMain({
             label="Pending review"
             badge={pendingCount > 0 ? pendingCount : undefined}
             onPress={onOpenPending}
+          />
+          <BTRule color={t.rule} />
+          <SettingsEntry
+            t={t}
+            icon="grid"
+            label="Categories"
+            onPress={onOpenCategories}
           />
           <BTRule color={t.rule} />
           <SettingsEntry

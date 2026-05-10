@@ -68,7 +68,61 @@ export interface LLMClient {
   readonly modelId: string;
   textReply(opts: LLMTextOpts): Promise<LLMTextResult>;
   structuredOutput<T>(opts: LLMStructuredOpts<T>): Promise<T>;
+  /** Optional. When present, supports the OpenAI-compatible `tools` param —
+   * a single LLM call that may emit assistant text, tool_calls, or both.
+   * Drives runWithTools() in `./tool-loop.ts`. Providers that don't
+   * implement this fall back to the post-extractor pattern. */
+  toolReply?(opts: LLMToolReplyOpts): Promise<LLMToolReplyResult>;
 }
+
+// ─── Tool-use types (OpenAI-compatible function calling) ────────────────
+
+export type LLMToolDef = {
+  name: string;
+  description: string;
+  /** JSON Schema for the tool's arguments. Tools must keep this in sync
+   * with their server-side zod validation; mismatch yields silent no-ops
+   * because the dispatcher re-validates. */
+  parameters: Record<string, unknown>;
+};
+
+export type LLMToolCall = {
+  /** Provider-issued id; must be echoed back as `tool_call_id` on the
+   * `role:"tool"` turn that returns the result. */
+  id: string;
+  name: string;
+  /** Raw JSON string as emitted by the model. Caller parses + validates. */
+  arguments: string;
+};
+
+/** A single conversation turn rich enough for the tool loop. Plain
+ * `user` / `assistant` carry text; `assistant` may also include
+ * `tool_calls`; `tool` carries a result indexed by `tool_call_id`. */
+export type LLMTurn =
+  | { role: "user"; content: string }
+  | { role: "assistant"; content: string }
+  | { role: "assistant"; content: string | null; tool_calls: LLMToolCall[] }
+  | { role: "tool"; tool_call_id: string; content: string };
+
+export type LLMToolReplyOpts = {
+  systemPrompts: string[];
+  turns: LLMTurn[];
+  tools: LLMToolDef[];
+  /** Default "auto" — the model decides. "required" forces a tool call
+   * (rarely useful here). "none" suppresses tools (debug). */
+  toolChoice?: "auto" | "required" | "none";
+  maxTokens?: number;
+  meta?: { userId?: string | null; route: string };
+};
+
+export type LLMToolReplyResult = {
+  /** May be empty string when the model emitted tool_calls only. */
+  text: string;
+  /** Empty when no tools were called this turn. */
+  toolCalls: LLMToolCall[];
+  modelId: string;
+  usage: LLMUsage;
+};
 
 /**
  * Tilly's default per-provider model picks. `tilly_config.model` overrides

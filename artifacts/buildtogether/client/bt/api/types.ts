@@ -129,7 +129,21 @@ export type TillyToolResult =
     }
   | { kind: "home_tile_unpinned"; tileKind: string; label: string }
   | { kind: "onboarding_field_unset"; field: string }
-  | { kind: "dream_deleted"; name: string };
+  | { kind: "dream_deleted"; name: string }
+  | {
+      kind: "category_inclusion_set";
+      category: string;
+      includeInSpend: boolean;
+      previouslyIncluded: boolean;
+    }
+  | {
+      kind: "merchant_category_set";
+      merchantSignature: string;
+      displayName: string;
+      fromCategory: string;
+      toCategory: string;
+      reclassifiedCount: number;
+    };
 
 export type UserPrefsResponse = {
   prefs: Record<string, Record<string, unknown>>;

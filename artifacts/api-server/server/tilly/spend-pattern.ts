@@ -12,7 +12,7 @@
  */
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "../db";
-import { plaidTransactions, expenses } from "../../shared/schema";
+import { plaidTransactions, expenses, userPreferences } from "../../shared/schema";
 
 /**
  * Unified read across Plaid + manual sources. The pattern engine doesn't
@@ -154,17 +154,62 @@ export type WeeklyPattern = {
   paycheck?: { amount: number; source: string; day: string; daysUntil: number };
 };
 
-/** Categories treated as "money flow / fixed" rather than discretionary
- * spending. Excluded from headline totals + bars + soft-spot detection,
- * surfaced in the dedicated `fixedObligations` field. `fees` joins the
- * club because an annual card fee or NSF charge is non-discretionary at
- * the moment it lands; the user can't avoid it this week. */
+/** DEFAULT categories treated as "money flow / fixed" rather than
+ * discretionary spending. Excluded from headline totals + bars +
+ * soft-spot detection, surfaced in the dedicated `fixedObligations`
+ * field. `fees` joins the club because an annual card fee or NSF charge
+ * is non-discretionary at the moment it lands; the user can't avoid it
+ * this week.
+ *
+ * The user can OVERRIDE these defaults via the setCategoryInclusion
+ * chat tool. We resolve overrides per-call via resolveFixedObligationSet
+ * below. Keep the constant in sync with the registry's
+ * DEFAULT_FIXED_OBLIGATION_CATS. */
 const FIXED_OBLIGATION_CATS = new Set([
   "loans",
   "taxes",
   "transfers",
   "fees",
 ]);
+
+/**
+ * Returns the effective fixed-obligation set for this user, applying
+ * `include_in_spend.<category>` overrides on top of the defaults.
+ * - includeInSpend=true on a default-excluded cat (loans, taxes, etc.)
+ *   removes it from the fixed set (now counts toward the headline).
+ * - includeInSpend=false on a default-included cat (subscriptions,
+ *   restaurants, etc.) adds it to the fixed set (now treated as
+ *   money flow only).
+ *
+ * Reads userPreferences directly. Without a userId we just return the
+ * defaults — non-user-scoped callers (cron, state-summary) shouldn't
+ * apply per-user overrides.
+ */
+async function resolveFixedObligationSet(userId: string | null): Promise<Set<string>> {
+  if (!userId) return new Set(FIXED_OBLIGATION_CATS);
+  const rows = await db
+    .select()
+    .from(userPreferences)
+    .where(
+      and(
+        eq(userPreferences.userId, userId),
+        eq(userPreferences.scope, "spend"),
+      ),
+    );
+  const overrides = new Map<string, boolean>();
+  for (const r of rows) {
+    if (!r.key.startsWith("include_in_spend.")) continue;
+    const cat = r.key.slice("include_in_spend.".length).toLowerCase();
+    const v = r.value as { includeInSpend?: unknown } | null;
+    if (typeof v?.includeInSpend === "boolean") overrides.set(cat, v.includeInSpend);
+  }
+  const set = new Set(FIXED_OBLIGATION_CATS);
+  for (const [cat, includeInSpend] of overrides) {
+    if (includeInSpend) set.delete(cat);     // user opted in → no longer fixed
+    else set.add(cat);                       // user opted out → now fixed
+  }
+  return set;
+}
 
 const DAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
 const FULL_DAY_NAMES = [
@@ -240,6 +285,7 @@ function contextFor(
  */
 export async function buildWeeklyPattern(
   householdId: string,
+  userId: string | null = null,
 ): Promise<WeeklyPattern | null> {
   const now = new Date();
   const weekStart = startOfWeek(now);
@@ -261,8 +307,9 @@ export async function buildWeeklyPattern(
   const weekStartIso = weekStart.toISOString().slice(0, 10);
   const todayIdx = dayOfWeekIndex(now.toISOString().slice(0, 10));
   const thisWeekTx = txRows.filter((t) => t.date >= weekStartIso);
+  const fixedCats = await resolveFixedObligationSet(userId);
   const isFixed = (t: UnifiedTx) =>
-    FIXED_OBLIGATION_CATS.has((t.category || "").toLowerCase());
+    fixedCats.has((t.category || "").toLowerCase());
   const discretionaryThisWeek = thisWeekTx.filter((t) => !isFixed(t));
   const fixedThisWeek = thisWeekTx.filter(isFixed);
 

@@ -24,7 +24,10 @@ import {
   tillyTonePref,
   goals,
   members,
+  userPreferences,
 } from "../../../shared/schema";
+import { gte } from "drizzle-orm";
+import { executeTool, type ToolName, TOOL_NAMES } from "../../tilly/tools/registry";
 import { buildDailyBrief } from "../../tilly/daily-brief";
 import { isValidTone, DEFAULT_TONE, type BTToneKey } from "../../tilly/tone";
 import { buildWeeklyPattern } from "../../tilly/spend-pattern";
@@ -326,13 +329,127 @@ export function mountTillyInsightsRoutes(app: Express): void {
     }
   });
 
+  // GET /api/tilly/categories — every category that's seen activity in
+  // the last 30d, with monthTotal + transactionCount + the user's
+  // current include-in-spend setting (default + override). Powers the
+  // Categories screen on the YOU tab. Default exclude-from-spend
+  // categories are loans/taxes/transfers/fees; everything else is
+  // included by default. Per-user overrides flip these on/off.
+  app.get("/api/tilly/categories", requireAuth, async (req: Request, res: Response) => {
+    if (!req.user) return res.status(401).json({ error: "auth required" });
+    const householdId = req.user.coupleId;
+    const userId = req.user.id;
+    if (!householdId) return res.json({ categories: [] });
+
+    try {
+      const monthAgo = new Date();
+      monthAgo.setDate(monthAgo.getDate() - 30);
+      const monthAgoIso = monthAgo.toISOString().slice(0, 10);
+
+      const txRows = await db
+        .select({
+          category: plaidTransactions.ourCategory,
+          amount: plaidTransactions.amount,
+        })
+        .from(plaidTransactions)
+        .where(
+          and(
+            eq(plaidTransactions.coupleId, householdId),
+            gte(plaidTransactions.date, monthAgoIso),
+            eq(plaidTransactions.status, "accepted"),
+          ),
+        );
+
+      const totals = new Map<string, { monthTotal: number; count: number }>();
+      for (const r of txRows) {
+        if (typeof r.amount !== "number" || r.amount <= 0) continue;
+        const cat = (r.category || "other").toLowerCase();
+        const t = totals.get(cat) ?? { monthTotal: 0, count: 0 };
+        t.monthTotal += r.amount;
+        t.count += 1;
+        totals.set(cat, t);
+      }
+
+      const prefRows = await db
+        .select()
+        .from(userPreferences)
+        .where(
+          and(
+            eq(userPreferences.userId, userId),
+            eq(userPreferences.scope, "spend"),
+          ),
+        );
+      const overrides = new Map<string, boolean>();
+      for (const p of prefRows) {
+        if (!p.key.startsWith("include_in_spend.")) continue;
+        const cat = p.key.slice("include_in_spend.".length).toLowerCase();
+        const v = p.value as { includeInSpend?: unknown } | null;
+        if (typeof v?.includeInSpend === "boolean") overrides.set(cat, v.includeInSpend);
+      }
+
+      const DEFAULT_FIXED = new Set(["loans", "taxes", "transfers", "fees"]);
+      const categories = Array.from(totals.entries())
+        .map(([name, t]) => {
+          const isDefaultFixed = DEFAULT_FIXED.has(name);
+          const override = overrides.get(name);
+          const includeInSpend =
+            override !== undefined ? override : !isDefaultFixed;
+          return {
+            name,
+            monthTotal: Math.round(t.monthTotal * 100) / 100,
+            transactionCount: t.count,
+            includeInSpend,
+            isDefaultFixed,
+            hasOverride: override !== undefined,
+          };
+        })
+        .sort((a, b) => b.monthTotal - a.monthTotal);
+      res.json({ categories });
+    } catch (err) {
+      console.warn("/api/tilly/categories error:", err);
+      res.status(500).json({ error: "categories failed" });
+    }
+  });
+
+  // POST /api/tilly/tools/:name — run any registered tool through the
+  // same dispatcher chat uses. Lets the Categories screen and other
+  // mutating UI surfaces fire setCategoryInclusion (and future tools)
+  // without forking logic per screen. Body is the tool args object.
+  app.post(
+    "/api/tilly/tools/:name",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const householdId = req.user.coupleId;
+      if (!householdId) return res.status(400).json({ error: "no_household" });
+      const name = String(req.params.name);
+      if (!(TOOL_NAMES as readonly string[]).includes(name)) {
+        return res.status(400).json({ error: `unknown tool: ${name}` });
+      }
+      try {
+        const result = await executeTool(name as ToolName, req.body ?? {}, {
+          userId: req.user.id,
+          householdId,
+        });
+        if (!result) {
+          return res.status(400).json({ error: "validation_or_dispatch_failed" });
+        }
+        res.json({ result });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`/api/tilly/tools/${name} error:`, msg);
+        res.status(500).json({ error: msg });
+      }
+    },
+  );
+
   app.get("/api/tilly/spend-pattern", requireAuth, async (req: Request, res: Response) => {
     if (!req.user) return res.status(401).json({ error: "auth required" });
     const householdId = req.user.coupleId;
     if (!householdId) return res.json({ phase: 4, ready: false });
 
     try {
-      const pattern = await buildWeeklyPattern(householdId);
+      const pattern = await buildWeeklyPattern(householdId, req.user.id);
       if (!pattern) return res.json({ phase: 4, ready: false });
       res.json(pattern);
     } catch (err) {

@@ -68,6 +68,19 @@ export const btApi = {
   spendPattern: () => getJson<SpendPattern>("/api/tilly/spend-pattern"),
   creditSnapshot: () => getJson<CreditSnapshot>("/api/tilly/credit-snapshot"),
   profile: () => getJson<TillyProfile>("/api/tilly/profile"),
+  categories: () =>
+    getJson<{
+      categories: Array<{
+        name: string;
+        monthTotal: number;
+        transactionCount: number;
+        includeInSpend: boolean;
+        isDefaultFixed: boolean;
+        hasOverride: boolean;
+      }>;
+    }>("/api/tilly/categories"),
+  runTool: (name: string, args: unknown) =>
+    postJson<{ result: any }>(`/api/tilly/tools/${name}`, args),
 
   // ── Tilly chat ───────────────────────────────────────────────────────────
   chatHistory: () => getJson<ChatHistory>("/api/tilly/chat/history"),

@@ -76,7 +76,21 @@ type ToolPreview =
     }
   | { kind: "home_tile_unpinned"; tileKind: string; label: string }
   | { kind: "onboarding_field_unset"; field: string }
-  | { kind: "dream_deleted"; name: string };
+  | { kind: "dream_deleted"; name: string }
+  | {
+      kind: "category_inclusion_set";
+      category: string;
+      includeInSpend: boolean;
+      previouslyIncluded: boolean;
+    }
+  | {
+      kind: "merchant_category_set";
+      merchantSignature: string;
+      displayName: string;
+      fromCategory: string;
+      toCategory: string;
+      reclassifiedCount: number;
+    };
 
 // Backward-compat alias for the existing single-tool field.
 type DreamPreview = Extract<ToolPreview, { kind: "dream_created" }>;
@@ -1109,6 +1123,60 @@ function ToolPreviewCard({
         >
           Deleted <Text style={{ fontWeight: "700" }}>{result.name}</Text>{" "}
           dream.
+        </Text>
+      </View>
+    );
+  }
+
+  if (result.kind === "merchant_category_set") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>↪️</Text>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={{
+              fontFamily: BTFonts.serif,
+              fontSize: 13,
+              fontWeight: "600",
+              color: t.ink,
+            }}
+          >
+            Moved {result.displayName}
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 11,
+              color: t.inkSoft,
+              marginTop: 2,
+            }}
+          >
+            {result.fromCategory} → {result.toCategory}
+            {result.reclassifiedCount > 0
+              ? ` · ${result.reclassifiedCount} past charge${result.reclassifiedCount === 1 ? "" : "s"} updated`
+              : ""}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (result.kind === "category_inclusion_set") {
+    const verb = result.includeInSpend ? "Counting" : "Treating";
+    const dest = result.includeInSpend ? "monthly spend" : "money flow only";
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>{result.includeInSpend ? "➕" : "➖"}</Text>
+        <Text
+          style={{
+            flex: 1,
+            fontFamily: BTFonts.sans,
+            fontSize: 12,
+            color: t.ink,
+          }}
+        >
+          {verb} <Text style={{ fontWeight: "700" }}>{result.category}</Text>{" "}
+          as {dest}.
         </Text>
       </View>
     );

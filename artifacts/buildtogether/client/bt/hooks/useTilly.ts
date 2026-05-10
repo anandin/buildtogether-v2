@@ -120,6 +120,25 @@ export function useTilly() {
         // refetch spend-pattern too to be safe.
         qc.invalidateQueries({ queryKey: ["/api/tilly/spend-pattern"] });
       }
+      if (seen.has("category_inclusion_set")) {
+        // Headline + bars + categories all change when a category
+        // crosses the discretionary/fixed line server-side.
+        qc.invalidateQueries({ queryKey: ["/api/tilly/spend-pattern"] });
+        qc.invalidateQueries({ queryKey: ["/api/user-prefs"] });
+        qc.invalidateQueries({ queryKey: ["/api/tilly/today"] });
+        qc.invalidateQueries({ queryKey: ["/api/tilly/categories"] });
+      }
+      if (seen.has("merchant_category_set")) {
+        // Past plaid_transactions + linked expenses just got moved into
+        // a new category. Every screen that reads category-derived data
+        // needs to refetch.
+        qc.invalidateQueries({ queryKey: ["/api/expenses"] });
+        qc.invalidateQueries({ queryKey: ["/api/tilly/spend-pattern"] });
+        qc.invalidateQueries({ queryKey: ["/api/tilly/today"] });
+        qc.invalidateQueries({ queryKey: ["/api/tilly/categories"] });
+        qc.invalidateQueries({ queryKey: ["/api/plaid/pending"] });
+        qc.invalidateQueries({ queryKey: ["/api/plaid/pending-grouped"] });
+      }
       if (
         seen.has("onboarding_field_set") ||
         seen.has("onboarding_field_unset")

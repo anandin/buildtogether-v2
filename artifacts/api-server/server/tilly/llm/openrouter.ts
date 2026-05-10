@@ -22,6 +22,10 @@ import type {
   LLMTextResult,
   LLMStructuredOpts,
   ChatMessage,
+  LLMToolReplyOpts,
+  LLMToolReplyResult,
+  LLMToolCall,
+  LLMTurn,
 } from "./types";
 import { DEFAULT_MODELS } from "./types";
 import { recordLLMCall } from "./cost-log";
@@ -257,6 +261,97 @@ export class OpenRouterLLM implements LLMClient {
     }
   }
 
+  /**
+   * OpenAI-compatible tool calling. Sends `tools` + `tool_choice` and
+   * parses `choices[0].message.{ content, tool_calls }`. The caller drives
+   * the loop in `tool-loop.ts` (we don't auto-execute here — separation
+   * keeps the LLM client side-effect free).
+   */
+  async toolReply(opts: LLMToolReplyOpts): Promise<LLMToolReplyResult> {
+    const sysJoined = opts.systemPrompts.filter(Boolean).join("\n\n---\n\n");
+    const messages: any[] = [{ role: "system", content: sysJoined }];
+    for (const turn of opts.turns) {
+      messages.push(turnToOpenAI(turn));
+    }
+    const body: ChatRequestBody = {
+      model: this.modelId,
+      max_tokens: opts.maxTokens ?? 2048,
+      messages: messages as any,
+    };
+    body.tools = opts.tools.map((t) => ({
+      type: "function",
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters,
+      },
+    }));
+    body.tool_choice = opts.toolChoice ?? "auto";
+
+    const t0 = Date.now();
+    try {
+      const res = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${getApiKey()}`,
+          "Content-Type": "application/json",
+          "HTTP-Referer": "https://buildtogether-v2.vercel.app",
+          "X-Title": "BuildTogether (Tilly)",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`OpenRouter ${res.status}: ${text.slice(0, 2000)}`);
+      }
+      const json = (await res.json()) as any;
+      const msg = json?.choices?.[0]?.message ?? {};
+      const text = typeof msg.content === "string" ? msg.content : "";
+      const rawCalls: any[] = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
+      const toolCalls: LLMToolCall[] = rawCalls
+        .filter((c) => c?.type === "function" && c?.function?.name)
+        .map((c, i) => ({
+          id: typeof c.id === "string" && c.id ? c.id : `call_${Date.now()}_${i}`,
+          name: String(c.function.name),
+          arguments:
+            typeof c.function.arguments === "string"
+              ? c.function.arguments
+              : JSON.stringify(c.function.arguments ?? {}),
+        }));
+      const usage = json?.usage ?? {};
+      recordLLMCall({
+        userId: opts.meta?.userId ?? null,
+        route: opts.meta?.route ?? "tools",
+        provider: this.providerName,
+        model: this.modelId,
+        promptTokens: usage.prompt_tokens ?? 0,
+        completionTokens: usage.completion_tokens ?? 0,
+        latencyMs: Date.now() - t0,
+        ok: true,
+      });
+      return {
+        text,
+        toolCalls,
+        modelId: this.modelId,
+        usage: {
+          inputTokens: usage.prompt_tokens ?? 0,
+          outputTokens: usage.completion_tokens ?? 0,
+        },
+      };
+    } catch (err) {
+      recordLLMCall({
+        userId: opts.meta?.userId ?? null,
+        route: opts.meta?.route ?? "tools",
+        provider: this.providerName,
+        model: this.modelId,
+        latencyMs: Date.now() - t0,
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
+  }
+
   async structuredOutput<T>(opts: LLMStructuredOpts<T>): Promise<T> {
     const body = this.buildBody(opts);
     body.response_format = {
@@ -365,6 +460,34 @@ export class OpenRouterLLM implements LLMClient {
  * into the expected `{ key: [...] }` shape for tolerant parsing.
  * Returns null when the schema doesn't match this pattern.
  */
+/**
+ * Map our LLMTurn discriminated union to the OpenAI Chat Completions
+ * message shape. Tool turns become `role:"tool"` with `tool_call_id`;
+ * assistant tool-call turns must include the original `tool_calls`
+ * array (re-serialised) so the model can correlate the result.
+ */
+function turnToOpenAI(turn: LLMTurn): Record<string, unknown> {
+  if (turn.role === "user") {
+    return { role: "user", content: turn.content };
+  }
+  if (turn.role === "tool") {
+    return { role: "tool", tool_call_id: turn.tool_call_id, content: turn.content };
+  }
+  // assistant — may or may not have tool_calls.
+  if ("tool_calls" in turn) {
+    return {
+      role: "assistant",
+      content: turn.content ?? "",
+      tool_calls: turn.tool_calls.map((c) => ({
+        id: c.id,
+        type: "function",
+        function: { name: c.name, arguments: c.arguments },
+      })),
+    };
+  }
+  return { role: "assistant", content: turn.content };
+}
+
 function singleArrayPropertyName(schema: ZodType): string | null {
   try {
     const def = (schema as any)._def;

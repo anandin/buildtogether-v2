@@ -30,8 +30,11 @@ import {
   users,
   goals,
 } from "../../../shared/schema";
-import { extractToolCalls } from "../../tilly/tools/extractor";
-import { executeTool, type ToolResult } from "../../tilly/tools/registry";
+import { getToolDefs, type ToolResult } from "../../tilly/tools/registry";
+import { runWithTools } from "../../tilly/llm/tool-loop";
+import { OpenRouterLLM } from "../../tilly/llm/openrouter";
+import { buildSystemPrompts } from "../../tilly/persona";
+import type { LLMTurn } from "../../tilly/llm/types";
 import { enqueueScout } from "../../tilly/scout/orchestrator";
 import { distillUser } from "../../tilly/nightly-distiller";
 import {
@@ -716,14 +719,51 @@ export function mountTillyChatRoutes(app: Express): void {
           promptSize: extraSystem?.length ?? 0,
         });
 
-        const response = await callTilly({
-          toneKey: tone,
-          messages: history,
-          extraSystem,
-          userId,
-          route: "chat",
-        });
-        const text = response.text;
+        // Native tool_use path: a single OpenRouter call with the
+        // `tools` parameter. Tilly may emit text only, tool_calls only,
+        // or both — runWithTools drives the conversation loop, executes
+        // each tool through the registry, and returns the final text +
+        // toolResults in one shot. Replaces the old post-extractor
+        // pattern (Tilly text → second Haiku call to find intent).
+        const llm = new OpenRouterLLM(
+          process.env.TILLY_CHAT_MODEL || undefined,
+        );
+        const initialTurns: LLMTurn[] = history.map((h) => ({
+          role: h.role === "user" ? ("user" as const) : ("assistant" as const),
+          content: h.content,
+        }));
+        const systemPrompts = await buildSystemPrompts(
+          tone,
+          extraSystem ? [extraSystem] : [],
+        );
+        let text = "";
+        let toolResults: ToolResult[] = [];
+        try {
+          const out = await runWithTools({
+            llm,
+            systemPrompts,
+            initialTurns,
+            tools: getToolDefs(),
+            ctx: { userId, householdId },
+            meta: { userId, route: "chat" },
+          });
+          text = out.text;
+          toolResults = out.toolResults;
+        } catch (err) {
+          // If tool_use fails (model doesn't support it, transient
+          // OpenRouter error, etc.), fall back to plain text reply.
+          // Tools won't fire this turn — rare path, logged so we notice.
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn("[chat] tool-loop failed, falling back to text:", msg);
+          const response = await callTilly({
+            toneKey: tone,
+            messages: history,
+            extraSystem,
+            userId,
+            route: "chat",
+          });
+          text = response.text;
+        }
         // Detect whether Tilly promised a follow-up — Haiku 4.5 classifier
         // (~1-2s, ~250 tok). Inline so the row exists by the time we return,
         // and the client can refetch reminders on the same mutation success.
@@ -811,29 +851,9 @@ export function mountTillyChatRoutes(app: Express): void {
           console.warn("[chat] reminder persist failed:", err);
         }
 
-        // Unified tool-extraction pass: detect 0..N tool calls in this
-        // turn, dispatch each through the registry. Replaces the
-        // single-purpose extract-dream-create extractor with a single
-        // Haiku call that knows the full tool surface.
-        let toolResults: ToolResult[] = [];
-        try {
-          const calls = await extractToolCalls({
-            userMessage: message,
-            tillyReply: text,
-            meta: { userId },
-          });
-          for (const call of calls) {
-            const result = await executeTool(call.name, call.args, {
-              userId,
-              householdId,
-            });
-            if (result) toolResults.push(result);
-          }
-        } catch (toolErr) {
-          console.warn("[chat] tool extractor/dispatch failed:", toolErr);
-        }
-        // Legacy single-tool field: keep populated when exactly one
-        // tool fired so old clients still render the dream preview card.
+        // toolResults already populated by runWithTools above. Keep the
+        // legacy single-tool field for backward compat with older
+        // clients that read `toolResult` (singular).
         const legacySingleToolResult =
           toolResults.length === 1 ? toolResults[0] : undefined;
 

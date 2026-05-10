@@ -18,11 +18,13 @@
  * domain ones like goals).
  */
 import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 
 import { db } from "../../db";
-import { goals, plaidTransactions, expenses, userPreferences } from "../../../shared/schema";
+import { goals, plaidTransactions, expenses, userPreferences, merchantRules } from "../../../shared/schema";
 import { and, eq, sql, inArray } from "drizzle-orm";
 import { merchantSignature } from "../merchant-rules";
+import type { LLMToolDef } from "../llm/types";
 
 export const TOOL_NAMES = [
   // Forward tools — mutate state.
@@ -39,6 +41,17 @@ export const TOOL_NAMES = [
   "unpinFromHome",
   "unsetOnboardingField",
   "deleteDream",
+  // Per-category headline override. Lets the user say "include loans"
+  // (Lincoln car loan = real spending) or "exclude transfers" (Scotia
+  // VISA payment = paying my own card). Has its own tool — not folded
+  // into hide/unhide — because hide removes the category from the page
+  // entirely; this just toggles whether it counts in the spend total.
+  "setCategoryInclusion",
+  // Per-merchant category override. "Move all my Lincoln transactions
+  // from loans to subscriptions" — writes a merchant_rules row so
+  // future syncs land in the new category, and (when retroactive=true)
+  // updates every existing tx + linked expense in one batch.
+  "setMerchantCategory",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -101,6 +114,26 @@ export type ToolResult =
   | {
       kind: "dream_deleted";
       name: string;
+    }
+  | {
+      kind: "category_inclusion_set";
+      category: string;
+      includeInSpend: boolean;
+      // What changed — defaults are loans/taxes/transfers/fees=excluded,
+      // everything else=included. We surface the override so the UI can
+      // show "now counted toward your spend total" / "now treated as
+      // money flow only" without re-deriving.
+      previouslyIncluded: boolean;
+    }
+  | {
+      kind: "merchant_category_set";
+      merchantSignature: string;
+      displayName: string;
+      fromCategory: string;
+      toCategory: string;
+      // How many existing rows the retroactive flag updated. 0 when the
+      // user opted out of retroactive or there were no past matches.
+      reclassifiedCount: number;
     };
 
 // ─── Tool context (passed to every handler) ────────────────────────────────
@@ -169,6 +202,19 @@ const unsetOnboardingFieldSchema = z.object({
 const deleteDreamSchema = z.object({
   name: z.string().min(1),
 });
+const setCategoryInclusionSchema = z.object({
+  category: z.string().min(1),
+  includeInSpend: z.boolean(),
+});
+
+const setMerchantCategorySchema = z.object({
+  merchantSignature: z.string().min(1),
+  category: z.string().min(1),
+  /** Default true — past transactions for this merchant get moved too.
+   * When false, only the merchant_rules override is written and future
+   * syncs apply it; existing rows stay where they are. */
+  retroactive: z.boolean().optional(),
+});
 
 const TOOL_SCHEMAS: Record<ToolName, z.ZodType> = {
   createDream: createDreamSchema,
@@ -181,7 +227,149 @@ const TOOL_SCHEMAS: Record<ToolName, z.ZodType> = {
   unpinFromHome: unpinFromHomeSchema,
   unsetOnboardingField: unsetOnboardingFieldSchema,
   deleteDream: deleteDreamSchema,
+  setCategoryInclusion: setCategoryInclusionSchema,
+  setMerchantCategory: setMerchantCategorySchema,
 };
+
+// ─── Tool descriptions for the LLM ──────────────────────────────────────
+// These ride along to the model in the `tools` parameter. Treat them as
+// the SOURCE OF TRUTH for "when should Tilly call this tool" — the
+// persona prompt no longer enumerates tool semantics, the model reads
+// them from here. Be specific about cue phrases and surgical-vs-nuclear
+// guidance.
+
+const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
+  createDream:
+    "Create a savings goal / 'dream' for the user. Trigger when they ask you to set up / track / save for something. " +
+    "If the user gave only a name (e.g. 'Switch 2'), estimate targetAmount from real-world prices " +
+    "(Switch 2 ≈ 650, MacBook ≈ 1500, Barcelona trip ≈ 2000). Always confirm in plain language: " +
+    "'Done. I added a Switch 2 dream — $650 target.'",
+  markPaymentToOwnCard:
+    "SURGICAL FIX. Use when the user clarifies that a transaction Tilly was treating as a 'loan' or " +
+    "expense is actually them paying off their own credit card balance (which they've also synced as " +
+    "a separate account, so the real spending is being tracked twice). Triggers: 'scotia under loans " +
+    "is my credit card bill', 'that visa payment is my own card', 'stop counting these as spending'. " +
+    "merchantSignature: lowercased simplified merchant key (e.g. 'scotialn vsa'). cardName: the " +
+    "card description ('Scotia VISA'). Retroactively reclassifies every matching past transaction.",
+  hideCategoryFromSpend:
+    "DESTRUCTIVE — USE SPARINGLY. Hides an entire category from the user's Spend page. ONLY fire when " +
+    "the user explicitly says 'hide X / never show me X / I don't want to see Y in my breakdown'. " +
+    "NEVER use this as a workaround for a categorization problem (e.g. 'this Scotia loan shouldn't " +
+    "be there' is a job for markPaymentToOwnCard, not this tool). When you do fire it, mention the " +
+    "user can ask you to bring it back any time.",
+  pinToHome:
+    "Pin a tile to the user's Today (home) screen. Triggers: 'show my subscriptions on home', " +
+    "'pin credit health to today', 'add upcoming bills to the front page'. Available tileKind " +
+    "values: subscriptions_overview, credit_health, spending_vs_avg, upcoming_bills, debt_breakdown.",
+  setOnboardingField:
+    "Capture a fact about the user that maps to a known onboarding field. Triggers: 'I'm 38' " +
+    "(ageBand=18-24/25-34/35-44/45+), 'I support 4 people' (dependents=4), 'I live in Toronto' " +
+    "(city=Toronto), 'I'm salaried' (employmentType=salaried/student/self-employed/freelance/etc), " +
+    "'I go to Laurier' (schoolName=Laurier). Fire MULTIPLE setOnboardingField calls if the user " +
+    "mentions multiple fields in one message. Acknowledge: 'Noted — 4 people, Toronto, salaried.'",
+  unhideCategory:
+    "INVERSE of hideCategoryFromSpend. Bring a hidden category back onto the Spend page. Triggers: " +
+    "'bring loans back', 'stop hiding loans', 'show loans on Spend again', 'unhide X', 'don't hide X anymore'. " +
+    "category: the name they want visible (lowercased; 'loan' / 'loans' → 'loans').",
+  removePaymentToOwnCardAlias:
+    "INVERSE of markPaymentToOwnCard. Stop treating a card's payments as transfers — count them as " +
+    "spending again. Triggers: 'stop treating Scotia as a credit-card payment', 'bring back Scotia VSA " +
+    "as spending', 'undo the Scotia alias', 'count my Visa payments again'. cardName: same description " +
+    "used originally ('Scotia VISA', 'TD Visa').",
+  unpinFromHome:
+    "INVERSE of pinToHome. Triggers: 'unpin subscriptions overview', 'remove credit health from Today', " +
+    "'don't show the X tile anymore'. Same tileKind values as pinToHome.",
+  unsetOnboardingField:
+    "INVERSE of setOnboardingField. Clear a previously-captured fact. Triggers: 'forget I'm 38', " +
+    "'I'm not in Toronto anymore — clear that', 'unset my dependents', 'reset my employment type'. " +
+    "field: same enum as setOnboardingField.",
+  deleteDream:
+    "Delete a savings goal the user no longer wants to track. Triggers: 'delete the Switch 2 dream', " +
+    "'remove my AirPods goal', 'I don't want to track that anymore', 'cancel the Barcelona dream'. " +
+    "name: dream name as the user references it (case-insensitive match server-side).",
+  setCategoryInclusion:
+    "Toggle whether a category counts toward the headline spend total + bars. " +
+    "Defaults: loans, taxes, transfers, fees are EXCLUDED (treated as money flow). " +
+    "Use this when the user wants to override the default — e.g. 'my Lincoln car " +
+    "loan should count as monthly spending' (loans → includeInSpend=true), or " +
+    "'don't count subscriptions in my spend' (subscriptions → includeInSpend=false). " +
+    "DIFFERENT from hideCategoryFromSpend: this keeps the category visible but " +
+    "moves it between the WHERE IT GOES section (true) and MONEY FLOW section " +
+    "(false). category: the category name (loans, taxes, transfers, fees, " +
+    "subscriptions, restaurants, etc., lowercased). includeInSpend: true to add " +
+    "to spend, false to treat as money flow.",
+  setMerchantCategory:
+    "Move a specific merchant's transactions from one category to another. Use " +
+    "for surgical fixes when ONE merchant is mis-categorized but the rest of the " +
+    "category is fine. Triggers: 'move my Lincoln transactions to subscriptions', " +
+    "'recategorize Doordash as restaurants', 'put Spotify under entertainment'. " +
+    "merchantSignature: lowercased simplified merchant key (e.g. 'lincoln afs ca apy', " +
+    "'doordash', 'spotify'). category: the destination category name. retroactive: " +
+    "default true — past transactions for this merchant get moved too.",
+};
+
+/**
+ * Build the LLMToolDef[] payload for the OpenAI-compatible `tools`
+ * parameter. JSON Schema is derived from each tool's zod schema, then
+ * stripped of provider-incompatible keywords (same shaping as
+ * structuredOutput uses for response_format). Re-derived on each call;
+ * the cost is tiny vs. the tradeoff of letting prompts go stale.
+ */
+export function getToolDefs(): LLMToolDef[] {
+  return TOOL_NAMES.map((name) => {
+    const json = zodToJsonSchema(TOOL_SCHEMAS[name], { name, $refStrategy: "none" }) as any;
+    let body: Record<string, unknown> = json;
+    if (json.definitions && json.definitions[name]) {
+      body = json.definitions[name];
+    } else if (json.$ref && json.definitions) {
+      body = json.definitions[name] ?? json;
+    }
+    stripUnsupportedToolKeys(body);
+    return {
+      name,
+      description: TOOL_DESCRIPTIONS[name],
+      parameters: body,
+    };
+  });
+}
+
+const TOOL_UNSUPPORTED_KEYS = [
+  "$schema",
+  "default",
+  "minItems",
+  "maxItems",
+  "minimum",
+  "maximum",
+  "exclusiveMinimum",
+  "exclusiveMaximum",
+  "minLength",
+  "maxLength",
+  "multipleOf",
+  "format",
+  "pattern",
+];
+
+function stripUnsupportedToolKeys(s: Record<string, unknown>) {
+  if (!s || typeof s !== "object") return;
+  for (const k of TOOL_UNSUPPORTED_KEYS) delete (s as any)[k];
+  if ((s as any).additionalProperties && typeof (s as any).additionalProperties !== "boolean") {
+    delete (s as any).additionalProperties;
+  }
+  if ((s as any).properties) {
+    for (const k of Object.keys((s as any).properties)) {
+      stripUnsupportedToolKeys((s as any).properties[k]);
+    }
+  }
+  if ((s as any).items) stripUnsupportedToolKeys((s as any).items);
+  for (const v of ["anyOf", "oneOf", "allOf"]) {
+    const arr = (s as any)[v];
+    if (Array.isArray(arr)) for (const sub of arr) stripUnsupportedToolKeys(sub);
+  }
+}
+
+export function isKnownToolName(n: string): n is ToolName {
+  return (TOOL_NAMES as readonly string[]).includes(n);
+}
 
 // ─── Dispatcher ────────────────────────────────────────────────────────────
 
@@ -236,7 +424,171 @@ export async function executeTool(
       );
     case "deleteDream":
       return await runDeleteDream(parsed.data as z.infer<typeof deleteDreamSchema>, ctx);
+    case "setCategoryInclusion":
+      return await runSetCategoryInclusion(
+        parsed.data as z.infer<typeof setCategoryInclusionSchema>,
+        ctx,
+      );
+    case "setMerchantCategory":
+      return await runSetMerchantCategory(
+        parsed.data as z.infer<typeof setMerchantCategorySchema>,
+        ctx,
+      );
   }
+}
+
+async function runSetMerchantCategory(
+  args: z.infer<typeof setMerchantCategorySchema>,
+  ctx: ToolContext,
+): Promise<ToolResult | null> {
+  const sig = args.merchantSignature.trim().toLowerCase();
+  const newCat = args.category.trim().toLowerCase();
+  const retroactive = args.retroactive !== false;
+
+  // 1. Snapshot what's currently under this signature so we can report
+  // {fromCategory, displayName, reclassifiedCount} accurately.
+  const matches = await db
+    .select()
+    .from(plaidTransactions)
+    .where(
+      and(
+        eq(plaidTransactions.coupleId, ctx.householdId),
+        eq(plaidTransactions.signature, sig),
+      ),
+    )
+    .limit(500);
+  const fromCategory =
+    matches.find((m) => m.ourCategory)?.ourCategory?.toLowerCase() || "other";
+  const displayName =
+    matches.find((m) => m.merchantName)?.merchantName ||
+    matches[0]?.name ||
+    sig;
+
+  // 2. Upsert merchant_rules so future syncs land in the new category
+  // via the existing tag_only branch. Don't flip autoAccept — a user
+  // recategorising one merchant shouldn't auto-accept all future
+  // charges from them.
+  const existing = await db
+    .select()
+    .from(merchantRules)
+    .where(
+      and(
+        eq(merchantRules.coupleId, ctx.householdId),
+        eq(merchantRules.signature, sig),
+      ),
+    )
+    .limit(1);
+  if (existing[0]) {
+    await db
+      .update(merchantRules)
+      .set({
+        category: newCat,
+        lastMerchant: displayName,
+        source: "user_moved",
+        updatedAt: new Date(),
+      })
+      .where(eq(merchantRules.id, existing[0].id));
+  } else {
+    await db.insert(merchantRules).values({
+      coupleId: ctx.householdId,
+      signature: sig,
+      lastMerchant: displayName,
+      category: newCat,
+      autoAccept: false,
+      autoIgnore: false,
+      hitCount: 0,
+      ignoreCount: 0,
+      source: "user_moved",
+    });
+  }
+
+  // 3. Retroactive update — move every existing plaid_tx + linked
+  // expense for this signature into the new category. The user almost
+  // always wants this (no point in moving Lincoln "from now on" if last
+  // month's Lincoln still says loans).
+  let reclassifiedCount = 0;
+  if (retroactive && matches.length > 0) {
+    const ids = matches.map((m) => m.id);
+    await db
+      .update(plaidTransactions)
+      .set({ ourCategory: newCat })
+      .where(inArray(plaidTransactions.id, ids));
+    const expenseIds = matches.map((m) => m.expenseId).filter(Boolean) as string[];
+    if (expenseIds.length) {
+      await db
+        .update(expenses)
+        .set({ category: newCat })
+        .where(inArray(expenses.id, expenseIds));
+    }
+    reclassifiedCount = matches.length;
+  }
+
+  return {
+    kind: "merchant_category_set",
+    merchantSignature: sig,
+    displayName,
+    fromCategory,
+    toCategory: newCat,
+    reclassifiedCount,
+  };
+}
+
+/** Default fixed-obligation categories — the ones that are EXCLUDED
+ * from the headline spend total unless the user opts them in. Keep in
+ * sync with FIXED_OBLIGATION_CATS in spend-pattern.ts. */
+const DEFAULT_FIXED_OBLIGATION_CATS = new Set([
+  "loans",
+  "taxes",
+  "transfers",
+  "fees",
+]);
+
+async function runSetCategoryInclusion(
+  args: z.infer<typeof setCategoryInclusionSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  const cat = args.category.trim().toLowerCase();
+  const wasExcluded = DEFAULT_FIXED_OBLIGATION_CATS.has(cat);
+  // Idempotent upsert. If the user is restoring the default state we
+  // delete the override row instead of writing a redundant one — keeps
+  // the Settings tab honest about what's actually overridden.
+  const restoresDefault =
+    (wasExcluded && args.includeInSpend === false) ||
+    (!wasExcluded && args.includeInSpend === true);
+  if (restoresDefault) {
+    await db
+      .delete(userPreferences)
+      .where(
+        and(
+          eq(userPreferences.userId, ctx.userId),
+          eq(userPreferences.scope, "spend"),
+          eq(userPreferences.key, `include_in_spend.${cat}`),
+        ),
+      );
+  } else {
+    await db
+      .insert(userPreferences)
+      .values({
+        userId: ctx.userId,
+        scope: "spend",
+        key: `include_in_spend.${cat}`,
+        value: { includeInSpend: args.includeInSpend, since: new Date().toISOString() },
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [userPreferences.userId, userPreferences.scope, userPreferences.key],
+        set: {
+          value: { includeInSpend: args.includeInSpend, since: new Date().toISOString() },
+          updatedAt: new Date(),
+        },
+      });
+  }
+  return {
+    kind: "category_inclusion_set",
+    category: cat,
+    includeInSpend: args.includeInSpend,
+    previouslyIncluded: !wasExcluded,
+  };
 }
 
 // ─── Handlers ──────────────────────────────────────────────────────────────
