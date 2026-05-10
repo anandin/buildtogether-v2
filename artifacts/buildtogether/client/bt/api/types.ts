@@ -143,6 +143,20 @@ export type TillyToolResult =
       fromCategory: string;
       toCategory: string;
       reclassifiedCount: number;
+    }
+  | {
+      kind: "scout_started";
+      mode: "find";
+      jobId: string;
+      query: string;
+      location: string | null;
+    }
+  | {
+      kind: "wait_started";
+      mode: "wait";
+      jobId: string;
+      query: string;
+      location: string | null;
     };
 
 export type UserPrefsResponse = {

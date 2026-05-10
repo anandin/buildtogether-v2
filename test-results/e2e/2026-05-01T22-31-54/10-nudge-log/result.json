@@ -1,0 +1,7 @@
+{
+  "scenarioId": "10-nudge-log",
+  "status": "fail",
+  "durationMs": 22030,
+  "error": "Yes, remind me button not on Today screen after seed",
+  "stack": "Error: Yes, remind me button not on Today screen after seed\n    at scenario (C:\\Projects\\BuildtogetherV2\\e2e\\scenarios\\10-nudge-log.js:46:11)\n    at async runScenario (C:\\Projects\\BuildtogetherV2\\e2e\\lib\\helpers.js:233:5)"
+}

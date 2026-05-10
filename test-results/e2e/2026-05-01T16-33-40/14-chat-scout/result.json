@@ -1,0 +1,7 @@
+{
+  "scenarioId": "14-chat-scout",
+  "status": "fail",
+  "durationMs": 68083,
+  "error": "chat reply not received within 60000ms",
+  "stack": "Error: chat reply not received within 60000ms\n    at sendChat (C:\\Projects\\BuildtogetherV2\\e2e\\lib\\helpers.js:175:9)\n    at async scenario (C:\\Projects\\BuildtogetherV2\\e2e\\scenarios\\14-chat-scout.js:27:23)\n    at async runScenario (C:\\Projects\\BuildtogetherV2\\e2e\\lib\\helpers.js:233:5)"
+}

@@ -139,6 +139,16 @@ export function useTilly() {
         qc.invalidateQueries({ queryKey: ["/api/plaid/pending"] });
         qc.invalidateQueries({ queryKey: ["/api/plaid/pending-grouped"] });
       }
+      if (seen.has("scout_started") || seen.has("wait_started")) {
+        // Tilly fired findOptions / predictSalePrice. The tool handler
+        // inserted a guardian_conversations row of intent=scout/wait
+        // that we won't have in the cache yet (chat-send only appends
+        // the text reply). Invalidate history so the scout card
+        // appears between the user message and Tilly's confirmation
+        // text. The history refetch also unmasks the in-flight scout
+        // poller — it'll tick every 2.5s until the job lands.
+        qc.invalidateQueries({ queryKey: ["/api/tilly/chat/history"] });
+      }
       if (
         seen.has("onboarding_field_set") ||
         seen.has("onboarding_field_unset")

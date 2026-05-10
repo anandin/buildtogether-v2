@@ -1,0 +1,11 @@
+200 POST /api/auth/login
+200 GET /api/household/onboarding-status
+200 GET /api/expenses?days=30
+200 GET /api/tilly/spend-pattern
+200 GET /api/dreams
+200 GET /api/admin/memory/users
+200 GET /api/admin/memory/users/15b9466a-4b0f-45f4-9805-42c1fa5f4b0f/bandit
+200 GET /api/admin/memory/users/15b9466a-4b0f-45f4-9805-42c1fa5f4b0f/nudges?limit=80
+200 GET /api/admin/memory/users/15b9466a-4b0f-45f4-9805-42c1fa5f4b0f/events?limit=200
+200 GET /api/admin/memory/users/15b9466a-4b0f-45f4-9805-42c1fa5f4b0f
+200 GET /api/admin/memory/users/15b9466a-4b0f-45f4-9805-42c1fa5f4b0f/typed-memory?limit=200

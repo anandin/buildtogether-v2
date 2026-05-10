@@ -21,7 +21,15 @@ import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 
 import { db } from "../../db";
-import { goals, plaidTransactions, expenses, userPreferences, merchantRules } from "../../../shared/schema";
+import {
+  goals,
+  plaidTransactions,
+  expenses,
+  userPreferences,
+  merchantRules,
+  guardianConversations,
+} from "../../../shared/schema";
+import { enqueueScout } from "../scout/orchestrator";
 import { and, eq, sql, inArray } from "drizzle-orm";
 import { merchantSignature } from "../merchant-rules";
 import type { LLMToolDef } from "../llm/types";
@@ -52,6 +60,16 @@ export const TOOL_NAMES = [
   // future syncs land in the new category, and (when retroactive=true)
   // updates every existing tx + linked expense in one batch.
   "setMerchantCategory",
+  // Scout / wait — Tilly's only path to live retailer data. Without
+  // these she hits her knowledge ceiling on "when does X go on sale?"
+  // and "find me cheaper Y" and incorrectly says "I can't see that."
+  // findOptions enqueues a find-mode scout (cheaper alternatives,
+  // secondhand inventory). predictSalePrice enqueues a wait-mode scout
+  // (sale history + should-I-wait verdict). Both insert their own
+  // guardian_conversations row so the mobile chat history renders a
+  // scout/wait card without Tilly having to write one in her reply.
+  "findOptions",
+  "predictSalePrice",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -134,6 +152,20 @@ export type ToolResult =
       // How many existing rows the retroactive flag updated. 0 when the
       // user opted out of retroactive or there were no past matches.
       reclassifiedCount: number;
+    }
+  | {
+      kind: "scout_started";
+      mode: "find";
+      jobId: string;
+      query: string;
+      location: string | null;
+    }
+  | {
+      kind: "wait_started";
+      mode: "wait";
+      jobId: string;
+      query: string;
+      location: string | null;
     };
 
 // ─── Tool context (passed to every handler) ────────────────────────────────
@@ -216,6 +248,19 @@ const setMerchantCategorySchema = z.object({
   retroactive: z.boolean().optional(),
 });
 
+const findOptionsSchema = z.object({
+  query: z.string().min(1),
+  /** Optional city to scope local secondhand inventory (Marketplace,
+   * Kijiji). Falls back to the user's saved profile city if omitted. */
+  location: z.string().optional(),
+});
+
+const predictSalePriceSchema = z.object({
+  query: z.string().min(1),
+  /** Optional city to scope regional pricing/availability. */
+  location: z.string().optional(),
+});
+
 const TOOL_SCHEMAS: Record<ToolName, z.ZodType> = {
   createDream: createDreamSchema,
   markPaymentToOwnCard: markPaymentToOwnCardSchema,
@@ -229,6 +274,8 @@ const TOOL_SCHEMAS: Record<ToolName, z.ZodType> = {
   deleteDream: deleteDreamSchema,
   setCategoryInclusion: setCategoryInclusionSchema,
   setMerchantCategory: setMerchantCategorySchema,
+  findOptions: findOptionsSchema,
+  predictSalePrice: predictSalePriceSchema,
 };
 
 // ─── Tool descriptions for the LLM ──────────────────────────────────────
@@ -306,6 +353,24 @@ const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
     "merchantSignature: lowercased simplified merchant key (e.g. 'lincoln afs ca apy', " +
     "'doordash', 'spotify'). category: the destination category name. retroactive: " +
     "default true — past transactions for this merchant get moved too.",
+  findOptions:
+    "Live web search for ALTERNATIVES — cheaper versions, secondhand " +
+    "inventory, similar products. Use whenever the user is shopping for a " +
+    "thing and your reply would otherwise be 'I can't see retailer data.' " +
+    "Triggers: 'find me a cheaper version of X', 'is there a used Y near " +
+    "me', 'where can I get Z under $N'. query: a short search phrase the " +
+    "scout will run ('Switch 2 used Waterloo $400', 'AirPods Pro 2 " +
+    "refurbished'). location: optional city — defaults to the user's " +
+    "saved city. NEVER respond 'I don't have retailer data' on a shopping " +
+    "question — call this tool instead.",
+  predictSalePrice:
+    "Live web search for SALE HISTORY + a should-I-wait verdict. Use when " +
+    "the user asks about future or seasonal pricing. Triggers: 'when will X " +
+    "go on sale', 'should I wait for Black Friday on Y', 'is this a good " +
+    "price for Z right now'. query: short phrase including the product " +
+    "('Aura ring sale history', 'Aritzia winter coat $200'). The scout " +
+    "returns a structured verdict (waitUntil / expectedSaving / sources). " +
+    "Same rule: NEVER say 'I can't see retailer pricing' — call this tool.",
 };
 
 /**
@@ -434,7 +499,80 @@ export async function executeTool(
         parsed.data as z.infer<typeof setMerchantCategorySchema>,
         ctx,
       );
+    case "findOptions":
+      return await runFindOptions(
+        parsed.data as z.infer<typeof findOptionsSchema>,
+        ctx,
+      );
+    case "predictSalePrice":
+      return await runPredictSalePrice(
+        parsed.data as z.infer<typeof predictSalePriceSchema>,
+        ctx,
+      );
   }
+}
+
+async function runScoutLike(
+  args: { query: string; location?: string | undefined },
+  ctx: ToolContext,
+  mode: "find" | "wait",
+): Promise<ToolResult> {
+  const location = args.location?.trim() || null;
+  const jobId = await enqueueScout(
+    {
+      userId: ctx.userId,
+      householdId: ctx.householdId,
+      query: args.query.trim(),
+      location,
+      mode,
+    },
+    { awaitCompletion: false },
+  );
+  // Insert the conversation row that the mobile history renderer turns
+  // into a scout/wait card. Same shape as the user-initiated POST
+  // /api/tilly/chat/scout endpoint produces — keeps client rendering
+  // identical whether the user tapped a button or Tilly fired the tool.
+  const placeholder =
+    mode === "wait"
+      ? `Looking up sale history for ${args.query.trim()}. One sec.`
+      : `On it — I'll check ${args.query.trim()}. Give me a minute.`;
+  await db.insert(guardianConversations).values({
+    coupleId: ctx.householdId,
+    userId: ctx.userId,
+    role: "guardian",
+    content: placeholder,
+    intent: mode === "wait" ? "wait" : "scout",
+    metadata: { jobId, query: args.query.trim(), location, sourceMessageId: null },
+  });
+  return mode === "wait"
+    ? {
+        kind: "wait_started",
+        mode: "wait",
+        jobId,
+        query: args.query.trim(),
+        location,
+      }
+    : {
+        kind: "scout_started",
+        mode: "find",
+        jobId,
+        query: args.query.trim(),
+        location,
+      };
+}
+
+async function runFindOptions(
+  args: z.infer<typeof findOptionsSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  return runScoutLike(args, ctx, "find");
+}
+
+async function runPredictSalePrice(
+  args: z.infer<typeof predictSalePriceSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  return runScoutLike(args, ctx, "wait");
 }
 
 async function runSetMerchantCategory(

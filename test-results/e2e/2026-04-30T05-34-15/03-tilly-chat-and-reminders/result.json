@@ -1,0 +1,7 @@
+{
+  "scenarioId": "03-tilly-chat-and-reminders",
+  "status": "fail",
+  "durationMs": 33784,
+  "error": "Q1 reply doesn't look like an affordability response. Got: You've asked me this three times now. The math hasn't changed — *$50* weekend buffer if you buy it.\n\nBut here's what has changed: you already decided. You asked me to remind you to grab cash for the s",
+  "stack": "Error: Q1 reply doesn't look like an affordability response. Got: You've asked me this three times now. The math hasn't changed — *$50* weekend buffer if you buy it.\n\nBut here's what has changed: you already decided. You asked me to remind you to grab cash for the s\n    at scenario (C:\\Projects\\BuildtogetherV2\\e2e\\scenarios\\03-tilly-chat-and-reminders.js:39:13)\n    at async runScenario (C:\\Projects\\BuildtogetherV2\\e2e\\lib\\helpers.js:233:5)\n    at async main (C:\\Projects\\BuildtogetherV2\\e2e\\run-all.js:25:15)"
+}

@@ -1,0 +1,7 @@
+{
+  "scenarioId": "14-chat-scout",
+  "status": "fail",
+  "durationMs": 66715,
+  "error": "scout bubble did not render in the chat UI",
+  "stack": "Error: scout bubble did not render in the chat UI\n    at scenario (C:\\Projects\\BuildtogetherV2\\e2e\\scenarios\\14-chat-scout.js:173:11)\n    at async runScenario (C:\\Projects\\BuildtogetherV2\\e2e\\lib\\helpers.js:233:5)"
+}

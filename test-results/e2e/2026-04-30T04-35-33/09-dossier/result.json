@@ -1,0 +1,7 @@
+{
+  "scenarioId": "09-dossier",
+  "status": "fail",
+  "durationMs": 7941,
+  "error": "dossier rewrite skipped: LLM failed: OpenRouter 400: {\"error\":{\"message\":\"Provider returned error\",\"code\":400,\"metadata\":{\"raw\":\"{\\\"type\\",
+  "stack": "Error: dossier rewrite skipped: LLM failed: OpenRouter 400: {\"error\":{\"message\":\"Provider returned error\",\"code\":400,\"metadata\":{\"raw\":\"{\\\"type\\\n    at scenario (C:\\Projects\\BuildtogetherV2\\e2e\\scenarios\\09-dossier.js:43:11)\n    at async runScenario (C:\\Projects\\BuildtogetherV2\\e2e\\lib\\helpers.js:233:5)"
+}

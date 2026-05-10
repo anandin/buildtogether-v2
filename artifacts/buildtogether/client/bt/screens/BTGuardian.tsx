@@ -90,6 +90,20 @@ type ToolPreview =
       fromCategory: string;
       toCategory: string;
       reclassifiedCount: number;
+    }
+  | {
+      kind: "scout_started";
+      mode: "find";
+      jobId: string;
+      query: string;
+      location: string | null;
+    }
+  | {
+      kind: "wait_started";
+      mode: "wait";
+      jobId: string;
+      query: string;
+      location: string | null;
     };
 
 // Backward-compat alias for the existing single-tool field.
@@ -1157,6 +1171,30 @@ function ToolPreviewCard({
               : ""}
           </Text>
         </View>
+      </View>
+    );
+  }
+
+  if (result.kind === "scout_started" || result.kind === "wait_started") {
+    // Lightweight pill — the real scout/wait card lands as a separate
+    // guardian_conversations row on the next history refetch (see
+    // useTilly cache invalidation). This pill just confirms the tool
+    // fired so the user understands Tilly is actually working on it.
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>✦</Text>
+        <Text
+          style={{
+            flex: 1,
+            fontFamily: BTFonts.sans,
+            fontSize: 12,
+            color: t.ink,
+          }}
+        >
+          {result.mode === "wait" ? "Looking up sale history for " : "Scouting "}
+          <Text style={{ fontWeight: "700" }}>{result.query}</Text>
+          {result.location ? ` in ${result.location}` : ""}.
+        </Text>
       </View>
     );
   }

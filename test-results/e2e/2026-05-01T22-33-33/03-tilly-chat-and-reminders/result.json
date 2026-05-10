@@ -1,0 +1,7 @@
+{
+  "scenarioId": "03-tilly-chat-and-reminders",
+  "status": "fail",
+  "durationMs": 22231,
+  "error": "Cannot read properties of undefined (reading 'title')",
+  "stack": "TypeError: Cannot read properties of undefined (reading 'title')\n    at scenario (C:\\Projects\\BuildtogetherV2\\e2e\\scenarios\\03-tilly-chat-and-reminders.js:34:38)\n    at async runScenario (C:\\Projects\\BuildtogetherV2\\e2e\\lib\\helpers.js:242:5)"
+}

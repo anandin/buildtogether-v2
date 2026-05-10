@@ -1,0 +1,7 @@
+{
+  "scenarioId": "13-scout",
+  "status": "fail",
+  "durationMs": 3381,
+  "error": "login form not found — site may already have a session",
+  "stack": "Error: login form not found — site may already have a session\n    at login (C:\\Projects\\BuildtogetherV2\\e2e\\lib\\helpers.js:30:11)\n    at async runScenario (C:\\Projects\\BuildtogetherV2\\e2e\\lib\\helpers.js:232:5)\n    at async main (C:\\Projects\\BuildtogetherV2\\e2e\\run-all.js:25:15)"
+}
