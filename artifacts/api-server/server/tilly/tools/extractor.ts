@@ -45,11 +45,18 @@ const ToolArgsSchema = z.object({
 
 const ToolCallSchema = z.object({
   name: z.enum([
+    // Forward
     "createDream",
     "markPaymentToOwnCard",
     "hideCategoryFromSpend",
     "pinToHome",
     "setOnboardingField",
+    // Inverse
+    "unhideCategory",
+    "removePaymentToOwnCardAlias",
+    "unpinFromHome",
+    "unsetOnboardingField",
+    "deleteDream",
   ]),
   args: ToolArgsSchema,
 });
@@ -101,6 +108,32 @@ Available tools:
    - supportNote: free-form clarification
    - schoolName: name of school (only when employmentType=student)
    Fire MULTIPLE setOnboardingField calls in the array if the user mentions multiple fields ("I'm 38, support 4, in Toronto" → 3 calls).
+
+INVERSE TOOLS — fire these when the user wants to UNDO something Tilly previously did. Cue phrases include "Don't / stop / bring back / undo / reverse / remove / cancel / nope / I changed my mind / forget that". Match the inverse to the forward tool the user is reversing:
+
+6. unhideCategory — bring back a category Tilly hid from Spend.
+   Triggers: "Bring loans back", "Stop hiding loans", "Show loans on my Spend page again", "Don't hide X anymore", "Unhide loans", "Bring back the X category".
+   Args: { category: string } — the category name they want visible again. Strings like "loan" / "loans" → "loans".
+
+7. removePaymentToOwnCardAlias — undo a markPaymentToOwnCard. The user wants the previously-aliased credit-card payments to count as spending again (or they want to revert because Tilly mis-classified).
+   Triggers: "Stop treating Scotia as a credit-card payment", "Bring back Scotia VSA as spending", "Undo the Scotia alias", "Count my Visa payments again", "Remove the credit-card alias".
+   Args: { cardName: string } — the same card description used originally ("Scotia VISA", "TD Visa", "Diners Club").
+
+8. unpinFromHome — undo a pinToHome.
+   Triggers: "Unpin subscriptions overview", "Take subscriptions off my home", "Remove credit health from Today", "Don't show the X tile anymore".
+   Args: { tileKind: string } — same tile names as pinToHome (subscriptions_overview, credit_health, spending_vs_avg, upcoming_bills, debt_breakdown).
+
+9. unsetOnboardingField — clear an onboarding fact Tilly recorded.
+   Triggers: "Forget I'm 38", "I'm not in Toronto anymore — clear that", "Unset my dependents", "Reset my employment type", "I told you wrong, clear my city".
+   Args: { field: same enum as setOnboardingField }.
+
+10. deleteDream — delete a savings goal the user no longer wants.
+    Triggers: "Delete the Switch 2 dream", "Remove my AirPods goal", "I don't want to track that anymore", "Cancel the Barcelona dream".
+    Args: { name: string } — the dream's name as the user references it. Case-insensitive match server-side.
+
+Multi-tool turns are supported across forward and inverse. "Bring loans back AND delete the Switch 2 dream" → two calls in the array.
+
+Choosing between similar tools — surgical-first principle: when the user complains about a number being wrong on Spend (e.g. "this Scotia loan shouldn't be there"), prefer markPaymentToOwnCard (surgical, retroactive) over hideCategoryFromSpend (nuclear, hides the whole category). Only fire hideCategoryFromSpend when the user explicitly says "hide" / "I never want to see this category" — never as a workaround for a categorization issue.
 
 Output rules:
 - toolCalls = [] is fine (and common). Don't force a tool when none applies.

@@ -118,7 +118,18 @@ export type TillyToolResult =
       kind: "onboarding_field_set";
       field: string;
       value: string;
-    };
+    }
+  // ─── Inverse tool results ────────────────────────────────────────────
+  | { kind: "category_unhidden"; category: string }
+  | {
+      kind: "payment_to_card_unaliased";
+      cardName: string;
+      restoredCount: number;
+      restoredAmount: number;
+    }
+  | { kind: "home_tile_unpinned"; tileKind: string; label: string }
+  | { kind: "onboarding_field_unset"; field: string }
+  | { kind: "dream_deleted"; name: string };
 
 export type UserPrefsResponse = {
   prefs: Record<string, Record<string, unknown>>;
@@ -223,6 +234,10 @@ export type SpendPattern =
       italicSpan?: string;
       bars: DayBar[];
       categories: SpendCategory[];
+      /** Fixed-obligation buckets this week (loans, taxes, transfers, fees).
+       * Same shape as `categories` so CategoryRow renders both lists.
+       * Optional for backward-compat with cached responses pre-split. */
+      fixedObligations?: SpendCategory[];
       today: { id: string; who: string; cat: string; amt: number; time: string }[];
       paycheck: { amount: number; source: string; day: string; daysUntil: number };
     };

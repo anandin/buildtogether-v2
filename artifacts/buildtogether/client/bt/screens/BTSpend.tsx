@@ -24,6 +24,7 @@ import { useSubscriptions } from "../hooks/useSubscriptions";
 import { useUserPrefs } from "../hooks/useUserPrefs";
 import { AddExpenseModal } from "../AddExpenseModal";
 import { SplitModal } from "../SplitModal";
+import { MemoryInspector } from "../MemoryInspector";
 import { btApi } from "../api/client";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { Linking } from "react-native";
@@ -45,6 +46,7 @@ export function BTSpend() {
   const [addOpen, setAddOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitPrefill, setSplitPrefill] = useState<{ amount?: number; label?: string }>({});
+  const [memoryOpen, setMemoryOpen] = useState(false);
   const live = spend.data && spend.data.ready === true ? spend.data : null;
   const recent = expenses.data?.expenses ?? [];
 
@@ -208,11 +210,19 @@ export function BTSpend() {
   }
 
   const { spent, italicSpan, bars, categories } = live;
+  const fixedObligations =
+    "fixedObligations" in live ? live.fixedObligations ?? [] : [];
   const todayLedger = "today" in live ? live.today : [];
   const paycheck = "paycheck" in live ? live.paycheck : null;
   // Tilly-driven category filter — chat sends a hideCategoryFromSpend
   // tool, server writes the pref, this screen reads it and filters.
   const { hiddenCategories } = useUserPrefs();
+  const visibleDiscretionary = categories.filter(
+    (c) => !hiddenCategories.includes(c.name.toLowerCase()),
+  );
+  const visibleFixed = fixedObligations.filter(
+    (c) => !hiddenCategories.includes(c.name.toLowerCase()),
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
@@ -246,25 +256,67 @@ export function BTSpend() {
 
         <View style={{ gap: 10 }}>
           <BTLabel color={t.inkMute}>Where it goes</BTLabel>
-          {categories
-            .filter((c) => !hiddenCategories.includes(c.name.toLowerCase()))
-            .map((c) => (
+          {visibleDiscretionary.length > 0 ? (
+            visibleDiscretionary.map((c) => (
               <CategoryRow key={c.id} c={c} t={t} />
+            ))
+          ) : (
+            <Text
+              style={{
+                color: t.inkMute,
+                fontFamily: BTFonts.sans,
+                fontSize: 12,
+                fontStyle: "italic",
+              }}
+            >
+              No discretionary spend this week.
+            </Text>
+          )}
+        </View>
+
+        {visibleFixed.length > 0 ? (
+          <View style={{ gap: 10 }}>
+            <BTLabel color={t.inkMute}>Money flow · fixed this week</BTLabel>
+            {visibleFixed.map((c) => (
+              <CategoryRow key={`fixed-${c.id}`} c={c} t={t} />
             ))}
-          {hiddenCategories.length > 0 ? (
             <Text
               style={{
                 color: t.inkMute,
                 fontFamily: BTFonts.sans,
                 fontSize: 11,
                 fontStyle: "italic",
-                marginTop: 4,
               }}
             >
-              Hiding: {hiddenCategories.join(", ")}. Tell Tilly to bring back.
+              These don't count toward your spend total above — they're
+              debt service, taxes, fees, and money moved between your own
+              accounts.
             </Text>
-          ) : null}
-        </View>
+          </View>
+        ) : null}
+
+        {hiddenCategories.length > 0 ? (
+          <Pressable
+            onPress={() => setMemoryOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Open Memory to see and undo Tilly's changes"
+            style={{ marginTop: -4 }}
+          >
+            <Text
+              style={{
+                color: t.inkMute,
+                fontFamily: BTFonts.sans,
+                fontSize: 11,
+                fontStyle: "italic",
+              }}
+            >
+              Hidden by Tilly: {hiddenCategories.join(", ")}.{" "}
+              <Text style={{ color: t.accent, fontWeight: "700" }}>
+                Tap to undo →
+              </Text>
+            </Text>
+          </Pressable>
+        ) : null}
 
         {activeSubs.length > 0 ? (
           <View style={{ gap: 10 }}>
@@ -413,6 +465,11 @@ export function BTSpend() {
         onClose={() => setSplitOpen(false)}
         prefillAmount={splitPrefill.amount}
         prefillLabel={splitPrefill.label}
+      />
+      <MemoryInspector
+        visible={memoryOpen}
+        onClose={() => setMemoryOpen(false)}
+        initialTab="settings"
       />
     </View>
   );

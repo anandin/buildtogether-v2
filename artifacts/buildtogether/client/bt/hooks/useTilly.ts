@@ -84,12 +84,15 @@ export function useTilly() {
           ? [reply.toolResult]
           : [];
       const seen = new Set(results.map((r) => r.kind));
-      if (seen.has("dream_created")) {
+      if (seen.has("dream_created") || seen.has("dream_deleted")) {
         qc.invalidateQueries({ queryKey: ["/api/dreams"] });
       }
-      if (seen.has("payment_to_card_aliased")) {
+      if (
+        seen.has("payment_to_card_aliased") ||
+        seen.has("payment_to_card_unaliased")
+      ) {
         // Spend totals + 90-day analyse + plaid pending all need refetch
-        // since past plaid_transactions just got reclassified to transfers.
+        // since past plaid_transactions just got reclassified.
         qc.invalidateQueries({ queryKey: ["/api/expenses"] });
         qc.invalidateQueries({ queryKey: ["/api/tilly/spend-pattern"] });
         qc.invalidateQueries({ queryKey: ["/api/tilly/today"] });
@@ -98,14 +101,29 @@ export function useTilly() {
       }
       if (
         seen.has("category_hidden") ||
+        seen.has("category_unhidden") ||
         seen.has("home_tile_pinned") ||
-        seen.has("onboarding_field_set")
+        seen.has("home_tile_unpinned") ||
+        seen.has("onboarding_field_set") ||
+        seen.has("onboarding_field_unset")
       ) {
         // All preference writes invalidate the prefs query; downstream
         // screens (Spend filtering, Today tiles, Settings) re-render.
         qc.invalidateQueries({ queryKey: ["/api/user-prefs"] });
       }
-      if (seen.has("onboarding_field_set")) {
+      if (
+        seen.has("category_unhidden") ||
+        seen.has("category_hidden")
+      ) {
+        // Spend page reads hidden categories from prefs but its
+        // categories array also changed shape (top-N sorting), so
+        // refetch spend-pattern too to be safe.
+        qc.invalidateQueries({ queryKey: ["/api/tilly/spend-pattern"] });
+      }
+      if (
+        seen.has("onboarding_field_set") ||
+        seen.has("onboarding_field_unset")
+      ) {
         qc.invalidateQueries({ queryKey: ["/api/tilly/me/life-context"] });
       }
       // Bind the inline confirmation chip to this specific reply.

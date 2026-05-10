@@ -65,7 +65,18 @@ type ToolPreview =
       kind: "onboarding_field_set";
       field: string;
       value: string;
-    };
+    }
+  // Inverse-tool result variants — rendered inline same as forward.
+  | { kind: "category_unhidden"; category: string }
+  | {
+      kind: "payment_to_card_unaliased";
+      cardName: string;
+      restoredCount: number;
+      restoredAmount: number;
+    }
+  | { kind: "home_tile_unpinned"; tileKind: string; label: string }
+  | { kind: "onboarding_field_unset"; field: string }
+  | { kind: "dream_deleted"; name: string };
 
 // Backward-compat alias for the existing single-tool field.
 type DreamPreview = Extract<ToolPreview, { kind: "dream_created" }>;
@@ -311,7 +322,14 @@ export function BTGuardian() {
           <BTLabel color={t.inkSoft} size={10}>memory</BTLabel>
         </Pressable>
       </View>
-      <MemoryInspector visible={memoryOpen} onClose={() => setMemoryOpen(false)} />
+      <MemoryInspector
+        visible={memoryOpen}
+        onClose={() => setMemoryOpen(false)}
+        onPrefillCompose={(seed) => {
+          setMemoryOpen(false);
+          setDraft(seed);
+        }}
+      />
 
       <BTRule color={t.rule} />
 
@@ -897,6 +915,17 @@ function ToolPreviewCard({
             {Math.round(result.reclassifiedAmount).toLocaleString()} moved out
             of loans
           </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 10,
+              color: t.inkMute,
+              marginTop: 4,
+              fontStyle: "italic",
+            }}
+          >
+            Not what you meant? Tell me to bring {result.cardName} back.
+          </Text>
         </View>
       </View>
     );
@@ -906,17 +935,30 @@ function ToolPreviewCard({
     return (
       <View style={baseStyle}>
         <Text style={{ fontSize: 18 }}>🙈</Text>
-        <Text
-          style={{
-            flex: 1,
-            fontFamily: BTFonts.sans,
-            fontSize: 12,
-            color: t.ink,
-          }}
-        >
-          Hidden <Text style={{ fontWeight: "700" }}>{result.category}</Text>{" "}
-          from your Spend page. Tell me to bring it back anytime.
-        </Text>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 12,
+              color: t.ink,
+            }}
+          >
+            Hidden <Text style={{ fontWeight: "700" }}>{result.category}</Text>{" "}
+            from your Spend page.
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 10,
+              color: t.inkMute,
+              marginTop: 4,
+              fontStyle: "italic",
+            }}
+          >
+            Not what you meant? Tell me to bring {result.category} back, or
+            open Memory.
+          </Text>
+        </View>
       </View>
     );
   }
@@ -954,6 +996,119 @@ function ToolPreviewCard({
         >
           Noted: {humanizeOnboardingField(result.field)} ={" "}
           <Text style={{ fontWeight: "700" }}>{result.value}</Text>
+        </Text>
+      </View>
+    );
+  }
+
+  // ─── Inverse-tool variants ──────────────────────────────────────────
+  if (result.kind === "category_unhidden") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>👁️</Text>
+        <Text
+          style={{
+            flex: 1,
+            fontFamily: BTFonts.sans,
+            fontSize: 12,
+            color: t.ink,
+          }}
+        >
+          <Text style={{ fontWeight: "700" }}>{result.category}</Text> visible
+          on your Spend page again.
+        </Text>
+      </View>
+    );
+  }
+
+  if (result.kind === "payment_to_card_unaliased") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>↩️</Text>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={{
+              fontFamily: BTFonts.serif,
+              fontSize: 13,
+              fontWeight: "600",
+              color: t.ink,
+            }}
+          >
+            {result.cardName} payments back as spending
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 11,
+              color: t.inkSoft,
+              marginTop: 2,
+            }}
+          >
+            {result.restoredCount} row
+            {result.restoredCount === 1 ? "" : "s"} · $
+            {Math.round(result.restoredAmount).toLocaleString()} restored to
+            their original categories
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (result.kind === "home_tile_unpinned") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>📌</Text>
+        <Text
+          style={{
+            flex: 1,
+            fontFamily: BTFonts.sans,
+            fontSize: 12,
+            color: t.ink,
+          }}
+        >
+          Unpinned <Text style={{ fontWeight: "700" }}>{result.label}</Text>{" "}
+          from Today.
+        </Text>
+      </View>
+    );
+  }
+
+  if (result.kind === "onboarding_field_unset") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>🧹</Text>
+        <Text
+          style={{
+            flex: 1,
+            fontFamily: BTFonts.sans,
+            fontSize: 12,
+            color: t.ink,
+          }}
+        >
+          Cleared{" "}
+          <Text style={{ fontWeight: "700" }}>
+            {humanizeOnboardingField(result.field)}
+          </Text>{" "}
+          from what I remember.
+        </Text>
+      </View>
+    );
+  }
+
+  if (result.kind === "dream_deleted") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>🗑️</Text>
+        <Text
+          style={{
+            flex: 1,
+            fontFamily: BTFonts.sans,
+            fontSize: 12,
+            color: t.ink,
+          }}
+        >
+          Deleted <Text style={{ fontWeight: "700" }}>{result.name}</Text>{" "}
+          dream.
         </Text>
       </View>
     );

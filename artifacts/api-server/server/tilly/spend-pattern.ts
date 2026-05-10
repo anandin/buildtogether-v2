@@ -141,10 +141,30 @@ export type WeeklyPattern = {
   headline: string;
   italicSpan?: string;
   bars: DayBar[];
+  /** Top discretionary categories this week — what "spending" really means.
+   * Excludes fixed-obligation buckets (loans / taxes / transfers / fees)
+   * which live in `fixedObligations` below so the user can see them without
+   * letting them dominate the spend headline + soft-spot detection. */
   categories: SpendCategory[];
+  /** Fixed-obligation buckets this week — debt service, taxes, between-
+   * own-account moves, bank fees. Same shape as categories so the mobile
+   * client can reuse `CategoryRow`. Empty when the user has no such rows. */
+  fixedObligations: SpendCategory[];
   today: { id: string; who: string; cat: string; amt: number; time: string }[];
   paycheck?: { amount: number; source: string; day: string; daysUntil: number };
 };
+
+/** Categories treated as "money flow / fixed" rather than discretionary
+ * spending. Excluded from headline totals + bars + soft-spot detection,
+ * surfaced in the dedicated `fixedObligations` field. `fees` joins the
+ * club because an annual card fee or NSF charge is non-discretionary at
+ * the moment it lands; the user can't avoid it this week. */
+const FIXED_OBLIGATION_CATS = new Set([
+  "loans",
+  "taxes",
+  "transfers",
+  "fees",
+]);
 
 const DAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
 const FULL_DAY_NAMES = [
@@ -233,28 +253,32 @@ export async function buildWeeklyPattern(
 
   if (txRows.length === 0) return null;
 
-  // ─── Bars: this week's daily totals ─────────────────────────────────────
-  // Loans, taxes, and transfers are fixed obligations / debt service / money
-  // moved between own accounts — they're not discretionary spending and a
-  // single $5K loan payment on Monday otherwise dwarfs every other bar to a
-  // sliver. The bar chart is supposed to surface "where did your discretionary
-  // money go this week" — exclude the fixed-obligation buckets so the picture
-  // is informative.
-  const FIXED_OBLIGATION_CATS = new Set(["loans", "taxes", "transfers"]);
+  // ─── Discretionary vs fixed-obligation split ─────────────────────────────
+  // Single source of truth for what counts as "spending" vs "money flow".
+  // The headline, bars, soft-spots, and primary categories list ALL use
+  // discretionaryThisWeek so they're internally consistent. fixedThisWeek
+  // surfaces the same buckets as their own section in the response.
   const weekStartIso = weekStart.toISOString().slice(0, 10);
   const todayIdx = dayOfWeekIndex(now.toISOString().slice(0, 10));
-  const dailyTotals = new Array(7).fill(0);
   const thisWeekTx = txRows.filter((t) => t.date >= weekStartIso);
-  for (const t of thisWeekTx) {
-    if (FIXED_OBLIGATION_CATS.has((t.category || "").toLowerCase())) continue;
+  const isFixed = (t: UnifiedTx) =>
+    FIXED_OBLIGATION_CATS.has((t.category || "").toLowerCase());
+  const discretionaryThisWeek = thisWeekTx.filter((t) => !isFixed(t));
+  const fixedThisWeek = thisWeekTx.filter(isFixed);
+
+  // ─── Bars: this week's daily discretionary totals ──────────────────────
+  const dailyTotals = new Array(7).fill(0);
+  for (const t of discretionaryThisWeek) {
     const di = dayOfWeekIndex(t.date);
     dailyTotals[di] += t.amount;
   }
 
-  // ─── Soft-spot detection: category × day cells ─────────────────────────
-  // Per-cell stats over the trailing 8 weeks (excluding this week).
+  // ─── Soft-spot detection: category × day cells (discretionary only) ────
+  // Loan auto-debits hit the same weekday every month, which made Monday
+  // fire as a soft spot every time we ran. Restrict cells to discretionary
+  // categories so soft-spot signals reflect actual habit drift.
   const cellAmounts = new Map<string, number[]>(); // key = "category|dayIdx"
-  const olderTx = txRows.filter((t) => t.date < weekStartIso);
+  const olderTx = txRows.filter((t) => t.date < weekStartIso && !isFixed(t));
   for (const t of olderTx) {
     const cat = t.category;
     const di = dayOfWeekIndex(t.date);
@@ -264,9 +288,9 @@ export async function buildWeeklyPattern(
     cellAmounts.set(key, arr);
   }
 
-  // This-week per-cell totals.
+  // This-week per-cell totals (discretionary).
   const thisWeekCells = new Map<string, number>();
-  for (const t of thisWeekTx) {
+  for (const t of discretionaryThisWeek) {
     const cat = t.category;
     const di = dayOfWeekIndex(t.date);
     const key = `${cat}|${di}`;
@@ -299,54 +323,76 @@ export async function buildWeeklyPattern(
     today: i === todayIdx,
   }));
 
-  // ─── Categories: this week's top spends with soft-spot tag + drill-down ─
-  const catTotals = new Map<string, number>();
-  const catTxs = new Map<string, UnifiedTx[]>();
-  for (const t of thisWeekTx) {
-    const cat = t.category;
-    catTotals.set(cat, (catTotals.get(cat) ?? 0) + t.amount);
-    const arr = catTxs.get(cat) ?? [];
-    arr.push(t);
-    catTxs.set(cat, arr);
-  }
-  const sortedCats = [...catTotals.entries()]
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 5);
+  // ─── Categories: this week's top discretionary spends ──────────────────
+  // Top-cap raised from 5 → 8 so smaller-but-real buckets (groceries,
+  // restaurants, transit) show up alongside the dominant ones rather
+  // than getting crowded out by a single big-dollar row. Only
+  // discretionary categories live here; fixed obligations live in
+  // their own list below.
+  const TOP_DISCRETIONARY = 8;
 
-  const categories: SpendCategory[] = sortedCats.map(([name, amt], catIdx) => {
-    const softCell = softCells.find((c) => c.category === name);
-    const softDayIdx = softCell ? softCell.dayIdx : null;
-    // Build per-transaction list for drill-down. Already sorted newest-first
-    // from readAllTransactions; dedupe by (name, amount) so Plaid sandbox
-    // dupes don't inflate the count shown to the user.
-    const rawTxs = catTxs.get(name) ?? [];
-    const seenKeys = new Set<string>();
-    const txList: SpendTx[] = [];
-    for (const t of rawTxs) {
-      const label = (t.who || name).trim();
-      const key = `${label.toLowerCase()}::${t.amount}`;
-      if (seenKeys.has(key)) continue;
-      seenKeys.add(key);
-      txList.push({
-        id: `cat-${catIdx}-tx-${txList.length}`,
-        name: label,
-        date: t.date,
-        amt: t.amount,
-      });
+  function buildCategoryList(
+    source: UnifiedTx[],
+    options: { applySoftSpot: boolean; idPrefix: string },
+  ): SpendCategory[] {
+    const totals = new Map<string, number>();
+    const buckets = new Map<string, UnifiedTx[]>();
+    for (const t of source) {
+      const cat = t.category;
+      totals.set(cat, (totals.get(cat) ?? 0) + t.amount);
+      const arr = buckets.get(cat) ?? [];
+      arr.push(t);
+      buckets.set(cat, arr);
     }
-    return {
-      id: name.toLowerCase().replace(/\s+/g, "-"),
-      name,
-      hue: categoryHue(name),
-      context: contextFor(softDayIdx, txList),
-      amt: Math.round(amt),
-      softSpot: !!softCell,
-      transactions: txList,
-    };
+    const sorted = [...totals.entries()]
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, TOP_DISCRETIONARY);
+    return sorted.map(([name, amt], catIdx) => {
+      const softCell = options.applySoftSpot
+        ? softCells.find((c) => c.category === name)
+        : undefined;
+      const softDayIdx = softCell ? softCell.dayIdx : null;
+      const rawTxs = buckets.get(name) ?? [];
+      const seenKeys = new Set<string>();
+      const txList: SpendTx[] = [];
+      for (const t of rawTxs) {
+        const label = (t.who || name).trim();
+        const key = `${label.toLowerCase()}::${t.amount}`;
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        txList.push({
+          id: `${options.idPrefix}-${catIdx}-tx-${txList.length}`,
+          name: label,
+          date: t.date,
+          amt: t.amount,
+        });
+      }
+      return {
+        id: name.toLowerCase().replace(/\s+/g, "-"),
+        name,
+        hue: categoryHue(name),
+        context: contextFor(softDayIdx, txList),
+        amt: Math.round(amt),
+        softSpot: !!softCell,
+        transactions: txList,
+      };
+    });
+  }
+
+  const categories = buildCategoryList(discretionaryThisWeek, {
+    applySoftSpot: true,
+    idPrefix: "cat",
+  });
+  const fixedObligations = buildCategoryList(fixedThisWeek, {
+    applySoftSpot: false,
+    idPrefix: "fixed",
   });
 
-  // ─── Headline: pick the strongest soft signal, fall back to neutral ────
-  const totalSpent = thisWeekTx.reduce((s, t) => s + t.amount, 0);
+  // ─── Headline: discretionary total, soft-spot annotation when present ──
+  // Headline now matches the bar-chart sum — both come from
+  // discretionaryThisWeek. No more "$15K spent" while the chart shows
+  // $2K worth of bars.
+  const totalSpent = discretionaryThisWeek.reduce((s, t) => s + t.amount, 0);
   const top = softCells[0];
   let headline: string;
   let italicSpan: string | undefined;
@@ -387,6 +433,7 @@ export async function buildWeeklyPattern(
     italicSpan,
     bars,
     categories,
+    fixedObligations,
     today: todayTx,
   };
 }
