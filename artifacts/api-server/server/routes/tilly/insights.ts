@@ -417,6 +417,12 @@ export function mountTillyInsightsRoutes(app: Express): void {
         monthly,
         forecast,
         openQuestions,
+        // Authoritative signal for the mobile to decide between the
+        // "connect your bank" empty state and the connected-state hero
+        // card. Computed from plaid_items above; prevents the empty
+        // state from leaking when surplus happens to be \$0 (no
+        // detected income yet, but banks ARE wired).
+        bankConnected: plaidConnected,
       });
     } catch (err) {
       console.error("/api/tilly/today error:", err);

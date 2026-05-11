@@ -78,11 +78,20 @@ export function BTHome({ onNav }: Props) {
   // query in flight on first mount blocks the empty branch.
   const isFirstLoad =
     today.isLoading || dreams.isLoading || spend.isLoading || expenses.isLoading;
+  // hasMoneyData = "show the hero card, not the connect-your-bank
+  // empty state." The server now returns bankConnected explicitly so
+  // we don't infer it from a \$ amount being > 0 — that fell over
+  // when monthly surplus clamped to \$0 (no detected income yet),
+  // making the user think their bank had disconnected when it hadn't.
+  // Falls back to the legacy heuristic when bankConnected is absent
+  // (older API response).
   const hasMoneyData =
     !!today_ &&
-    ((today_.afterRent ?? 0) > 0 ||
+    (today_.bankConnected === true ||
+      (today_.afterRent ?? 0) > 0 ||
       (today_.breathing ?? 0) > 0 ||
-      (today_.paycheckCopy ?? "").includes("this week"));
+      (today_.paycheckCopy ?? "").includes("this week") ||
+      (today_.paycheckCopy ?? "").includes("earned"));
   const userName = user?.name?.split(" ")[0] || "there";
 
   const greeting = today_?.greeting ?? tone.greeting(userName);

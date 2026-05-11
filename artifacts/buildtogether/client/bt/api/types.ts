@@ -54,6 +54,12 @@ export type TodayBrief =
         expected: number;
         reasons: string[];
       }>;
+      /** True when ≥1 plaid_items row exists for the household. Mobile
+       * uses this to decide between the "connect your bank" empty
+       * state and the connected-state hero. Prevents the empty state
+       * from showing when surplus is \$0 (no detected income) but
+       * banks ARE wired. */
+      bankConnected?: boolean;
     };
 
 export type TillyQuestion = {
