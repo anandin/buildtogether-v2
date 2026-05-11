@@ -134,22 +134,29 @@ function TillySvg({
   blink: boolean;
 }) {
   const { body, belly, beak } = t.tilly;
-  // Eye whites are an off-white tied to the lighter palette tone so they
-  // adapt cleanly across themes (Bloom cream vs Dusk dark interior). On dark
-  // themes the belly token is dark, so we fall back to a true white when the
-  // belly luminance would make the eye discs disappear.
-  const eyeWhite = isDark(belly) ? "#F2EBDD" : "#FFFFFF";
-
-  // User feedback: on dark themes (dusk, neon) Tilly was reading as
-  // creepy — big white owl with wide-open eyes on a dark background
-  // hit the uncanny-valley register. Two coordinated tweaks that
-  // dial her back to "calm bird" without restyling the silhouette:
-  //   1) Shrink eye discs (r=11 → r=9) — less wide-eyed-staring
-  //   2) Soften pupils to a sleepy half-lidded shape (ry 4 → 2.5)
-  //      — reads as "watchful, calm" instead of "owl in headlights"
-  // Light themes keep the original alert proportions where the
-  // softer pinks/creams already mute the effect.
   const isDarkTheme = isDark(t.bg);
+
+  // User feedback: on dark themes (dusk, neon) Tilly's body is LIGHT
+  // (cream/white) and the eye discs were ALSO near-white — so the eye
+  // sockets blended into the body and only the pupils floated, which
+  // hit the uncanny-mask register. Fix: on dark themes, invert the
+  // eye scheme to "dark socket + light pupil" — the watchful-owl-in-
+  // shadow look. The dark socket (belly tone) carves a clear edge
+  // against the light body; the light pupil reads as a small bright
+  // glint inside.
+  //
+  // Light themes keep the classic "white socket + dark pupil" cartoon
+  // eye — they don't have the same blending problem because body is
+  // already dark/wine/ink there, and the cream eye discs pop against it.
+  const eyeDiscFill = isDarkTheme
+    ? belly
+    : isDark(belly) ? "#F2EBDD" : "#FFFFFF";
+  const pupilFill = body; // body is dark on light themes, light on dark themes — works both ways
+  const highlightFill = isDarkTheme ? body : (isDark(belly) ? "#F2EBDD" : "#FFFFFF");
+
+  // Also dial back the wide-eyed proportions on dark themes (smaller
+  // discs + sleepy lids) so she reads as "calm watchful" rather than
+  // "wide-eyed staring."
   const eyeR = isDarkTheme ? 9 : 11;
   const defaultPupilRy = isDarkTheme ? 2.5 : 4;
 
@@ -173,23 +180,25 @@ function TillySvg({
       {/* Belly — wide cream oval centered on the lower torso */}
       <Ellipse cx={50} cy={64} rx={22} ry={22} fill={belly} />
 
-      {/* Eye discs — sized via eyeR (above) for dark-theme softening. */}
-      <Circle cx={38} cy={eyeBaseY} r={eyeR} fill={eyeWhite} />
-      <Circle cx={62} cy={eyeBaseY} r={eyeR} fill={eyeWhite} />
+      {/* Eye discs — sized via eyeR (above) for dark-theme softening.
+          Fill picked above: dark socket on dark themes (so it doesn't
+          blend into the light body), light socket on light themes. */}
+      <Circle cx={38} cy={eyeBaseY} r={eyeR} fill={eyeDiscFill} />
+      <Circle cx={62} cy={eyeBaseY} r={eyeR} fill={eyeDiscFill} />
 
       {/* Pupils + corner highlights, or arc smiles for the cheer state */}
       {state === "cheer" ? (
         <G>
           <Path
             d="M32 44 Q38 40 44 44"
-            stroke={body}
+            stroke={pupilFill}
             strokeWidth={2.4}
             fill="none"
             strokeLinecap="round"
           />
           <Path
             d="M56 44 Q62 40 68 44"
-            stroke={body}
+            stroke={pupilFill}
             strokeWidth={2.4}
             fill="none"
             strokeLinecap="round"
@@ -197,12 +206,12 @@ function TillySvg({
         </G>
       ) : (
         <G>
-          <Ellipse cx={38} cy={pupilY} rx={4} ry={pupilRy} fill={body} />
-          <Ellipse cx={62} cy={pupilY} rx={4} ry={pupilRy} fill={body} />
+          <Ellipse cx={38} cy={pupilY} rx={4} ry={pupilRy} fill={pupilFill} />
+          <Ellipse cx={62} cy={pupilY} rx={4} ry={pupilRy} fill={pupilFill} />
           {showHighlights ? (
             <G>
-              <Circle cx={39.5} cy={42.5} r={1.4} fill={eyeWhite} />
-              <Circle cx={63.5} cy={42.5} r={1.4} fill={eyeWhite} />
+              <Circle cx={39.5} cy={42.5} r={1.4} fill={highlightFill} />
+              <Circle cx={63.5} cy={42.5} r={1.4} fill={highlightFill} />
             </G>
           ) : null}
         </G>
