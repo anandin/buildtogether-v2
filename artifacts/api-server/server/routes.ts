@@ -289,32 +289,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
             : aiSuggestion && aiSuggestion.confidence >= HIGH_CONFIDENCE_THRESHOLD
               ? aiSuggestion.category
               : ourCat;
-        // Pending-tx policy: the original rule was "never auto-accept
-        // while pending." That made the user re-approve every \$6
-        // McDonald's because Plaid keeps small charges pending for
-        // hours/days. New policy:
-        //   - Tiny pending tx (≤\$25) auto-accept if a merchant rule
-        //     OR shouldAutoAcceptPlaidTransaction say yes. Even if
-        //     Plaid later modifies the amount by \$1-2, the user
-        //     doesn't care at that size — the friction of approval is
-        //     worse than the precision win.
-        //   - Anything larger stays in pending_review while Plaid
-        //     still says pending, so an Uber preauth \$150 doesn't
-        //     land as \$150 spend before it drops to \$25.
-        const SMALL_PENDING_AUTO_ACCEPT_CAP = 25;
+        // Pending-tx policy: don't let Plaid's `pending` flag gate
+        // auto-accept. shouldAutoAcceptPlaidTransaction already
+        // screens out the categories the user thinks of as
+        // "anomalies" — transfers, bank fees, loan payments,
+        // interest/overdraft/ATM, plus a noisy-keyword check. If a
+        // tx passes those filters, it's a normal purchase the user
+        // doesn't want to approve manually, whether Plaid has it
+        // pending or posted.
         const autoAcceptByRule = ruleOutcome.kind === "auto_accept";
         const autoIgnoreByRule = ruleOutcome.kind === "auto_ignore";
         const autoAcceptByAI = shouldAutoAcceptByAI(
           aiSuggestion?.confidence ?? null,
           tx,
         );
-        const baseAutoAccept =
+        const autoAccept =
           autoAcceptByRule ||
           shouldAutoAcceptPlaidTransaction(tx) ||
           autoAcceptByAI;
-        const autoAccept = tx.pending
-          ? baseAutoAccept && tx.amount <= SMALL_PENDING_AUTO_ACCEPT_CAP
-          : baseAutoAccept;
         const ruleId =
           ruleOutcome.kind === "auto_accept" ||
           ruleOutcome.kind === "auto_ignore" ||
@@ -5244,6 +5236,80 @@ Return just the message text.`;
   });
 
 
+
+  // One-shot drain: re-evaluate every pending_review row against the
+  // current auto-accept rule and accept the qualifying ones in bulk.
+  // Useful after a policy tweak (we just relaxed the pending-flag
+  // gate) to clear out the rows that landed under the old strict
+  // rule without making the user tap Accept × N.
+  app.post(
+    "/api/plaid/drain-pending",
+    requireAuth,
+    requireCoupleAccess,
+    async (req, res) => {
+      try {
+        const coupleId = req.user!.coupleId!;
+        const userId = req.user!.id;
+        const rows = await db
+          .select()
+          .from(plaidTransactions)
+          .where(
+            and(
+              eq(plaidTransactions.coupleId, coupleId),
+              eq(plaidTransactions.status, "pending_review"),
+            ),
+          )
+          .limit(500);
+        const [connector] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
+        const paidBy = connector?.partnerRole || "partner1";
+        let drained = 0;
+        let kept = 0;
+        for (const r of rows) {
+          const txShape = {
+            amount: r.amount,
+            name: r.name,
+            merchant_name: r.merchantName,
+            category: r.plaidCategory as string[] | null,
+            personal_finance_category: r.personalFinanceCategory as any,
+          };
+          const ok = shouldAutoAcceptPlaidTransaction(txShape);
+          if (!ok) {
+            kept++;
+            continue;
+          }
+          await db.transaction(async (txn) => {
+            const [expense] = await txn
+              .insert(expenses)
+              .values({
+                coupleId,
+                amount: r.amount,
+                description: r.merchantName || r.name || "Unknown",
+                merchant: r.merchantName || r.name || null,
+                category: r.ourCategory || "other",
+                date: r.date,
+                paidBy,
+                splitMethod: "joint",
+                source: "plaid",
+              })
+              .returning();
+            await txn
+              .update(plaidTransactions)
+              .set({ status: "accepted", expenseId: expense.id })
+              .where(eq(plaidTransactions.id, r.id));
+          });
+          drained++;
+        }
+        res.json({ scanned: rows.length, drained, kept });
+      } catch (e: any) {
+        console.error("drain-pending error:", e);
+        res.status(500).json({ error: e?.message });
+      }
+    },
+  );
 
   app.post(
     "/api/plaid/reclassify-pending",
