@@ -182,10 +182,10 @@ export function BTHome({ onNav }: Props) {
           <SkeletonHeroCard t={t} />
         ) : hasMoneyData ? (
           <BTCard t={t} inverted padding={22} radius={18}>
-            <BTStripes color="#fff" opacity={0.07} />
-            <BTLabel color="rgba(255,255,255,0.55)">Available now</BTLabel>
+            <BTStripes color={t.invertedFg} opacity={0.07} />
+            <BTLabel color={t.invertedFgMute}>Available now</BTLabel>
             <View style={{ marginTop: 14 }}>
-              <BTCurrency amount={today_!.afterRent} size={64} color="#FFFCF6" />
+              <BTCurrency amount={today_!.afterRent} size={64} color={t.invertedFg} />
             </View>
             <View
               style={{
@@ -197,7 +197,7 @@ export function BTHome({ onNav }: Props) {
             >
               <Text
                 style={{
-                  color: "rgba(255,252,246,0.7)",
+                  color: t.invertedFgMute,
                   fontFamily: BTFonts.sans,
                   fontSize: 12,
                   lineHeight: 17,
@@ -223,9 +223,9 @@ export function BTHome({ onNav }: Props) {
           </BTCard>
         ) : (
           <BTCard t={t} inverted padding={22} radius={18}>
-            <BTStripes color="#fff" opacity={0.07} />
-            <BTLabel color="rgba(255,255,255,0.55)">Step one</BTLabel>
-            <BTSerif size={26} color="#FFFCF6" weight="500" style={{ marginTop: 10, lineHeight: 32 }}>
+            <BTStripes color={t.invertedFg} opacity={0.07} />
+            <BTLabel color={t.invertedFgMute}>Step one</BTLabel>
+            <BTSerif size={26} color={t.invertedFg} weight="500" style={{ marginTop: 10, lineHeight: 32 }}>
               Connect your bank so I can{" "}
               <Text style={{ color: t.accent2, fontFamily: BTFonts.serifItalic }}>
                 actually watch
@@ -234,7 +234,7 @@ export function BTHome({ onNav }: Props) {
             </BTSerif>
             <Text
               style={{
-                color: "rgba(255,252,246,0.7)",
+                color: t.invertedFgMute,
                 fontFamily: BTFonts.sans,
                 fontSize: 13,
                 marginTop: 12,
@@ -502,14 +502,14 @@ function SkeletonHeroCard({ t }: { t: BTTheme }) {
         width: w as any,
         height: h,
         borderRadius: h / 2,
-        backgroundColor: "rgba(255,252,246,0.18)",
+        backgroundColor: t.invertedFgMute,
         opacity,
       }}
     />
   );
   return (
     <BTCard t={t} inverted padding={22} radius={18}>
-      <BTStripes color="#fff" opacity={0.07} />
+      <BTStripes color={t.invertedFg} opacity={0.07} />
       <View style={{ gap: 14 }}>
         <Bar w={90} h={11} />
         <Bar w={"55%"} h={42} />
@@ -520,7 +520,7 @@ function SkeletonHeroCard({ t }: { t: BTTheme }) {
               width: 42,
               height: 42,
               borderRadius: 21,
-              backgroundColor: "rgba(255,252,246,0.2)",
+              backgroundColor: t.invertedFgMute,
               opacity,
             }}
           />

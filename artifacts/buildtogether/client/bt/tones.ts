@@ -21,11 +21,14 @@ export const BT_TONES: Record<BTToneKey, BTTone> = {
     label: "Sibling",
     voice: "calm, wise, plainspoken",
     greeting: (name) => `Hey ${name}.`,
-    // Tone-illustrative sample, NOT an empty-state cue. The previous
-    // "connect a bank when you're ready" line stuck around even after
-    // banks were synced and made the YOU page feel broken.
+    // Tone-illustrative samples are intentionally generic. Earlier
+    // versions used hyper-specific phrasing ("DoorDash twice in two
+    // weeks · lock $25 ceiling on Wed nights?") which read as real
+    // observations the user hadn't actually been given. They're
+    // labeled "Sample voice" in the UI so it's clear this is HOW
+    // Tilly would talk, not WHAT she's saying right now.
     sample:
-      "Wednesday's the soft spot again — DoorDash twice in two weeks. Want to lock $25 ceiling for Wed nights?",
+      "Spot a soft-spot day this week? We could set a small ceiling — just for that one.",
   },
   coach: {
     key: "coach",
@@ -33,7 +36,7 @@ export const BT_TONES: Record<BTToneKey, BTTone> = {
     voice: "warm, direct, future-focused",
     greeting: (name) => `Morning, ${name}.`,
     sample:
-      "Two no-spend days in. One more puts you back in the green for the week. Coffee at home tomorrow?",
+      "Two good days in a row. One more locks the week green — coffee at home tomorrow?",
   },
   quiet: {
     key: "quiet",
@@ -41,7 +44,7 @@ export const BT_TONES: Record<BTToneKey, BTTone> = {
     voice: "minimal, observational, no nudging",
     greeting: (name) => `${name},`,
     sample:
-      "Three subscriptions you haven't touched in 60 days. Nothing urgent. Just wanted you to know.",
+      "A few subscriptions sitting untouched. Nothing urgent. Just wanted you to know.",
   },
 };
 

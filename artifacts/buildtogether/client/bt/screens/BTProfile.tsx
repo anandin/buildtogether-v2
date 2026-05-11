@@ -290,25 +290,27 @@ function BTProfileMain({
         </View>
         <View
           style={{
-            flexDirection: "row",
-            gap: 10,
             padding: 14,
             backgroundColor: tonePreviewBg(tone.key, t),
             borderRadius: 16,
+            gap: 8,
           }}
         >
-          <Tilly t={t} size={32} breathing={false} />
-          <Text
-            style={{
-              flex: 1,
-              color: t.ink,
-              fontFamily: BTFonts.serifItalic,
-              fontSize: 15,
-              lineHeight: 22,
-            }}
-          >
-            {tone.sample}
-          </Text>
+          <BTLabel color={t.inkMute}>Sample voice</BTLabel>
+          <View style={{ flexDirection: "row", gap: 10, alignItems: "flex-start" }}>
+            <Tilly t={t} size={32} breathing={false} />
+            <Text
+              style={{
+                flex: 1,
+                color: t.ink,
+                fontFamily: BTFonts.serifItalic,
+                fontSize: 15,
+                lineHeight: 22,
+              }}
+            >
+              {tone.sample}
+            </Text>
+          </View>
         </View>
       </View>
 

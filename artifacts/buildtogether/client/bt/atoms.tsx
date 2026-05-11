@@ -211,7 +211,12 @@ export function BTCard({
   radius = 18,
   style,
 }: CardProps) {
-  const bg = inverted ? t.ink : alt ? t.surfaceAlt : t.surface;
+  // `inverted` flips to the high-contrast "spotlight" surface for hero
+  // cards. Uses theme.invertedBg (always opposite-luminance to bg) so
+  // dark themes get a LIGHT inverted card and white text-on-white
+  // doesn't disappear (the previous t.ink-as-bg trick failed on dusk +
+  // neon — see theme.ts for the long version).
+  const bg = inverted ? t.invertedBg : alt ? t.surfaceAlt : t.surface;
   return (
     <View
       style={[
