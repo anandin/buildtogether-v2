@@ -122,8 +122,32 @@ export function Tilly({
   );
 }
 
+/**
+ * Tilly palette — hardcoded honey-owl identity, theme-independent.
+ *
+ * Earlier iterations derived Tilly's colors from `t.tilly` so she'd
+ * shift per theme (cream on dusk, off-white on neon, etc.). The
+ * theme-shifting versions kept reading as uncanny — the light body
+ * + light eye discs blended on dark themes, and even the "dark
+ * sockets" variant didn't fully land. User called the play: pick a
+ * single warm honey owl with explicit face features (mask, blush,
+ * beak shadow) so she has one consistent friendly read across every
+ * theme. Mascot identity > theme tinting.
+ */
+const TILLY = {
+  body: "#E5C896",          // honey/oat main fill
+  bodyHighlight: "#F0DCB4", // brighter band along the upper body
+  bodyShadow: "#B8966A",    // rim shadow along the lower body
+  mask: "#2A1E18",          // warm-espresso face mask around the eyes
+  beak: "#D89048",          // amber beak
+  beakShadow: "#B87038",    // beak underside shadow for depth
+  blush: "#E89878",         // peach cheek blush
+  eye: "#FFF4DC",           // cream eye disc (NOT pure white)
+  pupil: "#1F1612",         // near-black-warm pupil
+} as const;
+
 function TillySvg({
-  t,
+  t: _t,
   size,
   state,
   blink,
@@ -133,72 +157,54 @@ function TillySvg({
   state: TillyState;
   blink: boolean;
 }) {
-  const { body, belly, beak } = t.tilly;
-  const isDarkTheme = isDark(t.bg);
-
-  // User feedback: on dark themes (dusk, neon) Tilly's body is LIGHT
-  // (cream/white) and the eye discs were ALSO near-white — so the eye
-  // sockets blended into the body and only the pupils floated, which
-  // hit the uncanny-mask register. Fix: on dark themes, invert the
-  // eye scheme to "dark socket + light pupil" — the watchful-owl-in-
-  // shadow look. The dark socket (belly tone) carves a clear edge
-  // against the light body; the light pupil reads as a small bright
-  // glint inside.
-  //
-  // Light themes keep the classic "white socket + dark pupil" cartoon
-  // eye — they don't have the same blending problem because body is
-  // already dark/wine/ink there, and the cream eye discs pop against it.
-  const eyeDiscFill = isDarkTheme
-    ? belly
-    : isDark(belly) ? "#F2EBDD" : "#FFFFFF";
-  const pupilFill = body; // body is dark on light themes, light on dark themes — works both ways
-  const highlightFill = isDarkTheme ? body : (isDark(belly) ? "#F2EBDD" : "#FFFFFF");
-
-  // Also dial back the wide-eyed proportions on dark themes (smaller
-  // discs + sleepy lids) so she reads as "calm watchful" rather than
-  // "wide-eyed staring."
-  const eyeR = isDarkTheme ? 9 : 11;
-  const defaultPupilRy = isDarkTheme ? 2.5 : 4;
-
   const eyeBaseY = 44;
   const thinkOffset = state === "think" ? 1 : 0;
   const pupilY = eyeBaseY + thinkOffset;
-  const pupilRy = blink ? 0.6 : defaultPupilRy;
+  const pupilRy = blink ? 0.6 : 3.4;
   const showHighlights = !blink && state !== "cheer";
 
   return (
     <Svg width={size} height={size} viewBox="0 0 100 100">
       {/* Owl-ear tufts at the crown — what gives Tilly her observant
           silhouette. Without these she reads "round bird," not "calm owl." */}
-      <Ellipse cx={32} cy={22} rx={6} ry={9} fill={body} transform="rotate(-18 32 22)" />
-      <Ellipse cx={68} cy={22} rx={6} ry={9} fill={body} transform="rotate(18 68 22)" />
+      <Ellipse cx={32} cy={22} rx={6} ry={9} fill={TILLY.body} transform="rotate(-18 32 22)" />
+      <Ellipse cx={68} cy={22} rx={6} ry={9} fill={TILLY.body} transform="rotate(18 68 22)" />
 
-      {/* Body — full ellipse 34x36 per spec, NOT the tall narrow egg the old
-          implementation used. */}
-      <Ellipse cx={50} cy={56} rx={34} ry={36} fill={body} />
+      {/* Body — full honey ellipse. */}
+      <Ellipse cx={50} cy={56} rx={34} ry={36} fill={TILLY.body} />
 
-      {/* Belly — wide cream oval centered on the lower torso */}
-      <Ellipse cx={50} cy={64} rx={22} ry={22} fill={belly} />
+      {/* Upper-body highlight band — fakes a soft top-light without
+          needing SVG gradients (which RN's react-native-svg supports
+          but adds re-renders). A subtle lighter ellipse at the top
+          half does the same warmth-from-above read. */}
+      <Ellipse cx={50} cy={38} rx={28} ry={14} fill={TILLY.bodyHighlight} opacity={0.55} />
 
-      {/* Eye discs — sized via eyeR (above) for dark-theme softening.
-          Fill picked above: dark socket on dark themes (so it doesn't
-          blend into the light body), light socket on light themes. */}
-      <Circle cx={38} cy={eyeBaseY} r={eyeR} fill={eyeDiscFill} />
-      <Circle cx={62} cy={eyeBaseY} r={eyeR} fill={eyeDiscFill} />
+      {/* Lower-body rim shadow — gives the silhouette roundness. */}
+      <Ellipse cx={50} cy={84} rx={30} ry={10} fill={TILLY.bodyShadow} opacity={0.45} />
+
+      {/* Face mask — wide dark-espresso lozenge centered on the eye
+          line. Anchors both eyes in one clear face area so the discs
+          don't float in the body color. */}
+      <Ellipse cx={50} cy={44} rx={28} ry={14} fill={TILLY.mask} />
+
+      {/* Eye discs — cream against the dark mask. Definition is the
+          point: the mask carves the socket, the cream disc sits inside. */}
+      <Circle cx={38} cy={eyeBaseY} r={9} fill={TILLY.eye} />
+      <Circle cx={62} cy={eyeBaseY} r={9} fill={TILLY.eye} />
 
       {/* Pupils + corner highlights, or arc smiles for the cheer state */}
       {state === "cheer" ? (
         <G>
           <Path
             d="M32 44 Q38 40 44 44"
-            stroke={pupilFill}
+            stroke={TILLY.pupil}
             strokeWidth={2.4}
             fill="none"
             strokeLinecap="round"
           />
           <Path
             d="M56 44 Q62 40 68 44"
-            stroke={pupilFill}
+            stroke={TILLY.pupil}
             strokeWidth={2.4}
             fill="none"
             strokeLinecap="round"
@@ -206,29 +212,34 @@ function TillySvg({
         </G>
       ) : (
         <G>
-          <Ellipse cx={38} cy={pupilY} rx={4} ry={pupilRy} fill={pupilFill} />
-          <Ellipse cx={62} cy={pupilY} rx={4} ry={pupilRy} fill={pupilFill} />
+          <Ellipse cx={38} cy={pupilY} rx={3.6} ry={pupilRy} fill={TILLY.pupil} />
+          <Ellipse cx={62} cy={pupilY} rx={3.6} ry={pupilRy} fill={TILLY.pupil} />
           {showHighlights ? (
             <G>
-              <Circle cx={39.5} cy={42.5} r={1.4} fill={highlightFill} />
-              <Circle cx={63.5} cy={42.5} r={1.4} fill={highlightFill} />
+              <Circle cx={39.5} cy={42.5} r={1.4} fill={TILLY.eye} />
+              <Circle cx={63.5} cy={42.5} r={1.4} fill={TILLY.eye} />
             </G>
           ) : null}
         </G>
       )}
 
-      {/* Beak — small diamond, NOT a triangle. The diamond gives her a
-          deliberate, calm read; a downward triangle reads beaky/aggressive. */}
-      <Path d="M50 52 L46 56 L50 60 L54 56 Z" fill={beak} />
+      {/* Cheek blush — soft peach dots below the mask. The single
+          biggest "this owl is friendly, not watching" cue. */}
+      <Ellipse cx={28} cy={60} rx={5} ry={3.2} fill={TILLY.blush} opacity={0.65} />
+      <Ellipse cx={72} cy={60} rx={5} ry={3.2} fill={TILLY.blush} opacity={0.65} />
 
-      {/* Wing-tip ovals on each side — give her a body silhouette rather
-          than a featureless egg. */}
-      <Ellipse cx={20} cy={60} rx={5} ry={11} fill={body} />
-      <Ellipse cx={80} cy={60} rx={5} ry={11} fill={body} />
+      {/* Beak — amber diamond + a small shadow underside for depth. */}
+      <Path d="M50 54 L46 58 L50 62 L54 58 Z" fill={TILLY.beak} />
+      <Path d="M46 58 L50 62 L54 58 L52 60 L50 63 L48 60 Z" fill={TILLY.beakShadow} opacity={0.7} />
 
-      {/* Feet — small ovals at the bottom, beak-colored. */}
-      <Ellipse cx={42} cy={92} rx={4} ry={2} fill={beak} />
-      <Ellipse cx={58} cy={92} rx={4} ry={2} fill={beak} />
+      {/* Wing-tip ovals on each side — same body honey so the
+          silhouette stays cohesive. */}
+      <Ellipse cx={20} cy={60} rx={5} ry={11} fill={TILLY.body} />
+      <Ellipse cx={80} cy={60} rx={5} ry={11} fill={TILLY.body} />
+
+      {/* Feet — amber, matching the beak. */}
+      <Ellipse cx={42} cy={92} rx={4} ry={2} fill={TILLY.beak} />
+      <Ellipse cx={58} cy={92} rx={4} ry={2} fill={TILLY.beak} />
     </Svg>
   );
 }
