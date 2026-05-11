@@ -486,7 +486,7 @@ function BankRow({
         style={{
           color: t.inkMute,
           fontFamily: BTFonts.mono,
-          fontSize: 9,
+          fontSize: 11,
           letterSpacing: 0.8,
           textTransform: "uppercase",
         }}

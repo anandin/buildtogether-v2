@@ -646,7 +646,7 @@ function DreamPortrait({
             style={{
               color: "rgba(255,255,255,0.85)",
               fontFamily: BTFonts.mono,
-              fontSize: 9,
+              fontSize: 11,
               letterSpacing: 1.4,
               textTransform: "uppercase",
             }}
@@ -777,7 +777,7 @@ function DreamPortrait({
             style={{
               color: t.inkMute,
               fontFamily: BTFonts.mono,
-              fontSize: 9,
+              fontSize: 11,
               letterSpacing: 1,
               textTransform: "uppercase",
             }}

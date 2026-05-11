@@ -589,7 +589,7 @@ function PendingRow({
                   style={{
                     color: t.inkSoft,
                     fontFamily: BTFonts.mono,
-                    fontSize: 9,
+                    fontSize: 11,
                     letterSpacing: 0.8,
                     textTransform: "uppercase",
                     fontWeight: "600",
@@ -604,7 +604,7 @@ function PendingRow({
                 style={{
                   color: t.warn,
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
+                  fontSize: 11,
                   letterSpacing: 0.8,
                   textTransform: "uppercase",
                   fontWeight: "700",
@@ -730,7 +730,7 @@ function PendingRow({
             style={{
               color: t.inkMute,
               fontFamily: BTFonts.mono,
-              fontSize: 9,
+              fontSize: 11,
               letterSpacing: 0.8,
               textTransform: "uppercase",
               fontWeight: "600",
@@ -950,7 +950,7 @@ function GroupCard({
                 style={{
                   color: t.surface,
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
+                  fontSize: 11,
                   fontWeight: "700",
                   letterSpacing: 0.6,
                 }}
@@ -984,7 +984,7 @@ function GroupCard({
                   style={{
                     color: t.inkSoft,
                     fontFamily: BTFonts.mono,
-                    fontSize: 9,
+                    fontSize: 11,
                     letterSpacing: 0.8,
                     textTransform: "uppercase",
                     fontWeight: "600",
@@ -1039,7 +1039,7 @@ function GroupCard({
               style={{
                 color: t.inkMute,
                 fontFamily: BTFonts.mono,
-                fontSize: 9,
+                fontSize: 11,
                 letterSpacing: 0.8,
                 textTransform: "uppercase",
               }}

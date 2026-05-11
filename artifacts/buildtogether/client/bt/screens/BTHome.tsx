@@ -275,7 +275,7 @@ export function BTHome({ onNav }: Props) {
                 style={{
                   color: t.inkMute,
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
+                  fontSize: 11,
                   letterSpacing: 1,
                   textTransform: "uppercase",
                 }}
@@ -905,7 +905,7 @@ function UpNextCard({ onNav }: { onNav?: (r: BTRoute) => void }) {
                 style={{
                   color: t.inkMute,
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
+                  fontSize: 11,
                   letterSpacing: 0.6,
                   textTransform: "uppercase",
                   marginTop: 2,
@@ -996,7 +996,7 @@ function TillyQuestionsStrip({
           style={{
             color: t.inkMute,
             fontFamily: BTFonts.mono,
-            fontSize: 9,
+            fontSize: 11,
             letterSpacing: 0.8,
             textTransform: "uppercase",
             fontWeight: "700",

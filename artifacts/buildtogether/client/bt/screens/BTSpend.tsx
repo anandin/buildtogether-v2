@@ -626,7 +626,7 @@ function TxLine({ tx, t }: { tx: SpendTx; t: BTTheme }) {
           style={{
             color: t.inkMute,
             fontFamily: BTFonts.mono,
-            fontSize: 9,
+            fontSize: 11,
             letterSpacing: 0.8,
             textTransform: "uppercase",
             marginTop: 2,
@@ -748,7 +748,7 @@ function DayBars({ t, bars }: { t: BTTheme; bars: DayBar[] }) {
               style={{
                 color: t.inkMute,
                 fontFamily: BTFonts.mono,
-                fontSize: 9,
+                fontSize: 11,
                 letterSpacing: 1,
               }}
             >
@@ -834,7 +834,7 @@ function PaycheckBanner({
             style={{
               color: "rgba(255,255,255,0.85)",
               fontFamily: BTFonts.mono,
-              fontSize: 9,
+              fontSize: 11,
               letterSpacing: 1,
               textTransform: "uppercase",
             }}

@@ -137,7 +137,7 @@ function BTProfileMain({
   onOpenSecurity: () => void;
   onOpenCategories: () => void;
 }) {
-  const { t, tone, setTone } = useBT();
+  const { t, tone, setTone, textScale, setTextScale } = useBT();
   const memory = useMemory();
   const setServerTone = useSetTillyTone();
   const profile = useProfile();
@@ -577,6 +577,69 @@ function BTProfileMain({
           Sign out
         </Text>
       </Pressable>
+
+      {/* Text size — accessibility pref, scales all body fonts via the
+          BTContext multiplier (BTLabel / BTSerif / BTNum auto-scale).
+          Three values keeps the affordance instantly understandable;
+          no editor modal needed. Persisted to AsyncStorage so it
+          survives reloads. */}
+      <View style={{ gap: 8 }}>
+        <BTLabel color={t.inkMute}>Text size</BTLabel>
+        <View
+          style={{
+            flexDirection: "row",
+            backgroundColor: t.surface,
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: t.rule,
+            overflow: "hidden",
+          }}
+        >
+          {(["sm", "md", "lg"] as const).map((opt, i) => {
+            const active = textScale === opt;
+            const label = opt === "sm" ? "Small" : opt === "md" ? "Default" : "Large";
+            const sizeHint = opt === "sm" ? 13 : opt === "md" ? 15 : 17;
+            return (
+              <Pressable
+                key={opt}
+                onPress={() => setTextScale(opt)}
+                accessibilityRole="button"
+                accessibilityLabel={`Set text size to ${label}`}
+                style={{
+                  flex: 1,
+                  paddingVertical: 14,
+                  alignItems: "center",
+                  backgroundColor: active ? t.accentSoft : "transparent",
+                  borderRightWidth: i < 2 ? 1 : 0,
+                  borderRightColor: t.rule,
+                }}
+              >
+                <Text
+                  style={{
+                    color: active ? t.accent : t.ink,
+                    fontFamily: BTFonts.sans,
+                    fontSize: sizeHint,
+                    fontWeight: active ? "700" : "500",
+                  }}
+                >
+                  {label}
+                </Text>
+                <Text
+                  style={{
+                    color: active ? t.accent : t.inkMute,
+                    fontFamily: BTFonts.mono,
+                    fontSize: 10,
+                    letterSpacing: 1,
+                    marginTop: 4,
+                  }}
+                >
+                  Aa
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
 
       {/* Quiet settings — five niche prefs (quiet hours, big-purchase
           alert, sub scan, phishing watch, memory retention). Most users
@@ -1070,7 +1133,7 @@ function YourReminders() {
           style={{
             color: t.inkMute,
             fontFamily: BTFonts.mono,
-            fontSize: 9,
+            fontSize: 11,
             letterSpacing: 0.6,
             textTransform: "uppercase",
             marginTop: 2,
@@ -1139,7 +1202,7 @@ function YourReminders() {
             style={{
               color: t.inkSoft,
               fontFamily: BTFonts.mono,
-              fontSize: 9,
+              fontSize: 11,
               letterSpacing: 0.6,
               textTransform: "uppercase",
             }}
@@ -1155,7 +1218,7 @@ function YourReminders() {
             style={{
               color: t.inkSoft,
               fontFamily: BTFonts.mono,
-              fontSize: 9,
+              fontSize: 11,
               letterSpacing: 0.6,
               textTransform: "uppercase",
             }}
@@ -1171,7 +1234,7 @@ function YourReminders() {
             style={{
               color: t.inkSoft,
               fontFamily: BTFonts.mono,
-              fontSize: 9,
+              fontSize: 11,
               letterSpacing: 0.6,
               textTransform: "uppercase",
             }}

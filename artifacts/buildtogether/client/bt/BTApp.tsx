@@ -235,7 +235,7 @@ const styles = StyleSheet.create({
   },
   tabLabel: {
     fontFamily: BTFonts.mono,
-    fontSize: 9,
+    fontSize: 11,
     letterSpacing: 1.2,
     textTransform: "uppercase",
     fontWeight: "700",

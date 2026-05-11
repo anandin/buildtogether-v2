@@ -155,7 +155,7 @@ export function BTCredit() {
               transform: [{ translateX: -16 }],
               color: t.ink,
               fontFamily: BTFonts.mono,
-              fontSize: 9,
+              fontSize: 11,
               letterSpacing: 1,
               textTransform: "uppercase",
               fontWeight: "700",
@@ -198,7 +198,7 @@ export function BTCredit() {
                 style={{
                   color: "rgba(255,252,246,0.6)",
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
+                  fontSize: 11,
                   letterSpacing: 1.2,
                   textTransform: "uppercase",
                 }}
@@ -289,7 +289,7 @@ export function BTCredit() {
                   color:
                     l.state === "good" ? t.good : l.state === "neutral" ? t.inkMute : t.warn,
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
+                  fontSize: 11,
                   letterSpacing: 1,
                   textTransform: "uppercase",
                   fontWeight: "700",
