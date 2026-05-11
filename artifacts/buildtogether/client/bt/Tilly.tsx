@@ -160,7 +160,11 @@ function TillySvg({
   return <TillyThemedOwl t={t} size={size} state={state} blink={blink} />;
 }
 
-/** Dusk-only variant — honey palette, face mask, beak shadow, blush. */
+/** Dusk-only variant — honey palette applied to the SAME shape as
+ * the other themes. Earlier dusk experiment added a face mask + cheek
+ * blush + beak shadow + highlight bands, which changed the silhouette
+ * away from the canonical Tilly. User flagged it — back to the
+ * standard primitives, just recoloured to honey/cream/amber. */
 function TillyHoneyOwl({
   size,
   state,
@@ -173,7 +177,7 @@ function TillyHoneyOwl({
   const eyeBaseY = 44;
   const thinkOffset = state === "think" ? 1 : 0;
   const pupilY = eyeBaseY + thinkOffset;
-  const pupilRy = blink ? 0.6 : 3.4;
+  const pupilRy = blink ? 0.6 : 4;
   const showHighlights = !blink && state !== "cheer";
   const T = TILLY_DUSK;
 
@@ -183,18 +187,14 @@ function TillyHoneyOwl({
       <Ellipse cx={68} cy={22} rx={6} ry={9} fill={T.body} transform="rotate(18 68 22)" />
 
       <Ellipse cx={50} cy={56} rx={34} ry={36} fill={T.body} />
+      {/* Belly — using the warm-espresso "mask" token as a lower-body
+          accent the same way other themes use t.tilly.belly. Wider
+          oval positioned low so it doesn't reach the eyes — no face
+          mask, no shape change. */}
+      <Ellipse cx={50} cy={64} rx={22} ry={22} fill={T.mask} />
 
-      {/* Upper-body highlight + lower rim shadow fake a soft top-light
-          without SVG gradients (RN re-renders are cheaper this way). */}
-      <Ellipse cx={50} cy={38} rx={28} ry={14} fill={T.bodyHighlight} opacity={0.55} />
-      <Ellipse cx={50} cy={84} rx={30} ry={10} fill={T.bodyShadow} opacity={0.45} />
-
-      {/* Face mask anchors both eyes in a defined dark area so cream
-          discs never blend into honey body. */}
-      <Ellipse cx={50} cy={44} rx={28} ry={14} fill={T.mask} />
-
-      <Circle cx={38} cy={eyeBaseY} r={9} fill={T.eye} />
-      <Circle cx={62} cy={eyeBaseY} r={9} fill={T.eye} />
+      <Circle cx={38} cy={eyeBaseY} r={11} fill={T.eye} />
+      <Circle cx={62} cy={eyeBaseY} r={11} fill={T.eye} />
 
       {state === "cheer" ? (
         <G>
@@ -203,8 +203,8 @@ function TillyHoneyOwl({
         </G>
       ) : (
         <G>
-          <Ellipse cx={38} cy={pupilY} rx={3.6} ry={pupilRy} fill={T.pupil} />
-          <Ellipse cx={62} cy={pupilY} rx={3.6} ry={pupilRy} fill={T.pupil} />
+          <Ellipse cx={38} cy={pupilY} rx={4} ry={pupilRy} fill={T.pupil} />
+          <Ellipse cx={62} cy={pupilY} rx={4} ry={pupilRy} fill={T.pupil} />
           {showHighlights ? (
             <G>
               <Circle cx={39.5} cy={42.5} r={1.4} fill={T.eye} />
@@ -214,13 +214,7 @@ function TillyHoneyOwl({
         </G>
       )}
 
-      {/* Cheek blush — the single biggest 'friendly not watching' cue. */}
-      <Ellipse cx={28} cy={60} rx={5} ry={3.2} fill={T.blush} opacity={0.65} />
-      <Ellipse cx={72} cy={60} rx={5} ry={3.2} fill={T.blush} opacity={0.65} />
-
-      {/* Amber beak with shadow underside for depth. */}
-      <Path d="M50 54 L46 58 L50 62 L54 58 Z" fill={T.beak} />
-      <Path d="M46 58 L50 62 L54 58 L52 60 L50 63 L48 60 Z" fill={T.beakShadow} opacity={0.7} />
+      <Path d="M50 52 L46 56 L50 60 L54 56 Z" fill={T.beak} />
 
       <Ellipse cx={20} cy={60} rx={5} ry={11} fill={T.body} />
       <Ellipse cx={80} cy={60} rx={5} ry={11} fill={T.body} />
