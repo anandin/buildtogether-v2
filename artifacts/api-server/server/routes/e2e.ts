@@ -17,18 +17,20 @@
  */
 import type { Express, Request, Response } from "express";
 import { randomBytes } from "crypto";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { db } from "../db";
 import { sessions, users } from "../../shared/schema";
 
 export function mountE2ERoutes(app: Express): void {
   const SECRET = process.env.E2E_SECRET;
-  const USER_ID = process.env.E2E_USER_ID;
-  if (!SECRET || !USER_ID) {
-    console.log("[e2e] E2E_SECRET / E2E_USER_ID not set — endpoint not mounted");
+  if (!SECRET) {
+    console.log("[e2e] E2E_SECRET not set — endpoint not mounted");
     return;
   }
-  console.log("[e2e] /api/_e2e/issue-session mounted");
+  const PINNED_USER_ID = process.env.E2E_USER_ID;
+  console.log(
+    `[e2e] /api/_e2e/issue-session mounted (${PINNED_USER_ID ? `pinned user ${PINNED_USER_ID.slice(0, 8)}…` : "first-user fallback"})`,
+  );
 
   app.post("/api/_e2e/issue-session", async (req: Request, res: Response) => {
     const header = req.header("x-e2e-secret");
@@ -38,11 +40,28 @@ export function mountE2ERoutes(app: Express): void {
       return res.status(404).json({ error: "Not found" });
     }
     try {
-      const user = await db.query.users.findFirst({
-        where: eq(users.id, USER_ID),
-      });
-      if (!user) {
-        return res.status(500).json({ error: `E2E_USER_ID ${USER_ID} not found in users table` });
+      // Pin to E2E_USER_ID when set; otherwise fall back to the
+      // chronologically first user in the table (solo-operator
+      // deployments don't need to look up their own uuid manually —
+      // there's only one user to choose from). This is what makes the
+      // setup truly one-env-var: drop in E2E_SECRET, you're done.
+      let user;
+      if (PINNED_USER_ID) {
+        user = await db.query.users.findFirst({
+          where: eq(users.id, PINNED_USER_ID),
+        });
+        if (!user) {
+          return res.status(500).json({
+            error: `E2E_USER_ID ${PINNED_USER_ID} not found in users table`,
+          });
+        }
+      } else {
+        user = await db.query.users.findFirst({
+          orderBy: asc(users.createdAt),
+        });
+        if (!user) {
+          return res.status(500).json({ error: "no users in DB to issue session for" });
+        }
       }
       const token = randomBytes(32).toString("hex");
       const expiresAt = new Date(Date.now() + 30 * 60 * 1000); // 30 min
