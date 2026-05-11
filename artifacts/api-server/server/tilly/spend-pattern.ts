@@ -293,16 +293,91 @@ function contextFor(
  * Returns null if no Plaid transactions exist — caller surfaces a
  * "connect a bank" state.
  */
+export type SpendRange = "week" | "month" | "year";
+
+/** Window + bar bucketing config per range. Bar labels are short
+ * (single-char where possible) so the existing 7-bar layout adapts to
+ * 4-week and 12-month layouts without redesign. */
+function rangeConfig(range: SpendRange, now: Date, tz: string): {
+  startIso: string;
+  bucketCount: number;
+  labels: string[];
+  bucketIndexFor: (dateIso: string) => number; // 0 = leftmost (oldest), bucketCount-1 = rightmost (today)
+  todayBucketIdx: number;
+  rangeLabel: string;
+} {
+  const todayIso = localDateString(now, tz);
+  const todayTime = new Date(todayIso + "T12:00:00Z").getTime();
+  if (range === "week") {
+    const startIso = localWeekStartIso(now, tz);
+    return {
+      startIso,
+      bucketCount: 7,
+      labels: DAY_LETTERS,
+      bucketIndexFor: (d: string) => dayOfWeekIndex(d),
+      todayBucketIdx: localDayOfWeekIndex(now, tz),
+      rangeLabel: "this week",
+    };
+  }
+  if (range === "month") {
+    // Rolling 28 days, bucketed into 4 weekly bars. The rightmost bar
+    // is "this week (so far)". The leftmost is "4 weeks ago".
+    const startIso = localDaysAgoIso(now, tz, 27);
+    return {
+      startIso,
+      bucketCount: 4,
+      labels: ["4w", "3w", "2w", "now"],
+      bucketIndexFor: (d: string) => {
+        const t = new Date(d + "T12:00:00Z").getTime();
+        const daysAgo = Math.floor((todayTime - t) / (24 * 3600 * 1000));
+        const weeksAgo = Math.floor(daysAgo / 7);
+        return 3 - Math.min(3, Math.max(0, weeksAgo));
+      },
+      todayBucketIdx: 3,
+      rangeLabel: "this month",
+    };
+  }
+  // year: 12 monthly bars (rolling). Bucket by month-difference.
+  const startIso = localDaysAgoIso(now, tz, 364);
+  const [y0, m0] = todayIso.split("-").map((n) => parseInt(n, 10));
+  const monthLabel = (idx: number) => {
+    // idx=0 → 11 months ago, idx=11 → current month
+    const offset = 11 - idx;
+    const ref = new Date(Date.UTC(y0, m0 - 1 - offset, 1));
+    return ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"][ref.getUTCMonth()];
+  };
+  return {
+    startIso,
+    bucketCount: 12,
+    labels: Array.from({ length: 12 }, (_, i) => monthLabel(i)),
+    bucketIndexFor: (d: string) => {
+      const [y, m] = d.split("-").map((n) => parseInt(n, 10));
+      const monthsAgo = (y0 - y) * 12 + (m0 - m);
+      return 11 - Math.min(11, Math.max(0, monthsAgo));
+    },
+    todayBucketIdx: 11,
+    rangeLabel: "this year",
+  };
+}
+
 export async function buildWeeklyPattern(
   householdId: string,
   userId: string | null = null,
+  range: SpendRange = "week",
 ): Promise<WeeklyPattern | null> {
+  const now = new Date();
+  const tz = await getUserTimezone(userId);
+  // Month / year ranges have simpler shapes (no soft-spot detection,
+  // no rolling-7 fallback) — delegate to a dedicated builder so the
+  // week path stays intact and well-tested.
+  if (range !== "week") {
+    return buildMonthOrYearPattern(householdId, userId, range, now, tz);
+  }
+  // === Week (existing logic below) ===
   // Resolve the user's timezone once. Vercel runs UTC; computing
   // weekStart from `new Date()` flips the week 4-5h early for an
   // East-Coast user (Sunday 9pm Toronto = Monday 1am UTC → "$0 this
   // week"). Use the user's city → IANA tz instead.
-  const now = new Date();
-  const tz = await getUserTimezone(userId);
   const weekStartIso = localWeekStartIso(now, tz);
   const todayIdx = localDayOfWeekIndex(now, tz);
   // For the 8-week trailing window for soft-spot baselines we just need
@@ -523,4 +598,133 @@ export async function buildWeeklyPattern(
     fixedObligations,
     today: todayTx,
   };
+}
+
+/**
+ * Month/year range builder. Simpler than the week path — no
+ * soft-spot detection, no rolling-7 fallback, no today mini-ledger.
+ * Bars are bucketed via rangeConfig.bucketIndexFor (weekly for month,
+ * monthly for year). Categories rank over the full range total.
+ */
+async function buildMonthOrYearPattern(
+  householdId: string,
+  userId: string | null,
+  range: SpendRange,
+  now: Date,
+  tz: string,
+): Promise<WeeklyPattern | null> {
+  const cfg = rangeConfig(range, now, tz);
+  const txRows = await readAllTransactions(householdId, cfg.startIso);
+  if (txRows.length === 0) return null;
+
+  const fixedCats = await resolveFixedObligationSet(userId);
+  const isFixed = (t: UnifiedTx) =>
+    fixedCats.has((t.category || "").toLowerCase());
+  const discretionary = txRows.filter((t) => !isFixed(t));
+  const fixedRows = txRows.filter(isFixed);
+
+  // Bars bucketed via rangeConfig
+  const bucketTotals = new Array(cfg.bucketCount).fill(0);
+  for (const t of discretionary) {
+    const idx = cfg.bucketIndexFor(t.date);
+    if (idx < 0 || idx >= cfg.bucketCount) continue;
+    bucketTotals[idx] += t.amount;
+  }
+  const bars: DayBar[] = bucketTotals.map((amt, i) => ({
+    d: cfg.labels[i] ?? "",
+    amt: Math.round(amt),
+    soft: false,
+    today: i === cfg.todayBucketIdx,
+  }));
+
+  // Categories — top 8 by total over range. Same shape as week.
+  const totals = new Map<string, number>();
+  const buckets = new Map<string, UnifiedTx[]>();
+  for (const t of discretionary) {
+    totals.set(t.category, (totals.get(t.category) ?? 0) + t.amount);
+    const arr = buckets.get(t.category) ?? [];
+    arr.push(t);
+    buckets.set(t.category, arr);
+  }
+  const topCats = [...totals.entries()]
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 8);
+  const categories: SpendCategory[] = topCats.map(([name, amt], catIdx) => {
+    const rawTxs = buckets.get(name) ?? [];
+    const seenKeys = new Set<string>();
+    const txList: SpendTx[] = [];
+    for (const t of rawTxs) {
+      const label = (t.who || name).trim();
+      const key = `${label.toLowerCase()}::${t.amount}`;
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      txList.push({
+        id: `cat-${catIdx}-tx-${txList.length}`,
+        name: label,
+        date: t.date,
+        amt: t.amount,
+      });
+    }
+    return {
+      id: name.toLowerCase().replace(/\s+/g, "-"),
+      name,
+      hue: categoryHue(name),
+      context: contextFor(null, txList),
+      amt: Math.round(amt),
+      transactions: txList.slice(0, 50),
+    };
+  });
+
+  // Fixed obligations same shape, no top-N slice — show everything.
+  const fixedTotals = new Map<string, number>();
+  const fixedBuckets = new Map<string, UnifiedTx[]>();
+  for (const t of fixedRows) {
+    fixedTotals.set(t.category, (fixedTotals.get(t.category) ?? 0) + t.amount);
+    const arr = fixedBuckets.get(t.category) ?? [];
+    arr.push(t);
+    fixedBuckets.set(t.category, arr);
+  }
+  const fixedObligations: SpendCategory[] = [...fixedTotals.entries()]
+    .sort(([, a], [, b]) => b - a)
+    .map(([name, amt], catIdx) => {
+      const rawTxs = fixedBuckets.get(name) ?? [];
+      const seenKeys = new Set<string>();
+      const txList: SpendTx[] = [];
+      for (const t of rawTxs) {
+        const label = (t.who || name).trim();
+        const key = `${label.toLowerCase()}::${t.amount}`;
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        txList.push({
+          id: `fixed-${catIdx}-tx-${txList.length}`,
+          name: label,
+          date: t.date,
+          amt: t.amount,
+        });
+      }
+      return {
+        id: name.toLowerCase().replace(/\s+/g, "-"),
+        name,
+        hue: categoryHue(name),
+        context: contextFor(null, txList),
+        amt: Math.round(amt),
+        transactions: txList.slice(0, 50),
+      };
+    });
+
+  const totalSpent = discretionary.reduce((s, t) => s + t.amount, 0);
+  const headline =
+    range === "month"
+      ? `$${Math.round(totalSpent).toLocaleString()} spent this month.`
+      : `$${Math.round(totalSpent).toLocaleString()} spent this year.`;
+
+  return {
+    ready: true,
+    spent: Math.round(totalSpent),
+    headline,
+    bars,
+    categories,
+    fixedObligations,
+    today: [],
+  } as WeeklyPattern;
 }

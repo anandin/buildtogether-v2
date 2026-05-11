@@ -174,7 +174,43 @@ async function main() {
     return `${r.body.reply.body.length} chars`;
   });
 
-  // 5. MEMORY — basic shape check, cheap probe.
+  // 5. MONTHLY SUMMARY — Tilly's basic-finance-app math.
+  await check("monthly-summary returns valid shape", async () => {
+    const r = await jsonFetch("GET", "/api/tilly/monthly-summary", token);
+    if (r.status !== 200) {
+      throw new Error(`status=${r.status} body=${JSON.stringify(r.body).slice(0, 200)}`);
+    }
+    if (r.body?.ready === false) return "ready=false (no household)";
+    const { income, spentToDate, committedRest, surplus, daysLeft } = r.body ?? {};
+    if (typeof income?.amount !== "number") throw new Error("income.amount missing");
+    if (typeof spentToDate !== "number") throw new Error("spentToDate missing");
+    if (typeof committedRest !== "number") throw new Error("committedRest missing");
+    if (typeof surplus !== "number") throw new Error("surplus missing");
+    if (typeof daysLeft !== "number") throw new Error("daysLeft missing");
+    return `income=$${income.amount} spent=$${spentToDate} committed=$${committedRest} surplus=$${surplus} (${daysLeft}d left, source=${income.source})`;
+  });
+
+  // 6. FORECAST — per-day expected spend for the next 7 days.
+  await check("forecast?days=7 returns 7-day array", async () => {
+    const r = await jsonFetch("GET", "/api/tilly/forecast?days=7", token);
+    if (r.status !== 200) {
+      throw new Error(`status=${r.status} body=${JSON.stringify(r.body).slice(0, 200)}`);
+    }
+    if (!Array.isArray(r.body?.days)) {
+      throw new Error("days not an array");
+    }
+    if (r.body.days.length !== 7) {
+      throw new Error(`expected 7 days, got ${r.body.days.length}`);
+    }
+    for (const d of r.body.days) {
+      if (typeof d.date !== "string") throw new Error("day.date missing");
+      if (typeof d.expected !== "number") throw new Error("day.expected missing");
+      if (!Array.isArray(d.reasons)) throw new Error("day.reasons not array");
+    }
+    return `7 days, total expected $${r.body.days.reduce((s: number, d: any) => s + d.expected, 0)}`;
+  });
+
+  // 7. MEMORY — basic shape check, cheap probe.
   await check("memory endpoint returns array shape", async () => {
     const r = await jsonFetch("GET", "/api/tilly/memory", token);
     if (r.status !== 200) {

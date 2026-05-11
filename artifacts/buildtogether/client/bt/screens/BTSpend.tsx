@@ -42,7 +42,8 @@ function useSplitsList() {
 
 export function BTSpend() {
   const { t } = useBT();
-  const spend = useSpend();
+  const [range, setRange] = useState<"week" | "month" | "year">("week");
+  const spend = useSpend(range);
   const expenses = useExpenses();
   const [addOpen, setAddOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
@@ -236,8 +237,58 @@ export function BTSpend() {
       >
         {paycheck ? <PaycheckBanner t={t} paycheck={paycheck} /> : null}
 
+        {/* Range segmented control — week / month / year. */}
+        <View
+          style={{
+            flexDirection: "row",
+            backgroundColor: t.surface,
+            borderRadius: 999,
+            borderWidth: 1,
+            borderColor: t.rule,
+            padding: 4,
+            alignSelf: "flex-start",
+          }}
+        >
+          {(["week", "month", "year"] as const).map((r) => {
+            const active = r === range;
+            return (
+              <Pressable
+                key={r}
+                onPress={() => setRange(r)}
+                accessibilityRole="button"
+                accessibilityLabel={`Show ${r}`}
+                style={{
+                  paddingVertical: 6,
+                  paddingHorizontal: 14,
+                  borderRadius: 999,
+                  backgroundColor: active ? t.accent : "transparent",
+                }}
+              >
+                <Text
+                  style={{
+                    color: active ? t.surface : t.ink,
+                    fontFamily: BTFonts.sans,
+                    fontSize: 12,
+                    fontWeight: "700",
+                    letterSpacing: 0.3,
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {r}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+
         <View style={{ gap: 8 }}>
-          <BTLabel color={t.inkMute}>This week's pattern</BTLabel>
+          <BTLabel color={t.inkMute}>
+            {range === "week"
+              ? "This week's pattern"
+              : range === "month"
+                ? "Last 4 weeks"
+                : "Last 12 months"}
+          </BTLabel>
           {italicSpan ? (
             <BTSerif size={30} color={t.ink} weight="500">
               ${spent} spent.{" "}

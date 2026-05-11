@@ -739,7 +739,10 @@ export function mountTillyInsightsRoutes(app: Express): void {
     if (!householdId) return res.json({ phase: 4, ready: false });
 
     try {
-      const pattern = await buildWeeklyPattern(householdId, req.user.id);
+      const rangeParam = String(req.query.range ?? "week");
+      const range =
+        rangeParam === "month" || rangeParam === "year" ? rangeParam : "week";
+      const pattern = await buildWeeklyPattern(householdId, req.user.id, range);
       if (!pattern) return res.json({ phase: 4, ready: false });
       res.json(pattern);
     } catch (err) {

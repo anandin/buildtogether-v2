@@ -65,7 +65,8 @@ async function putJson<T>(route: string, body?: unknown): Promise<T> {
 export const btApi = {
   // ── Tilly insights ───────────────────────────────────────────────────────
   today: () => getJson<TodayBrief>("/api/tilly/today"),
-  spendPattern: () => getJson<SpendPattern>("/api/tilly/spend-pattern"),
+  spendPattern: (range: "week" | "month" | "year" = "week") =>
+    getJson<SpendPattern>(`/api/tilly/spend-pattern?range=${range}`),
   creditSnapshot: () => getJson<CreditSnapshot>("/api/tilly/credit-snapshot"),
   profile: () => getJson<TillyProfile>("/api/tilly/profile"),
   categories: () =>
