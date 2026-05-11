@@ -140,10 +140,23 @@ function TillySvg({
   // belly luminance would make the eye discs disappear.
   const eyeWhite = isDark(belly) ? "#F2EBDD" : "#FFFFFF";
 
+  // User feedback: on dark themes (dusk, neon) Tilly was reading as
+  // creepy — big white owl with wide-open eyes on a dark background
+  // hit the uncanny-valley register. Two coordinated tweaks that
+  // dial her back to "calm bird" without restyling the silhouette:
+  //   1) Shrink eye discs (r=11 → r=9) — less wide-eyed-staring
+  //   2) Soften pupils to a sleepy half-lidded shape (ry 4 → 2.5)
+  //      — reads as "watchful, calm" instead of "owl in headlights"
+  // Light themes keep the original alert proportions where the
+  // softer pinks/creams already mute the effect.
+  const isDarkTheme = isDark(t.bg);
+  const eyeR = isDarkTheme ? 9 : 11;
+  const defaultPupilRy = isDarkTheme ? 2.5 : 4;
+
   const eyeBaseY = 44;
   const thinkOffset = state === "think" ? 1 : 0;
   const pupilY = eyeBaseY + thinkOffset;
-  const pupilRy = blink ? 0.6 : 4;
+  const pupilRy = blink ? 0.6 : defaultPupilRy;
   const showHighlights = !blink && state !== "cheer";
 
   return (
@@ -160,10 +173,9 @@ function TillySvg({
       {/* Belly — wide cream oval centered on the lower torso */}
       <Ellipse cx={50} cy={64} rx={22} ry={22} fill={belly} />
 
-      {/* Eye discs — big, expressive (r=11), much larger than the prior r=3
-          dots. This is the single biggest visual change. */}
-      <Circle cx={38} cy={eyeBaseY} r={11} fill={eyeWhite} />
-      <Circle cx={62} cy={eyeBaseY} r={11} fill={eyeWhite} />
+      {/* Eye discs — sized via eyeR (above) for dark-theme softening. */}
+      <Circle cx={38} cy={eyeBaseY} r={eyeR} fill={eyeWhite} />
+      <Circle cx={62} cy={eyeBaseY} r={eyeR} fill={eyeWhite} />
 
       {/* Pupils + corner highlights, or arc smiles for the cheer state */}
       {state === "cheer" ? (
