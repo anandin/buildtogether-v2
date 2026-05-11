@@ -17,9 +17,9 @@
  */
 import type { Express, Request, Response } from "express";
 import { randomBytes } from "crypto";
-import { asc, eq } from "drizzle-orm";
+import { asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db";
-import { sessions, users } from "../../shared/schema";
+import { sessions, users, plaidTransactions } from "../../shared/schema";
 
 export function mountE2ERoutes(app: Express): void {
   const SECRET = process.env.E2E_SECRET;
@@ -28,8 +28,15 @@ export function mountE2ERoutes(app: Express): void {
     return;
   }
   const PINNED_USER_ID = process.env.E2E_USER_ID;
+  const PINNED_USER_EMAIL = process.env.E2E_USER_EMAIL;
   console.log(
-    `[e2e] /api/_e2e/issue-session mounted (${PINNED_USER_ID ? `pinned user ${PINNED_USER_ID.slice(0, 8)}…` : "first-user fallback"})`,
+    `[e2e] /api/_e2e/issue-session mounted (${
+      PINNED_USER_ID
+        ? `pinned id ${PINNED_USER_ID.slice(0, 8)}…`
+        : PINNED_USER_EMAIL
+          ? `pinned email ${PINNED_USER_EMAIL}`
+          : "most-active-user fallback"
+    })`,
   );
 
   app.post("/api/_e2e/issue-session", async (req: Request, res: Response) => {
@@ -40,11 +47,15 @@ export function mountE2ERoutes(app: Express): void {
       return res.status(404).json({ error: "Not found" });
     }
     try {
-      // Pin to E2E_USER_ID when set; otherwise fall back to the
-      // chronologically first user in the table (solo-operator
-      // deployments don't need to look up their own uuid manually —
-      // there's only one user to choose from). This is what makes the
-      // setup truly one-env-var: drop in E2E_SECRET, you're done.
+      // Resolution order, most-specific first:
+      //   1. E2E_USER_ID (uuid pin)
+      //   2. E2E_USER_EMAIL (operator-stable identity — survives DB
+      //      reseeds, no uuid lookup needed)
+      //   3. The user with the most plaid_transactions rows ever —
+      //      i.e. the active operator on a solo deployment. The
+      //      previous "first user by createdAt" fallback picked stale
+      //      seed/test users with no real data, which the smoke
+      //      checks then mistakenly read as "Spend looks broken."
       let user;
       if (PINNED_USER_ID) {
         user = await db.query.users.findFirst({
@@ -55,9 +66,37 @@ export function mountE2ERoutes(app: Express): void {
             error: `E2E_USER_ID ${PINNED_USER_ID} not found in users table`,
           });
         }
-      } else {
+      } else if (PINNED_USER_EMAIL) {
         user = await db.query.users.findFirst({
-          orderBy: asc(users.createdAt),
+          where: eq(users.email, PINNED_USER_EMAIL),
+        });
+        if (!user) {
+          return res.status(500).json({
+            error: `E2E_USER_EMAIL ${PINNED_USER_EMAIL} not found in users table`,
+          });
+        }
+      } else {
+        // Pick the user whose household has the most accepted plaid
+        // transactions. Ties broken by most-recent createdAt.
+        const ranked = await db
+          .select({
+            userId: users.id,
+            cnt: sql<number>`count(${plaidTransactions.id})::int`,
+          })
+          .from(users)
+          .leftJoin(
+            plaidTransactions,
+            eq(plaidTransactions.coupleId, users.coupleId),
+          )
+          .groupBy(users.id, users.createdAt)
+          .orderBy(desc(sql`count(${plaidTransactions.id})`), desc(users.createdAt))
+          .limit(1);
+        const candidateId = ranked[0]?.userId;
+        if (!candidateId) {
+          return res.status(500).json({ error: "no users in DB to issue session for" });
+        }
+        user = await db.query.users.findFirst({
+          where: eq(users.id, candidateId),
         });
         if (!user) {
           return res.status(500).json({ error: "no users in DB to issue session for" });
