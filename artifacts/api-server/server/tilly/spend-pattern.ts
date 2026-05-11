@@ -13,6 +13,13 @@
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "../db";
 import { plaidTransactions, expenses, userPreferences } from "../../shared/schema";
+import {
+  getUserTimezone,
+  localWeekStartIso,
+  localDayOfWeekIndex,
+  localDaysAgoIso,
+  localDateString,
+} from "./user-tz";
 
 /**
  * Unified read across Plaid + manual sources. The pattern engine doesn't
@@ -290,15 +297,20 @@ export async function buildWeeklyPattern(
   householdId: string,
   userId: string | null = null,
 ): Promise<WeeklyPattern | null> {
+  // Resolve the user's timezone once. Vercel runs UTC; computing
+  // weekStart from `new Date()` flips the week 4-5h early for an
+  // East-Coast user (Sunday 9pm Toronto = Monday 1am UTC → "$0 this
+  // week"). Use the user's city → IANA tz instead.
   const now = new Date();
-  const weekStart = startOfWeek(now);
-  const eightWeeksAgo = new Date(weekStart);
-  eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 8 * 7);
+  const tz = await getUserTimezone(userId);
+  const weekStartIso = localWeekStartIso(now, tz);
+  const todayIdx = localDayOfWeekIndex(now, tz);
+  // For the 8-week trailing window for soft-spot baselines we just need
+  // a safe lower bound — using 9 weeks back from the local week start
+  // never undercuts.
+  const eightWeeksAgoIso = localDaysAgoIso(now, tz, 9 * 7);
 
-  const txRows = await readAllTransactions(
-    householdId,
-    eightWeeksAgo.toISOString().slice(0, 10),
-  );
+  const txRows = await readAllTransactions(householdId, eightWeeksAgoIso);
 
   if (txRows.length === 0) return null;
 
@@ -307,12 +319,30 @@ export async function buildWeeklyPattern(
   // The headline, bars, soft-spots, and primary categories list ALL use
   // discretionaryThisWeek so they're internally consistent. fixedThisWeek
   // surfaces the same buckets as their own section in the response.
-  const weekStartIso = weekStart.toISOString().slice(0, 10);
-  const todayIdx = dayOfWeekIndex(now.toISOString().slice(0, 10));
-  const thisWeekTx = txRows.filter((t) => t.date >= weekStartIso);
+  let thisWeekTx = txRows.filter((t) => t.date >= weekStartIso);
   const fixedCats = await resolveFixedObligationSet(userId);
   const isFixed = (t: UnifiedTx) =>
     fixedCats.has((t.category || "").toLowerCase());
+  // Rolling-7-day fallback: if the user has zero discretionary
+  // activity this week (Monday-to-now in their TZ) but plenty of
+  // activity over the last 7 rolling days, surface the rolling window
+  // instead of a $0 page. Avoids the "Spend looks broken on Sunday
+  // night" problem and the "first day of the week" empty state more
+  // generally. Marks the response with `rolling7Days: true` so the
+  // mobile can label the bars correctly ("Last 7 days" instead of
+  // "This week's pattern").
+  let usingRolling7 = false;
+  let bucketLabel: "this_week" | "last_7_days" = "this_week";
+  const discretionaryThisWeekRaw = thisWeekTx.filter((t) => !isFixed(t));
+  if (discretionaryThisWeekRaw.length === 0) {
+    const sevenDaysAgoIso = localDaysAgoIso(now, tz, 6);
+    const rolling = txRows.filter((t) => t.date >= sevenDaysAgoIso);
+    if (rolling.filter((t) => !isFixed(t)).length > 0) {
+      thisWeekTx = rolling;
+      usingRolling7 = true;
+      bucketLabel = "last_7_days";
+    }
+  }
   const discretionaryThisWeek = thisWeekTx.filter((t) => !isFixed(t));
   const fixedThisWeek = thisWeekTx.filter(isFixed);
 
@@ -446,18 +476,25 @@ export async function buildWeeklyPattern(
   const top = softCells[0];
   let headline: string;
   let italicSpan: string | undefined;
+  // Headline copy reflects the window — if we fell back to last 7
+  // rolling days because "this week" was empty, call that out so the
+  // user understands why Sunday-evening Spend isn't $0 fresh.
+  const windowSuffix = usingRolling7 ? " (last 7 days)" : "";
   if (top) {
     italicSpan = FULL_DAY_NAMES[top.dayIdx];
-    headline = `$${Math.round(totalSpent)} spent. ${italicSpan} are still your soft spot.`;
+    headline = `$${Math.round(totalSpent)} spent${windowSuffix}. ${italicSpan} are still your soft spot.`;
   } else {
-    headline = `$${Math.round(totalSpent)} spent. No surprises this week.`;
+    headline = `$${Math.round(totalSpent)} spent${windowSuffix}. No surprises this week.`;
   }
 
   // ─── Today mini-ledger: top 3 today ────────────────────────────────────
   // Dedupe by (merchant, amount) so a Plaid sandbox dataset that
   // repeats "United Airlines $500" three times shows once, leaving room
   // for the student's own manual logs (Popeyes, coffee, etc.).
-  const todayIso = now.toISOString().slice(0, 10);
+  // todayIso for "transactions that landed today" — must be the user's
+  // local date, not UTC. On Sunday 9pm Toronto the UTC date is already
+  // Monday, so a UTC-derived todayIso would miss all of Sunday's tx.
+  const todayIso = localDateString(now, tz);
   const seen = new Set<string>();
   const todayTx = txRows
     .filter((t) => t.date === todayIso)
