@@ -191,9 +191,16 @@ export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
         contentContainerStyle={{ padding: 22, paddingBottom: 120, gap: 18 }}
         refreshControl={
           <RefreshControl
-            refreshing={pending.isFetching || sync.isPending}
+            // Pull-to-refresh here just refetches the pending list
+            // from local DB — it no longer triggers a fresh Plaid
+            // sync. User feedback: 'sync my banks' is intuitively a
+            // Bank-Connections action, not a Pending-page action.
+            // Pulling on Pending kept dumping more rows the user
+            // hadn't asked for. The sync trigger lives on the Bank
+            // Connections screen now.
+            refreshing={pending.isFetching}
             onRefresh={() => {
-              sync.mutate();
+              pending.refetch();
             }}
             tintColor={t.accent}
           />

@@ -289,21 +289,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
             : aiSuggestion && aiSuggestion.confidence >= HIGH_CONFIDENCE_THRESHOLD
               ? aiSuggestion.category
               : ourCat;
-        // Never auto-accept while Plaid still says "pending" — the amount/merchant
-        // can change when it posts, and Plaid may send a `removed` for the pending
-        // id and a fresh `added` for the posted id. Waiting until post avoids
-        // duplicate or stale expense rows.
+        // Pending-tx policy: the original rule was "never auto-accept
+        // while pending." That made the user re-approve every \$6
+        // McDonald's because Plaid keeps small charges pending for
+        // hours/days. New policy:
+        //   - Tiny pending tx (≤\$25) auto-accept if a merchant rule
+        //     OR shouldAutoAcceptPlaidTransaction say yes. Even if
+        //     Plaid later modifies the amount by \$1-2, the user
+        //     doesn't care at that size — the friction of approval is
+        //     worse than the precision win.
+        //   - Anything larger stays in pending_review while Plaid
+        //     still says pending, so an Uber preauth \$150 doesn't
+        //     land as \$150 spend before it drops to \$25.
+        const SMALL_PENDING_AUTO_ACCEPT_CAP = 25;
         const autoAcceptByRule = ruleOutcome.kind === "auto_accept";
         const autoIgnoreByRule = ruleOutcome.kind === "auto_ignore";
         const autoAcceptByAI = shouldAutoAcceptByAI(
           aiSuggestion?.confidence ?? null,
           tx,
         );
-        const autoAccept =
-          !tx.pending &&
-          (autoAcceptByRule ||
-            shouldAutoAcceptPlaidTransaction(tx) ||
-            autoAcceptByAI);
+        const baseAutoAccept =
+          autoAcceptByRule ||
+          shouldAutoAcceptPlaidTransaction(tx) ||
+          autoAcceptByAI;
+        const autoAccept = tx.pending
+          ? baseAutoAccept && tx.amount <= SMALL_PENDING_AUTO_ACCEPT_CAP
+          : baseAutoAccept;
         const ruleId =
           ruleOutcome.kind === "auto_accept" ||
           ruleOutcome.kind === "auto_ignore" ||

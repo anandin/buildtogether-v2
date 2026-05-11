@@ -15,6 +15,7 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
+  RefreshControl,
   ScrollView,
   Text,
   View,
@@ -91,6 +92,19 @@ export function BankConnectionsScreen({ onBack }: { onBack: () => void }) {
       <ScrollView
         contentContainerStyle={{ padding: 22, paddingBottom: 120, gap: 22 }}
         showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            // Pull-to-refresh on Bank Connections IS the sync trigger.
+            // This is the intuitive home for it: 'refresh banks' lives
+            // where banks live. Pending screen no longer fires a sync
+            // — it only refetches the local pending list.
+            refreshing={sync.isPending || items.isFetching}
+            onRefresh={() => {
+              handleSync().catch(() => {});
+            }}
+            tintColor={t.accent}
+          />
+        }
       >
         {/* Header copy */}
         <View style={{ gap: 8 }}>
