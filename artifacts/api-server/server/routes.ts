@@ -5237,6 +5237,67 @@ Return just the message text.`;
 
 
 
+  // Backfill historical income (and any other tx the old filters
+  // skipped). Resets the per-item Plaid cursor to null and re-runs
+  // syncPlaidItem — Plaid re-streams the item's history window (~90
+  // days for most items, longer for some) and the current
+  // shouldImportPlaidTransaction filter now lets INCOME rows
+  // through, so paychecks that were dropped at original-sync time
+  // get inserted. Expense rows are protected from duplication by
+  // the unique plaid_transaction_id constraint; the sync handler's
+  // catch-on-duplicate logic just skips them.
+  app.post(
+    "/api/plaid/backfill-history",
+    requireAuth,
+    requireCoupleAccess,
+    async (req, res) => {
+      try {
+        const coupleId = req.user!.coupleId!;
+        const items = await db
+          .select()
+          .from(plaidItems)
+          .where(
+            and(
+              eq(plaidItems.coupleId, coupleId),
+              eq(plaidItems.status, "active"),
+            ),
+          );
+        if (items.length === 0) {
+          return res.json({ items: 0, totalAdded: 0, message: "no active items" });
+        }
+        let totalAdded = 0;
+        const perItem: Array<{ institution: string | null; added: number; modified: number }> = [];
+        for (const item of items) {
+          // Null out the cursor — next sync starts from scratch.
+          await db
+            .update(plaidItems)
+            .set({ cursor: null })
+            .where(eq(plaidItems.id, item.id));
+          try {
+            const { added, modified } = await syncPlaidItem(item.id);
+            totalAdded += added;
+            perItem.push({
+              institution: item.institutionName ?? null,
+              added,
+              modified,
+            });
+          } catch (err: any) {
+            perItem.push({
+              institution: item.institutionName ?? null,
+              added: 0,
+              modified: 0,
+            });
+            console.error(`backfill-history error for ${item.id}:`, err?.message);
+          }
+        }
+        res.json({ items: items.length, totalAdded, perItem });
+      } catch (e: any) {
+        console.error("backfill-history error:", e);
+        res.status(500).json({ error: e?.message });
+      }
+    },
+  );
+
   // One-shot drain: re-evaluate every pending_review row against the
   // current auto-accept rule and accept the qualifying ones in bulk.
   // Useful after a policy tweak (we just relaxed the pending-flag
