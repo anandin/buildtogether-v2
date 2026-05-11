@@ -92,6 +92,27 @@ export const btApi = {
         lastDate: string;
       }>;
     }>(`/api/tilly/categories/${encodeURIComponent(category)}/merchants`),
+  watchlist: () =>
+    getJson<{
+      items: Array<{
+        id: string;
+        name: string;
+        estimatedPrice: number | null;
+        addedAt: string;
+        lastNudgedAt: string | null;
+      }>;
+    }>("/api/tilly/watchlist"),
+  watchlistAdd: (name: string, estimatedPrice?: number) =>
+    postJson<{
+      item: {
+        id: string;
+        name: string;
+        estimatedPrice: number | null;
+        addedAt: string;
+      };
+    }>("/api/tilly/watchlist", { name, estimatedPrice }),
+  watchlistUpdate: (id: string, patch: { status?: "active" | "bought" | "dropped"; estimatedPrice?: number; name?: string }) =>
+    putJson<{ ok: true }>(`/api/tilly/watchlist/${encodeURIComponent(id)}`, patch),
 
   // ── Tilly chat ───────────────────────────────────────────────────────────
   chatHistory: () => getJson<ChatHistory>("/api/tilly/chat/history"),

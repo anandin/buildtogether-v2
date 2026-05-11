@@ -104,6 +104,12 @@ type ToolPreview =
       jobId: string;
       query: string;
       location: string | null;
+    }
+  | {
+      kind: "watchlist_item_added";
+      itemId: string;
+      name: string;
+      estimatedPrice: number | null;
     };
 
 // Backward-compat alias for the existing single-tool field.
@@ -1168,6 +1174,39 @@ function ToolPreviewCard({
             {result.fromCategory} → {result.toCategory}
             {result.reclassifiedCount > 0
               ? ` · ${result.reclassifiedCount} past charge${result.reclassifiedCount === 1 ? "" : "s"} updated`
+              : ""}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (result.kind === "watchlist_item_added") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>👀</Text>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={{
+              fontFamily: BTFonts.serif,
+              fontSize: 13,
+              fontWeight: "600",
+              color: t.ink,
+            }}
+          >
+            On your watchlist
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 12,
+              color: t.inkSoft,
+              marginTop: 2,
+            }}
+          >
+            {result.name}
+            {result.estimatedPrice
+              ? ` · ≈ $${Math.round(result.estimatedPrice).toLocaleString()}`
               : ""}
           </Text>
         </View>

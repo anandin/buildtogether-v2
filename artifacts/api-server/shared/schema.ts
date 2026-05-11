@@ -926,6 +926,36 @@ export const tillyQuestions = pgTable("tilly_questions", {
 
 export type TillyQuestion = typeof tillyQuestions.$inferSelect;
 
+/**
+ * Watchlist — Sprint A habit hook. Each row is something the user said
+ * they're "thinking about buying" so Tilly can follow up later instead
+ * of the desire firing into a checkout impulse. Either the user adds an
+ * item via the Today tile, or Tilly adds via the addToWatchlist tool
+ * mid-conversation. The daily 9am nudge picks one and asks "still
+ * thinking about X? you're \$N away."
+ *
+ * Status lifecycle:
+ *   active   → freshly added, still on the list
+ *   bought   → user purchased it (manually marked OR Plaid matched the
+ *              merchant) — kept for "you said X, did you go through with
+ *              it?" follow-up rather than deleted
+ *   dropped  → user explicitly let go of the desire
+ */
+export const watchlistItems = pgTable("watchlist_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  householdId: varchar("household_id").notNull(),
+  name: text("name").notNull(),
+  estimatedPrice: real("estimated_price"),
+  status: text("status").notNull().default("active"), // active | bought | dropped
+  addedAt: timestamp("added_at").defaultNow().notNull(),
+  resolvedAt: timestamp("resolved_at"),
+  lastNudgedAt: timestamp("last_nudged_at"),
+  metadata: jsonb("metadata").$type<Record<string, unknown> | null>(),
+});
+
+export type WatchlistItem = typeof watchlistItems.$inferSelect;
+
 // ==================== BuildTogether v2 (Tilly student-edition) ====================
 // Spec §5: Tilly's AI learning behavior. New tables introduced for the
 // student-edition pivot. Use `householdId` from day one (no V1 column-name

@@ -157,6 +157,12 @@ export type TillyToolResult =
       jobId: string;
       query: string;
       location: string | null;
+    }
+  | {
+      kind: "watchlist_item_added";
+      itemId: string;
+      name: string;
+      estimatedPrice: number | null;
     };
 
 export type UserPrefsResponse = {

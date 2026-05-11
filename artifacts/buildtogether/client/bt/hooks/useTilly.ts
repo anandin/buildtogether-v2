@@ -139,6 +139,10 @@ export function useTilly() {
         qc.invalidateQueries({ queryKey: ["/api/plaid/pending"] });
         qc.invalidateQueries({ queryKey: ["/api/plaid/pending-grouped"] });
       }
+      if (seen.has("watchlist_item_added")) {
+        // Today tile count + drill-in list both read /api/tilly/watchlist.
+        qc.invalidateQueries({ queryKey: ["/api/tilly/watchlist"] });
+      }
       if (seen.has("scout_started") || seen.has("wait_started")) {
         // Tilly fired findOptions / predictSalePrice. The tool handler
         // inserted a guardian_conversations row of intent=scout/wait

@@ -28,6 +28,7 @@ import {
   userPreferences,
   merchantRules,
   guardianConversations,
+  watchlistItems,
 } from "../../../shared/schema";
 import { enqueueScout } from "../scout/orchestrator";
 import { and, eq, sql, inArray } from "drizzle-orm";
@@ -70,6 +71,11 @@ export const TOOL_NAMES = [
   // scout/wait card without Tilly having to write one in her reply.
   "findOptions",
   "predictSalePrice",
+  // Sprint A — habit hook. The user says "I'm thinking of buying X" or
+  // "I've been eyeing the Switch 2" and Tilly saves it to a watchlist
+  // she follows up on. Defends against the impulse-checkout failure
+  // mode where desire fires → user buys before pausing.
+  "addToWatchlist",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -166,6 +172,12 @@ export type ToolResult =
       jobId: string;
       query: string;
       location: string | null;
+    }
+  | {
+      kind: "watchlist_item_added";
+      itemId: string;
+      name: string;
+      estimatedPrice: number | null;
     };
 
 // ─── Tool context (passed to every handler) ────────────────────────────────
@@ -261,6 +273,11 @@ const predictSalePriceSchema = z.object({
   location: z.string().optional(),
 });
 
+const addToWatchlistSchema = z.object({
+  name: z.string().min(1),
+  estimatedPrice: z.number().positive().optional(),
+});
+
 const TOOL_SCHEMAS: Record<ToolName, z.ZodType> = {
   createDream: createDreamSchema,
   markPaymentToOwnCard: markPaymentToOwnCardSchema,
@@ -276,6 +293,7 @@ const TOOL_SCHEMAS: Record<ToolName, z.ZodType> = {
   setMerchantCategory: setMerchantCategorySchema,
   findOptions: findOptionsSchema,
   predictSalePrice: predictSalePriceSchema,
+  addToWatchlist: addToWatchlistSchema,
 };
 
 // ─── Tool descriptions for the LLM ──────────────────────────────────────
@@ -371,6 +389,18 @@ const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
     "('Aura ring sale history', 'Aritzia winter coat $200'). The scout " +
     "returns a structured verdict (waitUntil / expectedSaving / sources). " +
     "Same rule: NEVER say 'I can't see retailer pricing' — call this tool.",
+  addToWatchlist:
+    "Save something the user is THINKING about buying so Tilly can " +
+    "follow up later. This is the core habit-building tool: the user " +
+    "says 'I've been eyeing X' / 'thinking about Y' / 'I want a Z' / " +
+    "'might get the new ___' — fire this even if no purchase is imminent. " +
+    "name: short item name as the user says it ('Switch 2', 'Aritzia " +
+    "coat', 'Doc Martens'). estimatedPrice: include if the user mentioned " +
+    "a price or you have a strong well-known estimate (Switch 2 ≈ 650, " +
+    "MacBook ≈ 1500). Confirm in plain language: 'Got it. Switch 2 on " +
+    "your watchlist — I'll check in.' DO NOT call this for items the " +
+    "user is asking about for someone else, or items they've already " +
+    "purchased.",
 };
 
 /**
@@ -509,7 +539,71 @@ export async function executeTool(
         parsed.data as z.infer<typeof predictSalePriceSchema>,
         ctx,
       );
+    case "addToWatchlist":
+      return await runAddToWatchlist(
+        parsed.data as z.infer<typeof addToWatchlistSchema>,
+        ctx,
+      );
   }
+}
+
+async function runAddToWatchlist(
+  args: z.infer<typeof addToWatchlistSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult | null> {
+  const name = args.name.trim();
+  if (!name) return null;
+  // De-dupe — if the same name (case-insensitive) is already active,
+  // just return that row instead of stacking duplicates. The user
+  // saying "thinking about Switch 2" three times shouldn't produce
+  // three rows.
+  const existing = await db
+    .select()
+    .from(watchlistItems)
+    .where(
+      and(
+        eq(watchlistItems.householdId, ctx.householdId),
+        eq(watchlistItems.status, "active"),
+      ),
+    )
+    .limit(50);
+  const matched = existing.find(
+    (r) => r.name.trim().toLowerCase() === name.toLowerCase(),
+  );
+  if (matched) {
+    // Optionally bump estimatedPrice if the new call had it and the
+    // stored row didn't.
+    if (
+      args.estimatedPrice != null &&
+      matched.estimatedPrice == null
+    ) {
+      await db
+        .update(watchlistItems)
+        .set({ estimatedPrice: args.estimatedPrice })
+        .where(eq(watchlistItems.id, matched.id));
+    }
+    return {
+      kind: "watchlist_item_added",
+      itemId: matched.id,
+      name: matched.name,
+      estimatedPrice: matched.estimatedPrice ?? args.estimatedPrice ?? null,
+    };
+  }
+  const [row] = await db
+    .insert(watchlistItems)
+    .values({
+      userId: ctx.userId,
+      householdId: ctx.householdId,
+      name,
+      estimatedPrice: args.estimatedPrice ?? null,
+    })
+    .returning();
+  return {
+    kind: "watchlist_item_added",
+    itemId: row.id,
+    name: row.name,
+    estimatedPrice: row.estimatedPrice ?? null,
+  };
 }
 
 async function runScoutLike(

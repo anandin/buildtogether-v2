@@ -44,6 +44,8 @@ import { useSpend } from "../hooks/useSpend";
 import { btApi } from "../api/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Text } from "react-native";
+import { ShouldIBuyTile } from "../ShouldIBuyTile";
+import { useTilly } from "../hooks/useTilly";
 
 type Props = { onNav?: (route: BTRoute) => void };
 export type BTRoute = "home" | "guardian" | "spend" | "credit" | "dreams" | "profile";
@@ -55,6 +57,16 @@ export function BTHome({ onNav }: Props) {
   const { user } = useUser();
   const expenses = useExpenses();
   const spend = useSpend();
+  // Sprint A — the "Should I buy this?" tile needs to be able to send
+  // a prefilled question through chat and switch to the Tilly tab in
+  // one move. Pulling useTilly() up here lets us call send() then nav,
+  // so the user lands on Guardian to see Tilly's reply for the item
+  // they just named.
+  const tilly = useTilly();
+  const openChatWithSeed = (seed: string) => {
+    tilly.send(seed);
+    onNav?.("guardian");
+  };
 
   const today_ = today.data && today.data.ready === true ? today.data : null;
   // Three states matter on Home:
@@ -233,6 +245,16 @@ export function BTHome({ onNav }: Props) {
             </Text>
           </BTCard>
         )}
+
+        {/* Sprint A — habit hook. Lives above the week strip, just
+            below the hero/breathing-room card, because this is the
+            single most important affordance for the core thesis: name
+            what you're thinking about buying BEFORE the impulse fires.
+            Hidden when both data states are loading so it doesn't
+            flash in front of the skeleton. */}
+        {!isFirstLoad ? (
+          <ShouldIBuyTile onOpenChatPrefilled={openChatWithSeed} />
+        ) : null}
 
         {/* Week strip — 5 horizontally scrolling day cards per design.
             Anchored to today; shows the next 4 days with whatever signal we
