@@ -126,7 +126,9 @@ export function BTHome({ onNav }: Props) {
     queryKey: ["/api/tilly/reminders"],
     queryFn: btApi.reminders,
   });
-  const weekDays = nextFiveDays(remindersAll.data?.reminders ?? []);
+  const forecast = today_?.forecast ?? [];
+  const weekDays = nextFiveDays(remindersAll.data?.reminders ?? [], forecast);
+  const monthly = today_?.monthly ?? null;
 
   return (
     <ScrollView
@@ -183,10 +185,43 @@ export function BTHome({ onNav }: Props) {
         ) : hasMoneyData ? (
           <BTCard t={t} inverted padding={22} radius={18}>
             <BTStripes color={t.invertedFg} opacity={0.07} />
-            <BTLabel color={t.invertedFgMute}>Available now</BTLabel>
+            <BTLabel color={t.invertedFgMute}>
+              {monthly && monthly.source !== "none" ? "This month" : "Available now"}
+            </BTLabel>
             <View style={{ marginTop: 14 }}>
-              <BTCurrency amount={today_!.afterRent} size={64} color={t.invertedFg} />
+              <BTCurrency
+                amount={monthly && monthly.source !== "none" ? monthly.surplus : today_!.afterRent}
+                size={64}
+                color={t.invertedFg}
+              />
             </View>
+            {monthly && monthly.source !== "none" ? (
+              <View style={{ marginTop: 10, gap: 4 }}>
+                <Text
+                  style={{
+                    color: t.invertedFgMute,
+                    fontFamily: BTFonts.mono,
+                    fontSize: 11,
+                    letterSpacing: 0.8,
+                  }}
+                >
+                  SURPLUS · INCOME − SPENT − COMMITTED
+                </Text>
+                <Text
+                  style={{
+                    color: t.invertedFg,
+                    fontFamily: BTFonts.serif,
+                    fontSize: 14,
+                    lineHeight: 20,
+                    marginTop: 2,
+                  }}
+                >
+                  ${Math.round(monthly.income).toLocaleString()} earned ·{" "}
+                  ${monthly.spentToDate.toLocaleString()} spent ·{" "}
+                  ${monthly.committedRest.toLocaleString()} still committed
+                </Text>
+              </View>
+            ) : null}
             <View
               style={{
                 flexDirection: "row",
@@ -546,12 +581,13 @@ type ReminderRow = {
   status: "scheduled" | "fired" | "cancelled";
 };
 
-function nextFiveDays(reminders: ReminderRow[]): WeekDay[] {
+function nextFiveDays(
+  reminders: ReminderRow[],
+  forecast: Array<{ date: string; expected: number; reasons: string[] }>,
+): WeekDay[] {
   const out: WeekDay[] = [];
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const now = new Date();
-  // Bucket scheduled reminders by their local YYYY-MM-DD so we can match
-  // by day without timezone drift. Cancelled / already-fired are skipped.
   const byDay = new Map<string, ReminderRow[]>();
   for (const r of reminders) {
     if (r.status !== "scheduled") continue;
@@ -562,13 +598,22 @@ function nextFiveDays(reminders: ReminderRow[]): WeekDay[] {
     list.push(r);
     byDay.set(key, list);
   }
+  // Forecast keyed by YYYY-MM-DD. Forward day cards prefer forecast data
+  // (real expected $ + a 1-line reason) over the previous hardcoded
+  // "Look ahead" / "Paycheck +$612" placeholders.
+  const forecastByDate = new Map<string, { expected: number; reasons: string[] }>();
+  for (const f of forecast) {
+    forecastByDate.set(f.date, { expected: f.expected, reasons: f.reasons });
+  }
   for (let i = 0; i < 5; i++) {
     const d = new Date(now);
     d.setDate(now.getDate() + i);
     const dow = d.getDay();
     const isToday = i === 0;
-    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    const dayReminders = byDay.get(key) ?? [];
+    const reminderKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const forecastKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const dayReminders = byDay.get(reminderKey) ?? [];
+    const fc = forecastByDate.get(forecastKey);
     let mood: WeekDay["mood"] = "maybe";
     let label = "";
     let amt = "";
@@ -579,20 +624,21 @@ function nextFiveDays(reminders: ReminderRow[]): WeekDay[] {
         amt = `+${dayReminders.length - 1}`;
       }
     } else if (dayReminders.length > 0) {
-      // A real reminder on this day takes priority over generic
-      // "look ahead" / "Paycheck" placeholders.
       mood = "watch";
       label = dayReminders[0].label;
-      if (dayReminders.length > 1) {
-        amt = `+${dayReminders.length - 1}`;
-      }
-    } else if (dow === 5) {
-      mood = "good";
-      label = "Paycheck";
-      amt = "+$612";
+      if (dayReminders.length > 1) amt = `+${dayReminders.length - 1}`;
+    } else if (fc && fc.expected > 0) {
+      mood =
+        fc.reasons.some((r) => /typical/.test(r))
+          ? "maybe"
+          : fc.reasons.length > 0
+            ? "watch"
+            : "maybe";
+      label = fc.reasons[0] ?? "look ahead";
+      amt = `~$${fc.expected}`;
     } else if (i === 1) {
-      mood = "watch";
-      label = "Look ahead";
+      mood = "maybe";
+      label = "look ahead";
     }
     out.push({
       d: days[dow],

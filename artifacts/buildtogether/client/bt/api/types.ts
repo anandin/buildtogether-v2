@@ -38,6 +38,22 @@ export type TodayBrief =
       // user (unknown merchant / category spike / outsized tx). Optional —
       // older API responses may omit it.
       openQuestions?: TillyQuestion[];
+      // Sprint SS6/SS8 — month math + 7-day forecast surfaced
+      // alongside the LLM-generated hero copy. The hero card consumes
+      // `monthly`; the forward day strip consumes `forecast`. Both
+      // optional so older API responses keep parsing.
+      monthly?: {
+        income: number;
+        spentToDate: number;
+        committedRest: number;
+        surplus: number;
+        source: "plaid" | "plaid-estimate" | "self-report" | "none";
+      } | null;
+      forecast?: Array<{
+        date: string; // YYYY-MM-DD
+        expected: number;
+        reasons: string[];
+      }>;
     };
 
 export type TillyQuestion = {

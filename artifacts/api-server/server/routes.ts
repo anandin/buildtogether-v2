@@ -351,7 +351,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
               aiSuggestedReasoning: aiSuggestion?.reasoning ?? null,
             }).returning();
 
-            if (autoAccept && !autoIgnoreByRule) {
+            // Income rows: accept the plaid_transactions row directly
+            // (so monthly-summary can query it) but DON'T mirror to the
+            // expenses table — income isn't an expense and would pollute
+            // every spend-totals query that doesn't guard against
+            // negative amounts.
+            const isIncome = ruleCategory === "income";
+            if (autoAccept && !autoIgnoreByRule && isIncome) {
+              await txn.update(plaidTransactions)
+                .set({ status: "accepted" })
+                .where(eq(plaidTransactions.id, inserted.id));
+            } else if (autoAccept && !autoIgnoreByRule) {
               const [expense] = await txn.insert(expenses).values({
                 coupleId: item.coupleId,
                 amount: tx.amount,

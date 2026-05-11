@@ -192,7 +192,10 @@ export function mapPlaidCategory(
     if (primary === "TRANSFER_IN") return "other"; // money in — filtered upstream
     // Bank/account fees are tiny but worth tracking — students notice them.
     if (primary === "BANK_FEES") return "fees";
-    if (primary === "INCOME") return "other"; // filtered upstream
+    // Income — paychecks + gig payments. Used by /api/tilly/monthly-summary
+    // to surface "you earned $X this month". Existing spend queries
+    // filter amount > 0 so these rows don't leak into Spend totals.
+    if (primary === "INCOME") return "income";
   }
 
   // Fallback to legacy category array
@@ -217,22 +220,38 @@ export function mapPlaidCategory(
 }
 
 /**
- * Determine if a Plaid transaction is an expense we should import.
- * We want: user-initiated debits (money leaving their account).
- * We skip: income/deposits, transfers between their own accounts, refunds.
+ * Determine if a Plaid transaction is one we should import.
+ * We import: outgoing expenses (user-initiated debits) AND incoming
+ * paychecks/income (so Tilly can compute monthly income vs spend).
+ * We skip: transfers between user's own accounts, refunds.
+ *
+ * Sign convention: Plaid uses positive=outflow, negative=inflow.
+ * Income rows land with negative amount and ourCategory='income';
+ * existing expense queries filter `amount > 0` so income rows are
+ * invisible to spend totals while remaining queryable for the
+ * monthly-summary endpoint.
  */
 export function shouldImportPlaidTransaction(
   tx: { amount: number; category?: string[] | null; personal_finance_category?: any },
 ): boolean {
-  // In Plaid: positive amount = money leaving the account (expense)
-  //           negative amount = money entering the account (income/refund)
-  if (tx.amount <= 0) return false;
-
+  if (tx.amount === 0) return false;
   const primary = (tx.personal_finance_category?.primary || "").toUpperCase();
-  if (primary === "INCOME" || primary === "TRANSFER_IN" || primary === "TRANSFER_OUT") return false;
 
+  // Income — paychecks, direct deposits, gig payments. Keep so we can
+  // surface monthly take-home and compute surplus on Home.
+  if (primary === "INCOME") return tx.amount < 0; // sanity: must be inflow
+
+  // Transfers between user's own accounts — drop entirely. They net to
+  // zero economically and double-counting either side is confusing.
+  if (primary === "TRANSFER_IN" || primary === "TRANSFER_OUT") return false;
+
+  // Legacy category fallback for the transfer/payment buckets.
   const top = (tx.category?.[0] || "").toLowerCase();
   if (top === "transfer" || top === "payment") return false;
+
+  // Refunds (inflows with no INCOME PFC) — skip; they're noise on the
+  // expense feed and not income from the user's POV either.
+  if (tx.amount < 0) return false;
 
   return true;
 }
@@ -289,9 +308,16 @@ export function shouldAutoAcceptByAI(
 export function shouldAutoAcceptPlaidTransaction(
   tx: { amount: number; name?: string | null; merchant_name?: string | null; category?: string[] | null; personal_finance_category?: any },
 ): boolean {
+  const primary = (tx.personal_finance_category?.primary || "").toUpperCase();
+
+  // Income rows: always auto-accept. The user shouldn't have to
+  // manually approve every paycheck — the monthly-summary endpoint
+  // just needs them in the table. amount-cap doesn't apply (income
+  // can be large) and we already gate by PFC=INCOME.
+  if (primary === "INCOME") return true;
+
   if (tx.amount > AUTO_ACCEPT_AMOUNT_CAP) return false;
 
-  const primary = (tx.personal_finance_category?.primary || "").toUpperCase();
   const detailed = (tx.personal_finance_category?.detailed || "").toUpperCase();
   if (
     primary === "BANK_FEES" ||

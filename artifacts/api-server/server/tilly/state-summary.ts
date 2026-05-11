@@ -43,6 +43,7 @@ export type FinancialStateSummary = {
  */
 export async function buildFinancialStateSummary(
   householdId: string,
+  userId: string | null = null,
 ): Promise<FinancialStateSummary> {
   const lines: string[] = [];
   let hasData = false;
@@ -60,6 +61,21 @@ export async function buildFinancialStateSummary(
       hasData = true;
     } else {
       lines.push("Bank: not connected (yet — they may have added expenses manually).");
+    }
+  } catch {}
+
+  // 1a. Authoritative monthly numbers (income/spent/committed/surplus)
+  // — anchors every "you earn X, you spend Y" claim Tilly might make in
+  // chat. Uses the same source-priority as the Home hero
+  // (Plaid-preferred, falls back to self-report).
+  try {
+    const { getMonthlyIncome } = await import("./income-summary");
+    const income = await getMonthlyIncome(userId, householdId);
+    if (income.amount > 0) {
+      lines.push(
+        `Monthly income: ~$${Math.round(income.amount)} (source: ${income.source}${income.note ? " — " + income.note : ""}). When the user asks about how much they earn or whether they can afford something, cite THIS number — don't ask them to remind you.`,
+      );
+      hasData = true;
     }
   } catch {}
 

@@ -214,17 +214,112 @@ export function mountTillyInsightsRoutes(app: Express): void {
         bestDreamTile(householdId),
       ]);
 
-      // Compute breathing-room from any transaction source — Plaid +
-      // manual expenses unioned. Falls through to the empty-state
-      // copy only when both sources are completely empty.
-      const fromTx = await estimateFromTransactions(householdId);
-      const numbers = fromTx ?? {
-        breathing: 0,
-        afterRent: 0,
-        paycheckCopy: plaidConnected
-          ? "Calculating paycheck cadence…"
-          : "Connect a bank to see your weekly room",
-      };
+      // Anchor the hero on monthly math instead of the legacy weekly
+      // heuristic (`weeklyAllowance = max(320, weekSpent * 1.25)` was
+      // arbitrary). `breathing` now means MONTH surplus (income − spent
+      // − committed); `paycheckCopy` is the income/spent/committed
+      // breakdown. Existing mobile keys unchanged so the old hero
+      // still renders something coherent while SS8 refactors the card.
+      const { getMonthlyIncome } = await import("../../tilly/income-summary");
+      const { forecastNextNDays } = await import("../../tilly/forecast");
+      const { localDateString, getUserTimezone } = await import("../../tilly/user-tz");
+      const tzNow = new Date();
+      const tzForToday = await getUserTimezone(userId);
+      const todayLocalIso = localDateString(tzNow, tzForToday);
+      const [y, m, d] = todayLocalIso.split("-").map((n) => parseInt(n, 10));
+      const monthStartLocal = `${y}-${String(m).padStart(2, "0")}-01`;
+      const monthEndDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+      const monthEndLocal = `${y}-${String(m).padStart(2, "0")}-${String(monthEndDay).padStart(2, "0")}`;
+      let numbers: { breathing: number; afterRent: number; paycheckCopy: string };
+      let forecast: Awaited<ReturnType<typeof forecastNextNDays>> = [];
+      let monthly: {
+        income: number;
+        spentToDate: number;
+        committedRest: number;
+        surplus: number;
+        source: string;
+      } | null = null;
+      try {
+        const income = await getMonthlyIncome(userId, householdId, tzNow);
+        const [plaidSpent, manualSpent] = await Promise.all([
+          db
+            .select({ amount: plaidTransactions.amount })
+            .from(plaidTransactions)
+            .where(
+              and(
+                eq(plaidTransactions.coupleId, householdId),
+                eq(plaidTransactions.status, "accepted"),
+                gte(plaidTransactions.date, monthStartLocal),
+                sql`${plaidTransactions.date} <= ${todayLocalIso}`,
+                sql`${plaidTransactions.amount} > 0`,
+              ),
+            ),
+          db
+            .select({ amount: expenses.amount })
+            .from(expenses)
+            .where(
+              and(
+                eq(expenses.coupleId, householdId),
+                gte(expenses.date, monthStartLocal),
+                sql`${expenses.date} <= ${todayLocalIso}`,
+                sql`${expenses.amount} > 0`,
+              ),
+            ),
+        ]);
+        const spentToDate = Math.round(
+          plaidSpent.reduce((s, r) => s + r.amount, 0) +
+            manualSpent.reduce((s, r) => s + r.amount, 0),
+        );
+        const { subscriptions: subsTbl } = await import("../../../shared/schema");
+        const subs = await db
+          .select({ amount: subsTbl.amount, nextChargeAt: subsTbl.nextChargeAt })
+          .from(subsTbl)
+          .where(
+            and(
+              eq(subsTbl.householdId, householdId),
+              eq(subsTbl.status, "active"),
+            ),
+          );
+        const committedRest = Math.round(
+          subs.reduce((s, r) => {
+            if (!r.nextChargeAt) return s;
+            const dd = r.nextChargeAt.slice(0, 10);
+            if (dd > todayLocalIso && dd <= monthEndLocal) return s + r.amount;
+            return s;
+          }, 0),
+        );
+        const surplus = Math.round(income.amount - spentToDate - committedRest);
+        monthly = {
+          income: income.amount,
+          spentToDate,
+          committedRest,
+          surplus,
+          source: income.source,
+        };
+        const paycheckCopy = income.amount > 0
+          ? `$${Math.round(income.amount)} earned · $${spentToDate} spent · $${committedRest} committed`
+          : plaidConnected
+            ? "Tell Tilly your monthly income to anchor this"
+            : "Connect a bank or tell Tilly your income";
+        numbers = {
+          breathing: Math.max(0, surplus),
+          afterRent: Math.max(0, surplus),
+          paycheckCopy,
+        };
+        forecast = await forecastNextNDays(userId, householdId, 7, tzNow);
+      } catch (mErr) {
+        console.warn("/api/tilly/today monthly fallback:", mErr);
+        // Last-resort: the old weekly heuristic so the hero doesn't go
+        // blank. Keeps the screen usable while we investigate.
+        const fromTx = await estimateFromTransactions(householdId);
+        numbers = fromTx ?? {
+          breathing: 0,
+          afterRent: 0,
+          paycheckCopy: plaidConnected
+            ? "Calculating…"
+            : "Connect a bank to see your numbers",
+        };
+      }
 
       // Pass a pending-queue summary to the LLM so the home screen invite
       // can reference something concrete ("Want to talk about your $4K in
@@ -319,6 +414,8 @@ export function mountTillyInsightsRoutes(app: Express): void {
       res.json({
         ready: true,
         ...brief,
+        monthly,
+        forecast,
         openQuestions,
       });
     } catch (err) {
@@ -328,6 +425,135 @@ export function mountTillyInsightsRoutes(app: Express): void {
       res.json({ phase: 2, ready: false, reason: "transient" });
     }
   });
+
+  // GET /api/tilly/monthly-summary — Tilly's basic-finance-app answer:
+  // this month you earned $X, spent $Y, and have $Z still committed
+  // (rent / subs / loans posting before month-end), so surplus = X−Y−Z.
+  // Replaces the meaningless "$8908 breathing room" heuristic on Home.
+  app.get(
+    "/api/tilly/monthly-summary",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const householdId = req.user.coupleId;
+      const userId = req.user.id;
+      if (!householdId) {
+        return res.json({ ready: false, reason: "no_household" });
+      }
+      try {
+        const { getMonthlyIncome } = await import("../../tilly/income-summary");
+        const { getUserTimezone, localDateString } = await import("../../tilly/user-tz");
+        const now = new Date();
+        const tz = await getUserTimezone(userId);
+        const today = localDateString(now, tz);
+        const [y, m, d] = today.split("-").map((n) => parseInt(n, 10));
+        const monthStart = `${y}-${String(m).padStart(2, "0")}-01`;
+        const monthEnd = new Date(Date.UTC(y, m, 0)); // last day of this month
+        const daysInMonth = monthEnd.getUTCDate();
+        const daysLeft = Math.max(0, daysInMonth - d);
+
+        // Income — Plaid-preferred, self-report fallback.
+        const income = await getMonthlyIncome(userId, householdId, now);
+
+        // Spent month-to-date — accepted plaid tx (amount > 0) plus
+        // manual expenses, both in [monthStart, today].
+        const [plaidSpent, manualSpent] = await Promise.all([
+          db
+            .select({ amount: plaidTransactions.amount })
+            .from(plaidTransactions)
+            .where(
+              and(
+                eq(plaidTransactions.coupleId, householdId),
+                eq(plaidTransactions.status, "accepted"),
+                gte(plaidTransactions.date, monthStart),
+                sql`${plaidTransactions.date} <= ${today}`,
+                sql`${plaidTransactions.amount} > 0`,
+              ),
+            ),
+          db
+            .select({ amount: expenses.amount })
+            .from(expenses)
+            .where(
+              and(
+                eq(expenses.coupleId, householdId),
+                gte(expenses.date, monthStart),
+                sql`${expenses.date} <= ${today}`,
+                sql`${expenses.amount} > 0`,
+              ),
+            ),
+        ]);
+        const spentToDate = Math.round(
+          plaidSpent.reduce((s, r) => s + r.amount, 0) +
+            manualSpent.reduce((s, r) => s + r.amount, 0),
+        );
+
+        // Committed rest-of-month — subscriptions with nextChargeAt
+        // between (today, monthEnd]. Tight: we only count what we
+        // KNOW will hit; baseline-style "you'll probably spend $X more
+        // discretionary" lives on the day-by-day forecast instead.
+        const { subscriptions: subsTbl } = await import("../../../shared/schema");
+        const monthEndIso = `${y}-${String(m).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
+        const upcomingSubs = await db
+          .select({ amount: subsTbl.amount, nextChargeAt: subsTbl.nextChargeAt })
+          .from(subsTbl)
+          .where(
+            and(
+              eq(subsTbl.householdId, householdId),
+              eq(subsTbl.status, "active"),
+            ),
+          );
+        const committedRest = Math.round(
+          upcomingSubs.reduce((s, r) => {
+            if (!r.nextChargeAt) return s;
+            const d = r.nextChargeAt.slice(0, 10);
+            if (d > today && d <= monthEndIso) return s + r.amount;
+            return s;
+          }, 0),
+        );
+
+        const surplus = Math.round(income.amount - spentToDate - committedRest);
+
+        res.json({
+          ready: true,
+          month: `${y}-${String(m).padStart(2, "0")}`,
+          income: { amount: income.amount, source: income.source, note: income.note ?? null },
+          spentToDate,
+          committedRest,
+          surplus,
+          daysLeft,
+        });
+      } catch (err) {
+        console.error("/api/tilly/monthly-summary error:", err);
+        res.status(500).json({ error: "monthly-summary failed" });
+      }
+    },
+  );
+
+  // GET /api/tilly/forecast?days=7 — per-day expected spend for the
+  // next N days. Composes known recurring obligations + trailing-8wk
+  // per-dayOfWeek baseline + month-shape adjustment.
+  app.get(
+    "/api/tilly/forecast",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const householdId = req.user.coupleId;
+      const userId = req.user.id;
+      if (!householdId) return res.json({ days: [] });
+      try {
+        const { forecastNextNDays } = await import("../../tilly/forecast");
+        const days = Math.min(
+          Math.max(parseInt(String(req.query.days ?? "7"), 10) || 7, 1),
+          30,
+        );
+        const out = await forecastNextNDays(userId, householdId, days);
+        res.json({ days: out });
+      } catch (err) {
+        console.error("/api/tilly/forecast error:", err);
+        res.status(500).json({ error: "forecast failed" });
+      }
+    },
+  );
 
   // GET /api/tilly/categories — every category that's seen activity in
   // the last 30d, with monthTotal + transactionCount + the user's

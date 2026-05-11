@@ -67,7 +67,7 @@ const PhrasingSchema = z.object({
   bodyLine: z
     .string()
     .describe(
-      "ONE sentence sub-headline that puts the breathing-room number in editorial-fintech voice. Use the literal markdown italics around the number, e.g. 'You have *$312* of breathing room this week.' If the number is 0 or negative, say something gentler. NO emoji, NO 'budget' as a verb.",
+      "ONE sentence sub-headline anchored on the user's monthly surplus (income − spent − committed). Editorial-fintech voice, italicize the key number with single asterisks (e.g. '*$2,340* surplus this month — that's room for the Switch 2 dream and dinner out.'). If surplus is 0 or negative, lean compassionate not alarmist ('Tight month — let's see what's still movable.'). NO emoji, NO 'budget' as a verb.",
     ),
   tillyInvite: z
     .string()
@@ -112,9 +112,8 @@ Time: ${input.now} (use "${dayLabel(input.now)}" as the day label context).
 Tone: ${input.tone}.
 
 The student's numbers (already computed — DO NOT recompute, just reference accurately):
-- breathing room this week: $${input.numbers.breathing.toFixed(0)}
-- balance after next bill: $${input.numbers.afterRent.toFixed(2)}
-- paycheck context: "${input.numbers.paycheckCopy}"${memContext}${pendingContext}
+- monthly surplus (income − spent − committed): $${input.numbers.breathing.toFixed(0)}
+- month math summary: "${input.numbers.paycheckCopy}"${memContext}${pendingContext}
 
 Return three fields:
 1. greeting — tone-appropriate, 1 line.

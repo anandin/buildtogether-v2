@@ -498,7 +498,7 @@ export function mountTillyChatRoutes(app: Express): void {
           // Without this, the LLM has nothing to anchor "Starting buffer"
           // and either refuses structured output or returns a fabricated
           // ledger — both end up falling through to plain text.
-          const state = await buildFinancialStateSummary(householdId);
+          const state = await buildFinancialStateSummary(householdId, userId);
           // Pull recent expenses too so the "weekly drain" line is real.
           analysisPayload = await analyzeAffordability({
             userMessage: message,
@@ -584,7 +584,7 @@ export function mountTillyChatRoutes(app: Express): void {
 
         const [retrievedMemories, state, dossierRow, tillyCfg] = await Promise.all([
           hybridRetrieve(userId, message),
-          buildFinancialStateSummary(householdId),
+          buildFinancialStateSummary(householdId, userId),
           getLatestDossier(userId),
           getTillyConfig(),
         ]);
