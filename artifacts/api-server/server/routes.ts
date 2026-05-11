@@ -5249,10 +5249,10 @@ Return just the message text.`;
   app.post(
     "/api/plaid/backfill-history",
     requireAuth,
-    requireCoupleAccess,
     async (req, res) => {
       try {
-        const coupleId = req.user!.coupleId!;
+        const coupleId = req.user!.coupleId;
+        if (!coupleId) return res.status(400).json({ error: "no household" });
         const items = await db
           .select()
           .from(plaidItems)
