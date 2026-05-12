@@ -317,6 +317,9 @@ export type SpendPattern =
       /** Horizon block — present on month + year ranges. Drives the
        * sky/income-line/categories-hanging-below layout on BTSpend. */
       horizon?: SpendHorizon;
+      /** Human-readable label for the currently-rendered period
+       * ("May 2026" / "2025"). Drives the BTSpend prev/next nav header. */
+      periodLabel?: string;
     };
 
 export type CreditSnapshot =

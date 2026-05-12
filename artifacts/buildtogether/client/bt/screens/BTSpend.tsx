@@ -7,7 +7,7 @@
  * When the user hasn't connected a bank, we don't fake a Maya-shaped life.
  * The screen flips to a single connect-bank empty state instead.
  */
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Animated, Easing, Platform, Pressable, ScrollView, Text, View, LayoutAnimation, UIManager } from "react-native";
 if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -141,19 +141,50 @@ export function BTSpend() {
   );
 }
 
-/** Horizon header strip: range label (NOVEMBER / YEAR-TO-DATE) + verdict pill. */
+/** Horizon header strip: range label (NOVEMBER / YEAR-TO-DATE) + verdict pill.
+ * When onPrev/onNext are supplied, renders chevron arrows on either side
+ * of the label for navigating to adjacent periods. Next arrow is hidden
+ * when canGoNext = false (i.e., we're at the current period). */
 function HorizonHeader({
   t,
   rangeLabel,
   verdict,
+  onPrev,
+  onNext,
+  canGoNext,
 }: {
   t: BTTheme;
   rangeLabel: string;
   verdict: SpendHorizon["verdict"];
+  onPrev?: () => void;
+  onNext?: () => void;
+  canGoNext?: boolean;
 }) {
   const vc = verdictColor(verdict.tone, t);
   return (
-    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      {onPrev ? (
+        <Pressable
+          onPress={onPrev}
+          accessibilityRole="button"
+          accessibilityLabel="Previous period"
+          hitSlop={10}
+          style={({ pressed }) => ({
+            width: 28,
+            height: 28,
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: t.rule,
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: pressed ? 0.5 : 1,
+          })}
+        >
+          <Text style={{ color: t.ink, fontSize: 14, fontWeight: "700", marginTop: -2 }}>
+            ‹
+          </Text>
+        </Pressable>
+      ) : null}
       <Text
         style={{
           fontSize: 11,
@@ -187,6 +218,30 @@ function HorizonHeader({
           {verdict.label}
         </Text>
       </View>
+      {onNext ? (
+        <Pressable
+          onPress={canGoNext ? onNext : undefined}
+          accessibilityRole="button"
+          accessibilityLabel="Next period"
+          accessibilityState={{ disabled: !canGoNext }}
+          hitSlop={10}
+          style={({ pressed }) => ({
+            width: 28,
+            height: 28,
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: t.rule,
+            alignItems: "center",
+            justifyContent: "center",
+            opacity: !canGoNext ? 0.25 : pressed ? 0.5 : 1,
+            marginLeft: 4,
+          })}
+        >
+          <Text style={{ color: t.ink, fontSize: 14, fontWeight: "700", marginTop: -2 }}>
+            ›
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -314,6 +369,28 @@ function HorizonPanel({
   const maxAmt = categories.length
     ? Math.max(...categories.map((c) => c.amt))
     : 1;
+
+  // Grow-down animation per category. Each bar's scaleY interpolates
+  // 0 → 1 with `transformOrigin: 'top'` so the bar appears to descend
+  // from the income line down to its target height. Staggered by 70ms
+  // per the design's cubic-bezier curve. Reset whenever the category
+  // list identity changes (month-nav, hide-cat tool, etc.).
+  const catKey = categories.map((c) => `${c.id}:${c.amt}`).join("|");
+  const growAnims = useMemo(
+    () => categories.map(() => new Animated.Value(0)),
+    [catKey],
+  );
+  useEffect(() => {
+    const animations = growAnims.map((v) =>
+      Animated.timing(v, {
+        toValue: 1,
+        duration: 600,
+        easing: Easing.bezier(0.34, 1.2, 0.64, 1),
+        useNativeDriver: true,
+      }),
+    );
+    Animated.stagger(70, animations).start();
+  }, [growAnims]);
 
   return (
     <View
@@ -502,10 +579,11 @@ function HorizonPanel({
             </Text>
           </View>
         ) : (
-          categories.map((c) => {
+          categories.map((c, i) => {
             const heightPct = (c.amt / maxAmt) * 100;
             const isTapped = tappedId === c.id;
             const barColor = categoryBarColor(c, t);
+            const anim = growAnims[i];
             return (
               <Pressable
                 key={c.id}
@@ -518,27 +596,31 @@ function HorizonPanel({
                   minHeight: 24,
                 }}
               >
-                <View
+                <Animated.View
                   style={{
                     flex: 1,
                     backgroundColor: barColor,
                     borderBottomLeftRadius: 10,
                     borderBottomRightRadius: 10,
                     opacity: tappedId && !isTapped ? 0.55 : 1,
+                    transform: [{ scaleY: anim ?? 1 }],
+                    transformOrigin: "top",
                   }}
                 />
                 {isTapped ? (
                   <View
                     style={{
                       position: "absolute",
-                      top: -34,
+                      top: -42,
                       left: "50%",
-                      transform: [{ translateX: -32 }],
+                      transform: [{ translateX: -45 }],
                       backgroundColor: t.ink,
-                      paddingHorizontal: 8,
-                      paddingVertical: 4,
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
                       borderRadius: 8,
                       zIndex: 10,
+                      minWidth: 90,
+                      alignItems: "center",
                     }}
                   >
                     <Text
@@ -547,6 +629,18 @@ function HorizonPanel({
                         fontFamily: BTFonts.sans,
                         fontSize: 11,
                         fontWeight: "700",
+                      }}
+                      numberOfLines={1}
+                    >
+                      {c.name}
+                    </Text>
+                    <Text
+                      style={{
+                        color: t.surface,
+                        fontFamily: BTFonts.mono,
+                        fontSize: 10,
+                        opacity: 0.85,
+                        marginTop: 1,
                       }}
                     >
                       ${c.amt.toLocaleString()}
@@ -714,6 +808,26 @@ function HorizonYearList({
   const noDataCount = months.filter(
     (m) => !m.isFuture && m.income === 0,
   ).length;
+
+  // One Animated.Value per row. Drives the spend-fill scaleX from 0 → 1
+  // with stagger. Recreated whenever the months array identity shifts
+  // (range toggle, month change) so the animation re-plays.
+  const monthsKey = months.map((m) => `${m.m}:${m.spend}:${m.income}`).join("|");
+  const fillAnims = useMemo(
+    () => months.map(() => new Animated.Value(0)),
+    [monthsKey],
+  );
+  useEffect(() => {
+    const animations = fillAnims.map((v) =>
+      Animated.timing(v, {
+        toValue: 1,
+        duration: 700,
+        easing: Easing.bezier(0.34, 1.05, 0.64, 1),
+        useNativeDriver: true,
+      }),
+    );
+    Animated.stagger(60, animations).start();
+  }, [fillAnims]);
   return (
     <BTCard t={t} padding={18}>
       <View style={{ alignItems: "center", marginBottom: 4 }}>
@@ -745,16 +859,19 @@ function HorizonYearList({
         const isOver = !m.isFuture && m.income > 0 && m.spend > m.income;
         const ratio = m.isFuture || m.income === 0 ? 0 : m.spend / m.income;
         const fillPct = Math.min(ratio * 100, 100);
-        const overflowPct = Math.max(ratio * 100 - 100, 0);
         const monthSurplus = m.income - m.spend;
         const dimmed = m.isFuture || noData;
+        // Per-row scaleX animation — fills left → right with stagger.
+        // useNativeDriver works for scale + opacity. transformOrigin
+        // requires RN 0.74+ (we're on 0.81).
+        const fill = fillAnims[i];
         return (
           <View
             key={`${m.m}-${i}`}
             style={{
               flexDirection: "row",
               alignItems: "center",
-              gap: 12,
+              gap: 10,
               marginBottom: 10,
               opacity: dimmed ? 0.3 : 1,
             }}
@@ -774,13 +891,33 @@ function HorizonYearList({
               style={{
                 flex: 1,
                 height: 22,
-                backgroundColor: m.isFuture ? t.rule : `${t.good}22`,
+                backgroundColor: m.isFuture || noData ? t.rule : `${t.good}1f`,
                 borderRadius: 5,
                 position: "relative",
-                overflow: "visible",
+                overflow: "hidden",
               }}
             >
-              {/* income horizon at right edge */}
+              {/* spend fill — scaleX-animated from the left edge. We
+                  render the View at 100% of fillPct and scale it from
+                  0 to 1 with native driver. */}
+              {!m.isFuture && m.income > 0 ? (
+                <Animated.View
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    bottom: 0,
+                    width: `${fillPct}%`,
+                    backgroundColor: isOver ? t.bad : t.inkSoft,
+                    borderRadius: 5,
+                    transform: [{ scaleX: fill ?? 1 }],
+                    transformOrigin: "left",
+                  }}
+                />
+              ) : null}
+              {/* income horizon line — solid black tick at the right
+                  edge of the bar container, rendered ABOVE the fill so
+                  it stays visible even when the fill goes full-width. */}
               <View
                 style={{
                   position: "absolute",
@@ -792,75 +929,42 @@ function HorizonYearList({
                   zIndex: 4,
                 }}
               />
-              {/* spend fill */}
-              {!m.isFuture && m.income > 0 ? (
-                <View
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    bottom: 0,
-                    width: `${fillPct}%`,
-                    backgroundColor: isOver ? t.bad : t.inkSoft,
-                    borderTopLeftRadius: 5,
-                    borderBottomLeftRadius: 5,
-                    borderTopRightRadius: fillPct >= 100 ? 0 : 5,
-                    borderBottomRightRadius: fillPct >= 100 ? 0 : 5,
-                  }}
-                />
-              ) : null}
-              {/* overflow past the income line — hatched */}
-              {isOver ? (
-                <View
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    bottom: 0,
-                    left: "100%",
-                    width: `${Math.min(overflowPct, 40)}%`,
-                    overflow: "hidden",
-                    borderTopRightRadius: 5,
-                    borderBottomRightRadius: 5,
-                  }}
-                >
-                  <Svg width="100%" height="100%">
-                    <Defs>
-                      <Pattern
-                        id={`yh-${m.m}-${i}`}
-                        x="0"
-                        y="0"
-                        width="8"
-                        height="8"
-                        patternUnits="userSpaceOnUse"
-                        patternTransform="rotate(45)"
-                      >
-                        <Rect width="4" height="8" fill={t.bad} />
-                        <Rect x="4" width="4" height="8" fill={t.bad} fillOpacity={0.55} />
-                      </Pattern>
-                    </Defs>
-                    <Rect width="100%" height="100%" fill={`url(#yh-${m.m}-${i})`} />
-                  </Svg>
-                </View>
-              ) : null}
             </View>
-            <Text
+            <View
               style={{
-                width: 56,
-                textAlign: "right",
-                fontSize: 12,
-                fontFamily: BTFonts.sans,
-                fontWeight: "700",
-                color: dimmed
-                  ? t.inkMute
-                  : isOver
-                    ? t.bad
-                    : t.good,
+                width: 72,
+                flexDirection: "row",
+                justifyContent: "flex-end",
+                alignItems: "baseline",
+                gap: 3,
               }}
             >
-              {dimmed
-                ? "—"
-                : compactDollar(monthSurplus < 0 ? -Math.abs(monthSurplus) : monthSurplus)}
-            </Text>
+              <Text
+                style={{
+                  fontSize: 12,
+                  fontFamily: BTFonts.sans,
+                  fontWeight: "700",
+                  color: dimmed ? t.inkMute : isOver ? t.bad : t.good,
+                }}
+              >
+                {dimmed
+                  ? "—"
+                  : compactDollar(monthSurplus < 0 ? -Math.abs(monthSurplus) : monthSurplus)}
+              </Text>
+              {isOver ? (
+                <Text
+                  style={{
+                    fontSize: 10,
+                    fontFamily: BTFonts.sans,
+                    color: t.bad,
+                    fontWeight: "600",
+                    letterSpacing: 0.4,
+                  }}
+                >
+                  over
+                </Text>
+              ) : null}
+            </View>
           </View>
         );
       })}
@@ -899,7 +1003,15 @@ function HorizonYearList({
 function BTSpendBody() {
   const { t } = useBT();
   const [range, setRange] = useState<"week" | "month" | "year">("week");
-  const spend = useSpend(range);
+  // Offset = how many periods back from the current one. 0 = current.
+  // Negative goes backwards. Reset to 0 whenever the range tab changes
+  // — otherwise switching week→month after navigating to April would
+  // land on a weird "5 weeks ago" with no clear UX.
+  const [offset, setOffset] = useState(0);
+  useEffect(() => {
+    setOffset(0);
+  }, [range]);
+  const spend = useSpend(range, offset);
   const expenses = useExpenses();
   const [addOpen, setAddOpen] = useState(false);
   const [splitOpen, setSplitOpen] = useState(false);
@@ -1110,8 +1222,21 @@ function BTSpendBody() {
     .sort((a, b) => b.amt - a.amt)
     .slice(0, 8);
   const showHorizon = horizon && range !== "week";
-  const monthName = new Date().toLocaleString("en-US", { month: "long" });
-  const rangeLabel = range === "year" ? "YEAR-TO-DATE" : monthName.toUpperCase();
+  // Prefer the server's periodLabel ("May 2026" / "2025") so navigating
+  // backwards shows the right month name. Falls back to the current
+  // month / "year-to-date" while the first response hasn't loaded yet.
+  const periodLabel =
+    "periodLabel" in live && typeof live.periodLabel === "string"
+      ? live.periodLabel
+      : null;
+  const rangeLabel = periodLabel
+    ? periodLabel.toUpperCase()
+    : range === "year"
+      ? "YEAR-TO-DATE"
+      : new Date().toLocaleString("en-US", { month: "long" }).toUpperCase();
+  const goPrev = () => setOffset((o) => Math.max(o - 1, -23));
+  const goNext = () => setOffset((o) => Math.min(o + 1, 0));
+  const canGoNext = offset < 0;
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
@@ -1168,7 +1293,14 @@ function BTSpendBody() {
 
         {showHorizon && horizon ? (
           <>
-            <HorizonHeader t={t} rangeLabel={rangeLabel} verdict={horizon.verdict} />
+            <HorizonHeader
+              t={t}
+              rangeLabel={rangeLabel}
+              verdict={horizon.verdict}
+              onPrev={goPrev}
+              onNext={goNext}
+              canGoNext={canGoNext}
+            />
             <HorizonSurplus
               t={t}
               surplus={horizon.surplus}

@@ -165,6 +165,9 @@ export type WeeklyPattern = {
    * so we leave it null there). Drives the BTSpend "sky + categories
    * hanging from the line" layout. */
   horizon?: SpendHorizon;
+  /** Human-readable label for the currently-rendered period, e.g.
+   * "May 2026" / "2025". Drives the header for prev/next nav. */
+  periodLabel?: string;
 };
 
 /** Verdict tone — maps to theme color slots on the client. The client
@@ -412,6 +415,7 @@ export async function buildWeeklyPattern(
   householdId: string,
   userId: string | null = null,
   range: SpendRange = "week",
+  offset: number = 0,
 ): Promise<WeeklyPattern | null> {
   const now = new Date();
   const tz = await getUserTimezone(userId);
@@ -419,8 +423,12 @@ export async function buildWeeklyPattern(
   // no rolling-7 fallback) — delegate to a dedicated builder so the
   // week path stays intact and well-tested.
   if (range !== "week") {
-    return buildMonthOrYearPattern(householdId, userId, range, now, tz);
+    return buildMonthOrYearPattern(householdId, userId, range, now, tz, offset);
   }
+  // Week range doesn't honor offset yet — keep current behavior so the
+  // existing rolling-7 fallback + soft-spot detection don't get
+  // disturbed. If the user navigates while on Week, we just show the
+  // current week.
   // === Week (existing logic below) ===
   // Resolve the user's timezone once. Vercel runs UTC; computing
   // weekStart from `new Date()` flips the week 4-5h early for an
@@ -660,16 +668,27 @@ async function buildMonthOrYearPattern(
   range: SpendRange,
   now: Date,
   tz: string,
+  offset: number = 0,
 ): Promise<WeeklyPattern | null> {
-  const cfg = rangeConfig(range, now, tz);
+  // Shift the reference date by offset periods. range=month offset=-1
+  // → ref is one month ago; range=year offset=-1 → one year ago.
+  // We rebuild the window around this shifted reference so Horizon,
+  // categories, and bars all reflect the same period.
+  const refDate = offset === 0 ? now : shiftReferenceDate(now, tz, range, offset);
+  const cfg = rangeMonthYearWindow(range, refDate, tz);
   const txRows = await readAllTransactions(householdId, cfg.startIso);
-  if (txRows.length === 0) return null;
+  // Filter to within the period upper bound too — otherwise viewing
+  // last-month we'd accidentally pull in this-month's transactions.
+  const inWindowTx = txRows.filter(
+    (t) => t.date >= cfg.startIso && t.date <= cfg.endIso,
+  );
+  if (inWindowTx.length === 0) return null;
 
   const fixedCats = await resolveFixedObligationSet(userId);
   const isFixed = (t: UnifiedTx) =>
     fixedCats.has((t.category || "").toLowerCase());
-  const discretionary = txRows.filter((t) => !isFixed(t));
-  const fixedRows = txRows.filter(isFixed);
+  const discretionary = inWindowTx.filter((t) => !isFixed(t));
+  const fixedRows = inWindowTx.filter(isFixed);
 
   // Bars bucketed via rangeConfig
   const bucketTotals = new Array(cfg.bucketCount).fill(0);
@@ -779,11 +798,13 @@ async function buildMonthOrYearPattern(
     userId,
     householdId,
     range,
-    now,
+    now: refDate,
     tz,
     totalSpent,
     topCategoryName: topCats[0]?.[0],
     topCategoryAmt: topCats[0]?.[1] ?? 0,
+    windowStartIso: cfg.startIso,
+    windowEndIso: cfg.endIso,
   });
 
   return {
@@ -795,7 +816,107 @@ async function buildMonthOrYearPattern(
     fixedObligations,
     today: [],
     horizon,
+    periodLabel: cfg.periodLabel,
   } as WeeklyPattern;
+}
+
+/**
+ * Compute a reference date shifted by `offset` periods from `now`.
+ * For month range, offset=-1 means "one month ago" (same day-of-month
+ * clamped to the new month's length). For year range, offset=-1 means
+ * "one year ago" (same month + day clamped).
+ *
+ * Returns a Date in UTC noon for the local-tz-shifted reference day,
+ * so downstream localDateString / monthStart computations land in the
+ * expected month/year.
+ */
+function shiftReferenceDate(
+  now: Date,
+  tz: string,
+  range: SpendRange,
+  offset: number,
+): Date {
+  if (offset === 0) return now;
+  const todayIso = localDateString(now, tz);
+  const [y, m, d] = todayIso.split("-").map((n) => parseInt(n, 10));
+  let newY = y;
+  let newM = m;
+  if (range === "month") {
+    newM = m + offset;
+    while (newM < 1) {
+      newM += 12;
+      newY -= 1;
+    }
+    while (newM > 12) {
+      newM -= 12;
+      newY += 1;
+    }
+  } else if (range === "year") {
+    newY = y + offset;
+  }
+  // Clamp day to the target month's length (e.g., Mar 31 → Feb 28).
+  const lastDay = new Date(Date.UTC(newY, newM, 0)).getUTCDate();
+  const newD = Math.min(d, lastDay);
+  return new Date(`${newY}-${String(newM).padStart(2, "0")}-${String(newD).padStart(2, "0")}T12:00:00Z`);
+}
+
+/**
+ * Return the window bounds for a month/year period given a reference
+ * date inside it, plus a single-letter label set for the bars and a
+ * human-readable period label ("April 2026" / "2025").
+ */
+function rangeMonthYearWindow(
+  range: SpendRange,
+  refDate: Date,
+  tz: string,
+): {
+  startIso: string;
+  endIso: string;
+  bucketCount: number;
+  labels: string[];
+  bucketIndexFor: (dateIso: string) => number;
+  todayBucketIdx: number;
+  periodLabel: string;
+} {
+  const refIso = localDateString(refDate, tz);
+  const [y, m] = refIso.split("-").map((n) => parseInt(n, 10));
+  const monthLetters = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
+  const monthNames = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+  ];
+  if (range === "month") {
+    const startIso = `${y}-${String(m).padStart(2, "0")}-01`;
+    const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const endIso = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    // Bars: 4 weeks within the month — keep simple "w1..w4" labels.
+    // bucketIndexFor returns 0..3 based on day-of-month / ~7.
+    return {
+      startIso,
+      endIso,
+      bucketCount: 4,
+      labels: ["w1", "w2", "w3", "w4"],
+      bucketIndexFor: (dateIso: string) => {
+        const day = parseInt(dateIso.slice(8, 10), 10);
+        return Math.min(3, Math.max(0, Math.floor((day - 1) / 7)));
+      },
+      todayBucketIdx: 0, // not surfaced when navigating away from current
+      periodLabel: `${monthNames[m - 1]} ${y}`,
+    };
+  }
+  // range === "year"
+  const startIso = `${y}-01-01`;
+  const endIso = `${y}-12-31`;
+  return {
+    startIso,
+    endIso,
+    bucketCount: 12,
+    labels: monthLetters,
+    bucketIndexFor: (dateIso: string) =>
+      Math.max(0, Math.min(11, parseInt(dateIso.slice(5, 7), 10) - 1)),
+    todayBucketIdx: 0,
+    periodLabel: `${y}`,
+  };
 }
 
 /**
@@ -888,36 +1009,56 @@ async function buildHorizon(args: {
   userId: string | null;
   householdId: string;
   range: SpendRange;
+  /** Reference date (current period when offset=0, shifted for nav). */
   now: Date;
   tz: string;
   totalSpent: number;
   topCategoryName: string | undefined;
   topCategoryAmt: number;
+  /** Inclusive window bounds — used to scope the income query so a
+   * previous month / year request doesn't accidentally sum income
+   * from the current period. */
+  windowStartIso: string;
+  windowEndIso: string;
 }): Promise<SpendHorizon | undefined> {
-  const { userId, householdId, range, now, tz, totalSpent, topCategoryName } = args;
+  const {
+    userId,
+    householdId,
+    range,
+    now,
+    tz,
+    totalSpent,
+    topCategoryName,
+    windowStartIso,
+    windowEndIso,
+  } = args;
   if (range !== "month" && range !== "year") return undefined;
 
-  // For month: income = current month take-home (or estimate / self-report fallback).
-  // For year: income = sum of every paycheck since Jan 1 of the local year.
+  // Sum income directly in the window. Same shape for month + year now
+  // since both ranges have explicit bounds. We don't fall back to
+  // estimates / self-report for historical periods because those
+  // estimators rely on "trailing 35 days" / "latest snapshot" semantics
+  // that don't make sense when the user is looking at last April.
   let income: number;
-  if (range === "month") {
+  if (range === "month" && isCurrentMonth(now, tz, windowStartIso)) {
+    // Only the *current* month gets the estimate / self-report fallbacks
+    // (handles the "month just started, no paychecks yet" case the
+    // smart-home work spec'd).
     const mi = await getMonthlyIncome(userId, householdId, now);
     income = mi.amount;
   } else {
-    const yearStartIso = `${localDateString(now, tz).slice(0, 4)}-01-01`;
-    const todayIso = localDateString(now, tz);
-    const ytdIncomeRows = await db
+    const rows = await db
       .select({ amount: plaidTransactions.amount })
       .from(plaidTransactions)
       .where(
         and(
           eq(plaidTransactions.coupleId, householdId),
           eq(plaidTransactions.ourCategory, "income"),
-          gte(plaidTransactions.date, yearStartIso),
-          lte(plaidTransactions.date, todayIso),
+          gte(plaidTransactions.date, windowStartIso),
+          lte(plaidTransactions.date, windowEndIso),
         ),
       );
-    income = ytdIncomeRows.reduce((s, r) => s + Math.abs(r.amount), 0);
+    income = rows.reduce((s, r) => s + Math.abs(r.amount), 0);
   }
 
   const surplus = income - totalSpent;
@@ -953,6 +1094,13 @@ async function buildHorizon(args: {
         : undefined,
     monthlyHistory,
   };
+}
+
+/** True when the window's start matches the local first-of-current-month. */
+function isCurrentMonth(now: Date, tz: string, windowStartIso: string): boolean {
+  const todayIso = localDateString(now, tz);
+  const currentMonthStart = `${todayIso.slice(0, 7)}-01`;
+  return windowStartIso === currentMonthStart;
 }
 
 /** Compute mean savings rate (%) over the prior N complete months,

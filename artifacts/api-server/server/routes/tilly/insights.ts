@@ -772,7 +772,21 @@ export function mountTillyInsightsRoutes(app: Express): void {
       const rangeParam = String(req.query.range ?? "week");
       const range =
         rangeParam === "month" || rangeParam === "year" ? rangeParam : "week";
-      const pattern = await buildWeeklyPattern(householdId, req.user.id, range);
+      // Offset = how many periods back from the current one. 0 = current,
+      // -1 = last month / last year. Capped to non-positive so a typo
+      // can't ask for a future period (which would return 0 data + a
+      // bogus verdict).
+      const offsetRaw = parseInt(String(req.query.offset ?? "0"), 10);
+      const offset =
+        Number.isFinite(offsetRaw) && offsetRaw < 0
+          ? Math.max(offsetRaw, -23) // year-back limit: 2 years worth
+          : 0;
+      const pattern = await buildWeeklyPattern(
+        householdId,
+        req.user.id,
+        range,
+        offset,
+      );
       if (!pattern) return res.json({ phase: 4, ready: false });
       res.json(pattern);
     } catch (err) {
