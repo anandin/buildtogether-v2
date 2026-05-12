@@ -327,6 +327,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // (plaid_transaction_id) constraint is our idempotency key — if a
           // resync replays the same tx, this throws and we never create a
           // duplicate expense. Then create the expense and link it back.
+          // Prefer Plaid's `authorized_date` (when the card was actually
+          // swiped) over `date` (the bank's post date). For an in-person
+          // weekend purchase the post date is usually Monday — using it
+          // would attribute Sunday-night Costco to Monday and corrupt
+          // both the day-of-week analysis and the "today" mini-ledger.
+          // `authorized_date` is nullable on non-card transactions
+          // (cheques, transfers) — fall back to `date` there.
+          const txDate = (tx.authorized_date as string | null) || tx.date;
           await db.transaction(async (txn) => {
             const initialStatus = autoIgnoreByRule
               ? "ignored"
@@ -339,7 +347,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               plaidTransactionId: tx.transaction_id,
               accountId: tx.account_id,
               amount: tx.amount,
-              date: tx.date,
+              date: txDate,
               merchantName: tx.merchant_name || null,
               name: tx.name || "Unknown",
               plaidCategory: tx.category || null,
@@ -372,7 +380,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 description: tx.merchant_name || tx.name || "Unknown",
                 merchant: tx.merchant_name || tx.name || null,
                 category: ruleCategory,
-                date: tx.date,
+                date: txDate,
                 paidBy,
                 splitMethod: "joint",
                 source: "plaid",

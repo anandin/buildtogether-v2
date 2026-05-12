@@ -579,7 +579,7 @@ type WeekDay = {
   n: string;
   label: string;
   amt?: string;
-  mood: "today" | "watch" | "good" | "maybe";
+  mood: "today" | "watch" | "good" | "maybe" | "payday";
 };
 
 type ReminderRow = {
@@ -592,7 +592,7 @@ type ReminderRow = {
 
 function nextFiveDays(
   reminders: ReminderRow[],
-  forecast: Array<{ date: string; expected: number; reasons: string[] }>,
+  forecast: Array<{ date: string; expected: number; reasons: string[]; paycheckIn?: number }>,
 ): WeekDay[] {
   const out: WeekDay[] = [];
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -610,9 +610,16 @@ function nextFiveDays(
   // Forecast keyed by YYYY-MM-DD. Forward day cards prefer forecast data
   // (real expected $ + a 1-line reason) over the previous hardcoded
   // "Look ahead" / "Paycheck +$612" placeholders.
-  const forecastByDate = new Map<string, { expected: number; reasons: string[] }>();
+  const forecastByDate = new Map<
+    string,
+    { expected: number; reasons: string[]; paycheckIn?: number }
+  >();
   for (const f of forecast) {
-    forecastByDate.set(f.date, { expected: f.expected, reasons: f.reasons });
+    forecastByDate.set(f.date, {
+      expected: f.expected,
+      reasons: f.reasons,
+      paycheckIn: f.paycheckIn,
+    });
   }
   for (let i = 0; i < 5; i++) {
     const d = new Date(now);
@@ -632,6 +639,12 @@ function nextFiveDays(
       if (dayReminders.length > 1) {
         amt = `+${dayReminders.length - 1}`;
       }
+    } else if (fc && fc.paycheckIn && fc.paycheckIn > 0) {
+      // Payday wins over reminders + spend forecast — it's the one
+      // forward-looking event worth knowing about. Show inflow as +$X.
+      mood = "payday";
+      label = "paycheck";
+      amt = `+$${Math.round(fc.paycheckIn).toLocaleString()}`;
     } else if (dayReminders.length > 0) {
       mood = "watch";
       label = dayReminders[0].label;
@@ -666,6 +679,10 @@ function DayCard({ t, day }: { t: BTTheme; day: WeekDay }) {
     watch: { bg: t.surface, fg: t.ink, accent: t.warn },
     good: { bg: t.accentSoft, fg: t.ink, accent: t.good },
     maybe: { bg: t.surface, fg: t.ink, accent: t.inkMute },
+    // Payday: a tinted-good background so the inflow visually stands
+    // apart from outflow days without screaming. Accent stays t.good
+    // so the "+$X" reads as a positive event.
+    payday: { bg: `${t.good}22`, fg: t.ink, accent: t.good },
   }[day.mood];
   return (
     <View

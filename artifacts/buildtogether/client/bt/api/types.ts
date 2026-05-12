@@ -53,6 +53,10 @@ export type TodayBrief =
         date: string; // YYYY-MM-DD
         expected: number;
         reasons: string[];
+        /** Expected paycheck inflow on this date (cadence projection).
+         * Distinct from `expected` (outflow). Drives the "payday" day-card
+         * on Today. Absent when no paycheck is expected. */
+        paycheckIn?: number;
       }>;
       /** True when ≥1 plaid_items row exists for the household. Mobile
        * uses this to decide between the "connect your bank" empty

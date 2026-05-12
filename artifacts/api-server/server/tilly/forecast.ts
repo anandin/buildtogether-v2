@@ -41,6 +41,11 @@ export type ForecastDay = {
   expected: number;
   /** Reasons — 0-3 short strings. */
   reasons: string[];
+  /** Expected paycheck inflow on this date — only set when cadence
+   * analysis projects a payday landing here. Distinct from `expected`
+   * (which is OUTFLOW). The client uses this to flip the day card
+   * mood to "payday" and show "+$X coming in". */
+  paycheckIn?: number;
 };
 
 const DISCRETIONARY_FILTER_CATS = new Set([
@@ -100,6 +105,56 @@ export async function forecastNextNDays(
   // Round + clamp into a "typical-day" number. Soft floor of $10 so a
   // brand-new account with no history doesn't show $0 every day.
   const typicalByDow = baselineByDow.map((v) => Math.max(10, Math.round(v)));
+
+  // ── (1a) Expected paydays from income cadence ─────────────────────
+  // Read recent paychecks, infer cadence, project the next 1-2 payday
+  // dates into the forecast window. Surfaces "next paycheck in 11
+  // days" on Today so the user can plan around it. Falls back silently
+  // when there's not enough data to infer cadence (<2 paychecks).
+  const incomeRows = await db
+    .select({
+      amount: plaidTransactions.amount,
+      date: plaidTransactions.date,
+    })
+    .from(plaidTransactions)
+    .where(
+      and(
+        eq(plaidTransactions.coupleId, householdId),
+        eq(plaidTransactions.ourCategory, "income"),
+        gte(plaidTransactions.date, localDaysAgoIso(now, tz, 90)),
+      ),
+    );
+  const paydaysByDate = new Map<string, { amount: number }>();
+  if (incomeRows.length >= 2) {
+    const sortedIncome = [...incomeRows].sort((a, b) => a.date.localeCompare(b.date));
+    const gaps: number[] = [];
+    for (let i = 1; i < sortedIncome.length; i++) {
+      const d1 = new Date(sortedIncome[i - 1].date + "T12:00:00Z").getTime();
+      const d2 = new Date(sortedIncome[i].date + "T12:00:00Z").getTime();
+      gaps.push(Math.round((d2 - d1) / 86_400_000));
+    }
+    gaps.sort((a, b) => a - b);
+    const medianGap = gaps[Math.floor(gaps.length / 2)];
+    // Only project if cadence is reasonably regular (weekly to monthly).
+    if (medianGap >= 5 && medianGap <= 35) {
+      const lastPay = sortedIncome[sortedIncome.length - 1];
+      const lastPayAmt = Math.abs(lastPay.amount);
+      // Walk forward in `medianGap` steps from the last paycheck and
+      // record any date that falls inside the forecast window.
+      const lastDate = new Date(lastPay.date + "T12:00:00Z");
+      const windowEnd = parseLocalDate(todayIso);
+      windowEnd.setUTCDate(windowEnd.getUTCDate() + days);
+      let cursor = new Date(lastDate);
+      // Hard cap on iterations to prevent any infinite loop edge case.
+      for (let safety = 0; safety < 12; safety++) {
+        cursor.setUTCDate(cursor.getUTCDate() + medianGap);
+        if (cursor > windowEnd) break;
+        if (cursor <= parseLocalDate(todayIso)) continue;
+        const key = formatLocalDate(cursor);
+        paydaysByDate.set(key, { amount: lastPayAmt });
+      }
+    }
+  }
 
   // ── (1) Subscriptions known to post in the window ─────────────────
   const subs = await db
@@ -176,7 +231,19 @@ export async function forecastNextNDays(
     }
 
     const expected = Math.round(subTotal + monthShape + baseline);
-    out.push({ date: dateStr, expected, reasons: reasons.slice(0, 2) });
+    const payday = paydaysByDate.get(dateStr);
+    if (payday) {
+      // Inject payday as a first-class reason so even older clients
+      // that don't read paycheckIn still see "+$X paycheck" in the
+      // copy line of the day card.
+      reasons.unshift(`paycheck +$${Math.round(payday.amount).toLocaleString()}`);
+    }
+    out.push({
+      date: dateStr,
+      expected,
+      reasons: reasons.slice(0, 2),
+      paycheckIn: payday ? Math.round(payday.amount) : undefined,
+    });
   }
 
   return out;

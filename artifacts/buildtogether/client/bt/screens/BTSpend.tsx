@@ -1211,13 +1211,14 @@ function BTSpendBody() {
   const visibleFixed = fixedObligations.filter(
     (c) => !hidden.includes(c.name.toLowerCase()),
   );
-  // Horizon shows ALL spend categories hanging from the line — both
-  // discretionary and fixed obligations. Merge + sort desc; cap at 8 so
-  // the bar gutter stays readable. Filter hidden categories too so the
-  // hideCategoryFromSpend tool keeps working on the new view.
+  // Horizon shows real outflow categories hanging from the line —
+  // discretionary + fixed obligations EXCEPT transfers. Transfers
+  // (money moved between own accounts) net to zero against the wallet
+  // and don't belong in the "did the line hold?" visual. They still
+  // appear in the "Money flow · fixed" section below as info.
   const horizonCategories: SpendCategory[] = [
     ...visibleDiscretionary,
-    ...visibleFixed,
+    ...visibleFixed.filter((c) => c.name.toLowerCase() !== "transfers"),
   ]
     .sort((a, b) => b.amt - a.amt)
     .slice(0, 8);

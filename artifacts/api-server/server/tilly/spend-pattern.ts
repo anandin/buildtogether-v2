@@ -780,11 +780,19 @@ async function buildMonthOrYearPattern(
     });
 
   const totalDiscretionary = discretionary.reduce((s, t) => s + t.amount, 0);
-  const totalFixed = fixedRows.reduce((s, t) => s + t.amount, 0);
+  // Transfers are money moved between the user's own accounts (e.g.
+  // checking → savings, paying down a credit card). They are NOT real
+  // outflow — they net to zero against the wallet. Excluding them from
+  // BOTH the underwater math AND the Horizon panel bar set is the only
+  // way "did the line hold?" stays meaningful. Other fixed cats
+  // (loans / taxes / fees / insurance) DO count — those are real
+  // money leaving the household.
+  const isTransfer = (t: UnifiedTx) =>
+    (t.category || "").toLowerCase() === "transfers";
+  const fixedExclTransfers = fixedRows.filter((t) => !isTransfer(t));
+  const totalFixed = fixedExclTransfers.reduce((s, t) => s + t.amount, 0);
   // For Horizon, the bars hanging from the income line represent ALL
-  // outflow — loans + subs + groceries + everything. The discretionary
-  // vs fixed split lives in the category list below the panel, but the
-  // line-broke-or-it-didn't math has to use the full picture.
+  // outflow — loans + subs + groceries + everything *except transfers*.
   const totalSpent = totalDiscretionary + totalFixed;
 
   // Headline copy keeps using discretionary so the spend headline stays
