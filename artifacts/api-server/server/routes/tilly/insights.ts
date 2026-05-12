@@ -726,7 +726,13 @@ export function mountTillyInsightsRoutes(app: Express): void {
           { signature: string; displayName: string; monthTotal: number; count: number; lastDate: string }
         >();
         for (const r of filtered) {
-          if (typeof r.amount !== "number" || r.amount <= 0) continue;
+          if (typeof r.amount !== "number" || r.amount === 0) continue;
+          // Plaid stores income with negative amounts (money in); spend
+          // is positive. Bucket by absolute value so income merchants
+          // surface in the drill-in just like spend merchants. Without
+          // this, "Income" / "cashback" / "credit_adjustment" drill-ins
+          // came up empty even though the parent row showed a total.
+          const absAmt = Math.abs(r.amount);
           const sig = (r.signature || "").trim().toLowerCase();
           if (!sig) continue;
           const display =
@@ -735,14 +741,14 @@ export function mountTillyInsightsRoutes(app: Express): void {
             sig;
           const existing = out.get(sig);
           if (existing) {
-            existing.monthTotal += r.amount;
+            existing.monthTotal += absAmt;
             existing.count += 1;
             if (r.date > existing.lastDate) existing.lastDate = r.date;
           } else {
             out.set(sig, {
               signature: sig,
               displayName: display,
-              monthTotal: r.amount,
+              monthTotal: absAmt,
               count: 1,
               lastDate: r.date,
             });
