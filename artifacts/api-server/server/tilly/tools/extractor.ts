@@ -32,6 +32,8 @@ const ToolArgsSchema = z.object({
   // markPaymentToOwnCard
   merchantSignature: z.string().optional(),
   cardName: z.string().optional(),
+  // markIncomeAsTransfer
+  sourceName: z.string().optional(),
   // hideCategoryFromSpend
   category: z.string().optional(),
   // pinToHome
@@ -51,6 +53,7 @@ const ToolCallSchema = z.object({
     "hideCategoryFromSpend",
     "pinToHome",
     "setOnboardingField",
+    "markIncomeAsTransfer",
     // Inverse
     "unhideCategory",
     "removePaymentToOwnCardAlias",
@@ -96,6 +99,11 @@ Available tools:
 4. pinToHome — when the user wants Tilly to add a tile to the Today (home) screen.
    Triggers: "show my subscriptions on home", "pin credit health to today", "add my upcoming bills to the front page".
    Args: { tileKind: string (one of: subscriptions_overview, credit_health, spending_vs_avg, upcoming_bills, debt_breakdown) }
+
+5b. markIncomeAsTransfer — INCOME-SIDE mirror of markPaymentToOwnCard. Fire when the user clarifies that a deposit Tilly is treating as income is actually a WASH — money they immediately forward back out (employer expense reimbursement to pay a company card, a parent's pass-through rent contribution, a tax refund they immediately move). The deposit shouldn't count as income because the matching outflow shouldn't count as spend, and we already exclude transfers from spend.
+   Triggers: "the $4000 deposit isn't real income, it's for my company card", "my employer reimburses my expenses and I move it straight to the corporate Amex — stop counting that as pay", "TD deposits aren't pay, they're reimbursements", "my parents send rent that I forward — that's not income".
+   Args: { sourceName: string (user's description of the source — "TD reimbursement", "Acme expense float", "parents"), reason?: string }
+   Do NOT fire for actual paychecks the user is happy to count as real take-home. The signal must be "this is a wash / I immediately forward it / it's not real income."
 
 5. setOnboardingField — when the user tells Tilly something about themselves that maps to a known onboarding field.
    Triggers: "I'm 38", "I support 4 people", "I live in Toronto", "I'm salaried", "I go to Laurier".

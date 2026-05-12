@@ -76,6 +76,13 @@ export const TOOL_NAMES = [
   // she follows up on. Defends against the impulse-checkout failure
   // mode where desire fires → user buys before pausing.
   "addToWatchlist",
+  // Mirror of markPaymentToOwnCard for the INCOME side. The user gets
+  // a deposit (employer reimbursement, business expense float, parent's
+  // transfer to cover rent, etc.) that Plaid sees as income, but it's
+  // a wash — they immediately transfer it back out to pay a card or
+  // forward it on. Flipping it from "income" → "transfers" stops it
+  // inflating the savings rate + breathing-room math.
+  "markIncomeAsTransfer",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -98,6 +105,15 @@ export type ToolResult =
       // How many existing transactions got reclassified out of "loans"
       reclassifiedCount: number;
       // Approx $ that no longer counts as loan-spend.
+      reclassifiedAmount: number;
+    }
+  | {
+      kind: "income_aliased_to_transfer";
+      merchantSignature: string;
+      sourceName: string;
+      // How many existing income rows flipped to "transfers"
+      reclassifiedCount: number;
+      // Approx $ that no longer counts as income.
       reclassifiedAmount: number;
     }
   | {
@@ -278,6 +294,18 @@ const addToWatchlistSchema = z.object({
   estimatedPrice: z.number().positive().optional(),
 });
 
+const markIncomeAsTransferSchema = z.object({
+  /** The user-described source of the deposit ("TD reimbursement",
+   * "Acme expense reimbursement", "Mom") — keywords get extracted and
+   * fuzzy-matched against income rows in plaid_transactions, same as
+   * markPaymentToOwnCard does for card payments. */
+  sourceName: z.string().min(1),
+  /** Optional explicit merchant signature when the user has already
+   * referenced a specific tx (rare; sourceName usually carries it). */
+  merchantSignature: z.string().optional(),
+  reason: z.string().optional(),
+});
+
 const TOOL_SCHEMAS: Record<ToolName, z.ZodType> = {
   createDream: createDreamSchema,
   markPaymentToOwnCard: markPaymentToOwnCardSchema,
@@ -294,6 +322,7 @@ const TOOL_SCHEMAS: Record<ToolName, z.ZodType> = {
   findOptions: findOptionsSchema,
   predictSalePrice: predictSalePriceSchema,
   addToWatchlist: addToWatchlistSchema,
+  markIncomeAsTransfer: markIncomeAsTransferSchema,
 };
 
 // ─── Tool descriptions for the LLM ──────────────────────────────────────
@@ -401,6 +430,20 @@ const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
     "your watchlist — I'll check in.' DO NOT call this for items the " +
     "user is asking about for someone else, or items they've already " +
     "purchased.",
+  markIncomeAsTransfer:
+    "SURGICAL FIX. INCOME-SIDE INVERSE of markPaymentToOwnCard. Use when " +
+    "the user clarifies that a deposit Tilly is treating as income is " +
+    "actually a wash — money they immediately forward on (employer expense " +
+    "reimbursement that they transfer to pay a corporate card, a parent's " +
+    "rent contribution that passes through, a tax refund they're not " +
+    "spending). Triggers: 'that $4000 deposit isn't real income, I move it " +
+    "to my company card', 'the TD reimbursement isn't pay, stop counting " +
+    "it', 'my employer's expense float should be a transfer, not income'. " +
+    "sourceName: the user's description of the source ('TD reimbursement', " +
+    "'Acme expense float', 'parents'). Tilly will fuzzy-match this against " +
+    "the income merchants in their data and flip every match from 'income' " +
+    "to 'transfers' retroactively + alias them for future syncs. NEVER " +
+    "fire this for actual paychecks the user is happy to count.",
 };
 
 /**
@@ -544,7 +587,128 @@ export async function executeTool(
         parsed.data as z.infer<typeof addToWatchlistSchema>,
         ctx,
       );
+    case "markIncomeAsTransfer":
+      return await runMarkIncomeAsTransfer(
+        parsed.data as z.infer<typeof markIncomeAsTransferSchema>,
+        ctx,
+      );
   }
+}
+
+/**
+ * Income → transfers alias. Mirrors runMarkPaymentToOwnCard but
+ * targets `ourCategory === 'income'` rows instead of card-payment
+ * outflows. Persists `alias_income_to_transfer:<sig>` prefs so future
+ * syncs route the same merchant to transfers, and retroactively
+ * flips matching existing rows.
+ *
+ * NOTE: income rows don't have linked expenses (the sync handler
+ * explicitly skips the mirror for ourCategory='income'), so we only
+ * update plaid_transactions — no expenses table cascade needed.
+ */
+async function runMarkIncomeAsTransfer(
+  args: z.infer<typeof markIncomeAsTransferSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  const explicitSig = args.merchantSignature
+    ? merchantSignature({
+        merchantName: args.merchantSignature,
+        name: args.merchantSignature,
+        amount: 0,
+      })
+    : "";
+  const sourceKeywords = args.sourceName
+    .toLowerCase()
+    .split(/[\s\-_]+/)
+    .map((w) => w.replace(/[^a-z0-9]/g, ""))
+    // Drop noise words that match too many merchants; we need at
+    // least one distinctive token (employer name, bank, "td", "rbc").
+    .filter(
+      (w) =>
+        w.length >= 3 &&
+        !["the", "and", "for", "from", "deposit", "income", "payment"].includes(w),
+    );
+
+  // Scan plaid_transactions for INCOME rows whose merchant name overlaps
+  // with the sourceKeywords. We constrain to ourCategory='income' so a
+  // typo like "td" doesn't accidentally flip every TD outflow too.
+  const incomeTx = await db
+    .select()
+    .from(plaidTransactions)
+    .where(
+      and(
+        eq(plaidTransactions.coupleId, ctx.householdId),
+        eq(plaidTransactions.ourCategory, "income"),
+      ),
+    )
+    .limit(500);
+  const candidateSigs = new Set<string>();
+  if (explicitSig) candidateSigs.add(explicitSig);
+  for (const tx of incomeTx) {
+    const sig = merchantSignature(tx);
+    const haystack = `${tx.merchantName ?? ""} ${tx.name ?? ""}`.toLowerCase();
+    if (sourceKeywords.length === 0) continue;
+    const allMatch = sourceKeywords.every((kw) => haystack.includes(kw));
+    if (allMatch) candidateSigs.add(sig);
+  }
+
+  // Persist alias prefs for each candidate signature.
+  for (const sig of candidateSigs) {
+    await db
+      .insert(userPreferences)
+      .values({
+        userId: ctx.userId,
+        scope: "plaid",
+        key: `alias_income_to_transfer:${sig}`,
+        value: {
+          sourceName: args.sourceName,
+          reason: args.reason ?? "user-confirmed wash deposit",
+          since: new Date().toISOString(),
+        },
+      })
+      .onConflictDoUpdate({
+        target: [userPreferences.userId, userPreferences.scope, userPreferences.key],
+        set: {
+          value: {
+            sourceName: args.sourceName,
+            reason: args.reason ?? "user-confirmed wash deposit",
+            since: new Date().toISOString(),
+          },
+          updatedAt: new Date(),
+        },
+      });
+  }
+
+  // Retroactively flip matching income rows. Two match-conditions: the
+  // explicit signature path OR a name-keyword match (catches future
+  // stranger-named rows that ARE the same source). We re-query the
+  // full income tx set because the keyword path needs the same name
+  // search we ran above.
+  let reclassifiedCount = 0;
+  let reclassifiedAmount = 0;
+  for (const tx of incomeTx) {
+    const sig = merchantSignature(tx);
+    const haystack = `${tx.merchantName ?? ""} ${tx.name ?? ""}`.toLowerCase();
+    const sigMatch = candidateSigs.has(sig);
+    const nameMatch =
+      sourceKeywords.length > 0 &&
+      sourceKeywords.every((kw) => haystack.includes(kw));
+    if (!sigMatch && !nameMatch) continue;
+    await db
+      .update(plaidTransactions)
+      .set({ ourCategory: "transfers" })
+      .where(eq(plaidTransactions.id, tx.id));
+    reclassifiedCount++;
+    reclassifiedAmount += Math.abs(tx.amount);
+  }
+
+  return {
+    kind: "income_aliased_to_transfer",
+    merchantSignature: [...candidateSigs].join(", ") || explicitSig,
+    sourceName: args.sourceName,
+    reclassifiedCount,
+    reclassifiedAmount: Math.round(reclassifiedAmount),
+  };
 }
 
 async function runAddToWatchlist(

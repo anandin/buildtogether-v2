@@ -110,6 +110,13 @@ type ToolPreview =
       itemId: string;
       name: string;
       estimatedPrice: number | null;
+    }
+  | {
+      kind: "income_aliased_to_transfer";
+      merchantSignature: string;
+      sourceName: string;
+      reclassifiedCount: number;
+      reclassifiedAmount: number;
     };
 
 // Backward-compat alias for the existing single-tool field.
@@ -959,6 +966,50 @@ function ToolPreviewCard({
             }}
           >
             Not what you meant? Tell me to bring {result.cardName} back.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (result.kind === "income_aliased_to_transfer") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>↔️</Text>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={{
+              fontFamily: BTFonts.serif,
+              fontSize: 13,
+              fontWeight: "600",
+              color: t.ink,
+            }}
+          >
+            Stopped counting {result.sourceName} as income
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 11,
+              color: t.inkSoft,
+              marginTop: 2,
+            }}
+          >
+            {result.reclassifiedCount} past deposit
+            {result.reclassifiedCount === 1 ? "" : "s"} · $
+            {Math.round(result.reclassifiedAmount).toLocaleString()} treated as
+            transfer now
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 10,
+              color: t.inkMute,
+              marginTop: 4,
+              fontStyle: "italic",
+            }}
+          >
+            Your savings rate just dropped accordingly. Say so if you want it back.
           </Text>
         </View>
       </View>

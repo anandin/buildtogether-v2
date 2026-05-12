@@ -189,6 +189,13 @@ export type TillyToolResult =
       itemId: string;
       name: string;
       estimatedPrice: number | null;
+    }
+  | {
+      kind: "income_aliased_to_transfer";
+      merchantSignature: string;
+      sourceName: string;
+      reclassifiedCount: number;
+      reclassifiedAmount: number;
     };
 
 export type UserPrefsResponse = {

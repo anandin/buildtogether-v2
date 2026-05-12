@@ -218,6 +218,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .filter((k) => k.startsWith("alias_payment_to_card:"))
         .map((k) => k.slice("alias_payment_to_card:".length)),
     );
+    // Income-side alias map — deposits the user has flagged as wash
+    // transfers (employer reimbursements they immediately forward on,
+    // parents' pass-through rent contributions, etc.). Flips
+    // ourCategory from 'income' to 'transfers' on future syncs.
+    const incomeAliasedSignatures = new Set(
+      aliasPrefs
+        .map((p) => p.key)
+        .filter((k) => k.startsWith("alias_income_to_transfer:"))
+        .map((k) => k.slice("alias_income_to_transfer:".length)),
+    );
 
     while (hasMore) {
       const resp: any = await plaid.transactionsSync({
@@ -229,11 +239,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const tx of data.added || []) {
         if (!shouldImportPlaidTransaction(tx)) continue;
 
-        // Compute signature first so we can check alias_payment_to_card
-        // before letting mapPlaidCategory run its keyword + PFC chain.
+        // Compute signature first so we can check alias maps before
+        // letting mapPlaidCategory run its keyword + PFC chain. Both
+        // aliases route to "transfers" — alias_payment_to_card catches
+        // outflows the user flagged as "this is me paying my own card",
+        // alias_income_to_transfer catches inflows the user flagged as
+        // "this is a wash, not real income".
         const sig = merchantSignature(tx);
         const isAliasedToOwnCard = aliasedSignatures.has(sig);
-        const ourCat = isAliasedToOwnCard
+        const isAliasedFromIncome = incomeAliasedSignatures.has(sig);
+        const ourCat = isAliasedToOwnCard || isAliasedFromIncome
           ? "transfers"
           : mapPlaidCategory(tx.category, tx.personal_finance_category, {
               name: tx.name ?? null,
