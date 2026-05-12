@@ -34,6 +34,7 @@ import { getToolDefs, type ToolResult } from "../../tilly/tools/registry";
 import { runWithTools } from "../../tilly/llm/tool-loop";
 import { OpenRouterLLM } from "../../tilly/llm/openrouter";
 import { buildSystemPrompts } from "../../tilly/persona";
+import { buildCashFlowSummary } from "../../tilly/cash-flow-summary";
 import type { LLMTurn } from "../../tilly/llm/types";
 import { enqueueScout } from "../../tilly/scout/orchestrator";
 import { distillUser } from "../../tilly/nightly-distiller";
@@ -611,6 +612,20 @@ export function mountTillyChatRoutes(app: Express): void {
           sections.push(
             `What you remember about them (in your voice, from RAG):\n${memSnippets.map((s) => `- ${s}`).join("\n")}`,
           );
+        }
+
+        // Cash-flow timing block — the timeline of money in + out so
+        // Tilly references upcoming paychecks and recurring bills BEFORE
+        // answering "can I afford X" rather than only looking at the
+        // headline. Non-fatal: if the query fails we just skip the
+        // block; the reply still goes out.
+        try {
+          const cashFlow = await buildCashFlowSummary(userId, householdId);
+          if (cashFlow.hasData) {
+            sections.push(cashFlow.text);
+          }
+        } catch (cfErr) {
+          console.warn("[chat] cash-flow summary lookup failed:", cfErr);
         }
 
         // Task #24 follow-up context: if this household ran an analysis

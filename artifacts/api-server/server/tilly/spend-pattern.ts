@@ -234,6 +234,11 @@ const FIXED_OBLIGATION_CATS = new Set([
   "taxes",
   "transfers",
   "fees",
+  // Adjustments — see isAdjustment() in buildMonthOrYearPattern. They
+  // belong in the "money flow" bucket on Spend (so the user can see
+  // them) but get stripped from the Horizon panel + totalSpent math.
+  "cashback",
+  "credit_adjustment",
 ]);
 
 /**
@@ -829,17 +834,22 @@ async function buildMonthOrYearPattern(
     });
 
   const totalDiscretionary = discretionary.reduce((s, t) => s + t.amount, 0);
-  // Transfers are money moved between the user's own accounts (e.g.
-  // checking → savings, paying down a credit card). They are NOT real
-  // outflow — they net to zero against the wallet. Excluding them from
-  // BOTH the underwater math AND the Horizon panel bar set is the only
-  // way "did the line hold?" stays meaningful. Other fixed cats
-  // (loans / taxes / fees / insurance) DO count — those are real
-  // money leaving the household.
-  const isTransfer = (t: UnifiedTx) =>
-    (t.category || "").toLowerCase() === "transfers";
-  const fixedExclTransfers = fixedRows.filter((t) => !isTransfer(t));
-  const totalFixed = fixedExclTransfers.reduce((s, t) => s + t.amount, 0);
+  // Adjustments — money flows that net to zero against the wallet and
+  // shouldn't count toward "did the line hold?" math:
+  //   - transfers: own-account moves (checking → savings, CC payments)
+  //   - cashback: a partial refund of spend already counted
+  //   - credit_adjustment: statement credits, returned goods, etc.
+  // The user reclassifies income into these via the cash-flow page or
+  // markIncomeAsTransfer chat tool; the Plaid sync handler also routes
+  // matching aliases. Everything here is excluded from totalSpent AND
+  // from the Horizon panel bar set. Other fixed cats (loans / taxes /
+  // fees / insurance) DO count — those are real money leaving.
+  const isAdjustment = (t: UnifiedTx) => {
+    const c = (t.category || "").toLowerCase();
+    return c === "transfers" || c === "cashback" || c === "credit_adjustment";
+  };
+  const fixedExclAdjustments = fixedRows.filter((t) => !isAdjustment(t));
+  const totalFixed = fixedExclAdjustments.reduce((s, t) => s + t.amount, 0);
   // For Horizon, the bars hanging from the income line represent ALL
   // outflow — loans + subs + groceries + everything *except transfers*.
   const totalSpent = totalDiscretionary + totalFixed;

@@ -34,6 +34,11 @@ type Props = { onBack: () => void };
 
 type CategoryRow = {
   name: string;
+  /** "income"  → real take-home (paychecks)
+   *  "adjustment" → transfers / cashback / credit_adjustment
+   *  "spend"   → counted toward the spend headline by default
+   *              (unless the user has toggled it to money-flow only) */
+  kind?: "income" | "adjustment" | "spend";
   monthTotal: number;
   transactionCount: number;
   includeInSpend: boolean;
@@ -64,8 +69,16 @@ export function BTCategories({ onBack }: Props) {
   });
 
   const list = (cats.data?.categories ?? []) as CategoryRow[];
-  const included = list.filter((c) => c.includeInSpend);
-  const excluded = list.filter((c) => !c.includeInSpend);
+  // Three-bucket split matching the server's cash-flow taxonomy:
+  //   income      → real take-home
+  //   adjustment  → wash transactions (transfers, cashback, credit_adjustment)
+  //   spend       → everything else, subject to the include-in-spend toggle
+  //                 (only this bucket can be toggled)
+  const incomeRows = list.filter((c) => c.kind === "income");
+  const adjustmentRows = list.filter((c) => c.kind === "adjustment");
+  const spendRows = list.filter((c) => c.kind === "spend" || !c.kind);
+  const included = spendRows.filter((c) => c.includeInSpend);
+  const excluded = spendRows.filter((c) => !c.includeInSpend);
   const allCategoryNames = useMemo(() => list.map((c) => c.name), [list]);
 
   return (
@@ -86,7 +99,7 @@ export function BTCategories({ onBack }: Props) {
         <View style={{ flex: 1 }}>
           <BTLabel color={t.inkMute}>You · all synced transactions</BTLabel>
           <BTSerif size={26} color={t.ink} weight="500" style={{ marginTop: 6 }}>
-            Categories.
+            Categories · cash flow.
           </BTSerif>
         </View>
         <Pressable
@@ -121,9 +134,9 @@ export function BTCategories({ onBack }: Props) {
             lineHeight: 21,
           }}
         >
-          What counts toward your monthly spend total. Loans, taxes,
-          transfers, and fees default to "money flow only" — but you can
-          toggle anything in or out below.
+          Money in, money out, and the wash transactions in between. Tap
+          any merchant to reclassify — a stray reimbursement can become
+          a transfer, a points-back rebate can become cashback.
         </Text>
 
         {cats.isLoading ? (
@@ -144,6 +157,30 @@ export function BTCategories({ onBack }: Props) {
           </Text>
         ) : (
           <>
+            {incomeRows.length > 0 ? (
+              <Section
+                title="Money in"
+                caption={`${incomeRows.length} source${incomeRows.length === 1 ? "" : "s"}`}
+                rows={incomeRows}
+                t={t}
+                onToggle={() => {}}
+                onDrill={(cat) => setDrillCategory(cat.name)}
+                pending={undefined}
+                hideToggle
+              />
+            ) : null}
+            {adjustmentRows.length > 0 ? (
+              <Section
+                title="Wash · adjustments"
+                caption={`${adjustmentRows.length} categor${adjustmentRows.length === 1 ? "y" : "ies"} — neither spend nor income`}
+                rows={adjustmentRows}
+                t={t}
+                onToggle={() => {}}
+                onDrill={(cat) => setDrillCategory(cat.name)}
+                pending={undefined}
+                hideToggle
+              />
+            ) : null}
             <Section
               title="Counted in monthly spend"
               caption={`${included.length} categor${included.length === 1 ? "y" : "ies"}`}
@@ -416,7 +453,16 @@ function CategoryPicker({
 
   const options = useMemo(() => {
     // Include the standard set so even an empty deployment offers them.
+    // `income` + the three adjustment kinds (transfers, cashback,
+    // credit_adjustment) are always present so the user can reclassify
+    // a deposit out of income without having to type the category name
+    // by hand. The server doesn't enforce an enum — these become first-
+    // class ourCategory values once the user picks them.
     const defaults = [
+      "income",
+      "transfers",
+      "cashback",
+      "credit_adjustment",
       "groceries",
       "restaurants",
       "transport",
@@ -433,7 +479,6 @@ function CategoryPicker({
       "insurance",
       "fees",
       "taxes",
-      "transfers",
       "other",
     ];
     const set = new Set<string>([...defaults, ...allCategories.map((c) => c.toLowerCase())]);
@@ -579,6 +624,7 @@ function Section({
   onToggle,
   onDrill,
   pending,
+  hideToggle,
 }: {
   title: string;
   caption: string;
@@ -587,8 +633,18 @@ function Section({
   onToggle: (cat: CategoryRow, next: boolean) => void;
   onDrill: (cat: CategoryRow) => void;
   pending?: string;
+  /** Income + adjustment rows have no meaningful "include in spend"
+   * toggle (they're never spend) — hide the Switch in those sections. */
+  hideToggle?: boolean;
 }) {
   if (rows.length === 0) return null;
+  // Income gets a mild green tint matching the Spend "Where it comes
+  // from" section so the same money is colour-coded the same way
+  // everywhere.
+  const sectionBg =
+    title === "Money in"
+      ? `${t.good}1a`
+      : t.surface;
   return (
     <View style={{ gap: 8 }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" }}>
@@ -599,7 +655,7 @@ function Section({
       </View>
       <View
         style={{
-          backgroundColor: t.surface,
+          backgroundColor: sectionBg,
           borderRadius: 14,
           borderWidth: 1,
           borderColor: t.rule,
@@ -615,6 +671,7 @@ function Section({
               onToggle={onToggle}
               onDrill={onDrill}
               pending={pending === row.name}
+              hideToggle={hideToggle}
             />
           </React.Fragment>
         ))}
@@ -629,13 +686,16 @@ function Row({
   onToggle,
   onDrill,
   pending,
+  hideToggle,
 }: {
   row: CategoryRow;
   t: any;
   onToggle: (cat: CategoryRow, next: boolean) => void;
   onDrill: (cat: CategoryRow) => void;
   pending: boolean;
+  hideToggle?: boolean;
 }) {
+  const isIncome = row.kind === "income";
   return (
     <Pressable
       onPress={() => onDrill(row)}
@@ -652,27 +712,29 @@ function Row({
     >
       <View style={{ flex: 1 }}>
         <Text style={{ color: t.ink, fontFamily: BTFonts.serif, fontSize: 16, textTransform: "capitalize" }}>
-          {row.name}
+          {row.name.replace(/_/g, " ")}
         </Text>
         <Text
           style={{
-            color: t.inkMute,
+            color: isIncome ? t.good : t.inkMute,
             fontFamily: BTFonts.mono,
             fontSize: 10,
             marginTop: 3,
           }}
         >
-          ${Math.round(row.monthTotal).toLocaleString()} · {row.transactionCount} tx
-          {row.hasOverride ? " · custom" : row.isDefaultFixed ? " · default money-flow" : ""}
+          {isIncome ? "+" : ""}${Math.round(row.monthTotal).toLocaleString()} · {row.transactionCount} tx
+          {row.hasOverride ? " · custom" : row.isDefaultFixed && !isIncome ? " · default money-flow" : ""}
         </Text>
       </View>
-      <Switch
-        value={row.includeInSpend}
-        onValueChange={(next) => onToggle(row, next)}
-        disabled={pending}
-        trackColor={{ false: t.rule, true: t.accent }}
-        thumbColor={row.includeInSpend ? t.surface : t.surface}
-      />
+      {hideToggle ? null : (
+        <Switch
+          value={row.includeInSpend}
+          onValueChange={(next) => onToggle(row, next)}
+          disabled={pending}
+          trackColor={{ false: t.rule, true: t.accent }}
+          thumbColor={row.includeInSpend ? t.surface : t.surface}
+        />
+      )}
       <Text
         style={{
           color: t.inkMute,

@@ -349,8 +349,8 @@ function BTProfileMain({
           <SettingsEntry
             t={t}
             icon="tag"
-            label="Categorize spend"
-            description="Pick which categories count toward your monthly spend total — Lincoln car loan, Scotia transfers, etc."
+            label="Categories · cash flow"
+            description="Money in, money out, and the wash transactions in between. Tap any merchant to reclassify — reimbursements, cashback, credit adjustments, transfers."
             onPress={onOpenCategories}
           />
           <BTRule color={t.rule} />

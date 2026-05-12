@@ -606,12 +606,18 @@ export function mountTillyInsightsRoutes(app: Express): void {
           ),
         );
 
+      // Sum totals per category. INCOME rows in Plaid come through with
+      // negative amounts (money in); we use Math.abs so the income row
+      // surfaces as a positive total alongside the spend categories —
+      // that lets the cash-flow page render both in one list. The
+      // `kind` field (income / adjustment / spend) tells the client
+      // how to style + which actions to offer.
       const totals = new Map<string, { monthTotal: number; count: number }>();
       for (const r of txRows) {
-        if (typeof r.amount !== "number" || r.amount <= 0) continue;
+        if (typeof r.amount !== "number" || r.amount === 0) continue;
         const cat = (r.category || "other").toLowerCase();
         const t = totals.get(cat) ?? { monthTotal: 0, count: 0 };
-        t.monthTotal += r.amount;
+        t.monthTotal += Math.abs(r.amount);
         t.count += 1;
         totals.set(cat, t);
       }
@@ -633,15 +639,37 @@ export function mountTillyInsightsRoutes(app: Express): void {
         if (typeof v?.includeInSpend === "boolean") overrides.set(cat, v.includeInSpend);
       }
 
-      const DEFAULT_FIXED = new Set(["loans", "taxes", "transfers", "fees"]);
+      // Cash-flow taxonomy:
+      //   income     — paychecks / take-home (counted toward income line)
+      //   adjustment — transfers, cashback, credit_adjustment
+      //                (net-zero against the wallet; excluded from spend
+      //                AND from income totals)
+      //   spend      — everything else; subject to the include_in_spend
+      //                pref toggle. Defaults to excluded for loans/
+      //                taxes/fees (treated as money-flow-only).
+      const ADJUSTMENT = new Set(["transfers", "cashback", "credit_adjustment"]);
+      const DEFAULT_FIXED = new Set(["loans", "taxes", "fees"]);
+      type CashFlowKind = "income" | "adjustment" | "spend";
       const categories = Array.from(totals.entries())
         .map(([name, t]) => {
-          const isDefaultFixed = DEFAULT_FIXED.has(name);
+          let kind: CashFlowKind;
+          if (name === "income") kind = "income";
+          else if (ADJUSTMENT.has(name)) kind = "adjustment";
+          else kind = "spend";
+          const isDefaultFixed =
+            kind === "income" || kind === "adjustment" || DEFAULT_FIXED.has(name);
           const override = overrides.get(name);
+          // Only `spend` rows can be toggled in/out of the headline.
+          // Income + adjustments are never in spend by definition.
           const includeInSpend =
-            override !== undefined ? override : !isDefaultFixed;
+            kind !== "spend"
+              ? false
+              : override !== undefined
+                ? override
+                : !isDefaultFixed;
           return {
             name,
+            kind,
             monthTotal: Math.round(t.monthTotal * 100) / 100,
             transactionCount: t.count,
             includeInSpend,
