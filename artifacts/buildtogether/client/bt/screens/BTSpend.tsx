@@ -141,6 +141,83 @@ export function BTSpend() {
   );
 }
 
+/** Week-view header strip: just the period label + prev/next chevrons.
+ * No verdict pill because week intentionally skips the Horizon math
+ * (paycheck cadence ≠ weekly). Mirrors HorizonHeader's chevron shape
+ * so the two views feel consistent. */
+function WeekNavHeader({
+  t,
+  label,
+  onPrev,
+  onNext,
+  canGoNext,
+}: {
+  t: BTTheme;
+  label: string;
+  onPrev: () => void;
+  onNext: () => void;
+  canGoNext: boolean;
+}) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+      <Pressable
+        onPress={onPrev}
+        accessibilityRole="button"
+        accessibilityLabel="Previous week"
+        hitSlop={10}
+        style={({ pressed }) => ({
+          width: 28,
+          height: 28,
+          borderRadius: 14,
+          borderWidth: 1,
+          borderColor: t.rule,
+          alignItems: "center",
+          justifyContent: "center",
+          opacity: pressed ? 0.5 : 1,
+        })}
+      >
+        <Text style={{ color: t.ink, fontSize: 14, fontWeight: "700", marginTop: -2 }}>
+          ‹
+        </Text>
+      </Pressable>
+      <Text
+        style={{
+          fontSize: 11,
+          letterSpacing: 1.8,
+          color: t.inkMute,
+          fontFamily: BTFonts.sans,
+          fontWeight: "700",
+          textTransform: "uppercase",
+          flex: 1,
+        }}
+      >
+        {label}
+      </Text>
+      <Pressable
+        onPress={canGoNext ? onNext : undefined}
+        accessibilityRole="button"
+        accessibilityLabel="Next week"
+        accessibilityState={{ disabled: !canGoNext }}
+        hitSlop={10}
+        style={({ pressed }) => ({
+          width: 28,
+          height: 28,
+          borderRadius: 14,
+          borderWidth: 1,
+          borderColor: t.rule,
+          alignItems: "center",
+          justifyContent: "center",
+          opacity: !canGoNext ? 0.25 : pressed ? 0.5 : 1,
+        })}
+      >
+        <Text style={{ color: t.ink, fontSize: 14, fontWeight: "700", marginTop: -2 }}>
+          ›
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
 /** Horizon header strip: range label (NOVEMBER / YEAR-TO-DATE) + verdict pill.
  * When onPrev/onNext are supplied, renders chevron arrows on either side
  * of the label for navigating to adjacent periods. Next arrow is hidden
@@ -1200,6 +1277,10 @@ function BTSpendBody() {
     "today" in live && Array.isArray(live.today) ? live.today : [];
   const paycheck = "paycheck" in live ? live.paycheck ?? null : null;
   const horizon = "horizon" in live ? live.horizon ?? null : null;
+  const incomeSources =
+    "incomeSources" in live && Array.isArray(live.incomeSources)
+      ? (live.incomeSources as SpendCategory[])
+      : [];
   // hiddenCategories was read at the top of the component (Rules of
   // Hooks). Tilly-driven category filter — chat sends a
   // hideCategoryFromSpend tool, server writes the pref, this screen
@@ -1335,8 +1416,14 @@ function BTSpendBody() {
           </>
         ) : (
           <>
+            <WeekNavHeader
+              t={t}
+              label={periodLabel ?? "This week's pattern"}
+              onPrev={goPrev}
+              onNext={goNext}
+              canGoNext={canGoNext}
+            />
             <View style={{ gap: 8 }}>
-              <BTLabel color={t.inkMute}>This week's pattern</BTLabel>
               {italicSpan ? (
                 <BTSerif size={30} color={t.ink} weight="500">
                   ${spent.toLocaleString()} spent.{" "}
@@ -1347,7 +1434,8 @@ function BTSpendBody() {
                 </BTSerif>
               ) : (
                 <BTSerif size={30} color={t.ink} weight="500">
-                  ${spent.toLocaleString()} spent this week.
+                  ${spent.toLocaleString()} spent{" "}
+                  {offset === 0 ? "this week." : "that week."}
                 </BTSerif>
               )}
             </View>
@@ -1357,6 +1445,23 @@ function BTSpendBody() {
             </BTCard>
           </>
         )}
+
+        {/* Income breakdown — "Where it comes from". Lives ABOVE
+            spend so the flow reads top-to-bottom: money in → money out.
+            Only renders when there's at least one income source in the
+            period; otherwise hidden so the empty "Where it comes from"
+            label doesn't make the screen feel partly-broken. */}
+        {incomeSources.length > 0 ? (
+          <View style={{ gap: 10 }}>
+            <BTLabel color={t.inkMute}>
+              Where it comes from{" "}
+              {range === "week" ? "this week" : range === "month" ? "this month" : "this year"}
+            </BTLabel>
+            {incomeSources.map((c) => (
+              <CategoryRow key={`income-${c.id}`} c={c} t={t} variant="income" />
+            ))}
+          </View>
+        ) : null}
 
         {/* Category breakdown — always rendered, regardless of range.
             On month/year the Horizon panel shows TRUNCATED bar labels
@@ -1630,7 +1735,18 @@ function BTSpendBody() {
 // Tappable row that collapses by default and expands to show each transaction
 // inside the category. Solves the "other: $369 — but what is it??" problem.
 
-function CategoryRow({ c, t }: { c: SpendCategory; t: BTTheme }) {
+function CategoryRow({
+  c,
+  t,
+  variant,
+}: {
+  c: SpendCategory;
+  t: BTTheme;
+  /** "income" tints the card a mild green to match the horizon green
+   * tone (signals inflow at a glance) and flips the amount sign to a
+   * "+" prefix. Defaults to "spend" otherwise. */
+  variant?: "spend" | "income";
+}) {
   const [open, setOpen] = useState(false);
   const hueColor =
     c.hue === "accent"
@@ -1647,6 +1763,16 @@ function CategoryRow({ c, t }: { c: SpendCategory; t: BTTheme }) {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setOpen((v) => !v);
   };
+  const isIncome = variant === "income";
+  // Background tint for income rows — mild green at low alpha to match
+  // the horizon sky tone without competing for attention against the
+  // spend cards. `1f` (12%) was the lowest value that still reads as
+  // distinct on the bloom + dusk themes.
+  const bg = isIncome
+    ? `${t.good}1f`
+    : c.softSpot
+      ? t.accentSoft
+      : t.surface;
 
   return (
     <Pressable
@@ -1654,7 +1780,7 @@ function CategoryRow({ c, t }: { c: SpendCategory; t: BTTheme }) {
       accessibilityRole="button"
       accessibilityLabel={`${c.name} — $${c.amt}. Tap to ${open ? "collapse" : "expand"}`}
       style={({ pressed }) => ({
-        backgroundColor: c.softSpot ? t.accentSoft : t.surface,
+        backgroundColor: bg,
         borderRadius: 16,
         borderWidth: 1,
         borderColor: t.rule,
@@ -1684,7 +1810,9 @@ function CategoryRow({ c, t }: { c: SpendCategory; t: BTTheme }) {
           ) : null}
         </View>
         <View style={{ alignItems: "flex-end", gap: 2 }}>
-          <BTNum size={24} color={t.ink}>${c.amt}</BTNum>
+          <BTNum size={24} color={isIncome ? t.good : t.ink}>
+            {isIncome ? "+" : ""}${c.amt}
+          </BTNum>
           <Text style={{ color: t.inkMute, fontFamily: BTFonts.mono, fontSize: 9 }}>
             {open ? "▲ less" : "▼ detail"}
           </Text>

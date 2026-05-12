@@ -331,6 +331,10 @@ export type SpendPattern =
       /** Human-readable label for the currently-rendered period
        * ("May 2026" / "2025"). Drives the BTSpend prev/next nav header. */
       periodLabel?: string;
+      /** Income sources for the period, grouped by merchant. Same
+       * shape as `categories` so CategoryRow renders it. Drives the
+       * "Where it comes from" section on BTSpend. */
+      incomeSources?: SpendCategory[];
     };
 
 export type CreditSnapshot =

@@ -168,6 +168,12 @@ export type WeeklyPattern = {
   /** Human-readable label for the currently-rendered period, e.g.
    * "May 2026" / "2025". Drives the header for prev/next nav. */
   periodLabel?: string;
+  /** Income sources for the period — grouped by merchant, same shape
+   * as `categories` so the client can reuse CategoryRow. Drives the
+   * "Where it comes from" section. Excludes rows the user has aliased
+   * to transfers via markIncomeAsTransfer (they're no longer in
+   * ourCategory='income'). */
+  incomeSources?: SpendCategory[];
 };
 
 /** Verdict tone — maps to theme color slots on the client. The client
@@ -425,21 +431,29 @@ export async function buildWeeklyPattern(
   if (range !== "week") {
     return buildMonthOrYearPattern(householdId, userId, range, now, tz, offset);
   }
-  // Week range doesn't honor offset yet — keep current behavior so the
-  // existing rolling-7 fallback + soft-spot detection don't get
-  // disturbed. If the user navigates while on Week, we just show the
-  // current week.
-  // === Week (existing logic below) ===
+  // === Week (existing logic below, now offset-aware) ===
   // Resolve the user's timezone once. Vercel runs UTC; computing
   // weekStart from `new Date()` flips the week 4-5h early for an
   // East-Coast user (Sunday 9pm Toronto = Monday 1am UTC → "$0 this
   // week"). Use the user's city → IANA tz instead.
-  const weekStartIso = localWeekStartIso(now, tz);
-  const todayIdx = localDayOfWeekIndex(now, tz);
+  //
+  // offset shifts the week boundary backwards by N weeks. offset=0
+  // returns the current week; offset=-1 returns last week (Mon-Sun
+  // in local tz), etc. We compute weekStart for offset=0 via the
+  // existing helper, then subtract 7*|offset| days. weekEnd = start+6.
+  const currentWeekStartIso = localWeekStartIso(now, tz);
+  const weekStartIso =
+    offset === 0
+      ? currentWeekStartIso
+      : addDaysIso(currentWeekStartIso, offset * 7);
+  const weekEndIso = addDaysIso(weekStartIso, 6);
+  const isCurrentWeek = offset === 0;
+  const todayIdx = isCurrentWeek ? localDayOfWeekIndex(now, tz) : -1;
   // For the 8-week trailing window for soft-spot baselines we just need
   // a safe lower bound — using 9 weeks back from the local week start
-  // never undercuts.
-  const eightWeeksAgoIso = localDaysAgoIso(now, tz, 9 * 7);
+  // never undercuts. Anchor on the SELECTED week so historical weeks
+  // get their own correct trailing baseline (not the current week's).
+  const eightWeeksAgoIso = addDaysIso(weekStartIso, -9 * 7);
 
   const txRows = await readAllTransactions(householdId, eightWeeksAgoIso);
 
@@ -450,28 +464,31 @@ export async function buildWeeklyPattern(
   // The headline, bars, soft-spots, and primary categories list ALL use
   // discretionaryThisWeek so they're internally consistent. fixedThisWeek
   // surfaces the same buckets as their own section in the response.
-  let thisWeekTx = txRows.filter((t) => t.date >= weekStartIso);
+  // For historical weeks we constrain to [weekStart, weekEnd]; for the
+  // current week we keep the open-ended "from weekStart" to include
+  // anything pending-stamped today (rare edge but worth preserving).
+  let thisWeekTx = isCurrentWeek
+    ? txRows.filter((t) => t.date >= weekStartIso)
+    : txRows.filter((t) => t.date >= weekStartIso && t.date <= weekEndIso);
   const fixedCats = await resolveFixedObligationSet(userId);
   const isFixed = (t: UnifiedTx) =>
     fixedCats.has((t.category || "").toLowerCase());
-  // Rolling-7-day fallback: if the user has zero discretionary
-  // activity this week (Monday-to-now in their TZ) but plenty of
-  // activity over the last 7 rolling days, surface the rolling window
-  // instead of a $0 page. Avoids the "Spend looks broken on Sunday
-  // night" problem and the "first day of the week" empty state more
-  // generally. Marks the response with `rolling7Days: true` so the
-  // mobile can label the bars correctly ("Last 7 days" instead of
-  // "This week's pattern").
+  // Rolling-7-day fallback: only meaningful for the CURRENT week.
+  // When navigating back to historical weeks, an empty week is just
+  // an empty week — falling back to a rolling 7-day window would
+  // show the user the wrong period entirely.
   let usingRolling7 = false;
   let bucketLabel: "this_week" | "last_7_days" = "this_week";
-  const discretionaryThisWeekRaw = thisWeekTx.filter((t) => !isFixed(t));
-  if (discretionaryThisWeekRaw.length === 0) {
-    const sevenDaysAgoIso = localDaysAgoIso(now, tz, 6);
-    const rolling = txRows.filter((t) => t.date >= sevenDaysAgoIso);
-    if (rolling.filter((t) => !isFixed(t)).length > 0) {
-      thisWeekTx = rolling;
-      usingRolling7 = true;
-      bucketLabel = "last_7_days";
+  if (isCurrentWeek) {
+    const discretionaryThisWeekRaw = thisWeekTx.filter((t) => !isFixed(t));
+    if (discretionaryThisWeekRaw.length === 0) {
+      const sevenDaysAgoIso = localDaysAgoIso(now, tz, 6);
+      const rolling = txRows.filter((t) => t.date >= sevenDaysAgoIso);
+      if (rolling.filter((t) => !isFixed(t)).length > 0) {
+        thisWeekTx = rolling;
+        usingRolling7 = true;
+        bucketLabel = "last_7_days";
+      }
     }
   }
   const discretionaryThisWeek = thisWeekTx.filter((t) => !isFixed(t));
@@ -619,30 +636,40 @@ export async function buildWeeklyPattern(
   }
 
   // ─── Today mini-ledger: top 3 today ────────────────────────────────────
-  // Dedupe by (merchant, amount) so a Plaid sandbox dataset that
-  // repeats "United Airlines $500" three times shows once, leaving room
-  // for the student's own manual logs (Popeyes, coffee, etc.).
-  // todayIso for "transactions that landed today" — must be the user's
-  // local date, not UTC. On Sunday 9pm Toronto the UTC date is already
-  // Monday, so a UTC-derived todayIso would miss all of Sunday's tx.
+  // Only meaningful for the CURRENT week. When the user has navigated
+  // back to a prior week, "today" isn't inside that week — leave the
+  // ledger empty so the BTSpend header doesn't show a TODAY chip with
+  // no rows.
   const todayIso = localDateString(now, tz);
   const seen = new Set<string>();
-  const todayTx = txRows
-    .filter((t) => t.date === todayIso)
-    .filter((t) => {
-      const key = `${(t.who || t.category).toLowerCase()}::${t.amount}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 3)
-    .map((t, i) => ({
-      id: `today-${i}`,
-      who: t.who || t.category,
-      cat: t.category,
-      amt: t.amount,
-      time: "today",
-    }));
+  const todayTx = isCurrentWeek
+    ? txRows
+        .filter((t) => t.date === todayIso)
+        .filter((t) => {
+          const key = `${(t.who || t.category).toLowerCase()}::${t.amount}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        })
+        .slice(0, 3)
+        .map((t, i) => ({
+          id: `today-${i}`,
+          who: t.who || t.category,
+          cat: t.category,
+          amt: t.amount,
+          time: "today",
+        }))
+    : [];
+
+  // Income sources + period label for the selected week. Period label
+  // uses the actual week-start date so historical navigation reads as
+  // "Week of May 4" rather than always saying "this week".
+  const incomeSources = await buildIncomeSources(
+    householdId,
+    weekStartIso,
+    weekEndIso,
+  );
+  const periodLabel = isCurrentWeek ? "This week" : weekLabel(weekStartIso);
 
   return {
     ready: true,
@@ -653,7 +680,29 @@ export async function buildWeeklyPattern(
     categories,
     fixedObligations,
     today: todayTx,
+    incomeSources,
+    periodLabel,
   };
+}
+
+/** "Week of May 4" — formats a YYYY-MM-DD start-of-week to a short
+ * human label for the navigation header. */
+function weekLabel(weekStartIso: string): string {
+  const months = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  ];
+  const [y, m, d] = weekStartIso.split("-").map((n) => parseInt(n, 10));
+  return `Week of ${months[m - 1]} ${d}, ${y}`;
+}
+
+/** Add a signed number of days to a YYYY-MM-DD string. Calendar-only,
+ * no TZ math — both ends are already in user-local date form. */
+function addDaysIso(iso: string, days: number): string {
+  const [y, m, d] = iso.split("-").map((n) => parseInt(n, 10));
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + days);
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
 }
 
 /**
@@ -814,6 +863,11 @@ async function buildMonthOrYearPattern(
     windowStartIso: cfg.startIso,
     windowEndIso: cfg.endIso,
   });
+  const incomeSources = await buildIncomeSources(
+    householdId,
+    cfg.startIso,
+    cfg.endIso,
+  );
 
   return {
     ready: true,
@@ -825,6 +879,7 @@ async function buildMonthOrYearPattern(
     today: [],
     horizon,
     periodLabel: cfg.periodLabel,
+    incomeSources,
   } as WeeklyPattern;
 }
 
@@ -1102,6 +1157,83 @@ async function buildHorizon(args: {
         : undefined,
     monthlyHistory,
   };
+}
+
+/**
+ * Build the "Where it comes from" income-source list for a period.
+ * Queries plaid_transactions directly (income lives only there, never
+ * in the expenses mirror) and groups by merchant name + signature.
+ * Returns same shape as discretionary `categories` so the mobile
+ * CategoryRow component renders both identically.
+ *
+ * inWindowEnd is inclusive; pass the period's last day in user TZ
+ * (or today's date when looking at the current month, to avoid
+ * pulling in future-dated rows that would inflate the total).
+ */
+async function buildIncomeSources(
+  householdId: string,
+  windowStartIso: string,
+  windowEndIso: string,
+): Promise<SpendCategory[]> {
+  const rows = await db
+    .select({
+      amount: plaidTransactions.amount,
+      merchantName: plaidTransactions.merchantName,
+      name: plaidTransactions.name,
+      date: plaidTransactions.date,
+    })
+    .from(plaidTransactions)
+    .where(
+      and(
+        eq(plaidTransactions.coupleId, householdId),
+        eq(plaidTransactions.ourCategory, "income"),
+        gte(plaidTransactions.date, windowStartIso),
+        lte(plaidTransactions.date, windowEndIso),
+      ),
+    );
+  if (rows.length === 0) return [];
+
+  // Group by display name. Use merchantName when Plaid provided it,
+  // otherwise fall back to the raw `name`. Some employer ACH rows have
+  // no merchant — those still need to be groupable.
+  const groups = new Map<string, { total: number; txs: Array<{ amount: number; date: string }> }>();
+  for (const r of rows) {
+    const label = (r.merchantName || r.name || "Income").trim();
+    const key = label.toLowerCase();
+    const g = groups.get(key) ?? { total: 0, txs: [] };
+    g.total += Math.abs(r.amount);
+    g.txs.push({ amount: Math.abs(r.amount), date: r.date });
+    groups.set(key, g);
+  }
+
+  // Sort by amount desc — biggest paycheck source first. No top-N cap
+  // here since income tends to have far fewer sources than spend.
+  const sorted = [...groups.entries()].sort((a, b) => b[1].total - a[1].total);
+  return sorted.map(([key, g], i) => {
+    // Lookup the original display label from one of the rows (preserve
+    // original casing).
+    const sample = rows.find(
+      (r) => (r.merchantName || r.name || "Income").toLowerCase() === key,
+    );
+    const displayName = (sample?.merchantName || sample?.name || "Income").trim();
+    const txList: SpendTx[] = g.txs.map((tx, ti) => ({
+      id: `income-${i}-tx-${ti}`,
+      name: displayName,
+      date: tx.date,
+      amt: Math.round(tx.amount),
+    }));
+    const countStr = g.txs.length === 1 ? "1 deposit" : `${g.txs.length} deposits`;
+    return {
+      id: `income-${key.replace(/\s+/g, "-")}`,
+      name: displayName,
+      // 'good' hue maps to t.good on the client — drives the green
+      // left-bar + the tinted card background in the income variant.
+      hue: "good",
+      context: countStr,
+      amt: Math.round(g.total),
+      transactions: txList,
+    };
+  });
 }
 
 /** True when the window's start matches the local first-of-current-month. */
