@@ -281,6 +281,24 @@ export type SpendCategory = {
   softSpot?: boolean;
   transactions: SpendTx[];
 };
+export type SpendVerdictTone = "good" | "ok" | "warn" | "edge" | "bad";
+export type SpendVerdict = {
+  label: "Soaring" | "Steady" | "Tight" | "Edge" | "Underwater";
+  tone: SpendVerdictTone;
+  score: number;
+  weatherLabel: string;
+  closingLine: string;
+};
+export type HorizonMonth = { m: string; income: number; spend: number; isFuture: boolean };
+export type SpendHorizon = {
+  income: number;
+  totalSpent: number;
+  surplus: number;
+  savingsRate: number;
+  verdict: SpendVerdict;
+  sixMonthAvgSavingsRate?: number;
+  monthlyHistory?: HorizonMonth[];
+};
 export type SpendPattern =
   | StubEnvelope
   | {
@@ -296,6 +314,9 @@ export type SpendPattern =
       fixedObligations?: SpendCategory[];
       today: { id: string; who: string; cat: string; amt: number; time: string }[];
       paycheck: { amount: number; source: string; day: string; daysUntil: number };
+      /** Horizon block — present on month + year ranges. Drives the
+       * sky/income-line/categories-hanging-below layout on BTSpend. */
+      horizon?: SpendHorizon;
     };
 
 export type CreditSnapshot =

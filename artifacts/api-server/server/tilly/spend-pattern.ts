@@ -10,7 +10,7 @@
  * shape BTSpend renders: bars (M-S), categories (with softSpot flags),
  * paycheck, and the editorial headline.
  */
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, gte, lte, sql } from "drizzle-orm";
 import { db } from "../db";
 import { plaidTransactions, expenses, userPreferences } from "../../shared/schema";
 import {
@@ -20,6 +20,7 @@ import {
   localDaysAgoIso,
   localDateString,
 } from "./user-tz";
+import { getMonthlyIncome } from "./income-summary";
 
 /**
  * Unified read across Plaid + manual sources. The pattern engine doesn't
@@ -159,6 +160,53 @@ export type WeeklyPattern = {
   fixedObligations: SpendCategory[];
   today: { id: string; who: string; cat: string; amt: number; time: string }[];
   paycheck?: { amount: number; source: string; day: string; daysUntil: number };
+  /** Horizon block — income line + verdict + score, computed for month
+   * and year ranges (week's income horizon would be a pro-rated fudge,
+   * so we leave it null there). Drives the BTSpend "sky + categories
+   * hanging from the line" layout. */
+  horizon?: SpendHorizon;
+};
+
+/** Verdict tone — maps to theme color slots on the client. The client
+ * has the actual hex values; the server just labels the bucket. */
+export type SpendVerdictTone = "good" | "ok" | "warn" | "edge" | "bad";
+
+export type SpendVerdict = {
+  label: "Soaring" | "Steady" | "Tight" | "Edge" | "Underwater";
+  tone: SpendVerdictTone;
+  /** 0-10. Soaring 7-10, Steady 6-9, Tight 4-7, Edge 3, Underwater 0-2. */
+  score: number;
+  /** One-line weather summary at the top of the panel. */
+  weatherLabel: string;
+  /** One-line Tilly observation under the score / comparator. */
+  closingLine: string;
+};
+
+export type HorizonMonth = {
+  /** Single-letter label J F M A M J ... */
+  m: string;
+  income: number;
+  spend: number;
+  /** True for months past today — rendered dimmed, no data. */
+  isFuture: boolean;
+};
+
+export type SpendHorizon = {
+  /** Take-home income for the range (month income, or YTD income). */
+  income: number;
+  /** Total spend for the range — discretionary + fixed obligations. */
+  totalSpent: number;
+  /** income - totalSpent. Negative = underwater. */
+  surplus: number;
+  /** Signed percentage. -8 means spent 108% of income. */
+  savingsRate: number;
+  verdict: SpendVerdict;
+  /** Trailing-6-month average savings rate. Only computed for month
+   * range — year range already has its own historical view. */
+  sixMonthAvgSavingsRate?: number;
+  /** 12 entries, oldest → newest, with the current month last. Only
+   * computed for year range. */
+  monthlyHistory?: HorizonMonth[];
 };
 
 /** DEFAULT categories treated as "money flow / fixed" rather than
@@ -712,19 +760,343 @@ async function buildMonthOrYearPattern(
       };
     });
 
-  const totalSpent = discretionary.reduce((s, t) => s + t.amount, 0);
+  const totalDiscretionary = discretionary.reduce((s, t) => s + t.amount, 0);
+  const totalFixed = fixedRows.reduce((s, t) => s + t.amount, 0);
+  // For Horizon, the bars hanging from the income line represent ALL
+  // outflow — loans + subs + groceries + everything. The discretionary
+  // vs fixed split lives in the category list below the panel, but the
+  // line-broke-or-it-didn't math has to use the full picture.
+  const totalSpent = totalDiscretionary + totalFixed;
+
+  // Headline copy keeps using discretionary so the spend headline stays
+  // consistent with the old behaviour and with the week-range path.
   const headline =
     range === "month"
-      ? `$${Math.round(totalSpent).toLocaleString()} spent this month.`
-      : `$${Math.round(totalSpent).toLocaleString()} spent this year.`;
+      ? `$${Math.round(totalDiscretionary).toLocaleString()} spent this month.`
+      : `$${Math.round(totalDiscretionary).toLocaleString()} spent this year.`;
+
+  const horizon = await buildHorizon({
+    userId,
+    householdId,
+    range,
+    now,
+    tz,
+    totalSpent,
+    topCategoryName: topCats[0]?.[0],
+    topCategoryAmt: topCats[0]?.[1] ?? 0,
+  });
 
   return {
     ready: true,
-    spent: Math.round(totalSpent),
+    spent: Math.round(totalDiscretionary),
     headline,
     bars,
     categories,
     fixedObligations,
     today: [],
+    horizon,
   } as WeeklyPattern;
+}
+
+/**
+ * Map a signed savings rate (%) to a verdict bucket + theme tone + 0-10
+ * score + one-line weather label + closing-line tilly observation.
+ *
+ * Thresholds match the Tilly Horizon design spec:
+ *   >= 25%  → Soaring
+ *   >= 15%  → Steady
+ *   >=  5%  → Tight
+ *   >=  0%  → Edge
+ *   <   0%  → Underwater
+ *
+ * The closing line is generic when we don't have anything specific —
+ * the caller passes `topCategoryName` so we can drop a "Loans drank
+ * deepest" style line when there's a clear lead.
+ */
+function bucketVerdict(
+  savingsRate: number,
+  topCategoryName: string | undefined,
+  range: SpendRange,
+): SpendVerdict {
+  const topCat = topCategoryName ? topCategoryName : null;
+  const rangeWord = range === "year" ? "this year" : "this month";
+  if (savingsRate >= 25) {
+    return {
+      label: "Soaring",
+      tone: "good",
+      score: Math.min(10, 7 + Math.round((savingsRate - 25) / 5)),
+      weatherLabel: "Clear skies. Well above the line.",
+      closingLine: `Strong ${rangeWord}. The line held with room to spare.`,
+    };
+  }
+  if (savingsRate >= 15) {
+    return {
+      label: "Steady",
+      tone: "ok",
+      score: Math.min(9, 6 + Math.round((savingsRate - 15) / 5)),
+      weatherLabel: "Healthy breathing room.",
+      closingLine: topCat
+        ? `${capitalize(topCat)} drank the deepest. Everything else stayed in range.`
+        : `Comfortably under the line ${rangeWord}.`,
+    };
+  }
+  if (savingsRate >= 5) {
+    return {
+      label: "Tight",
+      tone: "warn",
+      score: Math.min(7, 4 + Math.round((savingsRate - 5) / 5)),
+      weatherLabel: "Getting close to the line.",
+      closingLine: topCat
+        ? `Close call. ${capitalize(topCat)} ran hottest.`
+        : `Close call ${rangeWord}. Most categories ran hotter than usual.`,
+    };
+  }
+  if (savingsRate >= 0) {
+    return {
+      label: "Edge",
+      tone: "edge",
+      score: 3,
+      weatherLabel: "Living right at the line.",
+      closingLine: `Touched the line ${rangeWord}. One slip and you're under.`,
+    };
+  }
+  return {
+    label: "Underwater",
+    tone: "bad",
+    score: Math.max(0, 2 + Math.round(savingsRate / 5)),
+    weatherLabel: "You spent more than you earned.",
+    closingLine: topCat
+      ? `The line broke ${rangeWord}. ${capitalize(topCat)} pulled hardest. Worth a closer look together?`
+      : `The line broke ${rangeWord}. Worth a closer look together?`,
+  };
+}
+
+function capitalize(s: string): string {
+  if (!s) return s;
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
+ * Build the Horizon block. For month range, queries the prior 6 months
+ * to compute an avg savings rate. For year, queries each of the past 12
+ * months to populate monthlyHistory. Both reuse getMonthlyIncome
+ * semantics by querying plaid_transactions directly with ourCategory =
+ * 'income' (cheaper than calling getMonthlyIncome 12× since we already
+ * have the household scoped).
+ */
+async function buildHorizon(args: {
+  userId: string | null;
+  householdId: string;
+  range: SpendRange;
+  now: Date;
+  tz: string;
+  totalSpent: number;
+  topCategoryName: string | undefined;
+  topCategoryAmt: number;
+}): Promise<SpendHorizon | undefined> {
+  const { userId, householdId, range, now, tz, totalSpent, topCategoryName } = args;
+  if (range !== "month" && range !== "year") return undefined;
+
+  // For month: income = current month take-home (or estimate / self-report fallback).
+  // For year: income = sum of every paycheck since Jan 1 of the local year.
+  let income: number;
+  if (range === "month") {
+    const mi = await getMonthlyIncome(userId, householdId, now);
+    income = mi.amount;
+  } else {
+    const yearStartIso = `${localDateString(now, tz).slice(0, 4)}-01-01`;
+    const todayIso = localDateString(now, tz);
+    const ytdIncomeRows = await db
+      .select({ amount: plaidTransactions.amount })
+      .from(plaidTransactions)
+      .where(
+        and(
+          eq(plaidTransactions.coupleId, householdId),
+          eq(plaidTransactions.ourCategory, "income"),
+          gte(plaidTransactions.date, yearStartIso),
+          lte(plaidTransactions.date, todayIso),
+        ),
+      );
+    income = ytdIncomeRows.reduce((s, r) => s + Math.abs(r.amount), 0);
+  }
+
+  const surplus = income - totalSpent;
+  // savingsRate is signed: negative when underwater. Zero income →
+  // surface 0% (avoids /0) — verdict will fall through to Edge/Underwater
+  // based on signed surplus anyway.
+  const savingsRate = income > 0 ? (surplus / income) * 100 : 0;
+  const verdict = bucketVerdict(savingsRate, topCategoryName, range);
+
+  let sixMonthAvgSavingsRate: number | undefined;
+  let monthlyHistory: HorizonMonth[] | undefined;
+
+  if (range === "month") {
+    sixMonthAvgSavingsRate = await computeTrailingAvgSavingsRate(
+      householdId,
+      now,
+      tz,
+      6,
+    );
+  } else {
+    monthlyHistory = await computeMonthlyHistory(householdId, now, tz);
+  }
+
+  return {
+    income: Math.round(income),
+    totalSpent: Math.round(totalSpent),
+    surplus: Math.round(surplus),
+    savingsRate: Math.round(savingsRate * 10) / 10,
+    verdict,
+    sixMonthAvgSavingsRate:
+      sixMonthAvgSavingsRate !== undefined
+        ? Math.round(sixMonthAvgSavingsRate * 10) / 10
+        : undefined,
+    monthlyHistory,
+  };
+}
+
+/** Compute mean savings rate (%) over the prior N complete months,
+ * excluding the current in-progress month. Returns undefined if we
+ * can't get at least 2 months of history. */
+async function computeTrailingAvgSavingsRate(
+  householdId: string,
+  now: Date,
+  tz: string,
+  monthCount: number,
+): Promise<number | undefined> {
+  const months = priorMonthBounds(now, tz, monthCount);
+  const rates: number[] = [];
+  for (const { startIso, endIso } of months) {
+    const [incomeRows, spendRows] = await Promise.all([
+      db
+        .select({ amount: plaidTransactions.amount })
+        .from(plaidTransactions)
+        .where(
+          and(
+            eq(plaidTransactions.coupleId, householdId),
+            eq(plaidTransactions.ourCategory, "income"),
+            gte(plaidTransactions.date, startIso),
+            lte(plaidTransactions.date, endIso),
+          ),
+        ),
+      db
+        .select({ amount: plaidTransactions.amount, ourCategory: plaidTransactions.ourCategory })
+        .from(plaidTransactions)
+        .where(
+          and(
+            eq(plaidTransactions.coupleId, householdId),
+            gte(plaidTransactions.date, startIso),
+            lte(plaidTransactions.date, endIso),
+          ),
+        ),
+    ]);
+    const income = incomeRows.reduce((s, r) => s + Math.abs(r.amount), 0);
+    // Spend = everything except income. Don't strip transfers — when we
+    // do that for the headline, it's to exclude move-between-own-accounts;
+    // here we want the whole outflow picture against income.
+    const spend = spendRows
+      .filter((r) => (r.ourCategory ?? "").toLowerCase() !== "income")
+      .reduce((s, r) => s + Math.abs(r.amount), 0);
+    if (income > 0) {
+      rates.push(((income - spend) / income) * 100);
+    }
+  }
+  if (rates.length < 2) return undefined;
+  return rates.reduce((s, v) => s + v, 0) / rates.length;
+}
+
+/** Build a 12-entry monthly history for the local year. The first
+ * entries are the earliest months (Jan), the last is the current
+ * month. Months past the current one are marked isFuture so the
+ * client can render them dimmed without an income line. */
+async function computeMonthlyHistory(
+  householdId: string,
+  now: Date,
+  tz: string,
+): Promise<HorizonMonth[]> {
+  const todayIso = localDateString(now, tz);
+  const [yearStr, currMonStr] = todayIso.split("-");
+  const year = parseInt(yearStr, 10);
+  const currMonth = parseInt(currMonStr, 10); // 1-12
+  const letters = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
+
+  // Build all 12 month ranges up front so we can run a single SQL query.
+  const monthsMeta = Array.from({ length: 12 }, (_, i) => {
+    const monthNum = i + 1; // 1-12
+    const startIso = `${year}-${String(monthNum).padStart(2, "0")}-01`;
+    const lastDay = new Date(Date.UTC(year, monthNum, 0)).getUTCDate();
+    const endIso = `${year}-${String(monthNum).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    return {
+      monthNum,
+      startIso,
+      endIso,
+      letter: letters[i],
+      isFuture: monthNum > currMonth,
+    };
+  });
+
+  // One scan for the whole year then bucket in memory. Cheaper than
+  // 12 SQL round-trips, especially since the per-month rate helper
+  // already pays that cost for the 6-month avg.
+  const yearStart = `${year}-01-01`;
+  const yearEnd = `${year}-12-31`;
+  const rows = await db
+    .select({
+      amount: plaidTransactions.amount,
+      ourCategory: plaidTransactions.ourCategory,
+      date: plaidTransactions.date,
+    })
+    .from(plaidTransactions)
+    .where(
+      and(
+        eq(plaidTransactions.coupleId, householdId),
+        gte(plaidTransactions.date, yearStart),
+        lte(plaidTransactions.date, yearEnd),
+      ),
+    );
+
+  const incomeByMonth = new Array(12).fill(0);
+  const spendByMonth = new Array(12).fill(0);
+  for (const r of rows) {
+    const m = parseInt(r.date.slice(5, 7), 10) - 1;
+    if (m < 0 || m > 11) continue;
+    const cat = (r.ourCategory ?? "").toLowerCase();
+    const abs = Math.abs(r.amount);
+    if (cat === "income") incomeByMonth[m] += abs;
+    else spendByMonth[m] += abs;
+  }
+
+  return monthsMeta.map(({ letter, monthNum, isFuture }) => ({
+    m: letter,
+    income: isFuture ? 0 : Math.round(incomeByMonth[monthNum - 1]),
+    spend: isFuture ? 0 : Math.round(spendByMonth[monthNum - 1]),
+    isFuture,
+  }));
+}
+
+/** Return the [startIso, endIso] bounds of the N months immediately
+ * preceding the local month containing `now`. Most-recent first. */
+function priorMonthBounds(
+  now: Date,
+  tz: string,
+  count: number,
+): Array<{ startIso: string; endIso: string }> {
+  const today = localDateString(now, tz);
+  const year = parseInt(today.slice(0, 4), 10);
+  const currMonth = parseInt(today.slice(5, 7), 10); // 1-12
+  const out: Array<{ startIso: string; endIso: string }> = [];
+  for (let i = 1; i <= count; i++) {
+    // Walk backwards from currMonth - 1, wrapping years.
+    let m = currMonth - i;
+    let y = year;
+    while (m < 1) {
+      m += 12;
+      y -= 1;
+    }
+    const startIso = `${y}-${String(m).padStart(2, "0")}-01`;
+    const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    const endIso = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    out.push({ startIso, endIso });
+  }
+  return out;
 }

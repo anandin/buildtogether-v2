@@ -13,6 +13,7 @@ if (Platform.OS === "android" && UIManager.setLayoutAnimationEnabledExperimental
   UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 import { LinearGradient } from "expo-linear-gradient";
+import Svg, { Defs, Pattern, Rect, Line } from "react-native-svg";
 
 import { useBT } from "../BTContext";
 import { Tilly } from "../Tilly";
@@ -30,7 +31,43 @@ import { btApi } from "../api/client";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { Linking } from "react-native";
 import { format } from "date-fns";
-import type { DayBar, SpendCategory, SpendTx } from "../api/types";
+import type {
+  DayBar,
+  SpendCategory,
+  SpendTx,
+  SpendHorizon,
+  SpendVerdictTone,
+  HorizonMonth,
+} from "../api/types";
+
+/** Map a server-provided verdict tone to a concrete theme color. We
+ * collapse 5 verdict buckets into the theme's 3 status colors so all
+ * four themes (dusk/citrus/bloom/neon) stay coherent — the label +
+ * score communicate the finer distinctions. */
+function verdictColor(tone: SpendVerdictTone, t: BTTheme): string {
+  switch (tone) {
+    case "good":
+      return t.good;
+    case "ok":
+      return t.good;
+    case "warn":
+      return t.warn;
+    case "edge":
+      return t.warn;
+    case "bad":
+      return t.bad;
+  }
+}
+
+/** Compact dollar label for tight 12-bar year layouts. */
+function compactDollar(n: number): string {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}m`;
+  if (abs >= 10_000) return `${sign}$${Math.round(abs / 1_000)}k`;
+  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}k`;
+  return `${sign}$${Math.round(abs)}`;
+}
 
 function useSplitsList() {
   return useQuery({
@@ -101,6 +138,747 @@ export function BTSpend() {
     <BTSpendErrorBoundary t={t}>
       <BTSpendBody />
     </BTSpendErrorBoundary>
+  );
+}
+
+/** Horizon header strip: range label (NOVEMBER / YEAR-TO-DATE) + verdict pill. */
+function HorizonHeader({
+  t,
+  rangeLabel,
+  verdict,
+}: {
+  t: BTTheme;
+  rangeLabel: string;
+  verdict: SpendHorizon["verdict"];
+}) {
+  const vc = verdictColor(verdict.tone, t);
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+      <Text
+        style={{
+          fontSize: 11,
+          letterSpacing: 1.8,
+          color: vc,
+          fontFamily: BTFonts.sans,
+          fontWeight: "700",
+          textTransform: "uppercase",
+        }}
+      >
+        {rangeLabel}
+      </Text>
+      <View
+        style={{
+          paddingHorizontal: 10,
+          paddingVertical: 3,
+          backgroundColor: vc,
+          borderRadius: 999,
+        }}
+      >
+        <Text
+          style={{
+            color: t.surface,
+            fontSize: 10,
+            fontFamily: BTFonts.sans,
+            fontWeight: "700",
+            letterSpacing: 0.8,
+            textTransform: "uppercase",
+          }}
+        >
+          {verdict.label}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/** Surplus big number + weather label. Tinted red when underwater. */
+function HorizonSurplus({
+  t,
+  surplus,
+  weatherLabel,
+}: {
+  t: BTTheme;
+  surplus: number;
+  weatherLabel: string;
+}) {
+  const underwater = surplus < 0;
+  return (
+    <View style={{ gap: 4 }}>
+      <Text
+        style={{
+          fontSize: 38,
+          color: underwater ? t.bad : t.ink,
+          fontFamily: BTFonts.serif,
+          fontWeight: "400",
+          letterSpacing: -0.5,
+          lineHeight: 42,
+        }}
+      >
+        {underwater ? "−" : ""}${Math.abs(surplus).toLocaleString()}{" "}
+        <Text style={{ fontSize: 20, color: t.inkSoft, letterSpacing: 0 }}>
+          {underwater ? "over" : "left"}
+        </Text>
+      </Text>
+      <Text
+        style={{
+          fontSize: 13,
+          color: t.inkSoft,
+          fontFamily: BTFonts.sans,
+        }}
+      >
+        {weatherLabel}
+      </Text>
+    </View>
+  );
+}
+
+/** 10-dot score, filled to score/10 in the verdict color. */
+function ScoreDots({
+  t,
+  score,
+  tone,
+}: {
+  t: BTTheme;
+  score: number;
+  tone: SpendVerdictTone;
+}) {
+  const vc = verdictColor(tone, t);
+  const clamped = Math.max(0, Math.min(10, score));
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+      <Text
+        style={{
+          fontSize: 10,
+          color: t.inkMute,
+          fontFamily: BTFonts.mono,
+          letterSpacing: 1,
+          marginRight: 2,
+        }}
+      >
+        SCORE
+      </Text>
+      {Array.from({ length: 10 }).map((_, i) => (
+        <View
+          key={i}
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 4,
+            backgroundColor: i < clamped ? vc : t.rule,
+          }}
+        />
+      ))}
+      <Text
+        style={{
+          fontSize: 12,
+          color: vc,
+          fontFamily: BTFonts.sans,
+          fontWeight: "700",
+          marginLeft: 4,
+        }}
+      >
+        {clamped}/10
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * The Horizon panel: a 360-tall block with a tinted sky above the income
+ * line and category bars hanging from it. When underwater, a hatched
+ * band sits below the income line and the bars start beneath it.
+ *
+ * Bars are tappable — first tap shows an amount tooltip, second clears
+ * it. RN has no hover so we lean on tap state instead of the mockup's
+ * mouseEnter/Leave. Long categories like "subscriptions" wrap below the
+ * bar (we don't try the mockup's `rotate(-90deg)` text trick — it's
+ * fragile on RN and reads worse than a horizontal label).
+ */
+function HorizonPanel({
+  t,
+  horizon,
+  categories,
+}: {
+  t: BTTheme;
+  horizon: SpendHorizon;
+  categories: SpendCategory[];
+}) {
+  const [tappedId, setTappedId] = useState<string | null>(null);
+  const vc = verdictColor(horizon.verdict.tone, t);
+  const underwater = horizon.surplus < 0;
+  const incomeLineY = 0.38; // 38% from top — matches the mockup proportion
+  const underwaterBandH = 0.13;
+  // Combine discretionary + fixed for the bar set (the Horizon shows
+  // EVERYTHING that hung off the income line, not just discretionary).
+  // The categories arg is already the merged list — caller takes care.
+  const maxAmt = categories.length
+    ? Math.max(...categories.map((c) => c.amt))
+    : 1;
+
+  return (
+    <View
+      style={{
+        position: "relative",
+        height: 360,
+        borderRadius: 24,
+        backgroundColor: t.surface,
+        overflow: "hidden",
+      }}
+    >
+      {/* Sky gradient (verdict-tinted) — top 38% */}
+      <LinearGradient
+        colors={[`${vc}22`, `${vc}66`]}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          height: `${incomeLineY * 100}%`,
+        }}
+      />
+
+      {/* Breathing-room callout in the sky (only when not underwater) */}
+      {!underwater ? (
+        <View
+          style={{
+            position: "absolute",
+            top: 36,
+            left: 0,
+            right: 0,
+            alignItems: "center",
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 10,
+              letterSpacing: 1.6,
+              color: vc,
+              fontFamily: BTFonts.sans,
+              fontWeight: "700",
+              marginBottom: 2,
+            }}
+          >
+            BREATHING ROOM · {horizon.savingsRate.toFixed(0)}%
+          </Text>
+          <Text
+            style={{
+              fontSize: 26,
+              color: vc,
+              fontFamily: BTFonts.serif,
+              fontWeight: "500",
+            }}
+          >
+            +${horizon.surplus.toLocaleString()}
+          </Text>
+        </View>
+      ) : null}
+
+      {/* Income line — solid black across the panel at incomeLineY */}
+      <View
+        style={{
+          position: "absolute",
+          top: `${incomeLineY * 100}%`,
+          left: 16,
+          right: 16,
+          height: 2,
+          backgroundColor: t.ink,
+          zIndex: 5,
+        }}
+      />
+      <Text
+        style={{
+          position: "absolute",
+          top: `${incomeLineY * 100}%`,
+          right: 16,
+          marginTop: -22,
+          fontSize: 11,
+          color: t.ink,
+          fontFamily: BTFonts.sans,
+          fontWeight: "700",
+          letterSpacing: 0.6,
+          zIndex: 6,
+        }}
+      >
+        ${horizon.income.toLocaleString()} EARNED
+      </Text>
+
+      {/* Underwater hatched band — only when surplus < 0 */}
+      {underwater ? (
+        <View
+          style={{
+            position: "absolute",
+            top: `${incomeLineY * 100}%`,
+            left: 16,
+            right: 16,
+            height: `${underwaterBandH * 100}%`,
+            zIndex: 3,
+          }}
+        >
+          <Svg width="100%" height="100%">
+            <Defs>
+              <Pattern
+                id="uwHatch"
+                x="0"
+                y="0"
+                width="10"
+                height="10"
+                patternUnits="userSpaceOnUse"
+                patternTransform="rotate(45)"
+              >
+                <Rect width="6" height="10" fill={t.bad} fillOpacity={0.32} />
+                <Rect x="6" width="4" height="10" fill={t.bad} fillOpacity={0.1} />
+              </Pattern>
+            </Defs>
+            <Rect width="100%" height="100%" fill="url(#uwHatch)" />
+          </Svg>
+          <View
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: 0,
+              right: 0,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <View
+              style={{
+                backgroundColor: t.bg,
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+                borderRadius: 999,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 10,
+                  letterSpacing: 1.8,
+                  color: t.bad,
+                  fontFamily: BTFonts.sans,
+                  fontWeight: "700",
+                }}
+              >
+                −${Math.abs(horizon.surplus).toLocaleString()} UNDERWATER
+              </Text>
+            </View>
+          </View>
+        </View>
+      ) : null}
+
+      {/* Category bars — hang from the income line (or from the bottom
+          of the underwater band if applicable) down to the panel floor.
+          Each bar's height = (amt / maxAmt) * availableHeight. */}
+      <View
+        style={{
+          position: "absolute",
+          top: `${(incomeLineY + (underwater ? underwaterBandH : 0)) * 100}%`,
+          left: 16,
+          right: 16,
+          bottom: 16,
+          flexDirection: "row",
+          gap: 5,
+          alignItems: "flex-start",
+        }}
+      >
+        {categories.length === 0 ? (
+          <View
+            style={{
+              flex: 1,
+              alignItems: "center",
+              justifyContent: "center",
+              paddingTop: 30,
+            }}
+          >
+            <Text
+              style={{
+                color: t.inkMute,
+                fontFamily: BTFonts.sans,
+                fontSize: 12,
+                fontStyle: "italic",
+              }}
+            >
+              No spend captured this range yet.
+            </Text>
+          </View>
+        ) : (
+          categories.map((c) => {
+            const heightPct = (c.amt / maxAmt) * 100;
+            const isTapped = tappedId === c.id;
+            const barColor = categoryBarColor(c, t);
+            return (
+              <Pressable
+                key={c.id}
+                onPress={() => setTappedId(isTapped ? null : c.id)}
+                accessibilityRole="button"
+                accessibilityLabel={`${c.name} ${c.amt} dollars`}
+                style={{
+                  flex: 1,
+                  height: `${heightPct}%`,
+                  minHeight: 24,
+                }}
+              >
+                <View
+                  style={{
+                    flex: 1,
+                    backgroundColor: barColor,
+                    borderBottomLeftRadius: 10,
+                    borderBottomRightRadius: 10,
+                    opacity: tappedId && !isTapped ? 0.55 : 1,
+                  }}
+                />
+                {isTapped ? (
+                  <View
+                    style={{
+                      position: "absolute",
+                      top: -34,
+                      left: "50%",
+                      transform: [{ translateX: -32 }],
+                      backgroundColor: t.ink,
+                      paddingHorizontal: 8,
+                      paddingVertical: 4,
+                      borderRadius: 8,
+                      zIndex: 10,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: t.surface,
+                        fontFamily: BTFonts.sans,
+                        fontSize: 11,
+                        fontWeight: "700",
+                      }}
+                    >
+                      ${c.amt.toLocaleString()}
+                    </Text>
+                  </View>
+                ) : null}
+                <Text
+                  numberOfLines={1}
+                  style={{
+                    position: "absolute",
+                    bottom: 6,
+                    left: 0,
+                    right: 0,
+                    textAlign: "center",
+                    color: t.surface,
+                    fontFamily: BTFonts.sans,
+                    fontSize: 9,
+                    fontWeight: "600",
+                    letterSpacing: 0.3,
+                  }}
+                >
+                  {c.name.length > 7 ? c.name.slice(0, 6) + "…" : c.name}
+                </Text>
+              </Pressable>
+            );
+          })
+        )}
+      </View>
+    </View>
+  );
+}
+
+/** Pick a bar color for a category — uses the existing hue → theme
+ * color mapping so subscriptions stay accent2, loans stay accent2,
+ * food stays good, etc. Keeps cross-screen consistency. */
+function categoryBarColor(c: SpendCategory, t: BTTheme): string {
+  switch (c.hue) {
+    case "accent":
+      return t.accent;
+    case "accent2":
+      return t.accent2;
+    case "good":
+      return t.good;
+    case "warn":
+      return t.warn;
+    case "inkSoft":
+    default:
+      return t.inkSoft;
+  }
+}
+
+/** vs 6-month average comparator. Centerline = the user's trailing-6 mean
+ * savings rate; the colored fill extends left or right from center
+ * depending on whether this period beat or missed the mean. */
+function SixMonthCompare({
+  t,
+  savingsRate,
+  avg,
+  tone,
+}: {
+  t: BTTheme;
+  savingsRate: number;
+  avg: number;
+  tone: SpendVerdictTone;
+}) {
+  const delta = savingsRate - avg;
+  const beats = delta >= 0;
+  const vc = verdictColor(tone, t);
+  // Width is capped so a single anomaly doesn't fill the whole bar — 45%
+  // of half-width per 100% of delta is a reasonable visual cap.
+  const widthPct = Math.min(Math.abs(delta) * 2.5, 45);
+  return (
+    <View style={{ gap: 8 }}>
+      <Text
+        style={{
+          fontSize: 11,
+          letterSpacing: 1.6,
+          color: t.inkMute,
+          fontFamily: BTFonts.mono,
+        }}
+      >
+        VS YOUR 6-MONTH AVERAGE
+      </Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+        <View
+          style={{
+            flex: 1,
+            height: 10,
+            backgroundColor: t.rule,
+            borderRadius: 5,
+            position: "relative",
+          }}
+        >
+          {/* center tick */}
+          <View
+            style={{
+              position: "absolute",
+              left: "50%",
+              top: -3,
+              bottom: -3,
+              width: 2,
+              backgroundColor: t.inkSoft,
+            }}
+          />
+          {/* delta bar */}
+          <View
+            style={{
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              left: beats ? "50%" : `${50 - widthPct}%`,
+              width: `${widthPct}%`,
+              backgroundColor: vc,
+              borderRadius: 5,
+            }}
+          />
+        </View>
+        <Text
+          style={{
+            fontSize: 13,
+            fontFamily: BTFonts.sans,
+            fontWeight: "700",
+            color: vc,
+            minWidth: 50,
+            textAlign: "right",
+          }}
+        >
+          {beats ? "↑" : "↓"} {Math.abs(delta).toFixed(0)}%
+        </Text>
+      </View>
+      <Text
+        style={{
+          fontSize: 12,
+          color: t.inkSoft,
+          fontFamily: BTFonts.serifItalic,
+        }}
+      >
+        {beats
+          ? `You saved ${delta.toFixed(0)}% more than your usual.`
+          : `You saved ${Math.abs(delta).toFixed(0)}% less than your usual.`}
+      </Text>
+    </View>
+  );
+}
+
+/** 12-month horizons list — one row per month with a spend bar that
+ * stops at the income line, plus a hatched overflow band when spend
+ * exceeded income. Future months render dimmed with no data. */
+function HorizonYearList({
+  t,
+  months,
+}: {
+  t: BTTheme;
+  months: HorizonMonth[];
+}) {
+  const overCount = months.filter((m) => !m.isFuture && m.spend > m.income && m.income > 0)
+    .length;
+  const underCount = months.filter(
+    (m) => !m.isFuture && m.spend <= m.income && m.income > 0,
+  ).length;
+  return (
+    <BTCard t={t} padding={18}>
+      <View style={{ alignItems: "center", marginBottom: 4 }}>
+        <Text
+          style={{
+            fontSize: 11,
+            letterSpacing: 1.6,
+            color: t.inkMute,
+            fontFamily: BTFonts.mono,
+          }}
+        >
+          12 HORIZONS
+        </Text>
+      </View>
+      <View style={{ alignItems: "center", marginBottom: 14 }}>
+        <Text
+          style={{
+            fontSize: 13,
+            color: t.inkSoft,
+            fontFamily: BTFonts.serifItalic,
+          }}
+        >
+          {underCount} months under the line · {overCount} over
+        </Text>
+      </View>
+      {months.map((m, i) => {
+        const isOver = !m.isFuture && m.income > 0 && m.spend > m.income;
+        const ratio = m.isFuture || m.income === 0 ? 0 : m.spend / m.income;
+        const fillPct = Math.min(ratio * 100, 100);
+        const overflowPct = Math.max(ratio * 100 - 100, 0);
+        const monthSurplus = m.income - m.spend;
+        return (
+          <View
+            key={`${m.m}-${i}`}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 12,
+              marginBottom: 10,
+              opacity: m.isFuture ? 0.3 : 1,
+            }}
+          >
+            <Text
+              style={{
+                width: 14,
+                fontSize: 11,
+                fontFamily: BTFonts.sans,
+                color: t.inkMute,
+                fontWeight: "600",
+              }}
+            >
+              {m.m}
+            </Text>
+            <View
+              style={{
+                flex: 1,
+                height: 22,
+                backgroundColor: m.isFuture ? t.rule : `${t.good}22`,
+                borderRadius: 5,
+                position: "relative",
+                overflow: "visible",
+              }}
+            >
+              {/* income horizon at right edge */}
+              <View
+                style={{
+                  position: "absolute",
+                  top: -3,
+                  bottom: -3,
+                  right: 0,
+                  width: 2,
+                  backgroundColor: t.ink,
+                  zIndex: 4,
+                }}
+              />
+              {/* spend fill */}
+              {!m.isFuture && m.income > 0 ? (
+                <View
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    bottom: 0,
+                    width: `${fillPct}%`,
+                    backgroundColor: isOver ? t.bad : t.inkSoft,
+                    borderTopLeftRadius: 5,
+                    borderBottomLeftRadius: 5,
+                    borderTopRightRadius: fillPct >= 100 ? 0 : 5,
+                    borderBottomRightRadius: fillPct >= 100 ? 0 : 5,
+                  }}
+                />
+              ) : null}
+              {/* overflow past the income line — hatched */}
+              {isOver ? (
+                <View
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    bottom: 0,
+                    left: "100%",
+                    width: `${Math.min(overflowPct, 40)}%`,
+                    overflow: "hidden",
+                    borderTopRightRadius: 5,
+                    borderBottomRightRadius: 5,
+                  }}
+                >
+                  <Svg width="100%" height="100%">
+                    <Defs>
+                      <Pattern
+                        id={`yh-${m.m}-${i}`}
+                        x="0"
+                        y="0"
+                        width="8"
+                        height="8"
+                        patternUnits="userSpaceOnUse"
+                        patternTransform="rotate(45)"
+                      >
+                        <Rect width="4" height="8" fill={t.bad} />
+                        <Rect x="4" width="4" height="8" fill={t.bad} fillOpacity={0.55} />
+                      </Pattern>
+                    </Defs>
+                    <Rect width="100%" height="100%" fill={`url(#yh-${m.m}-${i})`} />
+                  </Svg>
+                </View>
+              ) : null}
+            </View>
+            <Text
+              style={{
+                width: 56,
+                textAlign: "right",
+                fontSize: 12,
+                fontFamily: BTFonts.sans,
+                fontWeight: "700",
+                color: m.isFuture
+                  ? t.inkMute
+                  : isOver
+                    ? t.bad
+                    : t.good,
+              }}
+            >
+              {m.isFuture
+                ? "—"
+                : compactDollar(monthSurplus < 0 ? -Math.abs(monthSurplus) : monthSurplus)}
+            </Text>
+          </View>
+        );
+      })}
+      <View
+        style={{
+          marginTop: 14,
+          paddingTop: 14,
+          borderTopWidth: 1,
+          borderTopColor: t.rule,
+          alignItems: "center",
+        }}
+      >
+        <Text
+          style={{
+            fontSize: 13,
+            color: t.inkSoft,
+            fontFamily: BTFonts.serifItalic,
+            textAlign: "center",
+          }}
+        >
+          {overCount === 0
+            ? "The line held all year."
+            : overCount <= 2
+              ? `${overCount} months over the line. The rest under. The line held.`
+              : `${overCount} months over the line. Worth zooming out.`}
+        </Text>
+      </View>
+    </BTCard>
   );
 }
 
@@ -295,6 +1073,7 @@ function BTSpendBody() {
   const todayLedger =
     "today" in live && Array.isArray(live.today) ? live.today : [];
   const paycheck = "paycheck" in live ? live.paycheck ?? null : null;
+  const horizon = "horizon" in live ? live.horizon ?? null : null;
   // hiddenCategories was read at the top of the component (Rules of
   // Hooks). Tilly-driven category filter — chat sends a
   // hideCategoryFromSpend tool, server writes the pref, this screen
@@ -306,6 +1085,19 @@ function BTSpendBody() {
   const visibleFixed = fixedObligations.filter(
     (c) => !hidden.includes(c.name.toLowerCase()),
   );
+  // Horizon shows ALL spend categories hanging from the line — both
+  // discretionary and fixed obligations. Merge + sort desc; cap at 8 so
+  // the bar gutter stays readable. Filter hidden categories too so the
+  // hideCategoryFromSpend tool keeps working on the new view.
+  const horizonCategories: SpendCategory[] = [
+    ...visibleDiscretionary,
+    ...visibleFixed,
+  ]
+    .sort((a, b) => b.amt - a.amt)
+    .slice(0, 8);
+  const showHorizon = horizon && range !== "week";
+  const monthName = new Date().toLocaleString("en-US", { month: "long" });
+  const rangeLabel = range === "year" ? "YEAR-TO-DATE" : monthName.toUpperCase();
 
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
@@ -360,82 +1152,105 @@ function BTSpendBody() {
           })}
         </View>
 
-        <View style={{ gap: 8 }}>
-          <BTLabel color={t.inkMute}>
-            {range === "week"
-              ? "This week's pattern"
-              : range === "month"
-                ? "Last 4 weeks"
-                : "Last 12 months"}
-          </BTLabel>
-          {italicSpan && range === "week" ? (
-            <BTSerif size={30} color={t.ink} weight="500">
-              ${spent.toLocaleString()} spent.{" "}
-              <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
-                {italicSpan}
-              </Text>{" "}
-              are still your soft spot.
-            </BTSerif>
-          ) : (
-            <BTSerif size={30} color={t.ink} weight="500">
-              ${spent.toLocaleString()} spent{" "}
-              {range === "week"
-                ? "this week."
-                : range === "month"
-                  ? "this month."
-                  : "this year."}
-            </BTSerif>
-          )}
-        </View>
-
-        <BTCard t={t} padding={20}>
-          <DayBars t={t} bars={safeBars} />
-        </BTCard>
-
-        <View style={{ gap: 10 }}>
-          <BTLabel color={t.inkMute}>Where it goes</BTLabel>
-          {visibleDiscretionary.length > 0 ? (
-            visibleDiscretionary.map((c) => (
-              <CategoryRow key={c.id} c={c} t={t} />
-            ))
-          ) : (
+        {showHorizon && horizon ? (
+          <>
+            <HorizonHeader t={t} rangeLabel={rangeLabel} verdict={horizon.verdict} />
+            <HorizonSurplus
+              t={t}
+              surplus={horizon.surplus}
+              weatherLabel={horizon.verdict.weatherLabel}
+            />
+            <ScoreDots t={t} score={horizon.verdict.score} tone={horizon.verdict.tone} />
+            {range === "month" ? (
+              <HorizonPanel t={t} horizon={horizon} categories={horizonCategories} />
+            ) : null}
+            {range === "year" && horizon.monthlyHistory ? (
+              <HorizonYearList t={t} months={horizon.monthlyHistory} />
+            ) : null}
+            {range === "month" && horizon.sixMonthAvgSavingsRate !== undefined ? (
+              <SixMonthCompare
+                t={t}
+                savingsRate={horizon.savingsRate}
+                avg={horizon.sixMonthAvgSavingsRate}
+                tone={horizon.verdict.tone}
+              />
+            ) : null}
             <Text
               style={{
-                color: t.inkMute,
-                fontFamily: BTFonts.sans,
-                fontSize: 12,
-                fontStyle: "italic",
+                color: t.inkSoft,
+                fontFamily: BTFonts.serifItalic,
+                fontSize: 15,
+                lineHeight: 23,
               }}
             >
-              No discretionary spend{" "}
-              {range === "week" ? "this week." : range === "month" ? "this month." : "this year."}
+              {horizon.verdict.closingLine}
             </Text>
-          )}
-        </View>
+          </>
+        ) : (
+          <>
+            <View style={{ gap: 8 }}>
+              <BTLabel color={t.inkMute}>This week's pattern</BTLabel>
+              {italicSpan ? (
+                <BTSerif size={30} color={t.ink} weight="500">
+                  ${spent.toLocaleString()} spent.{" "}
+                  <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
+                    {italicSpan}
+                  </Text>{" "}
+                  are still your soft spot.
+                </BTSerif>
+              ) : (
+                <BTSerif size={30} color={t.ink} weight="500">
+                  ${spent.toLocaleString()} spent this week.
+                </BTSerif>
+              )}
+            </View>
 
-        {visibleFixed.length > 0 ? (
-          <View style={{ gap: 10 }}>
-            <BTLabel color={t.inkMute}>
-              Money flow · fixed{" "}
-              {range === "week" ? "this week" : range === "month" ? "this month" : "this year"}
-            </BTLabel>
-            {visibleFixed.map((c) => (
-              <CategoryRow key={`fixed-${c.id}`} c={c} t={t} />
-            ))}
-            <Text
-              style={{
-                color: t.inkMute,
-                fontFamily: BTFonts.sans,
-                fontSize: 11,
-                fontStyle: "italic",
-              }}
-            >
-              These don't count toward your spend total above — they're
-              debt service, taxes, fees, and money moved between your own
-              accounts.
-            </Text>
-          </View>
-        ) : null}
+            <BTCard t={t} padding={20}>
+              <DayBars t={t} bars={safeBars} />
+            </BTCard>
+
+            <View style={{ gap: 10 }}>
+              <BTLabel color={t.inkMute}>Where it goes</BTLabel>
+              {visibleDiscretionary.length > 0 ? (
+                visibleDiscretionary.map((c) => (
+                  <CategoryRow key={c.id} c={c} t={t} />
+                ))
+              ) : (
+                <Text
+                  style={{
+                    color: t.inkMute,
+                    fontFamily: BTFonts.sans,
+                    fontSize: 12,
+                    fontStyle: "italic",
+                  }}
+                >
+                  No discretionary spend this week.
+                </Text>
+              )}
+            </View>
+
+            {visibleFixed.length > 0 ? (
+              <View style={{ gap: 10 }}>
+                <BTLabel color={t.inkMute}>Money flow · fixed this week</BTLabel>
+                {visibleFixed.map((c) => (
+                  <CategoryRow key={`fixed-${c.id}`} c={c} t={t} />
+                ))}
+                <Text
+                  style={{
+                    color: t.inkMute,
+                    fontFamily: BTFonts.sans,
+                    fontSize: 11,
+                    fontStyle: "italic",
+                  }}
+                >
+                  These don't count toward your spend total above — they're
+                  debt service, taxes, fees, and money moved between your own
+                  accounts.
+                </Text>
+              </View>
+            ) : null}
+          </>
+        )}
 
         {hiddenCategories.length > 0 ? (
           <Pressable
@@ -862,17 +1677,6 @@ function FAB({
   );
 }
 
-function compactDollar(n: number): string {
-  // The Year view stacks 12 monthly bars side-by-side at flex:1, so the
-  // text above each bar gets ~22-28pt of width. "$20,491" wraps to two
-  // lines and reads as "$20 / 491" — looks like a bug.
-  // Use k/m suffix so labels stay one line.
-  const abs = Math.abs(n);
-  if (abs >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}m`;
-  if (abs >= 10_000) return `$${Math.round(n / 1_000)}k`;
-  if (abs >= 1_000) return `$${(n / 1_000).toFixed(1)}k`;
-  return `$${Math.round(n)}`;
-}
 
 function DayBars({ t, bars }: { t: BTTheme; bars: DayBar[] }) {
   const max = Math.max(1, ...bars.map((b) => b.amt));
