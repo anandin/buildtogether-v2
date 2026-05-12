@@ -702,10 +702,17 @@ function HorizonYearList({
   t: BTTheme;
   months: HorizonMonth[];
 }) {
-  const overCount = months.filter((m) => !m.isFuture && m.spend > m.income && m.income > 0)
-    .length;
-  const underCount = months.filter(
-    (m) => !m.isFuture && m.spend <= m.income && m.income > 0,
+  // "No data" = a past (or current) month where Plaid didn't surface any
+  // income rows. Could be a Plaid item that wasn't connected yet, an
+  // employer paying via cheque, or just a gap. We can't classify these
+  // as over/under so we dim them and pull them out of the summary
+  // counts. The user-visible difference: their Jan shows "—" instead of
+  // a misleading "$0" in green.
+  const hasData = (m: HorizonMonth) => !m.isFuture && m.income > 0;
+  const overCount = months.filter((m) => hasData(m) && m.spend > m.income).length;
+  const underCount = months.filter((m) => hasData(m) && m.spend <= m.income).length;
+  const noDataCount = months.filter(
+    (m) => !m.isFuture && m.income === 0,
   ).length;
   return (
     <BTCard t={t} padding={18}>
@@ -729,15 +736,18 @@ function HorizonYearList({
             fontFamily: BTFonts.serifItalic,
           }}
         >
-          {underCount} months under the line · {overCount} over
+          {underCount} under the line · {overCount} over
+          {noDataCount > 0 ? ` · ${noDataCount} no income data` : ""}
         </Text>
       </View>
       {months.map((m, i) => {
+        const noData = !m.isFuture && m.income === 0;
         const isOver = !m.isFuture && m.income > 0 && m.spend > m.income;
         const ratio = m.isFuture || m.income === 0 ? 0 : m.spend / m.income;
         const fillPct = Math.min(ratio * 100, 100);
         const overflowPct = Math.max(ratio * 100 - 100, 0);
         const monthSurplus = m.income - m.spend;
+        const dimmed = m.isFuture || noData;
         return (
           <View
             key={`${m.m}-${i}`}
@@ -746,7 +756,7 @@ function HorizonYearList({
               alignItems: "center",
               gap: 12,
               marginBottom: 10,
-              opacity: m.isFuture ? 0.3 : 1,
+              opacity: dimmed ? 0.3 : 1,
             }}
           >
             <Text
@@ -840,14 +850,14 @@ function HorizonYearList({
                 fontSize: 12,
                 fontFamily: BTFonts.sans,
                 fontWeight: "700",
-                color: m.isFuture
+                color: dimmed
                   ? t.inkMute
                   : isOver
                     ? t.bad
                     : t.good,
               }}
             >
-              {m.isFuture
+              {dimmed
                 ? "—"
                 : compactDollar(monthSurplus < 0 ? -Math.abs(monthSurplus) : monthSurplus)}
             </Text>
@@ -871,11 +881,15 @@ function HorizonYearList({
             textAlign: "center",
           }}
         >
-          {overCount === 0
+          {overCount === 0 && underCount > 0
             ? "The line held all year."
-            : overCount <= 2
-              ? `${overCount} months over the line. The rest under. The line held.`
-              : `${overCount} months over the line. Worth zooming out.`}
+            : overCount === 0 && underCount === 0
+              ? noDataCount > 0
+                ? "Not enough income synced yet to draw the year."
+                : "Nothing landed yet this year."
+              : overCount <= 2 && underCount >= overCount
+                ? `${overCount} month${overCount === 1 ? "" : "s"} over the line. The rest under. The line held.`
+                : `${overCount} month${overCount === 1 ? "" : "s"} over the line. Worth zooming out.`}
         </Text>
       </View>
     </BTCard>
@@ -1208,49 +1222,59 @@ function BTSpendBody() {
             <BTCard t={t} padding={20}>
               <DayBars t={t} bars={safeBars} />
             </BTCard>
-
-            <View style={{ gap: 10 }}>
-              <BTLabel color={t.inkMute}>Where it goes</BTLabel>
-              {visibleDiscretionary.length > 0 ? (
-                visibleDiscretionary.map((c) => (
-                  <CategoryRow key={c.id} c={c} t={t} />
-                ))
-              ) : (
-                <Text
-                  style={{
-                    color: t.inkMute,
-                    fontFamily: BTFonts.sans,
-                    fontSize: 12,
-                    fontStyle: "italic",
-                  }}
-                >
-                  No discretionary spend this week.
-                </Text>
-              )}
-            </View>
-
-            {visibleFixed.length > 0 ? (
-              <View style={{ gap: 10 }}>
-                <BTLabel color={t.inkMute}>Money flow · fixed this week</BTLabel>
-                {visibleFixed.map((c) => (
-                  <CategoryRow key={`fixed-${c.id}`} c={c} t={t} />
-                ))}
-                <Text
-                  style={{
-                    color: t.inkMute,
-                    fontFamily: BTFonts.sans,
-                    fontSize: 11,
-                    fontStyle: "italic",
-                  }}
-                >
-                  These don't count toward your spend total above — they're
-                  debt service, taxes, fees, and money moved between your own
-                  accounts.
-                </Text>
-              </View>
-            ) : null}
           </>
         )}
+
+        {/* Category breakdown — always rendered, regardless of range.
+            On month/year the Horizon panel shows TRUNCATED bar labels
+            ("subsc…", "restau…"), so users need this drill-into list
+            below to answer "where did the money actually go?" The
+            "Where it goes" + "Money flow · fixed" split is the same
+            for all ranges — labels just shift with range. */}
+        <View style={{ gap: 10 }}>
+          <BTLabel color={t.inkMute}>Where it goes</BTLabel>
+          {visibleDiscretionary.length > 0 ? (
+            visibleDiscretionary.map((c) => (
+              <CategoryRow key={c.id} c={c} t={t} />
+            ))
+          ) : (
+            <Text
+              style={{
+                color: t.inkMute,
+                fontFamily: BTFonts.sans,
+                fontSize: 12,
+                fontStyle: "italic",
+              }}
+            >
+              No discretionary spend{" "}
+              {range === "week" ? "this week." : range === "month" ? "this month." : "this year."}
+            </Text>
+          )}
+        </View>
+
+        {visibleFixed.length > 0 ? (
+          <View style={{ gap: 10 }}>
+            <BTLabel color={t.inkMute}>
+              Money flow · fixed{" "}
+              {range === "week" ? "this week" : range === "month" ? "this month" : "this year"}
+            </BTLabel>
+            {visibleFixed.map((c) => (
+              <CategoryRow key={`fixed-${c.id}`} c={c} t={t} />
+            ))}
+            <Text
+              style={{
+                color: t.inkMute,
+                fontFamily: BTFonts.sans,
+                fontSize: 11,
+                fontStyle: "italic",
+              }}
+            >
+              These don't count toward your spend total above — they're
+              debt service, taxes, fees, and money moved between your own
+              accounts.
+            </Text>
+          </View>
+        ) : null}
 
         {hiddenCategories.length > 0 ? (
           <Pressable
