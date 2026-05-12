@@ -365,6 +365,20 @@ export const btApi = {
     getJson<PlaidPendingTransaction[]>(`/api/plaid/pending/${coupleId}`),
   plaidSync: (coupleId: string) =>
     postJson<{ ok: true }>(`/api/plaid/sync/${coupleId}`),
+  plaidResetTransactions: () =>
+    postJson<{
+      deleted: { plaidTransactions: number; expenses: number };
+      resync: {
+        items: number;
+        resynced: number;
+        totalAdded: number;
+        perItem: Array<{
+          institution: string | null;
+          added: number;
+          modified: number;
+        }>;
+      };
+    }>("/api/plaid/reset-transactions", {}),
   plaidAccept: (
     txnId: string,
     overrides?: { note?: string | null; tags?: string[] | null },

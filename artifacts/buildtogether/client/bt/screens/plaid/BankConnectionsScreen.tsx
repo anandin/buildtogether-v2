@@ -32,6 +32,7 @@ import {
   usePlaidStatus,
   usePlaidSync,
   usePlaidDisconnect,
+  usePlaidResetTransactions,
   useInvalidatePlaid,
 } from "../../hooks/usePlaid";
 import { PlaidConnectButton } from "@/components/PlaidConnectButton";
@@ -45,9 +46,43 @@ export function BankConnectionsScreen({ onBack }: { onBack: () => void }) {
   const items = usePlaidItems({ silent: true });
   const sync = usePlaidSync();
   const disconnect = usePlaidDisconnect();
+  const resetTx = usePlaidResetTransactions();
   const refreshPlaid = useInvalidatePlaid();
   const passkeyGate = usePasskeyGate();
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [resetResult, setResetResult] = useState<string | null>(null);
+
+  const handleResetTransactions = () => {
+    if (resetTx.isPending) return;
+    Alert.alert(
+      "Reset all transactions?",
+      "I'll delete every bank transaction we have on file and re-pull the last ~3 months fresh from your connected banks.\n\nWHAT GETS WIPED:\n• All Plaid transactions + the expenses we created from them\n• Spend totals, categories, forecasts (they re-compute from the fresh pull)\n\nWHAT STAYS:\n• Your dreams, watchlist, subscriptions\n• Tilly's memory of you and our chat history\n• Your preferences (hidden categories, pinned items, etc.)\n• Manual expenses you typed in by voice/photo/text\n\nI'll also log this reset in Tilly's memory so she knows the ledger changed.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Reset",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const r = await resetTx.mutateAsync();
+              const inst =
+                r.resync.perItem
+                  .map((p) => `${p.institution ?? "bank"}: ${p.added}`)
+                  .join(", ") || "no banks";
+              setResetResult(
+                `Cleared ${r.deleted.plaidTransactions} transactions + ${r.deleted.expenses} expenses. Re-pulled ${r.resync.totalAdded} from ${r.resync.resynced} bank${r.resync.resynced === 1 ? "" : "s"} (${inst}).`,
+              );
+            } catch (err: any) {
+              Alert.alert(
+                "Reset failed",
+                err?.message ?? "Try again in a minute.",
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const handleSync = async () => {
     if (sync.isPending) return;
@@ -260,6 +295,103 @@ export function BankConnectionsScreen({ onBack }: { onBack: () => void }) {
                   {sync.isPending ? "Syncing…" : "Sync transactions now"}
                 </Text>
               </Pressable>
+            ) : null}
+          </View>
+        ) : null}
+
+        {/* Reset all transactions — destructive admin action. Lives
+            here (not buried in Settings) so the user finds it the same
+            place they'd think about their banks. */}
+        {status.data?.configured !== false && visible.length > 0 ? (
+          <View
+            style={{
+              marginTop: 24,
+              padding: 16,
+              borderRadius: 16,
+              borderWidth: 1,
+              borderColor: t.bad,
+              backgroundColor: t.surface,
+              gap: 12,
+            }}
+          >
+            <BTLabel color={t.bad}>Danger zone</BTLabel>
+            <Text
+              style={{
+                color: t.ink,
+                fontFamily: BTFonts.sans,
+                fontWeight: "700",
+                fontSize: 14,
+              }}
+            >
+              Reset all transactions
+            </Text>
+            <Text
+              style={{
+                color: t.inkSoft,
+                fontFamily: BTFonts.sans,
+                fontSize: 12,
+                lineHeight: 18,
+              }}
+            >
+              Wipes every bank transaction we have on file and re-pulls the
+              last ~3 months from your banks. Your memory, dreams, chat, and
+              preferences stay. I'll write this reset into Tilly's memory so
+              she knows the ledger changed.
+            </Text>
+            <Pressable
+              onPress={handleResetTransactions}
+              disabled={resetTx.isPending}
+              accessibilityRole="button"
+              accessibilityLabel="Reset all transactions"
+              style={({ pressed }) => ({
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 8,
+                paddingVertical: 12,
+                borderRadius: 14,
+                backgroundColor: t.bad,
+                opacity: pressed || resetTx.isPending ? 0.7 : 1,
+              })}
+            >
+              {resetTx.isPending ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Feather name="trash-2" size={14} color="#fff" />
+              )}
+              <Text
+                style={{
+                  color: "#fff",
+                  fontFamily: BTFonts.sans,
+                  fontWeight: "700",
+                  fontSize: 13,
+                }}
+              >
+                {resetTx.isPending ? "Resetting…" : "Reset all transactions"}
+              </Text>
+            </Pressable>
+            {resetResult ? (
+              <View
+                style={{
+                  padding: 12,
+                  borderRadius: 10,
+                  backgroundColor: t.surfaceAlt,
+                  borderWidth: 1,
+                  borderColor: t.rule,
+                }}
+              >
+                <Text
+                  style={{
+                    color: t.ink,
+                    fontFamily: BTFonts.mono,
+                    fontSize: 11,
+                    lineHeight: 16,
+                  }}
+                  selectable
+                >
+                  {resetResult}
+                </Text>
+              </View>
             ) : null}
           </View>
         ) : null}

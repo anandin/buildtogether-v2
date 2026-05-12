@@ -84,7 +84,7 @@ export function BTCategories({ onBack }: Props) {
         }}
       >
         <View style={{ flex: 1 }}>
-          <BTLabel color={t.inkMute}>You · last 30 days</BTLabel>
+          <BTLabel color={t.inkMute}>You · all synced transactions</BTLabel>
           <BTSerif size={26} color={t.ink} weight="500" style={{ marginTop: 6 }}>
             Categories.
           </BTSerif>

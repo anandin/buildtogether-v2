@@ -41,6 +41,7 @@ import {
   plaidTransactions,
   aiCorrections,
   userPreferences,
+  tillyMemory,
 } from "../shared/schema";
 import { detectPatterns, savePatterns, createNudgeFromPattern, getActivePatterns, getPendingNudges } from "./pattern-detection";
 import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt, buildQuickAddPrompt, buildGuardianCoachPrompt, buildGuardianIntentClassifierPrompt, type GuardianCoachContext } from "./prompts";
@@ -5237,6 +5238,135 @@ Return just the message text.`;
 
 
 
+  // Hard reset: delete every plaid-sourced row for this household and
+  // re-pull from Plaid. Use when the auto-accept policy / categorization
+  // logic / income filter changes substantially enough that re-running
+  // backfill alone (which preserves existing rows + only adds new ones)
+  // would leave the dataset partially stale.
+  //
+  // What this touches:
+  //   - DELETE plaid_transactions for this coupleId (and their linked
+  //     expenses rows via expenseId).
+  //   - NULL plaid_items.cursor so the next sync re-streams ~90 days.
+  //   - Re-run syncPlaidItem per active item.
+  //
+  // What this leaves untouched: tilly_memory (Tilly's memory of you),
+  // dossier, chat history, user_preferences, subscriptions, merchant
+  // rules, dreams, manual expenses (voice/text/photo).
+  //
+  // Writes a tilly_memory row (source='admin_action') so the dossier
+  // knows the reset happened — otherwise Tilly would refer to the old
+  // numbers in chat without realizing the ledger was wiped.
+  app.post(
+    "/api/plaid/reset-transactions",
+    requireAuth,
+    async (req, res) => {
+      try {
+        const coupleId = req.user!.coupleId;
+        const userId = req.user!.id;
+        if (!coupleId) return res.status(400).json({ error: "no household" });
+
+        const plaidRows = await db
+          .select({ id: plaidTransactions.id, expenseId: plaidTransactions.expenseId })
+          .from(plaidTransactions)
+          .where(eq(plaidTransactions.coupleId, coupleId));
+        const linkedExpenseIds = plaidRows
+          .map((r) => r.expenseId)
+          .filter((id): id is string => !!id);
+
+        const txCount = plaidRows.length;
+        let expensesDeleted = 0;
+
+        if (linkedExpenseIds.length > 0) {
+          const deleted = await db
+            .delete(expenses)
+            .where(
+              and(
+                eq(expenses.coupleId, coupleId),
+                inArray(expenses.id, linkedExpenseIds),
+                eq(expenses.source, "plaid"),
+              ),
+            )
+            .returning({ id: expenses.id });
+          expensesDeleted = deleted.length;
+        }
+
+        await db
+          .delete(plaidTransactions)
+          .where(eq(plaidTransactions.coupleId, coupleId));
+
+        const items = await db
+          .select()
+          .from(plaidItems)
+          .where(
+            and(
+              eq(plaidItems.coupleId, coupleId),
+              eq(plaidItems.status, "active"),
+            ),
+          );
+
+        let resyncedItems = 0;
+        let totalAdded = 0;
+        const perItem: Array<{
+          institution: string | null;
+          added: number;
+          modified: number;
+        }> = [];
+        for (const item of items) {
+          await db
+            .update(plaidItems)
+            .set({ cursor: null })
+            .where(eq(plaidItems.id, item.id));
+          try {
+            const { added, modified } = await syncPlaidItem(item.id);
+            totalAdded += added;
+            resyncedItems++;
+            perItem.push({
+              institution: item.institutionName ?? null,
+              added,
+              modified,
+            });
+          } catch (err: any) {
+            perItem.push({
+              institution: item.institutionName ?? null,
+              added: 0,
+              modified: 0,
+            });
+            console.error(
+              `reset-transactions error for ${item.id}:`,
+              err?.message,
+            );
+          }
+        }
+
+        // Tell Tilly's memory that this happened, so when the user asks
+        // "what about that $300 transaction last week" Tilly can say "I
+        // refreshed your transaction history a couple of hours ago — the
+        // ledger you're looking at now is a fresh pull from your banks."
+        try {
+          await db.insert(tillyMemory).values({
+            userId,
+            householdId: coupleId,
+            kind: "observation",
+            source: "admin_action",
+            body: `You hit reset on transactions. I cleared ${txCount} old rows and re-pulled ${totalAdded} from ${resyncedItems} bank${resyncedItems === 1 ? "" : "s"}. Your memory of you, our chats, your dreams, and your preferences are untouched.`,
+            dateLabel: "Today",
+          });
+        } catch (memErr) {
+          console.error("reset-transactions tilly_memory write failed:", memErr);
+        }
+
+        res.json({
+          deleted: { plaidTransactions: txCount, expenses: expensesDeleted },
+          resync: { items: items.length, resynced: resyncedItems, totalAdded, perItem },
+        });
+      } catch (e: any) {
+        console.error("reset-transactions error:", e);
+        res.status(500).json({ error: e?.message });
+      }
+    },
+  );
+
   // Backfill historical income (and any other tx the old filters
   // skipped). Resets the per-item Plaid cursor to null and re-runs
   // syncPlaidItem — Plaid re-streams the item's history window (~90
@@ -5252,6 +5382,7 @@ Return just the message text.`;
     async (req, res) => {
       try {
         const coupleId = req.user!.coupleId;
+        const userId = req.user!.id;
         if (!coupleId) return res.status(400).json({ error: "no household" });
         const items = await db
           .select()
@@ -5288,6 +5419,23 @@ Return just the message text.`;
               modified: 0,
             });
             console.error(`backfill-history error for ${item.id}:`, err?.message);
+          }
+        }
+        if (totalAdded > 0) {
+          try {
+            await db.insert(tillyMemory).values({
+              userId,
+              householdId: coupleId,
+              kind: "observation",
+              source: "admin_action",
+              body: `You triggered a history backfill — I re-pulled ${totalAdded} transactions across ${items.length} bank${items.length === 1 ? "" : "s"} that the old import filter had skipped.`,
+              dateLabel: "Today",
+            });
+          } catch (memErr) {
+            console.error(
+              "backfill-history tilly_memory write failed:",
+              memErr,
+            );
           }
         }
         res.json({ items: items.length, totalAdded, perItem });
@@ -5363,6 +5511,23 @@ Return just the message text.`;
               .where(eq(plaidTransactions.id, r.id));
           });
           drained++;
+        }
+        if (drained > 0) {
+          try {
+            await db.insert(tillyMemory).values({
+              userId,
+              householdId: coupleId,
+              kind: "observation",
+              source: "admin_action",
+              body: `You drained the pending queue — I accepted ${drained} transactions in bulk that matched the auto-accept rule. ${kept} stayed pending for you to review.`,
+              dateLabel: "Today",
+            });
+          } catch (memErr) {
+            console.error(
+              "drain-pending tilly_memory write failed:",
+              memErr,
+            );
+          }
         }
         res.json({ scanned: rows.length, drained, kept });
       } catch (e: any) {

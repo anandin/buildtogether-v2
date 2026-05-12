@@ -204,6 +204,26 @@ export function usePlaidIgnore() {
   });
 }
 
+export function usePlaidResetTransactions() {
+  const qc = useQueryClient();
+  const { user } = useUser();
+  const couple = user?.householdId ?? null;
+  return useMutation({
+    mutationFn: () => btApi.plaidResetTransactions(),
+    onSuccess: () => {
+      invalidatePlaid(qc, couple);
+      // Wipe all derived caches that read plaid_transactions so the UI
+      // doesn't flash stale numbers between the reset and the re-sync.
+      qc.invalidateQueries({ queryKey: ["/api/expenses"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/spend-pattern"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/today"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/monthly-summary"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/forecast"] });
+      qc.invalidateQueries({ queryKey: ["/api/tilly/categories"] });
+    },
+  });
+}
+
 export function usePlaidDisconnect() {
   const qc = useQueryClient();
   const { user } = useUser();

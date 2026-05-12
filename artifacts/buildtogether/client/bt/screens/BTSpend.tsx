@@ -40,7 +40,71 @@ function useSplitsList() {
   });
 }
 
+class BTSpendErrorBoundary extends React.Component<
+  { children: React.ReactNode; t: BTTheme },
+  { err: Error | null }
+> {
+  state = { err: null as Error | null };
+  static getDerivedStateFromError(err: Error) {
+    return { err };
+  }
+  componentDidCatch(err: Error) {
+    console.error("[BTSpend] render error:", err);
+  }
+  render() {
+    if (this.state.err) {
+      const t = this.props.t;
+      return (
+        <View style={{ flex: 1, backgroundColor: t.bg, padding: 22, paddingTop: 60, gap: 14 }}>
+          <BTLabel color={t.inkMute}>Something broke on this view</BTLabel>
+          <BTSerif size={22} color={t.ink} weight="500">
+            I couldn't draw the spend page just now. Try switching ranges or
+            pulling to refresh.
+          </BTSerif>
+          <Text
+            style={{
+              color: t.inkMute,
+              fontFamily: BTFonts.mono,
+              fontSize: 10,
+              marginTop: 8,
+            }}
+            selectable
+          >
+            {String(this.state.err?.message ?? this.state.err)}
+          </Text>
+          <Pressable
+            onPress={() => this.setState({ err: null })}
+            accessibilityRole="button"
+            style={{
+              alignSelf: "flex-start",
+              paddingHorizontal: 14,
+              paddingVertical: 8,
+              borderRadius: 999,
+              borderWidth: 1,
+              borderColor: t.rule,
+            }}
+          >
+            <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontWeight: "700", fontSize: 12 }}>
+              Try again
+            </Text>
+          </Pressable>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export function BTSpend() {
+  const { t } = useBT();
+  return (
+    <BTSpendErrorBoundary t={t}>
+      <BTSpendBody />
+    </BTSpendErrorBoundary>
+  );
+}
+
+function BTSpendBody() {
   const { t } = useBT();
   const [range, setRange] = useState<"week" | "month" | "year">("week");
   const spend = useSpend(range);
@@ -86,6 +150,14 @@ export function BTSpend() {
   const activeSubs = (subs.data && subs.data.ready === true ? subs.data.subscriptions : [])
     .filter((s) => s.status === "active")
     .slice(0, 4);
+
+  // useUserPrefs MUST be called before any early return — Rules of Hooks.
+  // The previous structure ran it only when `live` was non-null, so when
+  // the query refetched and `live` flipped back to null between renders,
+  // React saw a different number of hooks and threw "Rendered fewer hooks
+  // than expected." The error boundary surfaces this now that the screen
+  // is wrapped, but the bug pre-existed the wrap.
+  const { hiddenCategories } = useUserPrefs();
 
   if (!live) {
     // No spend pattern computed yet — but the user may still have logged
@@ -214,18 +286,25 @@ export function BTSpend() {
   }
 
   const { spent, italicSpan, bars, categories } = live;
+  const safeCategories: SpendCategory[] = Array.isArray(categories) ? categories : [];
+  const safeBars: DayBar[] = Array.isArray(bars) ? bars : [];
   const fixedObligations =
-    "fixedObligations" in live ? live.fixedObligations ?? [] : [];
-  const todayLedger = "today" in live ? live.today : [];
-  const paycheck = "paycheck" in live ? live.paycheck : null;
-  // Tilly-driven category filter — chat sends a hideCategoryFromSpend
-  // tool, server writes the pref, this screen reads it and filters.
-  const { hiddenCategories } = useUserPrefs();
-  const visibleDiscretionary = categories.filter(
-    (c) => !hiddenCategories.includes(c.name.toLowerCase()),
+    "fixedObligations" in live && Array.isArray(live.fixedObligations)
+      ? live.fixedObligations
+      : [];
+  const todayLedger =
+    "today" in live && Array.isArray(live.today) ? live.today : [];
+  const paycheck = "paycheck" in live ? live.paycheck ?? null : null;
+  // hiddenCategories was read at the top of the component (Rules of
+  // Hooks). Tilly-driven category filter — chat sends a
+  // hideCategoryFromSpend tool, server writes the pref, this screen
+  // reads it and filters.
+  const hidden = Array.isArray(hiddenCategories) ? hiddenCategories : [];
+  const visibleDiscretionary = safeCategories.filter(
+    (c) => !hidden.includes(c.name.toLowerCase()),
   );
   const visibleFixed = fixedObligations.filter(
-    (c) => !hiddenCategories.includes(c.name.toLowerCase()),
+    (c) => !hidden.includes(c.name.toLowerCase()),
   );
 
   return (
@@ -289,9 +368,9 @@ export function BTSpend() {
                 ? "Last 4 weeks"
                 : "Last 12 months"}
           </BTLabel>
-          {italicSpan ? (
+          {italicSpan && range === "week" ? (
             <BTSerif size={30} color={t.ink} weight="500">
-              ${spent} spent.{" "}
+              ${spent.toLocaleString()} spent.{" "}
               <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
                 {italicSpan}
               </Text>{" "}
@@ -299,13 +378,18 @@ export function BTSpend() {
             </BTSerif>
           ) : (
             <BTSerif size={30} color={t.ink} weight="500">
-              ${spent} spent. No surprises this week.
+              ${spent.toLocaleString()} spent{" "}
+              {range === "week"
+                ? "this week."
+                : range === "month"
+                  ? "this month."
+                  : "this year."}
             </BTSerif>
           )}
         </View>
 
         <BTCard t={t} padding={20}>
-          <DayBars t={t} bars={bars} />
+          <DayBars t={t} bars={safeBars} />
         </BTCard>
 
         <View style={{ gap: 10 }}>
@@ -323,14 +407,18 @@ export function BTSpend() {
                 fontStyle: "italic",
               }}
             >
-              No discretionary spend this week.
+              No discretionary spend{" "}
+              {range === "week" ? "this week." : range === "month" ? "this month." : "this year."}
             </Text>
           )}
         </View>
 
         {visibleFixed.length > 0 ? (
           <View style={{ gap: 10 }}>
-            <BTLabel color={t.inkMute}>Money flow · fixed this week</BTLabel>
+            <BTLabel color={t.inkMute}>
+              Money flow · fixed{" "}
+              {range === "week" ? "this week" : range === "month" ? "this month" : "this year"}
+            </BTLabel>
             {visibleFixed.map((c) => (
               <CategoryRow key={`fixed-${c.id}`} c={c} t={t} />
             ))}
@@ -632,7 +720,7 @@ function CategoryRow({ c, t }: { c: SpendCategory; t: BTTheme }) {
       </View>
 
       {/* ── Expanded drill-down ── */}
-      {open && c.transactions.length > 0 ? (
+      {open && (c.transactions ?? []).length > 0 ? (
         <View
           style={{
             borderTopWidth: 1,
@@ -642,13 +730,13 @@ function CategoryRow({ c, t }: { c: SpendCategory; t: BTTheme }) {
             gap: 10,
           }}
         >
-          {c.transactions.map((tx) => (
+          {(c.transactions ?? []).map((tx) => (
             <TxLine key={tx.id} tx={tx} t={t} />
           ))}
         </View>
       ) : null}
 
-      {open && c.transactions.length === 0 ? (
+      {open && (c.transactions ?? []).length === 0 ? (
         <View style={{ borderTopWidth: 1, borderTopColor: t.rule, padding: 14 }}>
           <Text style={{ color: t.inkMute, fontFamily: BTFonts.sans, fontSize: 12 }}>
             No transaction details available from your bank for this category.
@@ -774,8 +862,23 @@ function FAB({
   );
 }
 
+function compactDollar(n: number): string {
+  // The Year view stacks 12 monthly bars side-by-side at flex:1, so the
+  // text above each bar gets ~22-28pt of width. "$20,491" wraps to two
+  // lines and reads as "$20 / 491" — looks like a bug.
+  // Use k/m suffix so labels stay one line.
+  const abs = Math.abs(n);
+  if (abs >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}m`;
+  if (abs >= 10_000) return `$${Math.round(n / 1_000)}k`;
+  if (abs >= 1_000) return `$${(n / 1_000).toFixed(1)}k`;
+  return `$${Math.round(n)}`;
+}
+
 function DayBars({ t, bars }: { t: BTTheme; bars: DayBar[] }) {
   const max = Math.max(1, ...bars.map((b) => b.amt));
+  // 12 bars (year) need tighter font + the abbreviated format. 4-7 bars
+  // (month/week) have room for plain dollars.
+  const useCompact = bars.length > 7;
   const pulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     const loop = Animated.loop(
@@ -796,14 +899,16 @@ function DayBars({ t, bars }: { t: BTTheme; bars: DayBar[] }) {
         return (
           <View key={i} style={{ alignItems: "center", gap: 6, flex: 1 }}>
             <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
               style={{
                 color: t.inkMute,
                 fontFamily: BTFonts.mono,
-                fontSize: 11,
-                letterSpacing: 1,
+                fontSize: useCompact ? 9 : 11,
+                letterSpacing: useCompact ? 0 : 1,
               }}
             >
-              ${b.amt}
+              {useCompact ? compactDollar(b.amt) : `$${b.amt}`}
             </Text>
             <View style={{ width: 22, height: h, alignItems: "center", justifyContent: "flex-end" }}>
               <View

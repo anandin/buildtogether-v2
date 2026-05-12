@@ -33,7 +33,7 @@ import { isValidTone, DEFAULT_TONE, type BTToneKey } from "../../tilly/tone";
 import { buildWeeklyPattern } from "../../tilly/spend-pattern";
 import { buildCreditSnapshot } from "../../tilly/credit-snapshot";
 import { sql } from "drizzle-orm";
-import { expenses, plaidTransactions } from "../../../shared/schema";
+import { expenses } from "../../../shared/schema";
 
 /**
  * Compute breathing-room from any transaction source we have — Plaid +
@@ -561,12 +561,16 @@ export function mountTillyInsightsRoutes(app: Express): void {
     },
   );
 
-  // GET /api/tilly/categories — every category that's seen activity in
-  // the last 30d, with monthTotal + transactionCount + the user's
-  // current include-in-spend setting (default + override). Powers the
-  // Categories screen on the YOU tab. Default exclude-from-spend
-  // categories are loans/taxes/transfers/fees; everything else is
-  // included by default. Per-user overrides flip these on/off.
+  // GET /api/tilly/categories?range=all|month|year — every category
+  // that's seen activity in the chosen window. Default is `all` so the
+  // user can recategorize any merchant that's ever synced, even old
+  // rows like a February rent payment. The 30-day window was hiding
+  // months-old merchants from the Categorize Spend screen — the user
+  // could see them on the Year-view Spend chart but couldn't move
+  // them, which is the bug we're fixing here.
+  //
+  // monthTotal is kept as a field name for client back-compat — it's
+  // now the total across the chosen range, not specifically a month.
   app.get("/api/tilly/categories", requireAuth, async (req: Request, res: Response) => {
     if (!req.user) return res.status(401).json({ error: "auth required" });
     const householdId = req.user.coupleId;
@@ -574,9 +578,19 @@ export function mountTillyInsightsRoutes(app: Express): void {
     if (!householdId) return res.json({ categories: [] });
 
     try {
-      const monthAgo = new Date();
-      monthAgo.setDate(monthAgo.getDate() - 30);
-      const monthAgoIso = monthAgo.toISOString().slice(0, 10);
+      const rangeQ = String(req.query.range ?? "all").toLowerCase();
+      const range: "all" | "month" | "year" =
+        rangeQ === "month" || rangeQ === "year" ? rangeQ : "all";
+      let sinceIso: string | null = null;
+      if (range === "month") {
+        const d = new Date();
+        d.setDate(d.getDate() - 30);
+        sinceIso = d.toISOString().slice(0, 10);
+      } else if (range === "year") {
+        const d = new Date();
+        d.setDate(d.getDate() - 365);
+        sinceIso = d.toISOString().slice(0, 10);
+      }
 
       const txRows = await db
         .select({
@@ -587,8 +601,8 @@ export function mountTillyInsightsRoutes(app: Express): void {
         .where(
           and(
             eq(plaidTransactions.coupleId, householdId),
-            gte(plaidTransactions.date, monthAgoIso),
             eq(plaidTransactions.status, "accepted"),
+            ...(sinceIso ? [gte(plaidTransactions.date, sinceIso)] : []),
           ),
         );
 
@@ -636,17 +650,17 @@ export function mountTillyInsightsRoutes(app: Express): void {
           };
         })
         .sort((a, b) => b.monthTotal - a.monthTotal);
-      res.json({ categories });
+      res.json({ range, categories });
     } catch (err) {
       console.warn("/api/tilly/categories error:", err);
       res.status(500).json({ error: "categories failed" });
     }
   });
 
-  // GET /api/tilly/categories/:name/merchants — every merchant whose
-  // ourCategory matches the requested name, with month total + count.
-  // Powers the drill-in on the Categorize spend screen so the user can
-  // tap a merchant and move it without going through chat.
+  // GET /api/tilly/categories/:name/merchants?range=all|month|year
+  // every merchant whose ourCategory matches, with total + count over
+  // the chosen window. Default `all` so any historically synced
+  // merchant is reachable, not just the last 30 days.
   app.get(
     "/api/tilly/categories/:name/merchants",
     requireAuth,
@@ -655,18 +669,28 @@ export function mountTillyInsightsRoutes(app: Express): void {
       const householdId = req.user.coupleId;
       if (!householdId) return res.json({ merchants: [] });
       const cat = String(req.params.name).toLowerCase();
+      const rangeQ = String(req.query.range ?? "all").toLowerCase();
+      const range: "all" | "month" | "year" =
+        rangeQ === "month" || rangeQ === "year" ? rangeQ : "all";
+      let sinceIso: string | null = null;
+      if (range === "month") {
+        const d = new Date();
+        d.setDate(d.getDate() - 30);
+        sinceIso = d.toISOString().slice(0, 10);
+      } else if (range === "year") {
+        const d = new Date();
+        d.setDate(d.getDate() - 365);
+        sinceIso = d.toISOString().slice(0, 10);
+      }
       try {
-        const monthAgo = new Date();
-        monthAgo.setDate(monthAgo.getDate() - 30);
-        const monthAgoIso = monthAgo.toISOString().slice(0, 10);
         const filtered = await db
           .select()
           .from(plaidTransactions)
           .where(
             and(
               eq(plaidTransactions.coupleId, householdId),
-              gte(plaidTransactions.date, monthAgoIso),
               eq(plaidTransactions.ourCategory, cat),
+              ...(sinceIso ? [gte(plaidTransactions.date, sinceIso)] : []),
             ),
           );
         const out = new Map<
@@ -699,7 +723,7 @@ export function mountTillyInsightsRoutes(app: Express): void {
         const merchants = Array.from(out.values())
           .map((m) => ({ ...m, monthTotal: Math.round(m.monthTotal * 100) / 100 }))
           .sort((a, b) => b.monthTotal - a.monthTotal);
-        res.json({ category: cat, merchants });
+        res.json({ category: cat, range, merchants });
       } catch (err) {
         console.warn("/api/tilly/categories/:name/merchants error:", err);
         res.status(500).json({ error: "merchants failed" });
