@@ -733,7 +733,16 @@ export function mountTillyInsightsRoutes(app: Express): void {
           // this, "Income" / "cashback" / "credit_adjustment" drill-ins
           // came up empty even though the parent row showed a total.
           const absAmt = Math.abs(r.amount);
-          const sig = (r.signature || "").trim().toLowerCase();
+          // Bucket key fallback chain: explicit signature → lowercased
+          // merchantName → lowercased name. Sandbox Plaid sometimes
+          // produces rows with empty signatures (transaction_id-only),
+          // and skipping them dropped the parent total → drill-in
+          // mismatch the user actually hit. Skip only when ALL three
+          // are empty.
+          const sig =
+            (r.signature || "").trim().toLowerCase() ||
+            (r.merchantName || "").trim().toLowerCase() ||
+            (r.name || "").trim().toLowerCase();
           if (!sig) continue;
           const display =
             (r.merchantName && r.merchantName.trim()) ||
