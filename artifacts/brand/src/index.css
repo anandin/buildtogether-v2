@@ -1,0 +1,232 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=JetBrains+Mono:wght@400;700&display=swap');
+@import "tailwindcss";
+
+@theme inline {
+  --color-paper: #f3ead8;
+  --color-paper-deep: #ecdfc4;
+  --color-ink: #161312;
+  --color-ink-soft: #2a2421;
+  --color-terracotta: #d9542b;
+  --color-mustard: #e8b341;
+  --color-cobalt: #2640c4;
+  --color-coral: #f2a3a0;
+  --color-sage: #6a8b51;
+  --color-cream: #fbf5e8;
+
+  --font-display: 'Bricolage Grotesque', system-ui, sans-serif;
+  --font-serif: 'Fraunces', Georgia, serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+@layer base {
+  html {
+    background: var(--color-paper);
+    color: var(--color-ink);
+  }
+  body {
+    font-family: var(--font-serif);
+    background-color: var(--color-paper);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "ss01", "ss02";
+    overflow-x: hidden;
+  }
+  ::selection {
+    background: var(--color-terracotta);
+    color: var(--color-cream);
+  }
+}
+
+/* ============================================================
+   PAPER TEXTURE — subtle grain across the whole page
+   ============================================================ */
+.paper-grain {
+  position: relative;
+  isolation: isolate;
+}
+.paper-grain::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  opacity: 0.45;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.08  0 0 0 0 0.06  0 0 0 0 0.05  0 0 0 0.6 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+/* ============================================================
+   DOTTED + GRID PAPER BACKGROUNDS
+   ============================================================ */
+.bg-dots {
+  background-image: radial-gradient(rgba(22, 19, 18, 0.18) 1px, transparent 1px);
+  background-size: 22px 22px;
+  background-position: -1px -1px;
+}
+.bg-grid {
+  background-image:
+    linear-gradient(to right, rgba(22, 19, 18, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(22, 19, 18, 0.08) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+.bg-rule {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 27px,
+    rgba(38, 64, 196, 0.18) 27px,
+    rgba(38, 64, 196, 0.18) 28px
+  );
+}
+
+/* ============================================================
+   STICKER / TAPE / OUTLINE EFFECTS
+   ============================================================ */
+.tape {
+  position: absolute;
+  background: rgba(232, 179, 65, 0.55);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  width: 90px;
+  height: 22px;
+  backdrop-filter: blur(1px);
+}
+.tape::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 8px,
+    rgba(255,255,255,0.18) 8px 10px
+  );
+}
+
+.sticker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border: 2px solid var(--color-ink);
+  box-shadow: 3px 3px 0 var(--color-ink);
+  background: var(--color-cream);
+  white-space: nowrap;
+}
+
+.chip-outline {
+  border: 1.5px solid var(--color-ink);
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.brutal-shadow {
+  box-shadow: 6px 6px 0 0 var(--color-ink);
+}
+.brutal-shadow-sm {
+  box-shadow: 4px 4px 0 0 var(--color-ink);
+}
+.brutal-shadow-cobalt {
+  box-shadow: 6px 6px 0 0 var(--color-cobalt);
+}
+.brutal-shadow-terracotta {
+  box-shadow: 6px 6px 0 0 var(--color-terracotta);
+}
+
+/* ============================================================
+   POLAROID / INDEX CARD
+   ============================================================ */
+.polaroid {
+  background: var(--color-cream);
+  padding: 14px 14px 48px 14px;
+  border: 1.5px solid var(--color-ink);
+  box-shadow: 8px 10px 0 0 var(--color-ink);
+}
+
+.index-card {
+  background: var(--color-cream);
+  border: 1.5px solid var(--color-ink);
+  box-shadow: 5px 5px 0 0 var(--color-ink);
+  position: relative;
+}
+
+/* ============================================================
+   HAND-DRAWN UNDERLINE / SQUIGGLE
+   ============================================================ */
+.squiggle-underline {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 12'><path d='M0 8 Q 25 0 50 6 T 100 6 T 150 6 T 200 6' stroke='%23d9542b' stroke-width='3' fill='none' stroke-linecap='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: bottom left;
+  background-size: 100% 0.45em;
+  padding-bottom: 0.18em;
+}
+
+.squiggle-underline-cobalt {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 12'><path d='M0 8 Q 25 0 50 6 T 100 6 T 150 6 T 200 6' stroke='%232640c4' stroke-width='3' fill='none' stroke-linecap='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: bottom left;
+  background-size: 100% 0.45em;
+  padding-bottom: 0.18em;
+}
+
+/* ============================================================
+   ROTATIONS — sprinkle these on
+   ============================================================ */
+.rot--6 { transform: rotate(-6deg); }
+.rot--4 { transform: rotate(-4deg); }
+.rot--2 { transform: rotate(-2deg); }
+.rot-2  { transform: rotate(2deg); }
+.rot-3  { transform: rotate(3deg); }
+.rot-4  { transform: rotate(4deg); }
+.rot-6  { transform: rotate(6deg); }
+
+/* ============================================================
+   MARQUEE
+   ============================================================ */
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee 38s linear infinite;
+}
+
+/* ============================================================
+   FLOATING SHAPES animation
+   ============================================================ */
+@keyframes float-1 {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-14px) rotate(8deg); }
+}
+@keyframes float-2 {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(10px) rotate(-6deg); }
+}
+.float-a { animation: float-1 9s ease-in-out infinite; }
+.float-b { animation: float-2 11s ease-in-out infinite; }
+
+/* ============================================================
+   DASHED DIVIDERS
+   ============================================================ */
+.dashed-divider {
+  background-image: linear-gradient(
+    to right,
+    var(--color-ink) 0,
+    var(--color-ink) 8px,
+    transparent 8px,
+    transparent 16px
+  );
+  background-size: 16px 2px;
+  background-repeat: repeat-x;
+  background-position: center;
+  height: 2px;
+}
