@@ -1450,18 +1450,96 @@ function BTSpendBody() {
             spend so the flow reads top-to-bottom: money in → money out.
             Only renders when there's at least one income source in the
             period; otherwise hidden so the empty "Where it comes from"
-            label doesn't make the screen feel partly-broken. */}
-        {incomeSources.length > 0 ? (
-          <View style={{ gap: 10 }}>
-            <BTLabel color={t.inkMute}>
-              Where it comes from{" "}
-              {range === "week" ? "this week" : range === "month" ? "this month" : "this year"}
-            </BTLabel>
-            {incomeSources.map((c) => (
-              <CategoryRow key={`income-${c.id}`} c={c} t={t} variant="income" />
-            ))}
-          </View>
-        ) : null}
+            label doesn't make the screen feel partly-broken.
+
+            Header now exposes count + visible total so the user can
+            sanity-check against the Horizon's $X EARNED. If there's a
+            gap between the Horizon income and the sum of the rows here,
+            we surface a chip — that means some deposits were classified
+            under another category (other / transfer / etc.) and the
+            user should reclassify them via the Cash Flow page. */}
+        {(() => {
+          const visibleIncomeTotal = incomeSources.reduce((s, c) => s + c.amt, 0);
+          const horizonIncome = horizon?.income ?? 0;
+          // Round both before comparing to avoid sub-dollar noise.
+          const gap = Math.round(horizonIncome) - Math.round(visibleIncomeTotal);
+          const hasGap = gap >= 2; // tolerate $1 of rounding
+          if (incomeSources.length === 0 && horizonIncome <= 0) return null;
+          return (
+            <View style={{ gap: 10 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "baseline",
+                }}
+              >
+                <BTLabel color={t.inkMute}>
+                  Where it comes from{" "}
+                  {range === "week" ? "this week" : range === "month" ? "this month" : "this year"}
+                </BTLabel>
+                <Text
+                  style={{
+                    color: t.inkMute,
+                    fontFamily: BTFonts.mono,
+                    fontSize: 10,
+                    letterSpacing: 0.6,
+                  }}
+                >
+                  {incomeSources.length} source{incomeSources.length === 1 ? "" : "s"} ·{" "}
+                  ${visibleIncomeTotal.toLocaleString()}
+                </Text>
+              </View>
+              {hasGap ? (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                    backgroundColor: `${t.warn}1f`,
+                    borderRadius: 10,
+                    padding: 10,
+                    borderWidth: 1,
+                    borderColor: `${t.warn}55`,
+                  }}
+                >
+                  <Text style={{ fontSize: 14 }}>⚠️</Text>
+                  <Text
+                    style={{
+                      flex: 1,
+                      color: t.ink,
+                      fontFamily: BTFonts.sans,
+                      fontSize: 12,
+                      lineHeight: 17,
+                    }}
+                  >
+                    Tilly recorded ${horizonIncome.toLocaleString()} earned this period but only{" "}
+                    ${visibleIncomeTotal.toLocaleString()} is grouped below. ${gap.toLocaleString()}{" "}
+                    is probably in deposits I didn't recognize as income — open{" "}
+                    <Text style={{ fontWeight: "700", color: t.accent }}>Categories · cash flow</Text>{" "}
+                    on YOU and move them in.
+                  </Text>
+                </View>
+              ) : null}
+              {incomeSources.length > 0 ? (
+                incomeSources.map((c) => (
+                  <CategoryRow key={`income-${c.id}`} c={c} t={t} variant="income" />
+                ))
+              ) : (
+                <Text
+                  style={{
+                    color: t.inkMute,
+                    fontFamily: BTFonts.sans,
+                    fontSize: 12,
+                    fontStyle: "italic",
+                  }}
+                >
+                  No deposits recognised as income for this period.
+                </Text>
+              )}
+            </View>
+          );
+        })()}
 
         {/* Category breakdown — always rendered, regardless of range.
             On month/year the Horizon panel shows TRUNCATED bar labels
