@@ -408,6 +408,11 @@ function AboutMeSection({ t }: { t: BTTheme }) {
   const [dependents, setDependents] = useState("");
   const [supportNote, setSupportNote] = useState("");
   const [school, setSchool] = useState("");
+  // Inline ack state — replaces the iOS Alert popup which felt cheap and
+  // jarring. Renders as a soft confirmation chip next to the Save button
+  // for ~2.5s, then fades. The user already sees their typed values; we
+  // just need to confirm Tilly noted the change.
+  const [savedAt, setSavedAt] = useState<number | null>(null);
 
   useEffect(() => {
     if (!current) return;
@@ -430,7 +435,10 @@ function AboutMeSection({ t }: { t: BTTheme }) {
     body.schoolName = employmentType === "student" ? school.trim() || null : null;
     update.mutate(body, {
       onSuccess: () => {
-        Alert.alert("Saved", "I'll use this from now on.");
+        setSavedAt(Date.now());
+        // Auto-clear so the chip doesn't linger if the user comes back
+        // to this screen later.
+        setTimeout(() => setSavedAt(null), 2500);
       },
       onError: () => {
         Alert.alert("Couldn't save", "Try again in a moment.");
@@ -543,9 +551,26 @@ function AboutMeSection({ t }: { t: BTTheme }) {
               fontSize: 13,
             }}
           >
-            {update.isPending ? "Saving…" : "Save about me"}
+            {update.isPending
+              ? "Saving…"
+              : savedAt
+                ? "✓ Tilly noted it"
+                : "Save about me"}
           </Text>
         </Pressable>
+        {savedAt ? (
+          <Text
+            style={{
+              color: t.inkSoft,
+              fontFamily: BTFonts.sans,
+              fontSize: 12,
+              textAlign: "center",
+              marginTop: -4,
+            }}
+          >
+            I'll use this from now on.
+          </Text>
+        ) : null}
       </View>
     </View>
   );

@@ -44,6 +44,8 @@ import { useSpend } from "../hooks/useSpend";
 import { btApi } from "../api/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Text } from "react-native";
+import { ShouldIBuyTile } from "../ShouldIBuyTile";
+import { useTilly } from "../hooks/useTilly";
 
 type Props = { onNav?: (route: BTRoute) => void };
 export type BTRoute = "home" | "guardian" | "spend" | "credit" | "dreams" | "profile";
@@ -55,6 +57,16 @@ export function BTHome({ onNav }: Props) {
   const { user } = useUser();
   const expenses = useExpenses();
   const spend = useSpend();
+  // Sprint A — the "Should I buy this?" tile needs to be able to send
+  // a prefilled question through chat and switch to the Tilly tab in
+  // one move. Pulling useTilly() up here lets us call send() then nav,
+  // so the user lands on Guardian to see Tilly's reply for the item
+  // they just named.
+  const tilly = useTilly();
+  const openChatWithSeed = (seed: string) => {
+    tilly.send(seed);
+    onNav?.("guardian");
+  };
 
   const today_ = today.data && today.data.ready === true ? today.data : null;
   // Three states matter on Home:
@@ -66,11 +78,20 @@ export function BTHome({ onNav }: Props) {
   // query in flight on first mount blocks the empty branch.
   const isFirstLoad =
     today.isLoading || dreams.isLoading || spend.isLoading || expenses.isLoading;
+  // hasMoneyData = "show the hero card, not the connect-your-bank
+  // empty state." The server now returns bankConnected explicitly so
+  // we don't infer it from a \$ amount being > 0 — that fell over
+  // when monthly surplus clamped to \$0 (no detected income yet),
+  // making the user think their bank had disconnected when it hadn't.
+  // Falls back to the legacy heuristic when bankConnected is absent
+  // (older API response).
   const hasMoneyData =
     !!today_ &&
-    ((today_.afterRent ?? 0) > 0 ||
+    (today_.bankConnected === true ||
+      (today_.afterRent ?? 0) > 0 ||
       (today_.breathing ?? 0) > 0 ||
-      (today_.paycheckCopy ?? "").includes("this week"));
+      (today_.paycheckCopy ?? "").includes("this week") ||
+      (today_.paycheckCopy ?? "").includes("earned"));
   const userName = user?.name?.split(" ")[0] || "there";
 
   const greeting = today_?.greeting ?? tone.greeting(userName);
@@ -114,7 +135,9 @@ export function BTHome({ onNav }: Props) {
     queryKey: ["/api/tilly/reminders"],
     queryFn: btApi.reminders,
   });
-  const weekDays = nextFiveDays(remindersAll.data?.reminders ?? []);
+  const forecast = today_?.forecast ?? [];
+  const weekDays = nextFiveDays(remindersAll.data?.reminders ?? [], forecast);
+  const monthly = today_?.monthly ?? null;
 
   return (
     <ScrollView
@@ -170,11 +193,44 @@ export function BTHome({ onNav }: Props) {
           <SkeletonHeroCard t={t} />
         ) : hasMoneyData ? (
           <BTCard t={t} inverted padding={22} radius={18}>
-            <BTStripes color="#fff" opacity={0.07} />
-            <BTLabel color="rgba(255,255,255,0.55)">Available now</BTLabel>
+            <BTStripes color={t.invertedFg} opacity={0.07} />
+            <BTLabel color={t.invertedFgMute}>
+              {monthly && monthly.source !== "none" ? "This month" : "Available now"}
+            </BTLabel>
             <View style={{ marginTop: 14 }}>
-              <BTCurrency amount={today_!.afterRent} size={64} color="#FFFCF6" />
+              <BTCurrency
+                amount={monthly && monthly.source !== "none" ? monthly.surplus : today_!.afterRent}
+                size={64}
+                color={t.invertedFg}
+              />
             </View>
+            {monthly && monthly.source !== "none" ? (
+              <View style={{ marginTop: 10, gap: 4 }}>
+                <Text
+                  style={{
+                    color: t.invertedFgMute,
+                    fontFamily: BTFonts.mono,
+                    fontSize: 11,
+                    letterSpacing: 0.8,
+                  }}
+                >
+                  SURPLUS · INCOME − SPENT − COMMITTED
+                </Text>
+                <Text
+                  style={{
+                    color: t.invertedFg,
+                    fontFamily: BTFonts.serif,
+                    fontSize: 14,
+                    lineHeight: 20,
+                    marginTop: 2,
+                  }}
+                >
+                  ${Math.round(monthly.income).toLocaleString()} earned ·{" "}
+                  ${monthly.spentToDate.toLocaleString()} spent ·{" "}
+                  ${monthly.committedRest.toLocaleString()} still committed
+                </Text>
+              </View>
+            ) : null}
             <View
               style={{
                 flexDirection: "row",
@@ -185,7 +241,7 @@ export function BTHome({ onNav }: Props) {
             >
               <Text
                 style={{
-                  color: "rgba(255,252,246,0.7)",
+                  color: t.invertedFgMute,
                   fontFamily: BTFonts.sans,
                   fontSize: 12,
                   lineHeight: 17,
@@ -211,9 +267,9 @@ export function BTHome({ onNav }: Props) {
           </BTCard>
         ) : (
           <BTCard t={t} inverted padding={22} radius={18}>
-            <BTStripes color="#fff" opacity={0.07} />
-            <BTLabel color="rgba(255,255,255,0.55)">Step one</BTLabel>
-            <BTSerif size={26} color="#FFFCF6" weight="500" style={{ marginTop: 10, lineHeight: 32 }}>
+            <BTStripes color={t.invertedFg} opacity={0.07} />
+            <BTLabel color={t.invertedFgMute}>Step one</BTLabel>
+            <BTSerif size={26} color={t.invertedFg} weight="500" style={{ marginTop: 10, lineHeight: 32 }}>
               Connect your bank so I can{" "}
               <Text style={{ color: t.accent2, fontFamily: BTFonts.serifItalic }}>
                 actually watch
@@ -222,7 +278,7 @@ export function BTHome({ onNav }: Props) {
             </BTSerif>
             <Text
               style={{
-                color: "rgba(255,252,246,0.7)",
+                color: t.invertedFgMute,
                 fontFamily: BTFonts.sans,
                 fontSize: 13,
                 marginTop: 12,
@@ -233,6 +289,16 @@ export function BTHome({ onNav }: Props) {
             </Text>
           </BTCard>
         )}
+
+        {/* Sprint A — habit hook. Lives above the week strip, just
+            below the hero/breathing-room card, because this is the
+            single most important affordance for the core thesis: name
+            what you're thinking about buying BEFORE the impulse fires.
+            Hidden when both data states are loading so it doesn't
+            flash in front of the skeleton. */}
+        {!isFirstLoad ? (
+          <ShouldIBuyTile onOpenChatPrefilled={openChatWithSeed} />
+        ) : null}
 
         {/* Week strip — 5 horizontally scrolling day cards per design.
             Anchored to today; shows the next 4 days with whatever signal we
@@ -275,7 +341,7 @@ export function BTHome({ onNav }: Props) {
                 style={{
                   color: t.inkMute,
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
+                  fontSize: 11,
                   letterSpacing: 1,
                   textTransform: "uppercase",
                 }}
@@ -480,14 +546,14 @@ function SkeletonHeroCard({ t }: { t: BTTheme }) {
         width: w as any,
         height: h,
         borderRadius: h / 2,
-        backgroundColor: "rgba(255,252,246,0.18)",
+        backgroundColor: t.invertedFgMute,
         opacity,
       }}
     />
   );
   return (
     <BTCard t={t} inverted padding={22} radius={18}>
-      <BTStripes color="#fff" opacity={0.07} />
+      <BTStripes color={t.invertedFg} opacity={0.07} />
       <View style={{ gap: 14 }}>
         <Bar w={90} h={11} />
         <Bar w={"55%"} h={42} />
@@ -498,7 +564,7 @@ function SkeletonHeroCard({ t }: { t: BTTheme }) {
               width: 42,
               height: 42,
               borderRadius: 21,
-              backgroundColor: "rgba(255,252,246,0.2)",
+              backgroundColor: t.invertedFgMute,
               opacity,
             }}
           />
@@ -513,7 +579,7 @@ type WeekDay = {
   n: string;
   label: string;
   amt?: string;
-  mood: "today" | "watch" | "good" | "maybe";
+  mood: "today" | "watch" | "good" | "maybe" | "payday";
 };
 
 type ReminderRow = {
@@ -524,12 +590,13 @@ type ReminderRow = {
   status: "scheduled" | "fired" | "cancelled";
 };
 
-function nextFiveDays(reminders: ReminderRow[]): WeekDay[] {
+function nextFiveDays(
+  reminders: ReminderRow[],
+  forecast: Array<{ date: string; expected: number; reasons: string[]; paycheckIn?: number }>,
+): WeekDay[] {
   const out: WeekDay[] = [];
   const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const now = new Date();
-  // Bucket scheduled reminders by their local YYYY-MM-DD so we can match
-  // by day without timezone drift. Cancelled / already-fired are skipped.
   const byDay = new Map<string, ReminderRow[]>();
   for (const r of reminders) {
     if (r.status !== "scheduled") continue;
@@ -540,13 +607,29 @@ function nextFiveDays(reminders: ReminderRow[]): WeekDay[] {
     list.push(r);
     byDay.set(key, list);
   }
+  // Forecast keyed by YYYY-MM-DD. Forward day cards prefer forecast data
+  // (real expected $ + a 1-line reason) over the previous hardcoded
+  // "Look ahead" / "Paycheck +$612" placeholders.
+  const forecastByDate = new Map<
+    string,
+    { expected: number; reasons: string[]; paycheckIn?: number }
+  >();
+  for (const f of forecast) {
+    forecastByDate.set(f.date, {
+      expected: f.expected,
+      reasons: f.reasons,
+      paycheckIn: f.paycheckIn,
+    });
+  }
   for (let i = 0; i < 5; i++) {
     const d = new Date(now);
     d.setDate(now.getDate() + i);
     const dow = d.getDay();
     const isToday = i === 0;
-    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    const dayReminders = byDay.get(key) ?? [];
+    const reminderKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    const forecastKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    const dayReminders = byDay.get(reminderKey) ?? [];
+    const fc = forecastByDate.get(forecastKey);
     let mood: WeekDay["mood"] = "maybe";
     let label = "";
     let amt = "";
@@ -556,21 +639,28 @@ function nextFiveDays(reminders: ReminderRow[]): WeekDay[] {
       if (dayReminders.length > 1) {
         amt = `+${dayReminders.length - 1}`;
       }
+    } else if (fc && fc.paycheckIn && fc.paycheckIn > 0) {
+      // Payday wins over reminders + spend forecast — it's the one
+      // forward-looking event worth knowing about. Show inflow as +$X.
+      mood = "payday";
+      label = "paycheck";
+      amt = `+$${Math.round(fc.paycheckIn).toLocaleString()}`;
     } else if (dayReminders.length > 0) {
-      // A real reminder on this day takes priority over generic
-      // "look ahead" / "Paycheck" placeholders.
       mood = "watch";
       label = dayReminders[0].label;
-      if (dayReminders.length > 1) {
-        amt = `+${dayReminders.length - 1}`;
-      }
-    } else if (dow === 5) {
-      mood = "good";
-      label = "Paycheck";
-      amt = "+$612";
+      if (dayReminders.length > 1) amt = `+${dayReminders.length - 1}`;
+    } else if (fc && fc.expected > 0) {
+      mood =
+        fc.reasons.some((r) => /typical/.test(r))
+          ? "maybe"
+          : fc.reasons.length > 0
+            ? "watch"
+            : "maybe";
+      label = fc.reasons[0] ?? "look ahead";
+      amt = `~$${fc.expected}`;
     } else if (i === 1) {
-      mood = "watch";
-      label = "Look ahead";
+      mood = "maybe";
+      label = "look ahead";
     }
     out.push({
       d: days[dow],
@@ -589,6 +679,10 @@ function DayCard({ t, day }: { t: BTTheme; day: WeekDay }) {
     watch: { bg: t.surface, fg: t.ink, accent: t.warn },
     good: { bg: t.accentSoft, fg: t.ink, accent: t.good },
     maybe: { bg: t.surface, fg: t.ink, accent: t.inkMute },
+    // Payday: a tinted-good background so the inflow visually stands
+    // apart from outflow days without screaming. Accent stays t.good
+    // so the "+$X" reads as a positive event.
+    payday: { bg: `${t.good}22`, fg: t.ink, accent: t.good },
   }[day.mood];
   return (
     <View
@@ -905,7 +999,7 @@ function UpNextCard({ onNav }: { onNav?: (r: BTRoute) => void }) {
                 style={{
                   color: t.inkMute,
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
+                  fontSize: 11,
                   letterSpacing: 0.6,
                   textTransform: "uppercase",
                   marginTop: 2,
@@ -996,7 +1090,7 @@ function TillyQuestionsStrip({
           style={{
             color: t.inkMute,
             fontFamily: BTFonts.mono,
-            fontSize: 9,
+            fontSize: 11,
             letterSpacing: 0.8,
             textTransform: "uppercase",
             fontWeight: "700",

@@ -38,6 +38,32 @@ export type TodayBrief =
       // user (unknown merchant / category spike / outsized tx). Optional —
       // older API responses may omit it.
       openQuestions?: TillyQuestion[];
+      // Sprint SS6/SS8 — month math + 7-day forecast surfaced
+      // alongside the LLM-generated hero copy. The hero card consumes
+      // `monthly`; the forward day strip consumes `forecast`. Both
+      // optional so older API responses keep parsing.
+      monthly?: {
+        income: number;
+        spentToDate: number;
+        committedRest: number;
+        surplus: number;
+        source: "plaid" | "plaid-estimate" | "self-report" | "none";
+      } | null;
+      forecast?: Array<{
+        date: string; // YYYY-MM-DD
+        expected: number;
+        reasons: string[];
+        /** Expected paycheck inflow on this date (cadence projection).
+         * Distinct from `expected` (outflow). Drives the "payday" day-card
+         * on Today. Absent when no paycheck is expected. */
+        paycheckIn?: number;
+      }>;
+      /** True when ≥1 plaid_items row exists for the household. Mobile
+       * uses this to decide between the "connect your bank" empty
+       * state and the connected-state hero. Prevents the empty state
+       * from showing when surplus is \$0 (no detected income) but
+       * banks ARE wired. */
+      bankConnected?: boolean;
     };
 
 export type TillyQuestion = {
@@ -80,9 +106,117 @@ export type WaitSource = { source: string; url: string; evidence: string };
 export type ScoutStatus = "queued" | "running" | "done" | "failed";
 export type WaitConfidence = "low" | "medium" | "high";
 
+/**
+ * Tool execution results attached to a Tilly turn. The server runs an
+ * extract-then-execute pass after generating Tilly's text reply; each
+ * detected tool call produces one result here. The chat surface renders
+ * an inline preview card per result. Multi-tool turns are common
+ * ("I'm 38, support 4 people in Toronto" → 3 onboarding_field_set
+ * results).
+ */
+export type TillyToolResult =
+  | {
+      kind: "dream_created";
+      dreamId: string;
+      name: string;
+      targetAmount: number;
+      monthlyContribution: number;
+      emoji: string;
+    }
+  | {
+      kind: "payment_to_card_aliased";
+      merchantSignature: string;
+      cardName: string;
+      reclassifiedCount: number;
+      reclassifiedAmount: number;
+    }
+  | {
+      kind: "category_hidden";
+      category: string;
+      reason: string;
+    }
+  | {
+      kind: "home_tile_pinned";
+      tileKind: string;
+      label: string;
+    }
+  | {
+      kind: "onboarding_field_set";
+      field: string;
+      value: string;
+    }
+  // ─── Inverse tool results ────────────────────────────────────────────
+  | { kind: "category_unhidden"; category: string }
+  | {
+      kind: "payment_to_card_unaliased";
+      cardName: string;
+      restoredCount: number;
+      restoredAmount: number;
+    }
+  | { kind: "home_tile_unpinned"; tileKind: string; label: string }
+  | { kind: "onboarding_field_unset"; field: string }
+  | { kind: "dream_deleted"; name: string }
+  | {
+      kind: "category_inclusion_set";
+      category: string;
+      includeInSpend: boolean;
+      previouslyIncluded: boolean;
+    }
+  | {
+      kind: "merchant_category_set";
+      merchantSignature: string;
+      displayName: string;
+      fromCategory: string;
+      toCategory: string;
+      reclassifiedCount: number;
+    }
+  | {
+      kind: "scout_started";
+      mode: "find";
+      jobId: string;
+      query: string;
+      location: string | null;
+    }
+  | {
+      kind: "wait_started";
+      mode: "wait";
+      jobId: string;
+      query: string;
+      location: string | null;
+    }
+  | {
+      kind: "watchlist_item_added";
+      itemId: string;
+      name: string;
+      estimatedPrice: number | null;
+    }
+  | {
+      kind: "income_aliased_to_transfer";
+      merchantSignature: string;
+      sourceName: string;
+      reclassifiedCount: number;
+      reclassifiedAmount: number;
+    };
+
+export type UserPrefsResponse = {
+  prefs: Record<string, Record<string, unknown>>;
+  count: number;
+};
+
 export type TillyMessage =
   | { id: string; role: "user"; kind: "text"; body: string; createdAt: string }
-  | { id: string; role: "tilly"; kind: "text"; body: string; createdAt: string }
+  | {
+      id: string;
+      role: "tilly";
+      kind: "text";
+      body: string;
+      createdAt: string;
+      // Backward-compat single-tool field.
+      toolResult?: TillyToolResult;
+      // New: array of all tool results. Server populates both fields when
+      // exactly one tool fired; only `toolResults` when multiple did.
+      toolResults?: TillyToolResult[];
+    }
   | { id: string; role: "tilly"; kind: "typing" }
   | {
       id: string;
@@ -158,6 +292,24 @@ export type SpendCategory = {
   softSpot?: boolean;
   transactions: SpendTx[];
 };
+export type SpendVerdictTone = "good" | "ok" | "warn" | "edge" | "bad";
+export type SpendVerdict = {
+  label: "Soaring" | "Steady" | "Tight" | "Edge" | "Underwater";
+  tone: SpendVerdictTone;
+  score: number;
+  weatherLabel: string;
+  closingLine: string;
+};
+export type HorizonMonth = { m: string; income: number; spend: number; isFuture: boolean };
+export type SpendHorizon = {
+  income: number;
+  totalSpent: number;
+  surplus: number;
+  savingsRate: number;
+  verdict: SpendVerdict;
+  sixMonthAvgSavingsRate?: number;
+  monthlyHistory?: HorizonMonth[];
+};
 export type SpendPattern =
   | StubEnvelope
   | {
@@ -167,8 +319,22 @@ export type SpendPattern =
       italicSpan?: string;
       bars: DayBar[];
       categories: SpendCategory[];
+      /** Fixed-obligation buckets this week (loans, taxes, transfers, fees).
+       * Same shape as `categories` so CategoryRow renders both lists.
+       * Optional for backward-compat with cached responses pre-split. */
+      fixedObligations?: SpendCategory[];
       today: { id: string; who: string; cat: string; amt: number; time: string }[];
       paycheck: { amount: number; source: string; day: string; daysUntil: number };
+      /** Horizon block — present on month + year ranges. Drives the
+       * sky/income-line/categories-hanging-below layout on BTSpend. */
+      horizon?: SpendHorizon;
+      /** Human-readable label for the currently-rendered period
+       * ("May 2026" / "2025"). Drives the BTSpend prev/next nav header. */
+      periodLabel?: string;
+      /** Income sources for the period, grouped by merchant. Same
+       * shape as `categories` so CategoryRow renders it. Drives the
+       * "Where it comes from" section on BTSpend. */
+      incomeSources?: SpendCategory[];
     };
 
 export type CreditSnapshot =
@@ -295,4 +461,8 @@ export type PlaidPendingTransaction = {
   aiSuggestedCategory: string | null;
   aiSuggestedTags: string[] | null;
   aiSuggestedConfidence: number | null;
+  // One-sentence rationale Tilly returns alongside the category. Renders
+  // verbatim on the Pending card so LOANS/FEES badges feel reasoned, not
+  // silently assigned. Null when classification was skipped/failed/older.
+  aiSuggestedReasoning: string | null;
 };

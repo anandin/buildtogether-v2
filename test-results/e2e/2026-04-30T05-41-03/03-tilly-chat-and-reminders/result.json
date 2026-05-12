@@ -1,0 +1,7 @@
+{
+  "scenarioId": "03-tilly-chat-and-reminders",
+  "status": "fail",
+  "durationMs": 41933,
+  "error": "expected a new reminder row; before=4 after=4",
+  "stack": "Error: expected a new reminder row; before=4 after=4\n    at scenario (C:\\Projects\\BuildtogetherV2\\e2e\\scenarios\\03-tilly-chat-and-reminders.js:69:11)\n    at async runScenario (C:\\Projects\\BuildtogetherV2\\e2e\\lib\\helpers.js:233:5)\n    at async main (C:\\Projects\\BuildtogetherV2\\e2e\\run-all.js:25:15)"
+}

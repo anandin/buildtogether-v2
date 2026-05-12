@@ -1,0 +1,9 @@
+200 POST /api/auth/login
+200 GET /api/household/onboarding-status
+200 GET /api/dreams
+200 GET /api/expenses?days=30
+200 GET /api/tilly/spend-pattern
+200 GET /api/tilly/today
+200 GET /api/tilly/memory
+200 POST /api/tilly/learned/remind
+200 GET /api/tilly/memory

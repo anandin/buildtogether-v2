@@ -10,6 +10,7 @@ import { Text, View, StyleSheet } from "react-native";
 import type { TextStyle, ViewStyle, StyleProp } from "react-native";
 
 import { BTFonts, type BTTheme } from "./theme";
+import { useBT } from "./BTContext";
 
 type SerifProps = {
   children: React.ReactNode;
@@ -32,13 +33,15 @@ export function BTSerif({
   color,
   style,
 }: SerifProps) {
+  const { s } = useBT();
+  const scaled = s(size);
   return (
     <Text
       style={[
         {
           fontFamily: BTFonts.serif,
-          fontSize: size,
-          lineHeight: size * 1.1,
+          fontSize: scaled,
+          lineHeight: Math.round(scaled * 1.1),
           fontWeight: weight,
           fontStyle: italic ? "italic" : "normal",
           color,
@@ -58,16 +61,21 @@ type LabelProps = {
   style?: StyleProp<TextStyle>;
 };
 
-/** Mono uppercase mini-label. Used sparingly per spec — 9–13px, 0.08–0.14em. */
-export function BTLabel({ children, color, size = 11, style }: LabelProps) {
+/** Mono uppercase mini-label. Used sparingly per spec — 9–13px, 0.08–0.14em.
+ * Base size raised to 12 (was 11) per HCD audit; tiny mono uppercase
+ * labels were one of the worst readability offenders. Auto-scales via
+ * BTContext.s(). */
+export function BTLabel({ children, color, size = 12, style }: LabelProps) {
+  const { s } = useBT();
+  const scaled = s(size);
   return (
     <Text
       style={[
         {
           fontFamily: BTFonts.mono,
-          fontSize: size,
-          lineHeight: size + 4,
-          letterSpacing: size * 0.12,
+          fontSize: scaled,
+          lineHeight: scaled + 4,
+          letterSpacing: scaled * 0.12,
           textTransform: "uppercase",
           fontWeight: "600",
           color,
@@ -98,13 +106,15 @@ export function BTNum({
   color,
   style,
 }: NumProps) {
+  const { s } = useBT();
+  const scaled = s(size);
   return (
     <Text
       style={[
         {
           fontFamily: BTFonts.serif,
-          fontSize: size,
-          lineHeight: size * 1.05,
+          fontSize: scaled,
+          lineHeight: Math.round(scaled * 1.05),
           fontWeight: weight,
           fontStyle: italic ? "italic" : "normal",
           color,
@@ -148,6 +158,7 @@ type ChipProps = {
 
 /** Rounded mini-chip — used for delta indicators ("+12"), milestones, tags. */
 export function BTChip({ children, bg, fg, style }: ChipProps) {
+  const { s } = useBT();
   return (
     <View
       style={[
@@ -164,7 +175,7 @@ export function BTChip({ children, bg, fg, style }: ChipProps) {
       <Text
         style={{
           fontFamily: BTFonts.mono,
-          fontSize: 10,
+          fontSize: s(11),
           letterSpacing: 1,
           textTransform: "uppercase",
           fontWeight: "700",
@@ -200,7 +211,12 @@ export function BTCard({
   radius = 18,
   style,
 }: CardProps) {
-  const bg = inverted ? t.ink : alt ? t.surfaceAlt : t.surface;
+  // `inverted` flips to the high-contrast "spotlight" surface for hero
+  // cards. Uses theme.invertedBg (always opposite-luminance to bg) so
+  // dark themes get a LIGHT inverted card and white text-on-white
+  // doesn't disappear (the previous t.ink-as-bg trick failed on dusk +
+  // neon — see theme.ts for the long version).
+  const bg = inverted ? t.invertedBg : alt ? t.surfaceAlt : t.surface;
   return (
     <View
       style={[
@@ -242,6 +258,8 @@ export function BTCurrency({
   weight = "500",
   style,
 }: CurrencyProps) {
+  const { s } = useBT();
+  const scaled = s(size);
   const negative = amount < 0;
   const abs = Math.abs(amount);
   const dollars = Math.floor(abs);
@@ -253,8 +271,8 @@ export function BTCurrency({
       style={[
         {
           fontFamily: BTFonts.serif,
-          fontSize: size,
-          lineHeight: size * 1.02,
+          fontSize: scaled,
+          lineHeight: Math.round(scaled * 1.02),
           fontWeight: weight,
           fontStyle: italic ? "italic" : "normal",
           color,

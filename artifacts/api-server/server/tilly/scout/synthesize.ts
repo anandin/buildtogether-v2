@@ -60,6 +60,7 @@ Rules:
 - "why" sentence must be specific to the listing — not generic ("good price", "convenient"). e.g. "Same wash + size, ~70% off retail, picked up locally."
 - ASCII only — no em-dashes, smart quotes, or unicode currency.
 - summary is one sentence that makes Tilly sound like she scouted, not generated.
+- LOCATION RULE: when the user's location is in Canada (Toronto, Waterloo, Vancouver, Calgary, any Canadian city or "Canada" itself), STRONGLY prefer .ca domains: amazon.ca over amazon.com, bestbuy.ca over bestbuy.com, walmart.ca over walmart.com. If the snippets contain BOTH a .ca and a .com listing for the same product, pick the .ca one. Quote prices in CAD ($X CAD or just $X — never USD if location is Canadian). Sending a Canadian user to amazon.com instead of amazon.ca is a real bug — they pay duties + currency conversion + can't return easily.
 - NEVER recommend a Canadian retailer that doesn't exist anymore. Drop the option entirely if you see any of these in the URL or source: Hudson's Bay / The Bay / thebay.com / hbc.com (closed all Canadian stores in 2025), Sears Canada / sears.ca (closed 2018), Target Canada / target.ca (closed 2015), Future Shop / futureshop.ca (closed 2015). It is much better to return 2 options than 3 if one would point to a defunct store.
 - If a snippet's listing date is older than ~3 months for sales/deals, drop it — pricing has changed since.`;
 

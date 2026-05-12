@@ -1,0 +1,193 @@
+/**
+ * Unified tool-call extractor.
+ *
+ * Single Haiku pass after Tilly's main reply. Returns the array of tools
+ * the user just asked her to take in this turn. Each detected call goes
+ * through the dispatcher (registry.executeTool) which validates args
+ * server-side and runs the side effect.
+ *
+ * Why one extractor instead of one-per-tool: the per-tool approach was
+ * getting expensive (N Haiku calls per chat turn, each with a tightly
+ * scoped prompt that doesn't share work). One pass with the full registry
+ * is cheaper, more consistent, and aligned with how Anthropic's native
+ * tool_use blocks return arrays. When we migrate to true function-calling
+ * (Phase 3), this file's role becomes "the prompt that lists available
+ * tools" which is exactly what `tools` in the OpenRouter request expects.
+ */
+import { z } from "zod";
+import { OpenRouterLLM } from "../llm/openrouter";
+
+// Args schema lists every field used by ANY tool, all optional. Why not a
+// discriminated union: OpenRouter's JSON Schema serializer empirically
+// drops nested-union args (Claude returns args:{}). With every field
+// enumerated optional, Claude fills the relevant ones for each tool name.
+// Per-tool strict validation still runs in the dispatcher, so unrelated
+// fields aren't a correctness risk.
+const ToolArgsSchema = z.object({
+  // createDream
+  name: z.string().optional(),
+  targetAmount: z.number().optional(),
+  monthlyContribution: z.number().optional(),
+  emoji: z.string().optional(),
+  // markPaymentToOwnCard
+  merchantSignature: z.string().optional(),
+  cardName: z.string().optional(),
+  // markIncomeAsTransfer
+  sourceName: z.string().optional(),
+  // hideCategoryFromSpend
+  category: z.string().optional(),
+  // pinToHome
+  tileKind: z.string().optional(),
+  // setOnboardingField
+  field: z.string().optional(),
+  value: z.union([z.string(), z.number()]).optional(),
+  // Cross-tool
+  reason: z.string().optional(),
+});
+
+const ToolCallSchema = z.object({
+  name: z.enum([
+    // Forward
+    "createDream",
+    "markPaymentToOwnCard",
+    "hideCategoryFromSpend",
+    "pinToHome",
+    "setOnboardingField",
+    "markIncomeAsTransfer",
+    // Inverse
+    "unhideCategory",
+    "removePaymentToOwnCardAlias",
+    "unpinFromHome",
+    "unsetOnboardingField",
+    "deleteDream",
+  ]),
+  args: ToolArgsSchema,
+});
+
+const ResultSchema = z.object({
+  toolCalls: z
+    .array(ToolCallSchema)
+    .describe(
+      "Zero or more tool calls the user JUST asked Tilly to perform in THIS turn. Empty array when the user is just chatting / asking questions.",
+    ),
+});
+
+export type ExtractedToolCall = z.infer<typeof ToolCallSchema>;
+
+const SYSTEM_PROMPT = `You are a precise tool-call extractor for a personal-finance app called Tilly.
+
+Given the user's most recent message and Tilly's reply, decide which tools (if any) the USER explicitly asked Tilly to take this turn. Return an array of {name, args} objects. Empty array when the user is just chatting, asking questions, or describing things without requesting an action.
+
+THE USER'S MESSAGE IS THE PRIMARY SIGNAL. Tilly's reply is provided for context; even when she says "Done" or "I'll handle it", that does NOT mean the action happened — those are hallucinations the system catches via this extractor. Don't be swayed.
+
+Available tools:
+
+1. createDream — when the user asks to create / set up / track a savings goal.
+   Triggers: "create a dream for X", "set up a goal", "save for Z", "track Y at \$N/month"
+   Args: { name: string, targetAmount: number, monthlyContribution?: number, emoji?: string }
+   Estimate targetAmount from real-world prices when not given (Switch 2 ≈ 650, MacBook ≈ 1500, Barcelona ≈ 2000).
+
+2. markPaymentToOwnCard — when the user clarifies that a transaction Tilly was treating as a "loan" or expense is actually them paying off their own credit card balance (which they've also synced as a separate account).
+   Triggers: "scotia under loans is my credit card bill", "that visa payment is my own card", "I synced my X card so stop counting", "scotia is my credit card", "that's a payment to my own card".
+   Args: { merchantSignature: string (lowercased, e.g. "scotialn vsa"), cardName: string ("Scotia VISA"), reason?: string }
+   Use the merchant string the user pointed at, lowercased + simplified (drop store numbers, dates).
+
+3. hideCategoryFromSpend — when the user wants Tilly to stop showing a spend category on the Spend screen.
+   Triggers: "hide loans from my spend page", "stop showing me X", "I don't want to see Y in my breakdown".
+   Args: { category: string (one of: groceries, restaurants, transport, entertainment, utilities, subscriptions, shopping, health, personal, education, kids, travel, loans, fees, taxes, transfers, other), reason?: string }
+
+4. pinToHome — when the user wants Tilly to add a tile to the Today (home) screen.
+   Triggers: "show my subscriptions on home", "pin credit health to today", "add my upcoming bills to the front page".
+   Args: { tileKind: string (one of: subscriptions_overview, credit_health, spending_vs_avg, upcoming_bills, debt_breakdown) }
+
+5b. markIncomeAsTransfer — INCOME-SIDE mirror of markPaymentToOwnCard. Fire when the user clarifies that a deposit Tilly is treating as income is actually a WASH — money they immediately forward back out (employer expense reimbursement to pay a company card, a parent's pass-through rent contribution, a tax refund they immediately move). The deposit shouldn't count as income because the matching outflow shouldn't count as spend, and we already exclude transfers from spend.
+   Triggers: "the $4000 deposit isn't real income, it's for my company card", "my employer reimburses my expenses and I move it straight to the corporate Amex — stop counting that as pay", "TD deposits aren't pay, they're reimbursements", "my parents send rent that I forward — that's not income".
+   Args: { sourceName: string (user's description of the source — "TD reimbursement", "Acme expense float", "parents"), reason?: string }
+   Do NOT fire for actual paychecks the user is happy to count as real take-home. The signal must be "this is a wash / I immediately forward it / it's not real income."
+
+5. setOnboardingField — when the user tells Tilly something about themselves that maps to a known onboarding field.
+   Triggers: "I'm 38", "I support 4 people", "I live in Toronto", "I'm salaried", "I go to Laurier".
+   Args: { field: one of [employmentType, ageBand, city, dependents, supportNote, schoolName], value: string | number }
+   Field mappings:
+   - employmentType: "salaried" | "student" | "self-employed" | "freelance" | "unemployed" | "retired"
+   - ageBand: "under-18" | "18-24" | "25-34" | "35-44" | "45+"
+   - city: free-form string
+   - dependents: number (people user supports — kids, parents, partners, etc.)
+   - supportNote: free-form clarification
+   - schoolName: name of school (only when employmentType=student)
+   Fire MULTIPLE setOnboardingField calls in the array if the user mentions multiple fields ("I'm 38, support 4, in Toronto" → 3 calls).
+
+INVERSE TOOLS — fire these when the user wants to UNDO something Tilly previously did. Cue phrases include "Don't / stop / bring back / undo / reverse / remove / cancel / nope / I changed my mind / forget that". Match the inverse to the forward tool the user is reversing:
+
+6. unhideCategory — bring back a category Tilly hid from Spend.
+   Triggers: "Bring loans back", "Stop hiding loans", "Show loans on my Spend page again", "Don't hide X anymore", "Unhide loans", "Bring back the X category".
+   Args: { category: string } — the category name they want visible again. Strings like "loan" / "loans" → "loans".
+
+7. removePaymentToOwnCardAlias — undo a markPaymentToOwnCard. The user wants the previously-aliased credit-card payments to count as spending again (or they want to revert because Tilly mis-classified).
+   Triggers: "Stop treating Scotia as a credit-card payment", "Bring back Scotia VSA as spending", "Undo the Scotia alias", "Count my Visa payments again", "Remove the credit-card alias".
+   Args: { cardName: string } — the same card description used originally ("Scotia VISA", "TD Visa", "Diners Club").
+
+8. unpinFromHome — undo a pinToHome.
+   Triggers: "Unpin subscriptions overview", "Take subscriptions off my home", "Remove credit health from Today", "Don't show the X tile anymore".
+   Args: { tileKind: string } — same tile names as pinToHome (subscriptions_overview, credit_health, spending_vs_avg, upcoming_bills, debt_breakdown).
+
+9. unsetOnboardingField — clear an onboarding fact Tilly recorded.
+   Triggers: "Forget I'm 38", "I'm not in Toronto anymore — clear that", "Unset my dependents", "Reset my employment type", "I told you wrong, clear my city".
+   Args: { field: same enum as setOnboardingField }.
+
+10. deleteDream — delete a savings goal the user no longer wants.
+    Triggers: "Delete the Switch 2 dream", "Remove my AirPods goal", "I don't want to track that anymore", "Cancel the Barcelona dream".
+    Args: { name: string } — the dream's name as the user references it. Case-insensitive match server-side.
+
+Multi-tool turns are supported across forward and inverse. "Bring loans back AND delete the Switch 2 dream" → two calls in the array.
+
+Choosing between similar tools — surgical-first principle: when the user complains about a number being wrong on Spend (e.g. "this Scotia loan shouldn't be there"), prefer markPaymentToOwnCard (surgical, retroactive) over hideCategoryFromSpend (nuclear, hides the whole category). Only fire hideCategoryFromSpend when the user explicitly says "hide" / "I never want to see this category" — never as a workaround for a categorization issue.
+
+Output rules:
+- toolCalls = [] is fine (and common). Don't force a tool when none applies.
+- Each {name, args} entry must be one of the five tools above.
+- Args must match the shapes described — but be lenient: include only fields you're confident about. Validation runs server-side; bad args yield a no-op.
+- DO NOT fire tools the user is just asking ABOUT (e.g. "what is a dream?" → []).
+- DO NOT fire createDream when Tilly suggested something the user hasn't agreed to.
+
+Output the structured fields. No prose.`;
+
+/**
+ * Extract zero or more tool calls. Returns [] on any failure (treat as
+ * no-tool turn rather than blowing up the chat reply).
+ */
+export async function extractToolCalls(input: {
+  userMessage: string;
+  tillyReply: string;
+  meta?: { userId?: string | null };
+}): Promise<ExtractedToolCall[]> {
+  try {
+    // gpt-4o-mini is empirically faster than Haiku 4.5 for this schema
+    // shape (5 tool variants × 12-field args object). Both produce
+    // equivalent extraction quality on the test prompts. Override with
+    // TILLY_TOOL_EXTRACTOR_MODEL when needed.
+    const llm = new OpenRouterLLM(
+      process.env.TILLY_TOOL_EXTRACTOR_MODEL || "openai/gpt-4o-mini",
+    );
+    const result = await llm.structuredOutput<{ toolCalls: ExtractedToolCall[] }>({
+      systemPrompts: [SYSTEM_PROMPT],
+      messages: [
+        {
+          role: "user",
+          content: `USER said:\n"""\n${input.userMessage}\n"""\n\nTILLY replied:\n"""\n${input.tillyReply}\n"""`,
+        },
+      ],
+      schema: ResultSchema,
+      schemaName: "TillyToolCalls",
+      maxTokens: 384,
+      meta: { route: "tilly:tool-extractor", userId: input.meta?.userId ?? null },
+    });
+    return Array.isArray(result?.toolCalls) ? result.toolCalls : [];
+  } catch (err) {
+    console.warn(
+      "[tools/extractor] failed:",
+      err instanceof Error ? err.message : String(err),
+    );
+    return [];
+  }
+}

@@ -21,8 +21,14 @@ export const BT_TONES: Record<BTToneKey, BTTone> = {
     label: "Sibling",
     voice: "calm, wise, plainspoken",
     greeting: (name) => `Hey ${name}.`,
+    // Tone-illustrative samples are intentionally generic. Earlier
+    // versions used hyper-specific phrasing ("DoorDash twice in two
+    // weeks · lock $25 ceiling on Wed nights?") which read as real
+    // observations the user hadn't actually been given. They're
+    // labeled "Sample voice" in the UI so it's clear this is HOW
+    // Tilly would talk, not WHAT she's saying right now.
     sample:
-      "Glad you're here. Connect a bank when you're ready and I'll start showing you the patterns — until then, ask me anything.",
+      "Spot a soft-spot day this week? We could set a small ceiling — just for that one.",
   },
   coach: {
     key: "coach",
@@ -30,7 +36,7 @@ export const BT_TONES: Record<BTToneKey, BTTone> = {
     voice: "warm, direct, future-focused",
     greeting: (name) => `Morning, ${name}.`,
     sample:
-      "Good first move. Once your bank's connected I'll spot the small wins; for now, tell me one money thing on your mind.",
+      "Two good days in a row. One more locks the week green — coffee at home tomorrow?",
   },
   quiet: {
     key: "quiet",
@@ -38,7 +44,7 @@ export const BT_TONES: Record<BTToneKey, BTTone> = {
     voice: "minimal, observational, no nudging",
     greeting: (name) => `${name},`,
     sample:
-      "I'm here. I'll watch quietly once your bank's connected. No nudges unless you ask.",
+      "A few subscriptions sitting untouched. Nothing urgent. Just wanted you to know.",
   },
 };
 

@@ -122,7 +122,40 @@ export function getPlaidClient(): PlaidApi | null {
 export function mapPlaidCategory(
   legacyCategory?: string[] | null,
   pfCategory?: { primary?: string; detailed?: string } | null,
+  hints?: { name?: string | null; merchantName?: string | null } | null,
 ): string {
+  // Name-keyword overrides for stuff Plaid frequently mis-PFC's.
+  const haystack = `${hints?.merchantName ?? ""} ${hints?.name ?? ""}`.toLowerCase();
+  if (haystack) {
+    // Tax remittance — sometimes PFC=null or a generic GOVERNMENT category,
+    // but user recognizes as taxes regardless.
+    if (/\b(cra|irs|tax(es|cdn)?|txd|hst remit|gst remit|property tax|bramptax)/.test(haystack)) {
+      return "taxes";
+    }
+    // Charge cards & credit-card payment names. Diners Club, Amex, etc.
+    // sometimes come back as GENERAL_SERVICES (→ subscriptions) when
+    // they're really credit-card pay-downs. The user's Diners Club $4091
+    // landed in subscriptions instead of loans, dominating Monday's bar.
+    if (
+      /\b(diners club|amex(?!\s*statement)|charge card)\b/.test(haystack) ||
+      /\b(visa|mastercard|m\/?card)\s+(pmt|payment|preauth|w[a-z0-9]+)\b/.test(haystack)
+    ) {
+      return "loans";
+    }
+    // Insurance carriers — Plaid frequently lands these under
+    // GENERAL_SERVICES (→ subscriptions) which makes the spend page
+    // misleading. The user's Pembridge auto policy was the trigger;
+    // these are the most common Canadian + US carriers.
+    if (
+      /\b(pembridge|allstate|state farm|geico|progressive|travelers|nationwide|liberty mutual|farmers|aviva|intact|manulife|sun ?life|td insurance|belairdirect|economical|the co-?operators|desjardins insurance|wawanesa|gore mutual|primerica)\b/.test(
+        haystack,
+      ) ||
+      /\binsurance\b/.test(haystack)
+    ) {
+      return "insurance";
+    }
+  }
+
   // Prefer the new personal_finance_category when Plaid provides it.
   if (pfCategory?.detailed || pfCategory?.primary) {
     const detailed = (pfCategory.detailed || "").toUpperCase();
@@ -139,12 +172,30 @@ export function mapPlaidCategory(
     if (primary === "PERSONAL_CARE") return "personal";
     if (primary === "GENERAL_MERCHANDISE") return "shopping";
     if (primary === "HOME_IMPROVEMENT") return "shopping";
+    // Insurance has its own detailed PFC; map it before the broader
+    // GENERAL_SERVICES → subscriptions catch-all so auto/home/health
+    // policies don't pollute the subscriptions bucket.
+    if (detailed.includes("INSURANCE")) return "insurance";
     if (primary === "GENERAL_SERVICES") return "subscriptions";
-    if (primary === "GOVERNMENT_AND_NON_PROFIT") return "other";
-    if (primary === "LOAN_PAYMENTS") return "other";
-    if (primary === "TRANSFER_IN" || primary === "TRANSFER_OUT") return "other";
-    if (primary === "BANK_FEES") return "other";
-    if (primary === "INCOME") return "other";
+    // CRA, IRS, property tax (Bramptaxes etc.) — was disappearing into
+    // "other". Peeling out so the user sees "$5K to tax this quarter"
+    // instead of an undifferentiated $23K bucket.
+    if (primary === "GOVERNMENT_AND_NON_PROFIT") return "taxes";
+    // Loan payments are real spend from the user's POV — car loans, student
+    // loans, credit-card pay-downs all reduce the bank balance. Show them
+    // under their own bucket instead of dumping into "other".
+    if (primary === "LOAN_PAYMENTS") return "loans";
+    // Money moved between own accounts (savings deposits, e-transfer to
+    // self). Conceptually NOT spending, but the user still wants to see
+    // where the money went rather than have it vanish into "other".
+    if (primary === "TRANSFER_OUT") return "transfers";
+    if (primary === "TRANSFER_IN") return "other"; // money in — filtered upstream
+    // Bank/account fees are tiny but worth tracking — students notice them.
+    if (primary === "BANK_FEES") return "fees";
+    // Income — paychecks + gig payments. Used by /api/tilly/monthly-summary
+    // to surface "you earned $X this month". Existing spend queries
+    // filter amount > 0 so these rows don't leak into Spend totals.
+    if (primary === "INCOME") return "income";
   }
 
   // Fallback to legacy category array
@@ -169,22 +220,38 @@ export function mapPlaidCategory(
 }
 
 /**
- * Determine if a Plaid transaction is an expense we should import.
- * We want: user-initiated debits (money leaving their account).
- * We skip: income/deposits, transfers between their own accounts, refunds.
+ * Determine if a Plaid transaction is one we should import.
+ * We import: outgoing expenses (user-initiated debits) AND incoming
+ * paychecks/income (so Tilly can compute monthly income vs spend).
+ * We skip: transfers between user's own accounts, refunds.
+ *
+ * Sign convention: Plaid uses positive=outflow, negative=inflow.
+ * Income rows land with negative amount and ourCategory='income';
+ * existing expense queries filter `amount > 0` so income rows are
+ * invisible to spend totals while remaining queryable for the
+ * monthly-summary endpoint.
  */
 export function shouldImportPlaidTransaction(
   tx: { amount: number; category?: string[] | null; personal_finance_category?: any },
 ): boolean {
-  // In Plaid: positive amount = money leaving the account (expense)
-  //           negative amount = money entering the account (income/refund)
-  if (tx.amount <= 0) return false;
-
+  if (tx.amount === 0) return false;
   const primary = (tx.personal_finance_category?.primary || "").toUpperCase();
-  if (primary === "INCOME" || primary === "TRANSFER_IN" || primary === "TRANSFER_OUT") return false;
 
+  // Income — paychecks, direct deposits, gig payments. Keep so we can
+  // surface monthly take-home and compute surplus on Home.
+  if (primary === "INCOME") return tx.amount < 0; // sanity: must be inflow
+
+  // Transfers between user's own accounts — drop entirely. They net to
+  // zero economically and double-counting either side is confusing.
+  if (primary === "TRANSFER_IN" || primary === "TRANSFER_OUT") return false;
+
+  // Legacy category fallback for the transfer/payment buckets.
   const top = (tx.category?.[0] || "").toLowerCase();
   if (top === "transfer" || top === "payment") return false;
+
+  // Refunds (inflows with no INCOME PFC) — skip; they're noise on the
+  // expense feed and not income from the user's POV either.
+  if (tx.amount < 0) return false;
 
   return true;
 }
@@ -212,12 +279,45 @@ export const AUTO_ACCEPT_AMOUNT_CAP = 500;
  * Otherwise auto-accept. Caller should already have run
  * shouldImportPlaidTransaction() first to filter out income/refunds.
  */
+/**
+ * Complementary path to shouldAutoAcceptPlaidTransaction: when Tilly's
+ * classifier returns a very-high-confidence answer on a tiny or fee-shaped
+ * row, skip the Pending queue entirely. The user said it explicitly: "Annual
+ * Fee at 0.95 confidence, Withdrawal Fees at 0.95 — these don't need user
+ * review." Bigger or lower-confidence rows still hit Pending so the user can
+ * eyeball them.
+ *
+ * Returns true for:
+ *   - confidence ≥ 0.9 AND amount < $30, OR
+ *   - confidence ≥ 0.9 AND PFC primary = BANK_FEES
+ *
+ * Caller MUST also confirm the row isn't pending (Plaid still shaping it)
+ * before honouring this. Same `tx.pending` guard the rule path uses.
+ */
+export function shouldAutoAcceptByAI(
+  aiConfidence: number | null | undefined,
+  tx: { amount: number; personal_finance_category?: any },
+): boolean {
+  if (typeof aiConfidence !== "number" || aiConfidence < 0.9) return false;
+  const primary = (tx.personal_finance_category?.primary || "").toUpperCase();
+  if (primary === "BANK_FEES") return true;
+  if (Math.abs(tx.amount) < 30) return true;
+  return false;
+}
+
 export function shouldAutoAcceptPlaidTransaction(
   tx: { amount: number; name?: string | null; merchant_name?: string | null; category?: string[] | null; personal_finance_category?: any },
 ): boolean {
+  const primary = (tx.personal_finance_category?.primary || "").toUpperCase();
+
+  // Income rows: always auto-accept. The user shouldn't have to
+  // manually approve every paycheck — the monthly-summary endpoint
+  // just needs them in the table. amount-cap doesn't apply (income
+  // can be large) and we already gate by PFC=INCOME.
+  if (primary === "INCOME") return true;
+
   if (tx.amount > AUTO_ACCEPT_AMOUNT_CAP) return false;
 
-  const primary = (tx.personal_finance_category?.primary || "").toUpperCase();
   const detailed = (tx.personal_finance_category?.detailed || "").toUpperCase();
   if (
     primary === "BANK_FEES" ||

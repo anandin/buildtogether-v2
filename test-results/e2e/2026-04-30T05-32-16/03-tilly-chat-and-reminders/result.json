@@ -1,0 +1,7 @@
+{
+  "scenarioId": "03-tilly-chat-and-reminders",
+  "status": "fail",
+  "durationMs": 28481,
+  "error": "Q1 reply doesn't look like an affordability response. Got: Starting buffer                    $312\nEssentials through Friday           -$40\nWednesday DoorDash (likely)         -$22\nConcert ticket                     -$200\nPost-Friday buffer                  $",
+  "stack": "Error: Q1 reply doesn't look like an affordability response. Got: Starting buffer                    $312\nEssentials through Friday           -$40\nWednesday DoorDash (likely)         -$22\nConcert ticket                     -$200\nPost-Friday buffer                  $\n    at scenario (C:\\Projects\\BuildtogetherV2\\e2e\\scenarios\\03-tilly-chat-and-reminders.js:33:13)\n    at async runScenario (C:\\Projects\\BuildtogetherV2\\e2e\\lib\\helpers.js:233:5)"
+}

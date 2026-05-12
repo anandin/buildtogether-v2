@@ -155,7 +155,7 @@ export function BTCredit() {
               transform: [{ translateX: -16 }],
               color: t.ink,
               fontFamily: BTFonts.mono,
-              fontSize: 9,
+              fontSize: 11,
               letterSpacing: 1,
               textTransform: "uppercase",
               fontWeight: "700",
@@ -191,27 +191,27 @@ export function BTCredit() {
       {/* Score card — only render when Plaid surfaced an actual VantageScore */}
       {c.score ? (
         <BTCard t={t} inverted padding={18}>
-          <BTStripes color="#fff" opacity={0.07} />
+          <BTStripes color={t.invertedFg} opacity={0.07} />
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <View>
               <Text
                 style={{
-                  color: "rgba(255,252,246,0.6)",
+                  color: t.invertedFgMute,
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
+                  fontSize: 11,
                   letterSpacing: 1.2,
                   textTransform: "uppercase",
                 }}
               >
                 VantageScore
               </Text>
-              <BTNum size={44} color="#FFFCF6">
+              <BTNum size={44} color={t.invertedFg}>
                 {c.score}
               </BTNum>
               {c.delta && c.since ? (
                 <Text
                   style={{
-                    color: "rgba(255,252,246,0.55)",
+                    color: t.invertedFgMute,
                     fontFamily: BTFonts.sans,
                     fontSize: 12,
                     marginTop: 4,
@@ -289,7 +289,7 @@ export function BTCredit() {
                   color:
                     l.state === "good" ? t.good : l.state === "neutral" ? t.inkMute : t.warn,
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
+                  fontSize: 11,
                   letterSpacing: 1,
                   textTransform: "uppercase",
                   fontWeight: "700",

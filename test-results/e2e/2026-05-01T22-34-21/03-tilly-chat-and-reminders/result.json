@@ -1,0 +1,7 @@
+{
+  "scenarioId": "03-tilly-chat-and-reminders",
+  "status": "fail",
+  "durationMs": 39976,
+  "error": "no × cancel button visible (RemindersStrip not rendered?)",
+  "stack": "Error: no × cancel button visible (RemindersStrip not rendered?)\n    at scenario (C:\\Projects\\BuildtogetherV2\\e2e\\scenarios\\03-tilly-chat-and-reminders.js:116:11)\n    at async runScenario (C:\\Projects\\BuildtogetherV2\\e2e\\lib\\helpers.js:242:5)"
+}

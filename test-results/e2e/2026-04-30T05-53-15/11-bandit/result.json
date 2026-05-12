@@ -1,0 +1,7 @@
+{
+  "scenarioId": "11-bandit",
+  "status": "fail",
+  "durationMs": 4988,
+  "error": "prior expectedAccept out of plausible range for loss_aversion: 0.833",
+  "stack": "Error: prior expectedAccept out of plausible range for loss_aversion: 0.833\n    at scenario (C:\\Projects\\BuildtogetherV2\\e2e\\scenarios\\11-bandit.js:38:13)\n    at async runScenario (C:\\Projects\\BuildtogetherV2\\e2e\\lib\\helpers.js:233:5)\n    at async main (C:\\Projects\\BuildtogetherV2\\e2e\\run-all.js:25:15)"
+}

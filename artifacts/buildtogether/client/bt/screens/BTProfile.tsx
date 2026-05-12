@@ -34,8 +34,9 @@ import { BankConnectionsScreen } from "./plaid/BankConnectionsScreen";
 import { PendingTransactionsScreen } from "./plaid/PendingTransactionsScreen";
 import { AppSettingsScreen } from "./AppSettingsScreen";
 import { PasskeySecurityScreen } from "./PasskeySecurityScreen";
+import { BTCategories } from "./BTCategories";
 
-type ProfileRoute = null | "banks" | "pending" | "settings" | "security";
+type ProfileRoute = null | "banks" | "pending" | "settings" | "security" | "categories";
 
 /**
  * Public BTProfile entry — owns sub-route state so the You tab can drill
@@ -50,6 +51,7 @@ export function BTProfile() {
   if (route === "banks") return <BankConnectionsScreen onBack={back} />;
   if (route === "pending") return <PendingTransactionsScreen onBack={back} />;
   if (route === "security") return <PasskeySecurityScreen onBack={back} />;
+  if (route === "categories") return <BTCategories onBack={back} />;
   if (route === "settings")
     return (
       <AppSettingsScreen
@@ -64,6 +66,7 @@ export function BTProfile() {
       onOpenPending={() => setRoute("pending")}
       onOpenAppSettings={() => setRoute("settings")}
       onOpenSecurity={() => setRoute("security")}
+      onOpenCategories={() => setRoute("categories")}
     />
   );
 }
@@ -126,13 +129,15 @@ function BTProfileMain({
   onOpenPending,
   onOpenAppSettings,
   onOpenSecurity,
+  onOpenCategories,
 }: {
   onOpenBanks: () => void;
   onOpenPending: () => void;
   onOpenAppSettings: () => void;
   onOpenSecurity: () => void;
+  onOpenCategories: () => void;
 }) {
-  const { t, tone, setTone } = useBT();
+  const { t, tone, setTone, textScale, setTextScale } = useBT();
   const memory = useMemory();
   const setServerTone = useSetTillyTone();
   const profile = useProfile();
@@ -285,25 +290,77 @@ function BTProfileMain({
         </View>
         <View
           style={{
-            flexDirection: "row",
-            gap: 10,
             padding: 14,
             backgroundColor: tonePreviewBg(tone.key, t),
             borderRadius: 16,
+            gap: 8,
           }}
         >
-          <Tilly t={t} size={32} breathing={false} />
-          <Text
-            style={{
-              flex: 1,
-              color: t.ink,
-              fontFamily: BTFonts.serifItalic,
-              fontSize: 15,
-              lineHeight: 22,
-            }}
-          >
-            {tone.sample}
-          </Text>
+          <BTLabel color={t.inkMute}>Sample voice</BTLabel>
+          <View style={{ flexDirection: "row", gap: 10, alignItems: "flex-start" }}>
+            <Tilly t={t} size={32} breathing={false} />
+            <Text
+              style={{
+                flex: 1,
+                color: t.ink,
+                fontFamily: BTFonts.serifItalic,
+                fontSize: 15,
+                lineHeight: 22,
+              }}
+            >
+              {tone.sample}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Manage — promoted to the top so the most-used drill-downs are
+          one tap from landing on YOU. Each entry leads with the action
+          (verb-first label) and a one-line description so the surface
+          is self-explanatory without needing to tap-and-discover. */}
+      <View style={{ gap: 8 }}>
+        <BTLabel color={t.inkMute}>Manage</BTLabel>
+        <View
+          style={{
+            backgroundColor: t.surface,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: t.rule,
+            overflow: "hidden",
+          }}
+        >
+          <SettingsEntry
+            t={t}
+            icon="link-2"
+            label="Bank connections"
+            description="Connect or disconnect accounts via Plaid."
+            onPress={onOpenBanks}
+          />
+          <BTRule color={t.rule} />
+          <SettingsEntry
+            t={t}
+            icon="inbox"
+            label="Pending review"
+            description="Confirm transactions Tilly couldn't auto-categorize."
+            badge={pendingCount > 0 ? pendingCount : undefined}
+            onPress={onOpenPending}
+          />
+          <BTRule color={t.rule} />
+          <SettingsEntry
+            t={t}
+            icon="tag"
+            label="Categories · cash flow"
+            description="Money in, money out, and the wash transactions in between. Tap any merchant to reclassify — reimbursements, cashback, credit adjustments, transfers."
+            onPress={onOpenCategories}
+          />
+          <BTRule color={t.rule} />
+          <SettingsEntry
+            t={t}
+            icon="settings"
+            label="App settings"
+            description="Notifications, privacy, sign-out."
+            onPress={onOpenAppSettings}
+          />
         </View>
       </View>
 
@@ -354,9 +411,21 @@ function BTProfileMain({
         </View>
       ) : null}
 
-      {/* What I've learned about you */}
-      <View style={{ gap: 14 }}>
-        <BTLabel color={t.inkMute}>What I've learned</BTLabel>
+      {/* What I've learned about you — collapsed by default. The
+          memory timeline can run dozens of rows long; promoting the
+          first impression to a count + last note gets the user to the
+          rest of the page without paying the scroll cost. */}
+      <Collapsible
+        t={t}
+        title="What I've learned"
+        summary={
+          memoryItems.length === 0
+            ? "Once we've talked a bit, I'll start writing things down here."
+            : `${memoryItems.length} ${memoryItems.length === 1 ? "note" : "notes"} · most recent: "${
+                (memoryItems[0]?.body ?? "").slice(0, 90)
+              }${(memoryItems[0]?.body ?? "").length > 90 ? "…" : ""}"`
+        }
+      >
         {memoryItems.length > 0 ? (
           <>
             <BTSerif size={24} color={t.ink} weight="500">
@@ -367,19 +436,8 @@ function BTProfileMain({
             </BTSerif>
             <Timeline t={t} items={memoryItems} />
           </>
-        ) : (
-          <Text
-            style={{
-              color: t.inkSoft,
-              fontFamily: BTFonts.serifItalic,
-              fontSize: 16,
-              lineHeight: 24,
-            }}
-          >
-            Once we've talked a bit, I'll start writing down what matters here.
-          </Text>
-        )}
-      </View>
+        ) : null}
+      </Collapsible>
 
       {/* Your reminders — full management surface for Tilly's promised
           follow-ups. Today's compact view lives on Home; this is the
@@ -522,9 +580,77 @@ function BTProfileMain({
         </Text>
       </Pressable>
 
-      {/* Quiet settings */}
+      {/* Text size — accessibility pref, scales all body fonts via the
+          BTContext multiplier (BTLabel / BTSerif / BTNum auto-scale).
+          Three values keeps the affordance instantly understandable;
+          no editor modal needed. Persisted to AsyncStorage so it
+          survives reloads. */}
       <View style={{ gap: 8 }}>
-        <BTLabel color={t.inkMute}>Quiet settings</BTLabel>
+        <BTLabel color={t.inkMute}>Text size</BTLabel>
+        <View
+          style={{
+            flexDirection: "row",
+            backgroundColor: t.surface,
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: t.rule,
+            overflow: "hidden",
+          }}
+        >
+          {(["sm", "md", "lg"] as const).map((opt, i) => {
+            const active = textScale === opt;
+            const label = opt === "sm" ? "Small" : opt === "md" ? "Default" : "Large";
+            const sizeHint = opt === "sm" ? 13 : opt === "md" ? 15 : 17;
+            return (
+              <Pressable
+                key={opt}
+                onPress={() => setTextScale(opt)}
+                accessibilityRole="button"
+                accessibilityLabel={`Set text size to ${label}`}
+                style={{
+                  flex: 1,
+                  paddingVertical: 14,
+                  alignItems: "center",
+                  backgroundColor: active ? t.accentSoft : "transparent",
+                  borderRightWidth: i < 2 ? 1 : 0,
+                  borderRightColor: t.rule,
+                }}
+              >
+                <Text
+                  style={{
+                    color: active ? t.accent : t.ink,
+                    fontFamily: BTFonts.sans,
+                    fontSize: sizeHint,
+                    fontWeight: active ? "700" : "500",
+                  }}
+                >
+                  {label}
+                </Text>
+                <Text
+                  style={{
+                    color: active ? t.accent : t.inkMute,
+                    fontFamily: BTFonts.mono,
+                    fontSize: 10,
+                    letterSpacing: 1,
+                    marginTop: 4,
+                  }}
+                >
+                  Aa
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      {/* Quiet settings — five niche prefs (quiet hours, big-purchase
+          alert, sub scan, phishing watch, memory retention). Most users
+          take the defaults; collapse to keep the YOU tab calm. */}
+      <Collapsible
+        t={t}
+        title="Quiet settings"
+        summary={`Quiet hours ${quietValue(QUIET_ROWS[0], quiet.data)} · ${QUIET_ROWS.length - 1} more`}
+      >
         <View
           style={{
             backgroundColor: t.surface,
@@ -581,45 +707,7 @@ function BTProfileMain({
             );
           })}
         </View>
-      </View>
-
-      {/* Settings entries — drill-down rows for the deeper bank- and
-          app-level surfaces. Kept as a small grouped card so it reads
-          like one row "More" rather than three separate sections. */}
-      <View style={{ gap: 8 }}>
-        <BTLabel color={t.inkMute}>More</BTLabel>
-        <View
-          style={{
-            backgroundColor: t.surface,
-            borderRadius: 16,
-            borderWidth: 1,
-            borderColor: t.rule,
-            overflow: "hidden",
-          }}
-        >
-          <SettingsEntry
-            t={t}
-            icon="link-2"
-            label="Bank connections"
-            onPress={onOpenBanks}
-          />
-          <BTRule color={t.rule} />
-          <SettingsEntry
-            t={t}
-            icon="inbox"
-            label="Pending review"
-            badge={pendingCount > 0 ? pendingCount : undefined}
-            onPress={onOpenPending}
-          />
-          <BTRule color={t.rule} />
-          <SettingsEntry
-            t={t}
-            icon="settings"
-            label="App settings"
-            onPress={onOpenAppSettings}
-          />
-        </View>
-      </View>
+      </Collapsible>
     </ScrollView>
   );
 }
@@ -633,12 +721,14 @@ function SettingsEntry({
   t,
   icon,
   label,
+  description,
   badge,
   onPress,
 }: {
   t: BTTheme;
   icon: React.ComponentProps<typeof Feather>["name"];
   label: string;
+  description?: string;
   badge?: number;
   onPress: () => void;
 }) {
@@ -667,17 +757,31 @@ function SettingsEntry({
       >
         <Feather name={icon} size={15} color={t.ink} />
       </View>
-      <Text
-        style={{
-          flex: 1,
-          color: t.ink,
-          fontFamily: BTFonts.sans,
-          fontWeight: "600",
-          fontSize: 13,
-        }}
-      >
-        {label}
-      </Text>
+      <View style={{ flex: 1 }}>
+        <Text
+          style={{
+            color: t.ink,
+            fontFamily: BTFonts.sans,
+            fontWeight: "600",
+            fontSize: 13,
+          }}
+        >
+          {label}
+        </Text>
+        {description ? (
+          <Text
+            style={{
+              color: t.inkSoft,
+              fontFamily: BTFonts.sans,
+              fontSize: 11,
+              marginTop: 2,
+            }}
+            numberOfLines={2}
+          >
+            {description}
+          </Text>
+        ) : null}
+      </View>
       {badge ? (
         <View
           style={{
@@ -1031,7 +1135,7 @@ function YourReminders() {
           style={{
             color: t.inkMute,
             fontFamily: BTFonts.mono,
-            fontSize: 9,
+            fontSize: 11,
             letterSpacing: 0.6,
             textTransform: "uppercase",
             marginTop: 2,
@@ -1100,7 +1204,7 @@ function YourReminders() {
             style={{
               color: t.inkSoft,
               fontFamily: BTFonts.mono,
-              fontSize: 9,
+              fontSize: 11,
               letterSpacing: 0.6,
               textTransform: "uppercase",
             }}
@@ -1116,7 +1220,7 @@ function YourReminders() {
             style={{
               color: t.inkSoft,
               fontFamily: BTFonts.mono,
-              fontSize: 9,
+              fontSize: 11,
               letterSpacing: 0.6,
               textTransform: "uppercase",
             }}
@@ -1132,7 +1236,7 @@ function YourReminders() {
             style={{
               color: t.inkSoft,
               fontFamily: BTFonts.mono,
-              fontSize: 9,
+              fontSize: 11,
               letterSpacing: 0.6,
               textTransform: "uppercase",
             }}
@@ -1142,6 +1246,74 @@ function YourReminders() {
           {fired.map((r) => renderRow(r, { canMark: false, muted: true }))}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * Collapsible — a section header that toggles its body. Used on YOU
+ * to keep "What I've learned" (potentially dozens of memory rows) and
+ * "Quiet settings" (5 niche prefs) closed by default. The header
+ * shows a one-line summary so the user knows there's content to expand
+ * into without having to open it.
+ */
+function Collapsible({
+  t,
+  title,
+  summary,
+  defaultOpen,
+  children,
+}: {
+  t: BTTheme;
+  title: string;
+  summary: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(!!defaultOpen);
+  return (
+    <View style={{ gap: open ? 14 : 0 }}>
+      <Pressable
+        onPress={() => setOpen((v) => !v)}
+        accessibilityRole="button"
+        accessibilityLabel={`${open ? "Collapse" : "Expand"} ${title}`}
+        accessibilityState={{ expanded: open }}
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingVertical: 6,
+          gap: 10,
+        }}
+      >
+        <View style={{ flex: 1 }}>
+          <BTLabel color={t.inkMute}>{title}</BTLabel>
+          {!open && summary ? (
+            <Text
+              style={{
+                color: t.inkSoft,
+                fontFamily: BTFonts.serifItalic,
+                fontSize: 14,
+                lineHeight: 20,
+                marginTop: 4,
+              }}
+            >
+              {summary}
+            </Text>
+          ) : null}
+        </View>
+        <Text
+          style={{
+            color: t.inkMute,
+            fontFamily: BTFonts.mono,
+            fontSize: 11,
+            letterSpacing: 1,
+          }}
+        >
+          {open ? "HIDE" : "SHOW"}
+        </Text>
+      </Pressable>
+      {open ? children : null}
     </View>
   );
 }

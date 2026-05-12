@@ -191,9 +191,16 @@ export function PendingTransactionsScreen({ onBack }: { onBack: () => void }) {
         contentContainerStyle={{ padding: 22, paddingBottom: 120, gap: 18 }}
         refreshControl={
           <RefreshControl
-            refreshing={pending.isFetching || sync.isPending}
+            // Pull-to-refresh here just refetches the pending list
+            // from local DB — it no longer triggers a fresh Plaid
+            // sync. User feedback: 'sync my banks' is intuitively a
+            // Bank-Connections action, not a Pending-page action.
+            // Pulling on Pending kept dumping more rows the user
+            // hadn't asked for. The sync trigger lives on the Bank
+            // Connections screen now.
+            refreshing={pending.isFetching}
             onRefresh={() => {
-              sync.mutate();
+              pending.refetch();
             }}
             tintColor={t.accent}
           />
@@ -493,6 +500,13 @@ const GROUP_CATEGORIES = [
   "shopping",
   "health",
   "subscriptions",
+  // New buckets that used to all collapse into "other" — visible to the
+  // user as chips so the override path matches what Tilly auto-picks.
+  "loans",
+  "fees",
+  "taxes",
+  "transfers",
+  "education",
   "other",
 ];
 
@@ -582,7 +596,7 @@ function PendingRow({
                   style={{
                     color: t.inkSoft,
                     fontFamily: BTFonts.mono,
-                    fontSize: 9,
+                    fontSize: 11,
                     letterSpacing: 0.8,
                     textTransform: "uppercase",
                     fontWeight: "600",
@@ -597,7 +611,7 @@ function PendingRow({
                 style={{
                   color: t.warn,
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
+                  fontSize: 11,
                   letterSpacing: 0.8,
                   textTransform: "uppercase",
                   fontWeight: "700",
@@ -621,11 +635,43 @@ function PendingRow({
         </Text>
       </View>
 
-      {/* Tilly's category guess — only shown when the row has no merchant
-          rule yet AND Plaid couldn't confidently categorize it. Confirming
-          here trains a merchant rule so we never ask again. Disagreeing in
-          the note expander is logged to ai_corrections for tuning. */}
-      {txn.aiSuggestedCategory && !txn.ourCategory ? (
+      {/* Tilly's reasoning — render whenever the classifier left us a
+          rationale string. This is what makes the row feel AI-native:
+          the LOANS / FEES / RESTAURANTS badge already shows the answer,
+          this line shows the thinking ("monthly Lincoln auto-finance —
+          looks like a car loan"). When confidence is below the
+          high-conf threshold we add the % so the user knows to confirm.
+          Older rows synced before reasoning was persisted fall through
+          to the generic "Tilly thinks…" line. */}
+      {txn.aiSuggestedReasoning ? (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "flex-start",
+            gap: 8,
+            paddingTop: 4,
+          }}
+        >
+          <Text style={{ fontSize: 14, lineHeight: 18 }}>{"✨"}</Text>
+          <Text
+            style={{
+              flex: 1,
+              color: t.inkSoft,
+              fontFamily: BTFonts.sans,
+              fontSize: 12,
+              lineHeight: 16,
+            }}
+            numberOfLines={3}
+          >
+            {txn.aiSuggestedReasoning}
+            {typeof txn.aiSuggestedConfidence === "number" &&
+            txn.aiSuggestedConfidence < 0.85
+              ? ` · ${Math.round(txn.aiSuggestedConfidence * 100)}% sure — confirm?`
+              : ""}
+          </Text>
+        </View>
+      ) : txn.aiSuggestedCategory &&
+        txn.aiSuggestedCategory !== txn.ourCategory ? (
         <View
           style={{
             flexDirection: "row",
@@ -652,7 +698,7 @@ function PendingRow({
             {typeof txn.aiSuggestedConfidence === "number"
               ? ` (${Math.round(txn.aiSuggestedConfidence * 100)}% sure)`
               : ""}
-            . Tap Accept to confirm, or open Add note to change it.
+            .
           </Text>
         </View>
       ) : null}
@@ -691,7 +737,7 @@ function PendingRow({
             style={{
               color: t.inkMute,
               fontFamily: BTFonts.mono,
-              fontSize: 9,
+              fontSize: 11,
               letterSpacing: 0.8,
               textTransform: "uppercase",
               fontWeight: "600",
@@ -911,7 +957,7 @@ function GroupCard({
                 style={{
                   color: t.surface,
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
+                  fontSize: 11,
                   fontWeight: "700",
                   letterSpacing: 0.6,
                 }}
@@ -945,7 +991,7 @@ function GroupCard({
                   style={{
                     color: t.inkSoft,
                     fontFamily: BTFonts.mono,
-                    fontSize: 9,
+                    fontSize: 11,
                     letterSpacing: 0.8,
                     textTransform: "uppercase",
                     fontWeight: "600",
@@ -1000,7 +1046,7 @@ function GroupCard({
               style={{
                 color: t.inkMute,
                 fontFamily: BTFonts.mono,
-                fontSize: 9,
+                fontSize: 11,
                 letterSpacing: 0.8,
                 textTransform: "uppercase",
               }}

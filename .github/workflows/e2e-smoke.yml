@@ -1,0 +1,35 @@
+name: E2E smoke
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Nightly at 06:00 UTC (~02:00 Toronto winter / 01:00 summer) so a
+    # regression that landed during the day surfaces before the user
+    # opens the app the next morning.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Give Vercel ~90s after a push to finish deploying before the
+      # smoke runs. Skipped for manual + nightly runs.
+      - if: github.event_name == 'push'
+        run: sleep 90
+      - name: Run smoke suite
+        env:
+          E2E_BASE_URL: ${{ secrets.E2E_BASE_URL }}
+          E2E_SECRET: ${{ secrets.E2E_SECRET }}
+        run: pnpm -F @workspace/e2e smoke

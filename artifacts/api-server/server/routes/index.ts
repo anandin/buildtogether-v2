@@ -30,11 +30,14 @@ import { mountAdminUsersRoutes } from "./admin-users";
 import { mountAdminPlaidRoutes } from "./admin-plaid";
 import { mountCronRoutes } from "./cron";
 import { mountSplitsRoutes } from "./splits";
+import { registerUserPrefsRoutes } from "./user-prefs";
 import { mountPushRoutes } from "./push";
 import { mountExpensesRoutes } from "./expenses";
 import { mountInvitesRoutes } from "./invites";
 import { mountDemoRoutes } from "./demo";
 import { mountPasskeyRoutes, mountPasskeyDevRoutes } from "./passkey";
+import { mountE2ERoutes } from "./e2e";
+import { mountWatchlistRoutes } from "./watchlist";
 
 export function registerTillyRoutes(app: Express): void {
   mountPasskeyRoutes(app);
@@ -56,9 +59,15 @@ export function registerTillyRoutes(app: Express): void {
   mountAdminPage(app);
   mountCronRoutes(app);
   mountSplitsRoutes(app);
+  registerUserPrefsRoutes(app);
   mountPushRoutes(app);
   mountExpensesRoutes(app);
   mountInvitesRoutes(app);
+  mountWatchlistRoutes(app);
+  // E2E session-issuer — mounts only when E2E_SECRET + E2E_USER_ID are
+  // set. Self-gates via header secret check. Lets the smoke suite mint
+  // its own Bearer token instead of relying on a stale captured cookie.
+  mountE2ERoutes(app);
   // Demo routes (POST /api/demo/seed, /api/demo/clear, /api/demo/connect-plaid-sandbox)
   // are auth-gated but let any user wipe + re-seed their own data. Useful for
   // QA / staging, dangerous in production. Mount only in non-prod environments.

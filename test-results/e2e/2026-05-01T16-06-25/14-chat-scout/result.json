@@ -1,0 +1,7 @@
+{
+  "scenarioId": "14-chat-scout",
+  "status": "fail",
+  "durationMs": 132654,
+  "error": "scout did not reach a terminal state in 90s",
+  "stack": "Error: scout did not reach a terminal state in 90s\n    at scenario (C:\\Projects\\BuildtogetherV2\\e2e\\scenarios\\14-chat-scout.js:134:21)\n    at async runScenario (C:\\Projects\\BuildtogetherV2\\e2e\\lib\\helpers.js:233:5)"
+}

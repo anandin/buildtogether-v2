@@ -12,5 +12,11 @@
     { "source": "/api/:path*", "destination": "/api/index" },
     { "source": "/admin", "destination": "/api/index" },
     { "source": "/admin/:path*", "destination": "/api/index" }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/morning-watchlist",
+      "schedule": "0 * * * *"
+    }
   ]
 }

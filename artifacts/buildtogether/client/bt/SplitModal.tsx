@@ -422,7 +422,7 @@ function DetailRow({
         style={{
           color: t.inkMute,
           fontFamily: BTFonts.mono,
-          fontSize: 9,
+          fontSize: 11,
           letterSpacing: 1,
           textTransform: "uppercase",
         }}

@@ -1,0 +1,7 @@
+{
+  "scenarioId": "15-wait-advice-and-city",
+  "status": "fail",
+  "durationMs": 112673,
+  "error": "wait advice did not reach a terminal state in 90s",
+  "stack": "Error: wait advice did not reach a terminal state in 90s\n    at scenario (C:\\Projects\\BuildtogetherV2\\e2e\\scenarios\\15-wait-advice-and-city.js:70:21)\n    at async runScenario (C:\\Projects\\BuildtogetherV2\\e2e\\lib\\helpers.js:233:5)"
+}

@@ -40,10 +40,12 @@ import {
   plaidItems,
   plaidTransactions,
   aiCorrections,
+  userPreferences,
+  tillyMemory,
 } from "../shared/schema";
 import { detectPatterns, savePatterns, createNudgeFromPattern, getActivePatterns, getPendingNudges } from "./pattern-detection";
 import { buildDailyAnalysisPrompt, buildFeedbackLearningPrompt, buildQuickAddPrompt, buildGuardianCoachPrompt, buildGuardianIntentClassifierPrompt, type GuardianCoachContext } from "./prompts";
-import { getPlaidClient, getPlaidRedirectUri, isPlaidConfigured, mapPlaidCategory, shouldImportPlaidTransaction, shouldAutoAcceptPlaidTransaction } from "./plaid";
+import { getPlaidClient, getPlaidRedirectUri, isPlaidConfigured, mapPlaidCategory, shouldImportPlaidTransaction, shouldAutoAcceptPlaidTransaction, shouldAutoAcceptByAI } from "./plaid";
 import {
   applyRuleToPlaidTx,
   findRule,
@@ -197,6 +199,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     const [connector] = await db.select().from(users).where(eq(users.id, item.userId)).limit(1);
     const paidBy = connector?.partnerRole || "partner1";
 
+    // Pre-load alias_payment_to_card prefs for the connecting user so we
+    // can route matching merchants to "transfers" before they hit the
+    // pending queue. Tilly sets these via chat ("Scotia under loans is
+    // my credit card bill"); we honour them at sync time.
+    const aliasPrefs = await db
+      .select()
+      .from(userPreferences)
+      .where(
+        and(
+          eq(userPreferences.userId, item.userId),
+          eq(userPreferences.scope, "plaid"),
+        ),
+      );
+    const aliasedSignatures = new Set(
+      aliasPrefs
+        .map((p) => p.key)
+        .filter((k) => k.startsWith("alias_payment_to_card:"))
+        .map((k) => k.slice("alias_payment_to_card:".length)),
+    );
+    // Income-side alias map — deposits the user has flagged as wash
+    // transfers (employer reimbursements they immediately forward on,
+    // parents' pass-through rent contributions, etc.). Flips
+    // ourCategory from 'income' to 'transfers' on future syncs.
+    const incomeAliasedSignatures = new Set(
+      aliasPrefs
+        .map((p) => p.key)
+        .filter((k) => k.startsWith("alias_income_to_transfer:"))
+        .map((k) => k.slice("alias_income_to_transfer:".length)),
+    );
+
     while (hasMore) {
       const resp: any = await plaid.transactionsSync({
         access_token: item.accessToken,
@@ -207,13 +239,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const tx of data.added || []) {
         if (!shouldImportPlaidTransaction(tx)) continue;
 
-        const ourCat = mapPlaidCategory(tx.category, tx.personal_finance_category);
+        // Compute signature first so we can check alias maps before
+        // letting mapPlaidCategory run its keyword + PFC chain. Both
+        // aliases route to "transfers" — alias_payment_to_card catches
+        // outflows the user flagged as "this is me paying my own card",
+        // alias_income_to_transfer catches inflows the user flagged as
+        // "this is a wash, not real income".
+        const sig = merchantSignature(tx);
+        const isAliasedToOwnCard = aliasedSignatures.has(sig);
+        const isAliasedFromIncome = incomeAliasedSignatures.has(sig);
+        const ourCat = isAliasedToOwnCard || isAliasedFromIncome
+          ? "transfers"
+          : mapPlaidCategory(tx.category, tx.personal_finance_category, {
+              name: tx.name ?? null,
+              merchantName: tx.merchant_name ?? null,
+            });
         // Task #23: look up a learned merchant rule before deciding what
         // to do. The rule overrides Plaid's heuristic in either direction:
         // it can auto-accept (skip pending queue) OR auto-ignore (drop the
         // row). Both branches still write a plaid_transactions row so
         // future syncs dedupe correctly.
-        const sig = merchantSignature(tx);
         const rule = !tx.pending ? await findRule(item.coupleId, sig) : null;
         const ruleOutcome = applyRuleToPlaidTx(tx, rule);
 
@@ -222,7 +267,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // silently and become a real category in the spend feed; lower
         // confidence falls through into pending_review with the
         // suggestion attached so the user confirms in one tap.
-        let aiSuggestion: { category: string; tags: string[]; confidence: number } | null = null;
+        let aiSuggestion: {
+          category: string;
+          tags: string[];
+          confidence: number;
+          reasoning: string;
+        } | null = null;
         if (
           ruleOutcome.kind === "none" &&
           (ourCat === "other" || !ourCat) &&
@@ -242,6 +292,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               category: classified.category,
               tags: classified.tags,
               confidence: classified.confidence,
+              reasoning: classified.reasoning,
             };
           }
         }
@@ -254,13 +305,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
             : aiSuggestion && aiSuggestion.confidence >= HIGH_CONFIDENCE_THRESHOLD
               ? aiSuggestion.category
               : ourCat;
-        // Never auto-accept while Plaid still says "pending" — the amount/merchant
-        // can change when it posts, and Plaid may send a `removed` for the pending
-        // id and a fresh `added` for the posted id. Waiting until post avoids
-        // duplicate or stale expense rows.
+        // Pending-tx policy: don't let Plaid's `pending` flag gate
+        // auto-accept. shouldAutoAcceptPlaidTransaction already
+        // screens out the categories the user thinks of as
+        // "anomalies" — transfers, bank fees, loan payments,
+        // interest/overdraft/ATM, plus a noisy-keyword check. If a
+        // tx passes those filters, it's a normal purchase the user
+        // doesn't want to approve manually, whether Plaid has it
+        // pending or posted.
         const autoAcceptByRule = ruleOutcome.kind === "auto_accept";
         const autoIgnoreByRule = ruleOutcome.kind === "auto_ignore";
-        const autoAccept = !tx.pending && (autoAcceptByRule || shouldAutoAcceptPlaidTransaction(tx));
+        const autoAcceptByAI = shouldAutoAcceptByAI(
+          aiSuggestion?.confidence ?? null,
+          tx,
+        );
+        const autoAccept =
+          autoAcceptByRule ||
+          shouldAutoAcceptPlaidTransaction(tx) ||
+          autoAcceptByAI;
         const ruleId =
           ruleOutcome.kind === "auto_accept" ||
           ruleOutcome.kind === "auto_ignore" ||
@@ -280,6 +342,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // (plaid_transaction_id) constraint is our idempotency key — if a
           // resync replays the same tx, this throws and we never create a
           // duplicate expense. Then create the expense and link it back.
+          // Prefer Plaid's `authorized_date` (when the card was actually
+          // swiped) over `date` (the bank's post date). For an in-person
+          // weekend purchase the post date is usually Monday — using it
+          // would attribute Sunday-night Costco to Monday and corrupt
+          // both the day-of-week analysis and the "today" mini-ledger.
+          // `authorized_date` is nullable on non-card transactions
+          // (cheques, transfers) — fall back to `date` there.
+          const txDate = (tx.authorized_date as string | null) || tx.date;
           await db.transaction(async (txn) => {
             const initialStatus = autoIgnoreByRule
               ? "ignored"
@@ -292,7 +362,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               plaidTransactionId: tx.transaction_id,
               accountId: tx.account_id,
               amount: tx.amount,
-              date: tx.date,
+              date: txDate,
               merchantName: tx.merchant_name || null,
               name: tx.name || "Unknown",
               plaidCategory: tx.category || null,
@@ -305,16 +375,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
               aiSuggestedCategory: aiSuggestion?.category ?? null,
               aiSuggestedTags: aiSuggestion?.tags ?? null,
               aiSuggestedConfidence: aiSuggestion?.confidence ?? null,
+              aiSuggestedReasoning: aiSuggestion?.reasoning ?? null,
             }).returning();
 
-            if (autoAccept && !autoIgnoreByRule) {
+            // Income rows: accept the plaid_transactions row directly
+            // (so monthly-summary can query it) but DON'T mirror to the
+            // expenses table — income isn't an expense and would pollute
+            // every spend-totals query that doesn't guard against
+            // negative amounts.
+            const isIncome = ruleCategory === "income";
+            if (autoAccept && !autoIgnoreByRule && isIncome) {
+              await txn.update(plaidTransactions)
+                .set({ status: "accepted" })
+                .where(eq(plaidTransactions.id, inserted.id));
+            } else if (autoAccept && !autoIgnoreByRule) {
               const [expense] = await txn.insert(expenses).values({
                 coupleId: item.coupleId,
                 amount: tx.amount,
                 description: tx.merchant_name || tx.name || "Unknown",
                 merchant: tx.merchant_name || tx.name || null,
                 category: ruleCategory,
-                date: tx.date,
+                date: txDate,
                 paidBy,
                 splitMethod: "joint",
                 source: "plaid",
@@ -4955,7 +5036,13 @@ Return just the message text.`;
             category: (ptx.plaidCategory as string[] | null) || null,
             personal_finance_category: (ptx.personalFinanceCategory as { primary?: string; detailed?: string } | null) || null,
           };
-          if (!shouldAutoAcceptPlaidTransaction(txShape)) continue;
+          // Either path qualifies: Plaid's conservative auto-accept (real
+          // spend categorized cleanly), OR Tilly's AI is very confident on
+          // a tiny / fee-shaped row that the user said they don't want to
+          // review.
+          const okPlaid = shouldAutoAcceptPlaidTransaction(txShape);
+          const okAI = shouldAutoAcceptByAI(ptx.aiSuggestedConfidence ?? null, txShape);
+          if (!okPlaid && !okAI) continue;
 
           const paidBy = roleByItem.get(ptx.plaidItemId) || "partner1";
 
@@ -5171,6 +5258,384 @@ Return just the message text.`;
       res.status(500).json({ error: error.message });
     }
   });
+
+
+
+  // Hard reset: delete every plaid-sourced row for this household and
+  // re-pull from Plaid. Use when the auto-accept policy / categorization
+  // logic / income filter changes substantially enough that re-running
+  // backfill alone (which preserves existing rows + only adds new ones)
+  // would leave the dataset partially stale.
+  //
+  // What this touches:
+  //   - DELETE plaid_transactions for this coupleId (and their linked
+  //     expenses rows via expenseId).
+  //   - NULL plaid_items.cursor so the next sync re-streams ~90 days.
+  //   - Re-run syncPlaidItem per active item.
+  //
+  // What this leaves untouched: tilly_memory (Tilly's memory of you),
+  // dossier, chat history, user_preferences, subscriptions, merchant
+  // rules, dreams, manual expenses (voice/text/photo).
+  //
+  // Writes a tilly_memory row (source='admin_action') so the dossier
+  // knows the reset happened — otherwise Tilly would refer to the old
+  // numbers in chat without realizing the ledger was wiped.
+  app.post(
+    "/api/plaid/reset-transactions",
+    requireAuth,
+    async (req, res) => {
+      try {
+        const coupleId = req.user!.coupleId;
+        const userId = req.user!.id;
+        if (!coupleId) return res.status(400).json({ error: "no household" });
+
+        const plaidRows = await db
+          .select({ id: plaidTransactions.id, expenseId: plaidTransactions.expenseId })
+          .from(plaidTransactions)
+          .where(eq(plaidTransactions.coupleId, coupleId));
+        const linkedExpenseIds = plaidRows
+          .map((r) => r.expenseId)
+          .filter((id): id is string => !!id);
+
+        const txCount = plaidRows.length;
+        let expensesDeleted = 0;
+
+        if (linkedExpenseIds.length > 0) {
+          const deleted = await db
+            .delete(expenses)
+            .where(
+              and(
+                eq(expenses.coupleId, coupleId),
+                inArray(expenses.id, linkedExpenseIds),
+                eq(expenses.source, "plaid"),
+              ),
+            )
+            .returning({ id: expenses.id });
+          expensesDeleted = deleted.length;
+        }
+
+        await db
+          .delete(plaidTransactions)
+          .where(eq(plaidTransactions.coupleId, coupleId));
+
+        const items = await db
+          .select()
+          .from(plaidItems)
+          .where(
+            and(
+              eq(plaidItems.coupleId, coupleId),
+              eq(plaidItems.status, "active"),
+            ),
+          );
+
+        let resyncedItems = 0;
+        let totalAdded = 0;
+        const perItem: Array<{
+          institution: string | null;
+          added: number;
+          modified: number;
+        }> = [];
+        for (const item of items) {
+          await db
+            .update(plaidItems)
+            .set({ cursor: null })
+            .where(eq(plaidItems.id, item.id));
+          try {
+            const { added, modified } = await syncPlaidItem(item.id);
+            totalAdded += added;
+            resyncedItems++;
+            perItem.push({
+              institution: item.institutionName ?? null,
+              added,
+              modified,
+            });
+          } catch (err: any) {
+            perItem.push({
+              institution: item.institutionName ?? null,
+              added: 0,
+              modified: 0,
+            });
+            console.error(
+              `reset-transactions error for ${item.id}:`,
+              err?.message,
+            );
+          }
+        }
+
+        // Tell Tilly's memory that this happened, so when the user asks
+        // "what about that $300 transaction last week" Tilly can say "I
+        // refreshed your transaction history a couple of hours ago — the
+        // ledger you're looking at now is a fresh pull from your banks."
+        try {
+          await db.insert(tillyMemory).values({
+            userId,
+            householdId: coupleId,
+            kind: "observation",
+            source: "admin_action",
+            body: `You hit reset on transactions. I cleared ${txCount} old rows and re-pulled ${totalAdded} from ${resyncedItems} bank${resyncedItems === 1 ? "" : "s"}. Your memory of you, our chats, your dreams, and your preferences are untouched.`,
+            dateLabel: "Today",
+          });
+        } catch (memErr) {
+          console.error("reset-transactions tilly_memory write failed:", memErr);
+        }
+
+        res.json({
+          deleted: { plaidTransactions: txCount, expenses: expensesDeleted },
+          resync: { items: items.length, resynced: resyncedItems, totalAdded, perItem },
+        });
+      } catch (e: any) {
+        console.error("reset-transactions error:", e);
+        res.status(500).json({ error: e?.message });
+      }
+    },
+  );
+
+  // Backfill historical income (and any other tx the old filters
+  // skipped). Resets the per-item Plaid cursor to null and re-runs
+  // syncPlaidItem — Plaid re-streams the item's history window (~90
+  // days for most items, longer for some) and the current
+  // shouldImportPlaidTransaction filter now lets INCOME rows
+  // through, so paychecks that were dropped at original-sync time
+  // get inserted. Expense rows are protected from duplication by
+  // the unique plaid_transaction_id constraint; the sync handler's
+  // catch-on-duplicate logic just skips them.
+  app.post(
+    "/api/plaid/backfill-history",
+    requireAuth,
+    async (req, res) => {
+      try {
+        const coupleId = req.user!.coupleId;
+        const userId = req.user!.id;
+        if (!coupleId) return res.status(400).json({ error: "no household" });
+        const items = await db
+          .select()
+          .from(plaidItems)
+          .where(
+            and(
+              eq(plaidItems.coupleId, coupleId),
+              eq(plaidItems.status, "active"),
+            ),
+          );
+        if (items.length === 0) {
+          return res.json({ items: 0, totalAdded: 0, message: "no active items" });
+        }
+        let totalAdded = 0;
+        const perItem: Array<{ institution: string | null; added: number; modified: number }> = [];
+        for (const item of items) {
+          // Null out the cursor — next sync starts from scratch.
+          await db
+            .update(plaidItems)
+            .set({ cursor: null })
+            .where(eq(plaidItems.id, item.id));
+          try {
+            const { added, modified } = await syncPlaidItem(item.id);
+            totalAdded += added;
+            perItem.push({
+              institution: item.institutionName ?? null,
+              added,
+              modified,
+            });
+          } catch (err: any) {
+            perItem.push({
+              institution: item.institutionName ?? null,
+              added: 0,
+              modified: 0,
+            });
+            console.error(`backfill-history error for ${item.id}:`, err?.message);
+          }
+        }
+        if (totalAdded > 0) {
+          try {
+            await db.insert(tillyMemory).values({
+              userId,
+              householdId: coupleId,
+              kind: "observation",
+              source: "admin_action",
+              body: `You triggered a history backfill — I re-pulled ${totalAdded} transactions across ${items.length} bank${items.length === 1 ? "" : "s"} that the old import filter had skipped.`,
+              dateLabel: "Today",
+            });
+          } catch (memErr) {
+            console.error(
+              "backfill-history tilly_memory write failed:",
+              memErr,
+            );
+          }
+        }
+        res.json({ items: items.length, totalAdded, perItem });
+      } catch (e: any) {
+        console.error("backfill-history error:", e);
+        res.status(500).json({ error: e?.message });
+      }
+    },
+  );
+
+  // One-shot drain: re-evaluate every pending_review row against the
+  // current auto-accept rule and accept the qualifying ones in bulk.
+  // Useful after a policy tweak (we just relaxed the pending-flag
+  // gate) to clear out the rows that landed under the old strict
+  // rule without making the user tap Accept × N.
+  app.post(
+    "/api/plaid/drain-pending",
+    requireAuth,
+    requireCoupleAccess,
+    async (req, res) => {
+      try {
+        const coupleId = req.user!.coupleId!;
+        const userId = req.user!.id;
+        const rows = await db
+          .select()
+          .from(plaidTransactions)
+          .where(
+            and(
+              eq(plaidTransactions.coupleId, coupleId),
+              eq(plaidTransactions.status, "pending_review"),
+            ),
+          )
+          .limit(500);
+        const [connector] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, userId))
+          .limit(1);
+        const paidBy = connector?.partnerRole || "partner1";
+        let drained = 0;
+        let kept = 0;
+        for (const r of rows) {
+          const txShape = {
+            amount: r.amount,
+            name: r.name,
+            merchant_name: r.merchantName,
+            category: r.plaidCategory as string[] | null,
+            personal_finance_category: r.personalFinanceCategory as any,
+          };
+          const ok = shouldAutoAcceptPlaidTransaction(txShape);
+          if (!ok) {
+            kept++;
+            continue;
+          }
+          await db.transaction(async (txn) => {
+            const [expense] = await txn
+              .insert(expenses)
+              .values({
+                coupleId,
+                amount: r.amount,
+                description: r.merchantName || r.name || "Unknown",
+                merchant: r.merchantName || r.name || null,
+                category: r.ourCategory || "other",
+                date: r.date,
+                paidBy,
+                splitMethod: "joint",
+                source: "plaid",
+              })
+              .returning();
+            await txn
+              .update(plaidTransactions)
+              .set({ status: "accepted", expenseId: expense.id })
+              .where(eq(plaidTransactions.id, r.id));
+          });
+          drained++;
+        }
+        if (drained > 0) {
+          try {
+            await db.insert(tillyMemory).values({
+              userId,
+              householdId: coupleId,
+              kind: "observation",
+              source: "admin_action",
+              body: `You drained the pending queue — I accepted ${drained} transactions in bulk that matched the auto-accept rule. ${kept} stayed pending for you to review.`,
+              dateLabel: "Today",
+            });
+          } catch (memErr) {
+            console.error(
+              "drain-pending tilly_memory write failed:",
+              memErr,
+            );
+          }
+        }
+        res.json({ scanned: rows.length, drained, kept });
+      } catch (e: any) {
+        console.error("drain-pending error:", e);
+        res.status(500).json({ error: e?.message });
+      }
+    },
+  );
+
+  app.post(
+    "/api/plaid/reclassify-pending",
+    requireAuth,
+    requireCoupleAccess,
+    async (req, res) => {
+      try {
+        const coupleId = req.user!.coupleId!;
+        const rows = await db
+          .select()
+          .from(plaidTransactions)
+          .where(
+            and(
+              eq(plaidTransactions.coupleId, coupleId),
+              eq(plaidTransactions.status, "pending_review"),
+            ),
+          )
+          .limit(200);
+        let touched = 0;
+        let upgradedOurCategory = 0;
+        for (const r of rows) {
+          if (r.pending) continue;
+          // Re-derive ourCategory in case mapPlaidCategory's rules changed
+          // (e.g. LOAN_PAYMENTS now maps to "loans", not "other").
+          const newOurCat = mapPlaidCategory(
+            r.plaidCategory as string[] | null,
+            r.personalFinanceCategory as { primary?: string; detailed?: string } | null,
+            { name: r.name, merchantName: r.merchantName },
+          );
+          const sig = merchantSignature(r);
+          const classified = process.env.OPENROUTER_API_KEY
+            ? await classifyTransaction({
+                coupleId,
+                signature: sig,
+                merchant: r.merchantName || r.name || "(unknown)",
+                amount: r.amount,
+                plaidLegacyCategory: r.plaidCategory as string[] | null,
+                pfCategory: r.personalFinanceCategory as { primary?: string; detailed?: string } | null,
+              })
+            : null;
+          // Pick ourCategory the same way the sync handler does: prefer high-
+          // confidence AI, fall back to refreshed Plaid mapping.
+          const finalOur =
+            classified && classified.confidence >= HIGH_CONFIDENCE_THRESHOLD
+              ? classified.category
+              : newOurCat;
+          if (
+            finalOur !== r.ourCategory ||
+            (classified && classified.category !== r.aiSuggestedCategory)
+          ) {
+            await db
+              .update(plaidTransactions)
+              .set({
+                ourCategory: finalOur,
+                aiSuggestedCategory: classified?.category ?? null,
+                aiSuggestedTags: classified?.tags ?? null,
+                aiSuggestedConfidence: classified?.confidence ?? null,
+                aiSuggestedReasoning: classified?.reasoning ?? null,
+                signature: sig,
+              })
+              .where(eq(plaidTransactions.id, r.id));
+            touched++;
+            if (finalOur !== r.ourCategory) upgradedOurCategory++;
+          }
+        }
+        res.json({ scanned: rows.length, touched, upgradedOurCategory });
+      } catch (e: any) {
+        console.error("reclassify-pending error:", e);
+        res.status(500).json({ error: e?.message });
+      }
+    },
+  );
+
+
+
+
+
 
   // ─── Task #23: grouped pending queue + bulk accept ─────────────────────
   // Group pending Plaid txs by merchant signature so the user can deal with

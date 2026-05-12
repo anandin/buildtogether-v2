@@ -1,0 +1,7 @@
+{
+  "scenarioId": "10-nudge-log",
+  "status": "fail",
+  "durationMs": 61312,
+  "error": "chat reply not received within 45000ms",
+  "stack": "Error: chat reply not received within 45000ms\n    at sendChat (C:\\Projects\\BuildtogetherV2\\e2e\\lib\\helpers.js:175:9)\n    at async scenario (C:\\Projects\\BuildtogetherV2\\e2e\\scenarios\\10-nudge-log.js:69:13)\n    at async runScenario (C:\\Projects\\BuildtogetherV2\\e2e\\lib\\helpers.js:233:5)\n    at async main (C:\\Projects\\BuildtogetherV2\\e2e\\run-all.js:25:15)"
+}

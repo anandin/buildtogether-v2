@@ -24,6 +24,21 @@ export type BTTheme = {
   warn: string;
   bad: string;
   chip: string;
+  /** "Inverted" surface — used by BTCard inverted prop for the spotlight
+   * hero / step-one card. On LIGHT themes this is dark (so the card pops
+   * as a dark island); on DARK themes it's light (so the card pops as a
+   * bright island). Always high-contrast against `bg`.
+   *
+   * Pre-`invertedBg`, BTCard reused `t.ink` as the bg — which worked on
+   * light themes (ink is dark, white text on dark = readable) but broke
+   * on dusk/neon where ink is LIGHT and white text on a light card was
+   * invisible. Splitting into separate tokens makes the contrast safe
+   * across all four themes. */
+  invertedBg: string;
+  invertedFg: string;
+  /** A muted variant of invertedFg for sub-labels on the inverted card
+   * (e.g. "AVAILABLE NOW" mono caption). About 55-65% opacity feel. */
+  invertedFgMute: string;
   tilly: { body: string; belly: string; beak: string };
 };
 
@@ -49,6 +64,9 @@ export const BT_THEMES: Record<BTThemeKey, BTTheme> = {
     warn: "#C97A1F",
     bad: "#B8392E",
     chip: "rgba(42,21,24,0.06)",
+    invertedBg: "#2A1518",
+    invertedFg: "#FBF1EE",
+    invertedFgMute: "rgba(251,241,238,0.62)",
     tilly: { body: "#2A1518", belly: "#F6E8E6", beak: "#7A4FE0" },
   },
 
@@ -70,6 +88,12 @@ export const BT_THEMES: Record<BTThemeKey, BTTheme> = {
     warn: "#E5C25E",
     bad: "#E07560",
     chip: "rgba(244,239,230,0.06)",
+    // Dark theme — inverted card flips LIGHT so the hero pops as a
+    // bright island. Dark text on light is the only way the $$ number
+    // is legible at all here.
+    invertedBg: "#F4EFE6",
+    invertedFg: "#181612",
+    invertedFgMute: "rgba(24,22,18,0.62)",
     tilly: { body: "#F4EFE6", belly: "#2A2620", beak: "#F0934A" },
   },
 
@@ -91,6 +115,9 @@ export const BT_THEMES: Record<BTThemeKey, BTTheme> = {
     warn: "#B3811F",
     bad: "#A8392B",
     chip: "rgba(31,26,14,0.06)",
+    invertedBg: "#1F1A0E",
+    invertedFg: "#F5E9B8",
+    invertedFgMute: "rgba(245,233,184,0.62)",
     tilly: { body: "#1F1A0E", belly: "#F5E9B8", beak: "#D14A2C" },
   },
 
@@ -112,6 +139,12 @@ export const BT_THEMES: Record<BTThemeKey, BTTheme> = {
     warn: "#FFD60A",
     bad: "#FF2EC8",
     chip: "rgba(168,176,212,0.10)",
+    // Inverted = bright island. The hero $$ number gets dark text on
+    // off-white so the contrast is unambiguous. Tested at 9pm dark mode
+    // — was invisible at \$F0F4FF on \#F0F4FF before this split.
+    invertedBg: "#F0F4FF",
+    invertedFg: "#0A0B14",
+    invertedFgMute: "rgba(10,11,20,0.62)",
     tilly: { body: "#F0F4FF", belly: "#15172A", beak: "#00FF88" },
   },
 };

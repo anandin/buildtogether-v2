@@ -28,6 +28,8 @@ import {
   useDreams,
   useCreateDream,
   useContributeDream,
+  useUpdateDream,
+  useDeleteDream,
 } from "../hooks/useDreams";
 import type { Dream as BTDream } from "../api/types";
 
@@ -38,6 +40,10 @@ export function BTDreams() {
   const dreams = useDreams();
   const [newOpen, setNewOpen] = useState(false);
   const [contributeFor, setContributeFor] = useState<BTDream | null>(null);
+  // Edit / delete pathway. Opening this modal binds to a specific dream;
+  // dismissing clears the binding. Renders below the contribute modal so
+  // both can coexist if the user taps fast.
+  const [editFor, setEditFor] = useState<BTDream | null>(null);
 
   const live = dreams.data && dreams.data.ready === true ? dreams.data : null;
   const dreamsList: BTDream[] = live ? live.dreams : [];
@@ -99,6 +105,7 @@ export function BTDreams() {
           d={d}
           t={t}
           onContribute={() => setContributeFor(d)}
+          onEdit={() => setEditFor(d)}
         />
       ))}
 
@@ -122,6 +129,7 @@ export function BTDreams() {
       </Pressable>
 
       <NewDreamModal visible={newOpen} onClose={() => setNewOpen(false)} />
+      <EditDreamModal dream={editFor} onClose={() => setEditFor(null)} />
       <ContributeModal
         dream={contributeFor}
         onClose={() => setContributeFor(null)}
@@ -358,14 +366,179 @@ function SimpleField({
   );
 }
 
+function EditDreamModal({
+  dream,
+  onClose,
+}: {
+  dream: BTDream | null;
+  onClose: () => void;
+}) {
+  const { t } = useBT();
+  const update = useUpdateDream();
+  const remove = useDeleteDream();
+  const [name, setName] = useState("");
+  const [target, setTarget] = useState("");
+  const [weeklyAuto, setWeeklyAuto] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Resync local state whenever a different dream is bound. The modal
+  // mounts once at app level and rebinds via the `dream` prop, so without
+  // this effect the prior dream's values would leak across tap-throughs.
+  useEffect(() => {
+    if (!dream) {
+      setConfirmDelete(false);
+      return;
+    }
+    setName(dream.name);
+    setTarget(String(dream.target));
+    setWeeklyAuto(dream.weeklyAuto != null ? String(dream.weeklyAuto) : "");
+    setConfirmDelete(false);
+  }, [dream?.id]);
+
+  const submit = () => {
+    if (!dream) return;
+    if (!name.trim() || !target.trim()) return;
+    const w = Number((weeklyAuto || "").replace(/[^0-9.]/g, ""));
+    update.mutate(
+      {
+        id: dream.id,
+        body: {
+          name: name.trim(),
+          target: Number(target.replace(/[^0-9.]/g, "")) || dream.target,
+          weeklyAuto: Number.isFinite(w) ? w : undefined,
+        },
+      },
+      { onSuccess: () => onClose() },
+    );
+  };
+
+  const doDelete = () => {
+    if (!dream) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    remove.mutate(dream.id, { onSuccess: () => onClose() });
+  };
+
+  return (
+    <Modal
+      visible={!!dream}
+      animationType="slide"
+      transparent
+      onRequestClose={onClose}
+    >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
+        <Pressable
+          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" }}
+          onPress={onClose}
+        >
+          <Pressable
+            onPress={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: t.surface,
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              padding: 24,
+              paddingBottom: 40,
+              gap: 14,
+            }}
+          >
+            <BTLabel color={t.inkMute}>Edit dream</BTLabel>
+            <BTSerif size={26} color={t.ink} weight="500">
+              {dream?.name ?? ""}
+            </BTSerif>
+            <SimpleField
+              t={t}
+              label="Dream name"
+              value={name}
+              onChangeText={setName}
+              placeholder="Barcelona spring"
+            />
+            <SimpleField
+              t={t}
+              label="Target ($)"
+              value={target}
+              onChangeText={setTarget}
+              placeholder="2400"
+              keyboardType="numeric"
+            />
+            <SimpleField
+              t={t}
+              label="Auto-save per week ($)"
+              value={weeklyAuto}
+              onChangeText={setWeeklyAuto}
+              placeholder="40"
+              keyboardType="numeric"
+            />
+            <Pressable
+              onPress={submit}
+              disabled={update.isPending || !name.trim() || !target.trim()}
+              style={{
+                backgroundColor:
+                  update.isPending || !name.trim() || !target.trim()
+                    ? t.surfaceAlt
+                    : t.ink,
+                borderRadius: 14,
+                paddingVertical: 14,
+                alignItems: "center",
+                marginTop: 4,
+              }}
+            >
+              <Text
+                style={{
+                  color: t.surface,
+                  fontFamily: BTFonts.sans,
+                  fontWeight: "700",
+                  fontSize: 14,
+                }}
+              >
+                {update.isPending ? "Saving…" : "Save changes"}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={doDelete}
+              disabled={remove.isPending}
+              style={{
+                paddingVertical: 12,
+                alignItems: "center",
+              }}
+            >
+              <Text
+                style={{
+                  color: t.bad ?? "#c44",
+                  fontFamily: BTFonts.sans,
+                  fontWeight: "600",
+                  fontSize: 13,
+                }}
+              >
+                {remove.isPending
+                  ? "Deleting…"
+                  : confirmDelete
+                    ? "Tap again to confirm delete"
+                    : "Delete dream"}
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 function DreamPortrait({
   d,
   t,
   onContribute,
+  onEdit,
 }: {
   d: BTDream;
   t: BTTheme;
   onContribute?: () => void;
+  onEdit?: () => void;
 }) {
   const pct = Math.round((d.saved / d.target) * 100);
   const justCrossed = MILESTONES.find((m) => m > 0 && Math.abs(pct - m) <= 8) ?? null;
@@ -413,9 +586,37 @@ function DreamPortrait({
   const tx = slide.interpolate({ inputRange: [0, 1], outputRange: [-160, 360] });
 
   return (
-    <View style={{ borderRadius: 22, overflow: "hidden", backgroundColor: t.surface, borderWidth: 1, borderColor: t.rule }}>
+    <Pressable
+      onLongPress={onEdit}
+      delayLongPress={400}
+      accessibilityHint="Long press to edit or delete this dream"
+      style={{ borderRadius: 22, overflow: "hidden", backgroundColor: t.surface, borderWidth: 1, borderColor: t.rule }}
+    >
       {/* Gradient header */}
       <View style={{ height: 132, position: "relative", overflow: "hidden" }}>
+        {/* Edit affordance — top-right "⋯" so the long-press path is
+            also discoverable for users who don't know to long-press. */}
+        {onEdit ? (
+          <Pressable
+            onPress={onEdit}
+            hitSlop={10}
+            accessibilityLabel="Edit dream"
+            style={{
+              position: "absolute",
+              top: 10,
+              right: 10,
+              zIndex: 5,
+              width: 28,
+              height: 28,
+              borderRadius: 14,
+              backgroundColor: "rgba(255,255,255,0.22)",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text style={{ color: "#fff", fontSize: 16, fontWeight: "700", marginTop: -3 }}>⋯</Text>
+          </Pressable>
+        ) : null}
         <LinearGradient
           colors={d.gradient}
           start={{ x: 0, y: 0 }}
@@ -445,7 +646,7 @@ function DreamPortrait({
             style={{
               color: "rgba(255,255,255,0.85)",
               fontFamily: BTFonts.mono,
-              fontSize: 9,
+              fontSize: 11,
               letterSpacing: 1.4,
               textTransform: "uppercase",
             }}
@@ -576,7 +777,7 @@ function DreamPortrait({
             style={{
               color: t.inkMute,
               fontFamily: BTFonts.mono,
-              fontSize: 9,
+              fontSize: 11,
               letterSpacing: 1,
               textTransform: "uppercase",
             }}
@@ -633,7 +834,7 @@ function DreamPortrait({
           </Pressable>
         ) : null}
       </View>
-    </View>
+    </Pressable>
   );
 }
 

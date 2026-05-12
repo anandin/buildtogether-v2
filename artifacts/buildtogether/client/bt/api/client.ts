@@ -65,9 +65,57 @@ async function putJson<T>(route: string, body?: unknown): Promise<T> {
 export const btApi = {
   // ── Tilly insights ───────────────────────────────────────────────────────
   today: () => getJson<TodayBrief>("/api/tilly/today"),
-  spendPattern: () => getJson<SpendPattern>("/api/tilly/spend-pattern"),
+  spendPattern: (range: "week" | "month" | "year" = "week", offset: number = 0) =>
+    getJson<SpendPattern>(
+      `/api/tilly/spend-pattern?range=${range}${offset !== 0 ? `&offset=${offset}` : ""}`,
+    ),
   creditSnapshot: () => getJson<CreditSnapshot>("/api/tilly/credit-snapshot"),
   profile: () => getJson<TillyProfile>("/api/tilly/profile"),
+  categories: () =>
+    getJson<{
+      categories: Array<{
+        name: string;
+        monthTotal: number;
+        transactionCount: number;
+        includeInSpend: boolean;
+        isDefaultFixed: boolean;
+        hasOverride: boolean;
+      }>;
+    }>("/api/tilly/categories"),
+  runTool: (name: string, args: unknown) =>
+    postJson<{ result: any }>(`/api/tilly/tools/${name}`, args),
+  categoryMerchants: (category: string) =>
+    getJson<{
+      category: string;
+      merchants: Array<{
+        signature: string;
+        displayName: string;
+        monthTotal: number;
+        count: number;
+        lastDate: string;
+      }>;
+    }>(`/api/tilly/categories/${encodeURIComponent(category)}/merchants`),
+  watchlist: () =>
+    getJson<{
+      items: Array<{
+        id: string;
+        name: string;
+        estimatedPrice: number | null;
+        addedAt: string;
+        lastNudgedAt: string | null;
+      }>;
+    }>("/api/tilly/watchlist"),
+  watchlistAdd: (name: string, estimatedPrice?: number) =>
+    postJson<{
+      item: {
+        id: string;
+        name: string;
+        estimatedPrice: number | null;
+        addedAt: string;
+      };
+    }>("/api/tilly/watchlist", { name, estimatedPrice }),
+  watchlistUpdate: (id: string, patch: { status?: "active" | "bought" | "dropped"; estimatedPrice?: number; name?: string }) =>
+    putJson<{ ok: true }>(`/api/tilly/watchlist/${encodeURIComponent(id)}`, patch),
 
   // ── Tilly chat ───────────────────────────────────────────────────────────
   chatHistory: () => getJson<ChatHistory>("/api/tilly/chat/history"),
@@ -118,6 +166,26 @@ export const btApi = {
   }) => postJson<{ dream: import("./types").Dream }>("/api/dreams", body),
   contributeDream: (id: string, amount: number) =>
     postJson<{ ok: true }>(`/api/dreams/${id}/contribute`, { amount }),
+  updateDream: (
+    id: string,
+    body: {
+      name?: string;
+      target?: number;
+      glyph?: string;
+      weeklyAuto?: number;
+      loc?: string;
+      dueLabel?: string;
+    },
+  ) => putJson<{ dream: import("./types").Dream }>(`/api/dreams/${id}`, body),
+  deleteDream: async (id: string) => {
+    const res = await apiRequest("DELETE", `/api/dreams/${id}`);
+    return res.json() as Promise<{ ok: true }>;
+  },
+
+  // ── User preferences (read by every screen, written by Tilly tools) ──
+  userPrefs: () => getJson<import("./types").UserPrefsResponse>("/api/user-prefs"),
+  setUserPref: (scope: string, key: string, value: unknown) =>
+    postJson<{ ok: true }>("/api/user-prefs", { scope, key, value }),
 
   // ── Subscriptions ───────────────────────────────────────────────────────
   subscriptions: () => getJson<SubscriptionsList>("/api/subscriptions"),
@@ -299,6 +367,20 @@ export const btApi = {
     getJson<PlaidPendingTransaction[]>(`/api/plaid/pending/${coupleId}`),
   plaidSync: (coupleId: string) =>
     postJson<{ ok: true }>(`/api/plaid/sync/${coupleId}`),
+  plaidResetTransactions: () =>
+    postJson<{
+      deleted: { plaidTransactions: number; expenses: number };
+      resync: {
+        items: number;
+        resynced: number;
+        totalAdded: number;
+        perItem: Array<{
+          institution: string | null;
+          added: number;
+          modified: number;
+        }>;
+      };
+    }>("/api/plaid/reset-transactions", {}),
   plaidAccept: (
     txnId: string,
     overrides?: { note?: string | null; tags?: string[] | null },

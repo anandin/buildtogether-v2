@@ -382,6 +382,15 @@ const CRITICAL_STATEMENTS: string[] = [
   // rule auto-accepted which row.
   `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "signature" text`,
   `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "applied_rule_id" varchar`,
+  `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "ai_suggested_reasoning" text`,
+  `CREATE TABLE IF NOT EXISTS "user_preferences" (
+    "user_id" varchar NOT NULL,
+    "scope" text NOT NULL,
+    "key" text NOT NULL,
+    "value" jsonb NOT NULL,
+    "updated_at" timestamp NOT NULL DEFAULT now(),
+    PRIMARY KEY ("user_id", "scope", "key")
+  )`,
   `CREATE INDEX IF NOT EXISTS "plaid_transactions_couple_status_signature_idx"
      ON "plaid_transactions" ("couple_id", "status", "signature")`,
   `CREATE TABLE IF NOT EXISTS "merchant_rules" (
@@ -439,6 +448,26 @@ const CRITICAL_STATEMENTS: string[] = [
   `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "ai_suggested_category" text`,
   `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "ai_suggested_tags" jsonb`,
   `ALTER TABLE "plaid_transactions" ADD COLUMN IF NOT EXISTS "ai_suggested_confidence" real`,
+
+  // Sprint A — watchlist. Core thesis surface ("name what you're eyeing
+  // before you act"). Each row is one item the user (or Tilly via tool)
+  // has put on the list. Statuses: active (default), bought, dropped.
+  // estimatedPrice is optional — Tilly fills it in if user provides;
+  // affordability snapshots downstream will refresh it.
+  `CREATE TABLE IF NOT EXISTS "watchlist_items" (
+     "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+     "user_id" varchar NOT NULL,
+     "household_id" varchar NOT NULL,
+     "name" text NOT NULL,
+     "estimated_price" real,
+     "status" text NOT NULL DEFAULT 'active',
+     "added_at" timestamp DEFAULT now() NOT NULL,
+     "resolved_at" timestamp,
+     "last_nudged_at" timestamp,
+     "metadata" jsonb
+   )`,
+  `CREATE INDEX IF NOT EXISTS "watchlist_household_status_added_idx"
+     ON "watchlist_items" ("household_id", "status", "added_at" DESC)`,
 ];
 
 export async function applyBootMigrations(): Promise<{

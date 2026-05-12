@@ -74,6 +74,91 @@ export function useTilly() {
       // — so the new reminder appears without a manual reload.
       qc.invalidateQueries({ queryKey: ["/api/tilly/reminders"] });
       qc.invalidateQueries({ queryKey: ["/api/tilly/reminders/today"] });
+      // Tool-result side effects: each detected tool result on this turn
+      // points at the queries that need refetching so the relevant screens
+      // pick up the change without a manual pull-to-refresh.
+      const reply = data.reply as any;
+      const results: Array<{ kind: string }> = Array.isArray(reply?.toolResults)
+        ? reply.toolResults
+        : reply?.toolResult
+          ? [reply.toolResult]
+          : [];
+      const seen = new Set(results.map((r) => r.kind));
+      if (seen.has("dream_created") || seen.has("dream_deleted")) {
+        qc.invalidateQueries({ queryKey: ["/api/dreams"] });
+      }
+      if (
+        seen.has("payment_to_card_aliased") ||
+        seen.has("payment_to_card_unaliased")
+      ) {
+        // Spend totals + 90-day analyse + plaid pending all need refetch
+        // since past plaid_transactions just got reclassified.
+        qc.invalidateQueries({ queryKey: ["/api/expenses"] });
+        qc.invalidateQueries({ queryKey: ["/api/tilly/spend-pattern"] });
+        qc.invalidateQueries({ queryKey: ["/api/tilly/today"] });
+        qc.invalidateQueries({ queryKey: ["/api/plaid/pending"] });
+        qc.invalidateQueries({ queryKey: ["/api/plaid/pending-grouped"] });
+      }
+      if (
+        seen.has("category_hidden") ||
+        seen.has("category_unhidden") ||
+        seen.has("home_tile_pinned") ||
+        seen.has("home_tile_unpinned") ||
+        seen.has("onboarding_field_set") ||
+        seen.has("onboarding_field_unset")
+      ) {
+        // All preference writes invalidate the prefs query; downstream
+        // screens (Spend filtering, Today tiles, Settings) re-render.
+        qc.invalidateQueries({ queryKey: ["/api/user-prefs"] });
+      }
+      if (
+        seen.has("category_unhidden") ||
+        seen.has("category_hidden")
+      ) {
+        // Spend page reads hidden categories from prefs but its
+        // categories array also changed shape (top-N sorting), so
+        // refetch spend-pattern too to be safe.
+        qc.invalidateQueries({ queryKey: ["/api/tilly/spend-pattern"] });
+      }
+      if (seen.has("category_inclusion_set")) {
+        // Headline + bars + categories all change when a category
+        // crosses the discretionary/fixed line server-side.
+        qc.invalidateQueries({ queryKey: ["/api/tilly/spend-pattern"] });
+        qc.invalidateQueries({ queryKey: ["/api/user-prefs"] });
+        qc.invalidateQueries({ queryKey: ["/api/tilly/today"] });
+        qc.invalidateQueries({ queryKey: ["/api/tilly/categories"] });
+      }
+      if (seen.has("merchant_category_set")) {
+        // Past plaid_transactions + linked expenses just got moved into
+        // a new category. Every screen that reads category-derived data
+        // needs to refetch.
+        qc.invalidateQueries({ queryKey: ["/api/expenses"] });
+        qc.invalidateQueries({ queryKey: ["/api/tilly/spend-pattern"] });
+        qc.invalidateQueries({ queryKey: ["/api/tilly/today"] });
+        qc.invalidateQueries({ queryKey: ["/api/tilly/categories"] });
+        qc.invalidateQueries({ queryKey: ["/api/plaid/pending"] });
+        qc.invalidateQueries({ queryKey: ["/api/plaid/pending-grouped"] });
+      }
+      if (seen.has("watchlist_item_added")) {
+        // Today tile count + drill-in list both read /api/tilly/watchlist.
+        qc.invalidateQueries({ queryKey: ["/api/tilly/watchlist"] });
+      }
+      if (seen.has("scout_started") || seen.has("wait_started")) {
+        // Tilly fired findOptions / predictSalePrice. The tool handler
+        // inserted a guardian_conversations row of intent=scout/wait
+        // that we won't have in the cache yet (chat-send only appends
+        // the text reply). Invalidate history so the scout card
+        // appears between the user message and Tilly's confirmation
+        // text. The history refetch also unmasks the in-flight scout
+        // poller — it'll tick every 2.5s until the job lands.
+        qc.invalidateQueries({ queryKey: ["/api/tilly/chat/history"] });
+      }
+      if (
+        seen.has("onboarding_field_set") ||
+        seen.has("onboarding_field_unset")
+      ) {
+        qc.invalidateQueries({ queryKey: ["/api/tilly/me/life-context"] });
+      }
       // Bind the inline confirmation chip to this specific reply.
       if (data.createdReminder && data.reply?.id) {
         setConfirmedReminders((prev) => ({

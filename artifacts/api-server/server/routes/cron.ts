@@ -16,7 +16,13 @@ import type { Express, Request, Response, NextFunction } from "express";
 import { eq, and, gt, sql } from "drizzle-orm";
 
 import { db } from "../db";
-import { goals, goalContributions, tillyReminders, users } from "../../shared/schema";
+import {
+  goals,
+  goalContributions,
+  tillyReminders,
+  users,
+  watchlistItems,
+} from "../../shared/schema";
 import { runProtectionsAll } from "../tilly/protections-engine";
 import { runNotify } from "../tilly/notify-cron";
 import { runPatternDetectionAll } from "../tilly/pattern-cron";
@@ -25,6 +31,8 @@ import { rewriteDossiersForActiveUsers } from "../tilly/dossier-rewriter";
 import { archiveStaleMemories } from "../tilly/memory-archiver";
 import { sendExpoPush } from "../tilly/expo-push";
 import { emitEventAsync } from "../tilly/event-emitter";
+import { cityToTimezone, localDateString } from "../tilly/user-tz";
+import { asc, isNull, or } from "drizzle-orm";
 
 function requireCron(req: Request, res: Response, next: NextFunction) {
   const expected = process.env.CRON_SECRET;
@@ -133,6 +141,122 @@ export function mountCronRoutes(app: Express): void {
         const msg = err instanceof Error ? err.message : String(err);
         console.error("[cron] fire-reminders failed:", msg);
         res.status(500).json({ error: "fire-reminders failed", debug: msg });
+      }
+    },
+  );
+
+  /**
+   * Sprint A — morning watchlist nudge. Runs hourly. For each user
+   * whose local hour is currently 9am AND who has ≥1 active watchlist
+   * item, pick the oldest item that hasn't been nudged today and send
+   * a push notification. Idempotent via lastNudgedAt (compared against
+   * the user's local YYYY-MM-DD so a user only ever gets one nudge per
+   * local day even if the cron retries).
+   *
+   * Body templates are kept terse — the goal is to surface the desire
+   * back to the user, not to summarise it. The notification opens the
+   * app to Today where the ShouldIBuyTile is already mounted.
+   */
+  app.post(
+    "/api/cron/morning-watchlist",
+    requireCron,
+    async (_req: Request, res: Response) => {
+      const startedAt = Date.now();
+      const targetHour = 9; // 9am local
+      try {
+        // Pull active watchlist items + the owning user's city +
+        // expoPushToken in one go. Limit to a sane cap; if we ever
+        // exceed it the cron should be sharded.
+        const rows = await db
+          .select({
+            itemId: watchlistItems.id,
+            itemName: watchlistItems.name,
+            itemEstimatedPrice: watchlistItems.estimatedPrice,
+            itemAddedAt: watchlistItems.addedAt,
+            itemLastNudgedAt: watchlistItems.lastNudgedAt,
+            userId: users.id,
+            city: users.city,
+            expoPushToken: users.expoPushToken,
+          })
+          .from(watchlistItems)
+          .leftJoin(users, eq(users.id, watchlistItems.userId))
+          .where(eq(watchlistItems.status, "active"))
+          .orderBy(asc(watchlistItems.addedAt))
+          .limit(200);
+
+        // Group by user; pick the oldest unnudged-today item.
+        type Pick = {
+          userId: string;
+          tz: string;
+          token: string | null;
+          item: (typeof rows)[number];
+        };
+        const picks: Pick[] = [];
+        const seenUsers = new Set<string>();
+        const now = new Date();
+        for (const r of rows) {
+          if (!r.userId || seenUsers.has(r.userId)) continue;
+          const tz = cityToTimezone(r.city ?? null);
+          const localHour = new Intl.DateTimeFormat("en-US", {
+            timeZone: tz,
+            hour: "numeric",
+            hour12: false,
+          }).format(now);
+          if (parseInt(localHour, 10) !== targetHour) continue;
+          // Per-user idempotency: only fire if no item nudged this
+          // user's local-today date.
+          const todayLocal = localDateString(now, tz);
+          if (r.itemLastNudgedAt) {
+            const nudgeLocal = localDateString(r.itemLastNudgedAt, tz);
+            if (nudgeLocal === todayLocal) {
+              seenUsers.add(r.userId); // already nudged today
+              continue;
+            }
+          }
+          picks.push({ userId: r.userId, tz, token: r.expoPushToken ?? null, item: r });
+          seenUsers.add(r.userId);
+        }
+
+        let pushed = 0;
+        let pushSkipped = 0;
+        for (const p of picks) {
+          const name = p.item.itemName;
+          const price = p.item.itemEstimatedPrice;
+          const body = price
+            ? `Still thinking about ${name}? Roughly $${Math.round(price)} — want to check the math?`
+            : `Still thinking about ${name}? Tap to talk it through.`;
+          if (p.token) {
+            const ticket = await sendExpoPush({
+              to: p.token,
+              title: "Tilly",
+              body,
+              data: { route: "home", watchlistItemId: p.item.itemId },
+            });
+            if (ticket?.status === "ok") pushed += 1;
+            else pushSkipped += 1;
+          } else {
+            pushSkipped += 1;
+          }
+          // Always bump lastNudgedAt — even if the push failed, we
+          // shouldn't retry the same item in the same hour-window.
+          await db
+            .update(watchlistItems)
+            .set({ lastNudgedAt: new Date() })
+            .where(eq(watchlistItems.id, p.item.itemId));
+        }
+
+        res.json({
+          ok: true,
+          considered: rows.length,
+          eligible: picks.length,
+          pushed,
+          pushSkipped,
+          durationMs: Date.now() - startedAt,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("[cron] morning-watchlist failed:", msg);
+        res.status(500).json({ error: "morning-watchlist failed", debug: msg });
       }
     },
   );

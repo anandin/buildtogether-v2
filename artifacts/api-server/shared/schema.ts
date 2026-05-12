@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, timestamp, jsonb, real, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, jsonb, real, uniqueIndex, primaryKey } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -168,6 +168,31 @@ export const expenses = pgTable("expenses", {
  * copy) on top of the legacy V1 goal shape (kept for backward compatibility
  * during the transition).
  */
+/**
+ * User-scoped preferences. Each row is a typed (scope, key) pair holding a
+ * jsonb value. Tilly mutates these via tool calls so chat is the
+ * configuration UI:
+ *   scope='spend',   key='hide_categories', value=["loans","transfers"]
+ *   scope='today',   key='pinned_tiles',    value=["subscriptions_overview"]
+ *   scope='plaid',   key='alias_payment_to_card',
+ *      value={"signature":"scotialn vsa","cardName":"Scotia VISA","since":"2026-05-09"}
+ *   scope='tilly',   key='greeting_style',  value="terse"
+ *
+ * Mobile screens read prefs on render and apply layout/filtering. The
+ * compound primary key (user_id, scope, key) means the same key inside
+ * different scopes is independent (you can have a 'hide_categories' pref
+ * under both 'spend' and a future 'today' scope without collision).
+ */
+export const userPreferences = pgTable("user_preferences", {
+  userId: varchar("user_id").notNull(),
+  scope: text("scope").notNull(),
+  key: text("key").notNull(),
+  value: jsonb("value").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.userId, table.scope, table.key] }),
+}));
+
 export const goals = pgTable("goals", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   // Phase 1: column kept as `couple_id` for incremental rename. Phase 1c renames per-router.
@@ -833,6 +858,11 @@ export const plaidTransactions = pgTable("plaid_transactions", {
   aiSuggestedCategory: text("ai_suggested_category"),
   aiSuggestedTags: jsonb("ai_suggested_tags").$type<string[] | null>(),
   aiSuggestedConfidence: real("ai_suggested_confidence"),
+  // One-sentence rationale the classifier returns alongside its category
+  // pick — e.g. "monthly Lincoln auto-finance — looks like a car loan".
+  // Surfaced in the Pending card so the row doesn't just say LOANS, it
+  // says LOANS *because*, which is what makes Tilly feel AI-native.
+  aiSuggestedReasoning: text("ai_suggested_reasoning"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -895,6 +925,36 @@ export const tillyQuestions = pgTable("tilly_questions", {
 });
 
 export type TillyQuestion = typeof tillyQuestions.$inferSelect;
+
+/**
+ * Watchlist — Sprint A habit hook. Each row is something the user said
+ * they're "thinking about buying" so Tilly can follow up later instead
+ * of the desire firing into a checkout impulse. Either the user adds an
+ * item via the Today tile, or Tilly adds via the addToWatchlist tool
+ * mid-conversation. The daily 9am nudge picks one and asks "still
+ * thinking about X? you're \$N away."
+ *
+ * Status lifecycle:
+ *   active   → freshly added, still on the list
+ *   bought   → user purchased it (manually marked OR Plaid matched the
+ *              merchant) — kept for "you said X, did you go through with
+ *              it?" follow-up rather than deleted
+ *   dropped  → user explicitly let go of the desire
+ */
+export const watchlistItems = pgTable("watchlist_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull(),
+  householdId: varchar("household_id").notNull(),
+  name: text("name").notNull(),
+  estimatedPrice: real("estimated_price"),
+  status: text("status").notNull().default("active"), // active | bought | dropped
+  addedAt: timestamp("added_at").defaultNow().notNull(),
+  resolvedAt: timestamp("resolved_at"),
+  lastNudgedAt: timestamp("last_nudged_at"),
+  metadata: jsonb("metadata").$type<Record<string, unknown> | null>(),
+});
+
+export type WatchlistItem = typeof watchlistItems.$inferSelect;
 
 // ==================== BuildTogether v2 (Tilly student-edition) ====================
 // Spec §5: Tilly's AI learning behavior. New tables introduced for the

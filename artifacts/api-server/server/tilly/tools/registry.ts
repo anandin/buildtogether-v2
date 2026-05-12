@@ -1,0 +1,1498 @@
+/**
+ * Tilly tool registry.
+ *
+ * Each tool is a typed action Tilly can take during a chat turn. The
+ * unified extractor (extractor.ts) detects which tools the user just
+ * asked for via a single Haiku call returning an array of intents; the
+ * dispatcher (this file's `executeTool` function) then runs the actual
+ * server-side side effect for each detected intent.
+ *
+ * Adding a tool:
+ *   1. Add a TOOL_NAMES entry + zod schema for args
+ *   2. Implement the handler in `handlers/<name>.ts`
+ *   3. Map TOOL_HANDLERS[name]
+ *   4. Add the corresponding ToolResult variant + UI confirmation card
+ *
+ * No DB schema migration required for new tools (state lives in
+ * user_preferences for layout/filtering tools; tool-specific tables for
+ * domain ones like goals).
+ */
+import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
+
+import { db } from "../../db";
+import {
+  goals,
+  plaidTransactions,
+  expenses,
+  userPreferences,
+  merchantRules,
+  guardianConversations,
+  watchlistItems,
+} from "../../../shared/schema";
+import { enqueueScout } from "../scout/orchestrator";
+import { and, eq, sql, inArray } from "drizzle-orm";
+import { merchantSignature } from "../merchant-rules";
+import type { LLMToolDef } from "../llm/types";
+
+export const TOOL_NAMES = [
+  // Forward tools — mutate state.
+  "createDream",
+  "markPaymentToOwnCard",
+  "hideCategoryFromSpend",
+  "pinToHome",
+  "setOnboardingField",
+  // Inverse tools — reverse a prior mutation. Tilly chooses these when
+  // the user says "Don't / Stop / Bring back / Undo / Reverse / Remove
+  // X" referring to something she previously did.
+  "unhideCategory",
+  "removePaymentToOwnCardAlias",
+  "unpinFromHome",
+  "unsetOnboardingField",
+  "deleteDream",
+  // Per-category headline override. Lets the user say "include loans"
+  // (Lincoln car loan = real spending) or "exclude transfers" (Scotia
+  // VISA payment = paying my own card). Has its own tool — not folded
+  // into hide/unhide — because hide removes the category from the page
+  // entirely; this just toggles whether it counts in the spend total.
+  "setCategoryInclusion",
+  // Per-merchant category override. "Move all my Lincoln transactions
+  // from loans to subscriptions" — writes a merchant_rules row so
+  // future syncs land in the new category, and (when retroactive=true)
+  // updates every existing tx + linked expense in one batch.
+  "setMerchantCategory",
+  // Scout / wait — Tilly's only path to live retailer data. Without
+  // these she hits her knowledge ceiling on "when does X go on sale?"
+  // and "find me cheaper Y" and incorrectly says "I can't see that."
+  // findOptions enqueues a find-mode scout (cheaper alternatives,
+  // secondhand inventory). predictSalePrice enqueues a wait-mode scout
+  // (sale history + should-I-wait verdict). Both insert their own
+  // guardian_conversations row so the mobile chat history renders a
+  // scout/wait card without Tilly having to write one in her reply.
+  "findOptions",
+  "predictSalePrice",
+  // Sprint A — habit hook. The user says "I'm thinking of buying X" or
+  // "I've been eyeing the Switch 2" and Tilly saves it to a watchlist
+  // she follows up on. Defends against the impulse-checkout failure
+  // mode where desire fires → user buys before pausing.
+  "addToWatchlist",
+  // Mirror of markPaymentToOwnCard for the INCOME side. The user gets
+  // a deposit (employer reimbursement, business expense float, parent's
+  // transfer to cover rent, etc.) that Plaid sees as income, but it's
+  // a wash — they immediately transfer it back out to pay a card or
+  // forward it on. Flipping it from "income" → "transfers" stops it
+  // inflating the savings rate + breathing-room math.
+  "markIncomeAsTransfer",
+] as const;
+export type ToolName = (typeof TOOL_NAMES)[number];
+
+// ─── Tool result types ─────────────────────────────────────────────────────
+// Discriminated by `kind`. Mobile renders an inline preview card per kind.
+
+export type ToolResult =
+  | {
+      kind: "dream_created";
+      dreamId: string;
+      name: string;
+      targetAmount: number;
+      monthlyContribution: number;
+      emoji: string;
+    }
+  | {
+      kind: "payment_to_card_aliased";
+      merchantSignature: string;
+      cardName: string;
+      // How many existing transactions got reclassified out of "loans"
+      reclassifiedCount: number;
+      // Approx $ that no longer counts as loan-spend.
+      reclassifiedAmount: number;
+    }
+  | {
+      kind: "income_aliased_to_transfer";
+      merchantSignature: string;
+      sourceName: string;
+      // How many existing income rows flipped to "transfers"
+      reclassifiedCount: number;
+      // Approx $ that no longer counts as income.
+      reclassifiedAmount: number;
+    }
+  | {
+      kind: "category_hidden";
+      category: string;
+      reason: string;
+    }
+  | {
+      kind: "home_tile_pinned";
+      tileKind: string;
+      label: string;
+    }
+  | {
+      kind: "onboarding_field_set";
+      field: string;
+      value: string;
+    }
+  // ─── Inverse tool results ─────────────────────────────────────────────
+  | {
+      kind: "category_unhidden";
+      category: string;
+    }
+  | {
+      kind: "payment_to_card_unaliased";
+      cardName: string;
+      restoredCount: number;
+      restoredAmount: number;
+    }
+  | {
+      kind: "home_tile_unpinned";
+      tileKind: string;
+      label: string;
+    }
+  | {
+      kind: "onboarding_field_unset";
+      field: string;
+    }
+  | {
+      kind: "dream_deleted";
+      name: string;
+    }
+  | {
+      kind: "category_inclusion_set";
+      category: string;
+      includeInSpend: boolean;
+      // What changed — defaults are loans/taxes/transfers/fees=excluded,
+      // everything else=included. We surface the override so the UI can
+      // show "now counted toward your spend total" / "now treated as
+      // money flow only" without re-deriving.
+      previouslyIncluded: boolean;
+    }
+  | {
+      kind: "merchant_category_set";
+      merchantSignature: string;
+      displayName: string;
+      fromCategory: string;
+      toCategory: string;
+      // How many existing rows the retroactive flag updated. 0 when the
+      // user opted out of retroactive or there were no past matches.
+      reclassifiedCount: number;
+    }
+  | {
+      kind: "scout_started";
+      mode: "find";
+      jobId: string;
+      query: string;
+      location: string | null;
+    }
+  | {
+      kind: "wait_started";
+      mode: "wait";
+      jobId: string;
+      query: string;
+      location: string | null;
+    }
+  | {
+      kind: "watchlist_item_added";
+      itemId: string;
+      name: string;
+      estimatedPrice: number | null;
+    };
+
+// ─── Tool context (passed to every handler) ────────────────────────────────
+
+export type ToolContext = {
+  userId: string;
+  householdId: string;
+};
+
+// ─── Per-tool zod schemas (validated server-side after Haiku extraction) ──
+
+const createDreamSchema = z.object({
+  name: z.string().min(1),
+  targetAmount: z.number().positive(),
+  monthlyContribution: z.number().nonnegative().optional(),
+  emoji: z.string().optional(),
+});
+
+const markPaymentToOwnCardSchema = z.object({
+  merchantSignature: z.string().min(1),
+  cardName: z.string().min(1),
+  reason: z.string().optional(),
+});
+
+const hideCategoryFromSpendSchema = z.object({
+  category: z.string().min(1),
+  reason: z.string().optional(),
+});
+
+const pinToHomeSchema = z.object({
+  tileKind: z.string().min(1),
+});
+
+const setOnboardingFieldSchema = z.object({
+  field: z.enum([
+    "employmentType",
+    "ageBand",
+    "city",
+    "dependents",
+    "supportNote",
+    "schoolName",
+  ]),
+  value: z.union([z.string(), z.number()]),
+});
+
+// ─── Inverse-tool schemas ──────────────────────────────────────────────
+const unhideCategorySchema = z.object({
+  category: z.string().min(1),
+});
+const removePaymentToOwnCardAliasSchema = z.object({
+  cardName: z.string().min(1),
+});
+const unpinFromHomeSchema = z.object({
+  tileKind: z.string().min(1),
+});
+const unsetOnboardingFieldSchema = z.object({
+  field: z.enum([
+    "employmentType",
+    "ageBand",
+    "city",
+    "dependents",
+    "supportNote",
+    "schoolName",
+  ]),
+});
+const deleteDreamSchema = z.object({
+  name: z.string().min(1),
+});
+const setCategoryInclusionSchema = z.object({
+  category: z.string().min(1),
+  includeInSpend: z.boolean(),
+});
+
+const setMerchantCategorySchema = z.object({
+  merchantSignature: z.string().min(1),
+  category: z.string().min(1),
+  /** Default true — past transactions for this merchant get moved too.
+   * When false, only the merchant_rules override is written and future
+   * syncs apply it; existing rows stay where they are. */
+  retroactive: z.boolean().optional(),
+});
+
+const findOptionsSchema = z.object({
+  query: z.string().min(1),
+  /** Optional city to scope local secondhand inventory (Marketplace,
+   * Kijiji). Falls back to the user's saved profile city if omitted. */
+  location: z.string().optional(),
+});
+
+const predictSalePriceSchema = z.object({
+  query: z.string().min(1),
+  /** Optional city to scope regional pricing/availability. */
+  location: z.string().optional(),
+});
+
+const addToWatchlistSchema = z.object({
+  name: z.string().min(1),
+  estimatedPrice: z.number().positive().optional(),
+});
+
+const markIncomeAsTransferSchema = z.object({
+  /** The user-described source of the deposit ("TD reimbursement",
+   * "Acme expense reimbursement", "Mom") — keywords get extracted and
+   * fuzzy-matched against income rows in plaid_transactions, same as
+   * markPaymentToOwnCard does for card payments. */
+  sourceName: z.string().min(1),
+  /** Optional explicit merchant signature when the user has already
+   * referenced a specific tx (rare; sourceName usually carries it). */
+  merchantSignature: z.string().optional(),
+  reason: z.string().optional(),
+});
+
+const TOOL_SCHEMAS: Record<ToolName, z.ZodType> = {
+  createDream: createDreamSchema,
+  markPaymentToOwnCard: markPaymentToOwnCardSchema,
+  hideCategoryFromSpend: hideCategoryFromSpendSchema,
+  pinToHome: pinToHomeSchema,
+  setOnboardingField: setOnboardingFieldSchema,
+  unhideCategory: unhideCategorySchema,
+  removePaymentToOwnCardAlias: removePaymentToOwnCardAliasSchema,
+  unpinFromHome: unpinFromHomeSchema,
+  unsetOnboardingField: unsetOnboardingFieldSchema,
+  deleteDream: deleteDreamSchema,
+  setCategoryInclusion: setCategoryInclusionSchema,
+  setMerchantCategory: setMerchantCategorySchema,
+  findOptions: findOptionsSchema,
+  predictSalePrice: predictSalePriceSchema,
+  addToWatchlist: addToWatchlistSchema,
+  markIncomeAsTransfer: markIncomeAsTransferSchema,
+};
+
+// ─── Tool descriptions for the LLM ──────────────────────────────────────
+// These ride along to the model in the `tools` parameter. Treat them as
+// the SOURCE OF TRUTH for "when should Tilly call this tool" — the
+// persona prompt no longer enumerates tool semantics, the model reads
+// them from here. Be specific about cue phrases and surgical-vs-nuclear
+// guidance.
+
+const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
+  createDream:
+    "Create a savings goal / 'dream' for the user. Trigger when they ask you to set up / track / save for something. " +
+    "If the user gave only a name (e.g. 'Switch 2'), estimate targetAmount from real-world prices " +
+    "(Switch 2 ≈ 650, MacBook ≈ 1500, Barcelona trip ≈ 2000). Always confirm in plain language: " +
+    "'Done. I added a Switch 2 dream — $650 target.'",
+  markPaymentToOwnCard:
+    "SURGICAL FIX. Use when the user clarifies that a transaction Tilly was treating as a 'loan' or " +
+    "expense is actually them paying off their own credit card balance (which they've also synced as " +
+    "a separate account, so the real spending is being tracked twice). Triggers: 'scotia under loans " +
+    "is my credit card bill', 'that visa payment is my own card', 'stop counting these as spending'. " +
+    "merchantSignature: lowercased simplified merchant key (e.g. 'scotialn vsa'). cardName: the " +
+    "card description ('Scotia VISA'). Retroactively reclassifies every matching past transaction.",
+  hideCategoryFromSpend:
+    "DESTRUCTIVE — USE SPARINGLY. Hides an entire category from the user's Spend page. ONLY fire when " +
+    "the user explicitly says 'hide X / never show me X / I don't want to see Y in my breakdown'. " +
+    "NEVER use this as a workaround for a categorization problem (e.g. 'this Scotia loan shouldn't " +
+    "be there' is a job for markPaymentToOwnCard, not this tool). When you do fire it, mention the " +
+    "user can ask you to bring it back any time.",
+  pinToHome:
+    "Pin a tile to the user's Today (home) screen. Triggers: 'show my subscriptions on home', " +
+    "'pin credit health to today', 'add upcoming bills to the front page'. Available tileKind " +
+    "values: subscriptions_overview, credit_health, spending_vs_avg, upcoming_bills, debt_breakdown.",
+  setOnboardingField:
+    "Capture a fact about the user that maps to a known onboarding field. Triggers: 'I'm 38' " +
+    "(ageBand=18-24/25-34/35-44/45+), 'I support 4 people' (dependents=4), 'I live in Toronto' " +
+    "(city=Toronto), 'I'm salaried' (employmentType=salaried/student/self-employed/freelance/etc), " +
+    "'I go to Laurier' (schoolName=Laurier). Fire MULTIPLE setOnboardingField calls if the user " +
+    "mentions multiple fields in one message. Acknowledge: 'Noted — 4 people, Toronto, salaried.'",
+  unhideCategory:
+    "INVERSE of hideCategoryFromSpend. Bring a hidden category back onto the Spend page. Triggers: " +
+    "'bring loans back', 'stop hiding loans', 'show loans on Spend again', 'unhide X', 'don't hide X anymore'. " +
+    "category: the name they want visible (lowercased; 'loan' / 'loans' → 'loans').",
+  removePaymentToOwnCardAlias:
+    "INVERSE of markPaymentToOwnCard. Stop treating a card's payments as transfers — count them as " +
+    "spending again. Triggers: 'stop treating Scotia as a credit-card payment', 'bring back Scotia VSA " +
+    "as spending', 'undo the Scotia alias', 'count my Visa payments again'. cardName: same description " +
+    "used originally ('Scotia VISA', 'TD Visa').",
+  unpinFromHome:
+    "INVERSE of pinToHome. Triggers: 'unpin subscriptions overview', 'remove credit health from Today', " +
+    "'don't show the X tile anymore'. Same tileKind values as pinToHome.",
+  unsetOnboardingField:
+    "INVERSE of setOnboardingField. Clear a previously-captured fact. Triggers: 'forget I'm 38', " +
+    "'I'm not in Toronto anymore — clear that', 'unset my dependents', 'reset my employment type'. " +
+    "field: same enum as setOnboardingField.",
+  deleteDream:
+    "Delete a savings goal the user no longer wants to track. Triggers: 'delete the Switch 2 dream', " +
+    "'remove my AirPods goal', 'I don't want to track that anymore', 'cancel the Barcelona dream'. " +
+    "name: dream name as the user references it (case-insensitive match server-side).",
+  setCategoryInclusion:
+    "Toggle whether a category counts toward the headline spend total + bars. " +
+    "Defaults: loans, taxes, transfers, fees are EXCLUDED (treated as money flow). " +
+    "Use this when the user wants to override the default — e.g. 'my Lincoln car " +
+    "loan should count as monthly spending' (loans → includeInSpend=true), or " +
+    "'don't count subscriptions in my spend' (subscriptions → includeInSpend=false). " +
+    "DIFFERENT from hideCategoryFromSpend: this keeps the category visible but " +
+    "moves it between the WHERE IT GOES section (true) and MONEY FLOW section " +
+    "(false). category: the category name (loans, taxes, transfers, fees, " +
+    "subscriptions, restaurants, etc., lowercased). includeInSpend: true to add " +
+    "to spend, false to treat as money flow.",
+  setMerchantCategory:
+    "Move a specific merchant's transactions from one category to another. Use " +
+    "for surgical fixes when ONE merchant is mis-categorized but the rest of the " +
+    "category is fine. Triggers: 'move my Lincoln transactions to subscriptions', " +
+    "'recategorize Doordash as restaurants', 'put Spotify under entertainment'. " +
+    "merchantSignature: lowercased simplified merchant key (e.g. 'lincoln afs ca apy', " +
+    "'doordash', 'spotify'). category: the destination category name. retroactive: " +
+    "default true — past transactions for this merchant get moved too.",
+  findOptions:
+    "Live web search for ALTERNATIVES — cheaper versions, secondhand " +
+    "inventory, similar products. Use whenever the user is shopping for a " +
+    "thing and your reply would otherwise be 'I can't see retailer data.' " +
+    "Triggers: 'find me a cheaper version of X', 'is there a used Y near " +
+    "me', 'where can I get Z under $N'. query: a short search phrase the " +
+    "scout will run ('Switch 2 used Waterloo $400', 'AirPods Pro 2 " +
+    "refurbished'). location: optional city — defaults to the user's " +
+    "saved city. NEVER respond 'I don't have retailer data' on a shopping " +
+    "question — call this tool instead.",
+  predictSalePrice:
+    "Live web search for SALE HISTORY + a should-I-wait verdict. Use when " +
+    "the user asks about future or seasonal pricing. Triggers: 'when will X " +
+    "go on sale', 'should I wait for Black Friday on Y', 'is this a good " +
+    "price for Z right now'. query: short phrase including the product " +
+    "('Aura ring sale history', 'Aritzia winter coat $200'). The scout " +
+    "returns a structured verdict (waitUntil / expectedSaving / sources). " +
+    "Same rule: NEVER say 'I can't see retailer pricing' — call this tool.",
+  addToWatchlist:
+    "Save something the user is THINKING about buying so Tilly can " +
+    "follow up later. This is the core habit-building tool: the user " +
+    "says 'I've been eyeing X' / 'thinking about Y' / 'I want a Z' / " +
+    "'might get the new ___' — fire this even if no purchase is imminent. " +
+    "name: short item name as the user says it ('Switch 2', 'Aritzia " +
+    "coat', 'Doc Martens'). estimatedPrice: include if the user mentioned " +
+    "a price or you have a strong well-known estimate (Switch 2 ≈ 650, " +
+    "MacBook ≈ 1500). Confirm in plain language: 'Got it. Switch 2 on " +
+    "your watchlist — I'll check in.' DO NOT call this for items the " +
+    "user is asking about for someone else, or items they've already " +
+    "purchased.",
+  markIncomeAsTransfer:
+    "SURGICAL FIX. INCOME-SIDE INVERSE of markPaymentToOwnCard. Use when " +
+    "the user clarifies that a deposit Tilly is treating as income is " +
+    "actually a wash — money they immediately forward on (employer expense " +
+    "reimbursement that they transfer to pay a corporate card, a parent's " +
+    "rent contribution that passes through, a tax refund they're not " +
+    "spending). Triggers: 'that $4000 deposit isn't real income, I move it " +
+    "to my company card', 'the TD reimbursement isn't pay, stop counting " +
+    "it', 'my employer's expense float should be a transfer, not income'. " +
+    "sourceName: the user's description of the source ('TD reimbursement', " +
+    "'Acme expense float', 'parents'). Tilly will fuzzy-match this against " +
+    "the income merchants in their data and flip every match from 'income' " +
+    "to 'transfers' retroactively + alias them for future syncs. NEVER " +
+    "fire this for actual paychecks the user is happy to count.",
+};
+
+/**
+ * Build the LLMToolDef[] payload for the OpenAI-compatible `tools`
+ * parameter. JSON Schema is derived from each tool's zod schema, then
+ * stripped of provider-incompatible keywords (same shaping as
+ * structuredOutput uses for response_format). Re-derived on each call;
+ * the cost is tiny vs. the tradeoff of letting prompts go stale.
+ */
+export function getToolDefs(): LLMToolDef[] {
+  return TOOL_NAMES.map((name) => {
+    const json = zodToJsonSchema(TOOL_SCHEMAS[name], { name, $refStrategy: "none" }) as any;
+    let body: Record<string, unknown> = json;
+    if (json.definitions && json.definitions[name]) {
+      body = json.definitions[name];
+    } else if (json.$ref && json.definitions) {
+      body = json.definitions[name] ?? json;
+    }
+    stripUnsupportedToolKeys(body);
+    return {
+      name,
+      description: TOOL_DESCRIPTIONS[name],
+      parameters: body,
+    };
+  });
+}
+
+const TOOL_UNSUPPORTED_KEYS = [
+  "$schema",
+  "default",
+  "minItems",
+  "maxItems",
+  "minimum",
+  "maximum",
+  "exclusiveMinimum",
+  "exclusiveMaximum",
+  "minLength",
+  "maxLength",
+  "multipleOf",
+  "format",
+  "pattern",
+];
+
+function stripUnsupportedToolKeys(s: Record<string, unknown>) {
+  if (!s || typeof s !== "object") return;
+  for (const k of TOOL_UNSUPPORTED_KEYS) delete (s as any)[k];
+  if ((s as any).additionalProperties && typeof (s as any).additionalProperties !== "boolean") {
+    delete (s as any).additionalProperties;
+  }
+  if ((s as any).properties) {
+    for (const k of Object.keys((s as any).properties)) {
+      stripUnsupportedToolKeys((s as any).properties[k]);
+    }
+  }
+  if ((s as any).items) stripUnsupportedToolKeys((s as any).items);
+  for (const v of ["anyOf", "oneOf", "allOf"]) {
+    const arr = (s as any)[v];
+    if (Array.isArray(arr)) for (const sub of arr) stripUnsupportedToolKeys(sub);
+  }
+}
+
+export function isKnownToolName(n: string): n is ToolName {
+  return (TOOL_NAMES as readonly string[]).includes(n);
+}
+
+// ─── Dispatcher ────────────────────────────────────────────────────────────
+
+export async function executeTool(
+  name: ToolName,
+  args: unknown,
+  ctx: ToolContext,
+): Promise<ToolResult | null> {
+  const schema = TOOL_SCHEMAS[name];
+  const parsed = schema.safeParse(args);
+  if (!parsed.success) {
+    console.warn(
+      `[tools] ${name} args validation failed:`,
+      parsed.error.flatten(),
+    );
+    return null;
+  }
+
+  switch (name) {
+    case "createDream":
+      return await runCreateDream(parsed.data as z.infer<typeof createDreamSchema>, ctx);
+    case "markPaymentToOwnCard":
+      return await runMarkPaymentToOwnCard(
+        parsed.data as z.infer<typeof markPaymentToOwnCardSchema>,
+        ctx,
+      );
+    case "hideCategoryFromSpend":
+      return await runHideCategory(
+        parsed.data as z.infer<typeof hideCategoryFromSpendSchema>,
+        ctx,
+      );
+    case "pinToHome":
+      return await runPinToHome(parsed.data as z.infer<typeof pinToHomeSchema>, ctx);
+    case "setOnboardingField":
+      return await runSetOnboardingField(
+        parsed.data as z.infer<typeof setOnboardingFieldSchema>,
+        ctx,
+      );
+    case "unhideCategory":
+      return await runUnhideCategory(parsed.data as z.infer<typeof unhideCategorySchema>, ctx);
+    case "removePaymentToOwnCardAlias":
+      return await runRemovePaymentToOwnCardAlias(
+        parsed.data as z.infer<typeof removePaymentToOwnCardAliasSchema>,
+        ctx,
+      );
+    case "unpinFromHome":
+      return await runUnpinFromHome(parsed.data as z.infer<typeof unpinFromHomeSchema>, ctx);
+    case "unsetOnboardingField":
+      return await runUnsetOnboardingField(
+        parsed.data as z.infer<typeof unsetOnboardingFieldSchema>,
+        ctx,
+      );
+    case "deleteDream":
+      return await runDeleteDream(parsed.data as z.infer<typeof deleteDreamSchema>, ctx);
+    case "setCategoryInclusion":
+      return await runSetCategoryInclusion(
+        parsed.data as z.infer<typeof setCategoryInclusionSchema>,
+        ctx,
+      );
+    case "setMerchantCategory":
+      return await runSetMerchantCategory(
+        parsed.data as z.infer<typeof setMerchantCategorySchema>,
+        ctx,
+      );
+    case "findOptions":
+      return await runFindOptions(
+        parsed.data as z.infer<typeof findOptionsSchema>,
+        ctx,
+      );
+    case "predictSalePrice":
+      return await runPredictSalePrice(
+        parsed.data as z.infer<typeof predictSalePriceSchema>,
+        ctx,
+      );
+    case "addToWatchlist":
+      return await runAddToWatchlist(
+        parsed.data as z.infer<typeof addToWatchlistSchema>,
+        ctx,
+      );
+    case "markIncomeAsTransfer":
+      return await runMarkIncomeAsTransfer(
+        parsed.data as z.infer<typeof markIncomeAsTransferSchema>,
+        ctx,
+      );
+  }
+}
+
+/**
+ * Income → transfers alias. Mirrors runMarkPaymentToOwnCard but
+ * targets `ourCategory === 'income'` rows instead of card-payment
+ * outflows. Persists `alias_income_to_transfer:<sig>` prefs so future
+ * syncs route the same merchant to transfers, and retroactively
+ * flips matching existing rows.
+ *
+ * NOTE: income rows don't have linked expenses (the sync handler
+ * explicitly skips the mirror for ourCategory='income'), so we only
+ * update plaid_transactions — no expenses table cascade needed.
+ */
+async function runMarkIncomeAsTransfer(
+  args: z.infer<typeof markIncomeAsTransferSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  const explicitSig = args.merchantSignature
+    ? merchantSignature({
+        merchantName: args.merchantSignature,
+        name: args.merchantSignature,
+        amount: 0,
+      })
+    : "";
+  const sourceKeywords = args.sourceName
+    .toLowerCase()
+    .split(/[\s\-_]+/)
+    .map((w) => w.replace(/[^a-z0-9]/g, ""))
+    // Drop noise words that match too many merchants; we need at
+    // least one distinctive token (employer name, bank, "td", "rbc").
+    .filter(
+      (w) =>
+        w.length >= 3 &&
+        !["the", "and", "for", "from", "deposit", "income", "payment"].includes(w),
+    );
+
+  // Scan plaid_transactions for INCOME rows whose merchant name overlaps
+  // with the sourceKeywords. We constrain to ourCategory='income' so a
+  // typo like "td" doesn't accidentally flip every TD outflow too.
+  const incomeTx = await db
+    .select()
+    .from(plaidTransactions)
+    .where(
+      and(
+        eq(plaidTransactions.coupleId, ctx.householdId),
+        eq(plaidTransactions.ourCategory, "income"),
+      ),
+    )
+    .limit(500);
+  const candidateSigs = new Set<string>();
+  if (explicitSig) candidateSigs.add(explicitSig);
+  for (const tx of incomeTx) {
+    const sig = merchantSignature(tx);
+    const haystack = `${tx.merchantName ?? ""} ${tx.name ?? ""}`.toLowerCase();
+    if (sourceKeywords.length === 0) continue;
+    const allMatch = sourceKeywords.every((kw) => haystack.includes(kw));
+    if (allMatch) candidateSigs.add(sig);
+  }
+
+  // Persist alias prefs for each candidate signature.
+  for (const sig of candidateSigs) {
+    await db
+      .insert(userPreferences)
+      .values({
+        userId: ctx.userId,
+        scope: "plaid",
+        key: `alias_income_to_transfer:${sig}`,
+        value: {
+          sourceName: args.sourceName,
+          reason: args.reason ?? "user-confirmed wash deposit",
+          since: new Date().toISOString(),
+        },
+      })
+      .onConflictDoUpdate({
+        target: [userPreferences.userId, userPreferences.scope, userPreferences.key],
+        set: {
+          value: {
+            sourceName: args.sourceName,
+            reason: args.reason ?? "user-confirmed wash deposit",
+            since: new Date().toISOString(),
+          },
+          updatedAt: new Date(),
+        },
+      });
+  }
+
+  // Retroactively flip matching income rows. Two match-conditions: the
+  // explicit signature path OR a name-keyword match (catches future
+  // stranger-named rows that ARE the same source). We re-query the
+  // full income tx set because the keyword path needs the same name
+  // search we ran above.
+  let reclassifiedCount = 0;
+  let reclassifiedAmount = 0;
+  for (const tx of incomeTx) {
+    const sig = merchantSignature(tx);
+    const haystack = `${tx.merchantName ?? ""} ${tx.name ?? ""}`.toLowerCase();
+    const sigMatch = candidateSigs.has(sig);
+    const nameMatch =
+      sourceKeywords.length > 0 &&
+      sourceKeywords.every((kw) => haystack.includes(kw));
+    if (!sigMatch && !nameMatch) continue;
+    await db
+      .update(plaidTransactions)
+      .set({ ourCategory: "transfers" })
+      .where(eq(plaidTransactions.id, tx.id));
+    reclassifiedCount++;
+    reclassifiedAmount += Math.abs(tx.amount);
+  }
+
+  return {
+    kind: "income_aliased_to_transfer",
+    merchantSignature: [...candidateSigs].join(", ") || explicitSig,
+    sourceName: args.sourceName,
+    reclassifiedCount,
+    reclassifiedAmount: Math.round(reclassifiedAmount),
+  };
+}
+
+async function runAddToWatchlist(
+  args: z.infer<typeof addToWatchlistSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult | null> {
+  const name = args.name.trim();
+  if (!name) return null;
+  // De-dupe — if the same name (case-insensitive) is already active,
+  // just return that row instead of stacking duplicates. The user
+  // saying "thinking about Switch 2" three times shouldn't produce
+  // three rows.
+  const existing = await db
+    .select()
+    .from(watchlistItems)
+    .where(
+      and(
+        eq(watchlistItems.householdId, ctx.householdId),
+        eq(watchlistItems.status, "active"),
+      ),
+    )
+    .limit(50);
+  const matched = existing.find(
+    (r) => r.name.trim().toLowerCase() === name.toLowerCase(),
+  );
+  if (matched) {
+    // Optionally bump estimatedPrice if the new call had it and the
+    // stored row didn't.
+    if (
+      args.estimatedPrice != null &&
+      matched.estimatedPrice == null
+    ) {
+      await db
+        .update(watchlistItems)
+        .set({ estimatedPrice: args.estimatedPrice })
+        .where(eq(watchlistItems.id, matched.id));
+    }
+    return {
+      kind: "watchlist_item_added",
+      itemId: matched.id,
+      name: matched.name,
+      estimatedPrice: matched.estimatedPrice ?? args.estimatedPrice ?? null,
+    };
+  }
+  const [row] = await db
+    .insert(watchlistItems)
+    .values({
+      userId: ctx.userId,
+      householdId: ctx.householdId,
+      name,
+      estimatedPrice: args.estimatedPrice ?? null,
+    })
+    .returning();
+  return {
+    kind: "watchlist_item_added",
+    itemId: row.id,
+    name: row.name,
+    estimatedPrice: row.estimatedPrice ?? null,
+  };
+}
+
+async function runScoutLike(
+  args: { query: string; location?: string | undefined },
+  ctx: ToolContext,
+  mode: "find" | "wait",
+): Promise<ToolResult> {
+  const location = args.location?.trim() || null;
+  console.log(
+    `[tool:${mode === "wait" ? "predictSalePrice" : "findOptions"}] enqueue userId=${ctx.userId} query="${args.query.trim().slice(0, 80)}" location=${location ?? "null"}`,
+  );
+  // Block until the scout finishes. Earlier attempt used
+  // awaitCompletion=false (fire-and-forget) but Vercel shut down the
+  // function instance the moment the HTTP response returned — the
+  // processScoutJob promise never ran. Default true matches the
+  // existing user-tap scout endpoint (mountChatScoutLike). Chat reply
+  // takes 10-25s now but the scout card lands populated, and the
+  // assistant's final text reply references real results.
+  const jobId = await enqueueScout({
+    userId: ctx.userId,
+    householdId: ctx.householdId,
+    query: args.query.trim(),
+    location,
+    mode,
+  });
+  console.log(
+    `[tool:${mode === "wait" ? "predictSalePrice" : "findOptions"}] jobId=${jobId} (awaited)`,
+  );
+  // Insert the conversation row that the mobile history renderer turns
+  // into a scout/wait card. Same shape as the user-initiated POST
+  // /api/tilly/chat/scout endpoint produces — keeps client rendering
+  // identical whether the user tapped a button or Tilly fired the tool.
+  const placeholder =
+    mode === "wait"
+      ? `Looking up sale history for ${args.query.trim()}. One sec.`
+      : `On it — I'll check ${args.query.trim()}. Give me a minute.`;
+  await db.insert(guardianConversations).values({
+    coupleId: ctx.householdId,
+    userId: ctx.userId,
+    role: "guardian",
+    content: placeholder,
+    intent: mode === "wait" ? "wait" : "scout",
+    metadata: { jobId, query: args.query.trim(), location, sourceMessageId: null },
+  });
+  return mode === "wait"
+    ? {
+        kind: "wait_started",
+        mode: "wait",
+        jobId,
+        query: args.query.trim(),
+        location,
+      }
+    : {
+        kind: "scout_started",
+        mode: "find",
+        jobId,
+        query: args.query.trim(),
+        location,
+      };
+}
+
+async function runFindOptions(
+  args: z.infer<typeof findOptionsSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  return runScoutLike(args, ctx, "find");
+}
+
+async function runPredictSalePrice(
+  args: z.infer<typeof predictSalePriceSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  return runScoutLike(args, ctx, "wait");
+}
+
+async function runSetMerchantCategory(
+  args: z.infer<typeof setMerchantCategorySchema>,
+  ctx: ToolContext,
+): Promise<ToolResult | null> {
+  const sig = args.merchantSignature.trim().toLowerCase();
+  const newCat = args.category.trim().toLowerCase();
+  const retroactive = args.retroactive !== false;
+
+  // 1. Snapshot what's currently under this signature so we can report
+  // {fromCategory, displayName, reclassifiedCount} accurately.
+  const matches = await db
+    .select()
+    .from(plaidTransactions)
+    .where(
+      and(
+        eq(plaidTransactions.coupleId, ctx.householdId),
+        eq(plaidTransactions.signature, sig),
+      ),
+    )
+    .limit(500);
+  const fromCategory =
+    matches.find((m) => m.ourCategory)?.ourCategory?.toLowerCase() || "other";
+  const displayName =
+    matches.find((m) => m.merchantName)?.merchantName ||
+    matches[0]?.name ||
+    sig;
+
+  // 2. Upsert merchant_rules so future syncs land in the new category
+  // via the existing tag_only branch. Don't flip autoAccept — a user
+  // recategorising one merchant shouldn't auto-accept all future
+  // charges from them.
+  const existing = await db
+    .select()
+    .from(merchantRules)
+    .where(
+      and(
+        eq(merchantRules.coupleId, ctx.householdId),
+        eq(merchantRules.signature, sig),
+      ),
+    )
+    .limit(1);
+  if (existing[0]) {
+    await db
+      .update(merchantRules)
+      .set({
+        category: newCat,
+        lastMerchant: displayName,
+        source: "user_moved",
+        updatedAt: new Date(),
+      })
+      .where(eq(merchantRules.id, existing[0].id));
+  } else {
+    await db.insert(merchantRules).values({
+      coupleId: ctx.householdId,
+      signature: sig,
+      lastMerchant: displayName,
+      category: newCat,
+      autoAccept: false,
+      autoIgnore: false,
+      hitCount: 0,
+      ignoreCount: 0,
+      source: "user_moved",
+    });
+  }
+
+  // 3. Retroactive update — move every existing plaid_tx + linked
+  // expense for this signature into the new category. The user almost
+  // always wants this (no point in moving Lincoln "from now on" if last
+  // month's Lincoln still says loans).
+  let reclassifiedCount = 0;
+  if (retroactive && matches.length > 0) {
+    const ids = matches.map((m) => m.id);
+    await db
+      .update(plaidTransactions)
+      .set({ ourCategory: newCat })
+      .where(inArray(plaidTransactions.id, ids));
+    const expenseIds = matches.map((m) => m.expenseId).filter(Boolean) as string[];
+    if (expenseIds.length) {
+      await db
+        .update(expenses)
+        .set({ category: newCat })
+        .where(inArray(expenses.id, expenseIds));
+    }
+    reclassifiedCount = matches.length;
+  }
+
+  return {
+    kind: "merchant_category_set",
+    merchantSignature: sig,
+    displayName,
+    fromCategory,
+    toCategory: newCat,
+    reclassifiedCount,
+  };
+}
+
+/** Default fixed-obligation categories — the ones that are EXCLUDED
+ * from the headline spend total unless the user opts them in. Keep in
+ * sync with FIXED_OBLIGATION_CATS in spend-pattern.ts. */
+const DEFAULT_FIXED_OBLIGATION_CATS = new Set([
+  "loans",
+  "taxes",
+  "transfers",
+  "fees",
+]);
+
+async function runSetCategoryInclusion(
+  args: z.infer<typeof setCategoryInclusionSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  const cat = args.category.trim().toLowerCase();
+  const wasExcluded = DEFAULT_FIXED_OBLIGATION_CATS.has(cat);
+  // Idempotent upsert. If the user is restoring the default state we
+  // delete the override row instead of writing a redundant one — keeps
+  // the Settings tab honest about what's actually overridden.
+  const restoresDefault =
+    (wasExcluded && args.includeInSpend === false) ||
+    (!wasExcluded && args.includeInSpend === true);
+  if (restoresDefault) {
+    await db
+      .delete(userPreferences)
+      .where(
+        and(
+          eq(userPreferences.userId, ctx.userId),
+          eq(userPreferences.scope, "spend"),
+          eq(userPreferences.key, `include_in_spend.${cat}`),
+        ),
+      );
+  } else {
+    await db
+      .insert(userPreferences)
+      .values({
+        userId: ctx.userId,
+        scope: "spend",
+        key: `include_in_spend.${cat}`,
+        value: { includeInSpend: args.includeInSpend, since: new Date().toISOString() },
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [userPreferences.userId, userPreferences.scope, userPreferences.key],
+        set: {
+          value: { includeInSpend: args.includeInSpend, since: new Date().toISOString() },
+          updatedAt: new Date(),
+        },
+      });
+  }
+  return {
+    kind: "category_inclusion_set",
+    category: cat,
+    includeInSpend: args.includeInSpend,
+    previouslyIncluded: !wasExcluded,
+  };
+}
+
+// ─── Handlers ──────────────────────────────────────────────────────────────
+
+async function runCreateDream(
+  args: z.infer<typeof createDreamSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  // Idempotency: if a goal with same lowercased name already exists for
+  // this couple, return that one rather than creating a duplicate.
+  const existing = await db
+    .select()
+    .from(goals)
+    .where(eq(goals.coupleId, ctx.householdId))
+    .limit(50);
+  const normalized = args.name.trim().toLowerCase();
+  const matched = existing.find((g) => g.name.trim().toLowerCase() === normalized);
+  const goalRow =
+    matched ??
+    (
+      await db
+        .insert(goals)
+        .values({
+          coupleId: ctx.householdId,
+          name: args.name,
+          targetAmount: args.targetAmount,
+          savedAmount: 0,
+          emoji: args.emoji ?? "✺",
+          color: "#7C3AED",
+          weeklyAuto: args.monthlyContribution
+            ? Math.round((args.monthlyContribution / 4.33) * 100) / 100
+            : null,
+        })
+        .returning()
+    )[0];
+  return {
+    kind: "dream_created",
+    dreamId: goalRow.id,
+    name: goalRow.name,
+    targetAmount: goalRow.targetAmount,
+    monthlyContribution: args.monthlyContribution ?? 0,
+    emoji: goalRow.emoji,
+  };
+}
+
+async function runMarkPaymentToOwnCard(
+  args: z.infer<typeof markPaymentToOwnCardSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  // Tilly's extraction frequently grabs wording from her OWN reply
+  // (e.g. "TD→Scotia VISA" with the arrow) rather than the actual
+  // merchant string from the user's plaid_transactions ("Scotialn Vsa").
+  // Strict signature equality misses these cases. We need fuzzy
+  // matching: find the actual merchants in the user's data whose names
+  // overlap with the cardName keywords, derive their canonical
+  // signatures, and write an alias pref for each one.
+  const explicitSig = merchantSignature({
+    merchantName: args.merchantSignature,
+    name: args.merchantSignature,
+    amount: 0,
+  });
+  const cardKeywords = args.cardName
+    .toLowerCase()
+    .split(/[\s\-_]+/)
+    .map((w) => w.replace(/[^a-z0-9]/g, ""))
+    .filter((w) => w.length >= 3 && !["the", "and", "card", "visa", "vsa"].includes(w));
+  // Note: 'visa' and 'vsa' are excluded from required keywords because they
+  // appear on too many merchants; we need at least one distinctive name
+  // (Scotia, Diners, Amex, etc.) AND optionally a card descriptor.
+
+  // Scan plaid_transactions to find candidate matches.
+  const txs = await db
+    .select()
+    .from(plaidTransactions)
+    .where(eq(plaidTransactions.coupleId, ctx.householdId))
+    .limit(500);
+  const candidateSigs = new Set<string>();
+  if (explicitSig) candidateSigs.add(explicitSig);
+  for (const tx of txs) {
+    const sig = merchantSignature(tx);
+    const haystack = `${tx.merchantName ?? ""} ${tx.name ?? ""}`.toLowerCase();
+    // Match if every cardKeyword appears in the merchant name. With
+    // cardName="Scotia VISA" → keywords=["scotia"] (visa/vsa excluded
+    // above). "Scotialn Vsa" haystack contains "scotialn" — does that
+    // contain "scotia"? Yes (substring). Match.
+    if (cardKeywords.length === 0) continue;
+    const allMatch = cardKeywords.every((kw) => haystack.includes(kw));
+    if (allMatch) candidateSigs.add(sig);
+  }
+
+  // Persist alias prefs for every candidate signature so future syncs
+  // route them all to "transfers".
+  for (const sig of candidateSigs) {
+    await db
+      .insert(userPreferences)
+      .values({
+        userId: ctx.userId,
+        scope: "plaid",
+        key: `alias_payment_to_card:${sig}`,
+        value: {
+          cardName: args.cardName,
+          reason: args.reason ?? "user-confirmed CC payment",
+          since: new Date().toISOString(),
+        },
+      })
+      .onConflictDoUpdate({
+        target: [userPreferences.userId, userPreferences.scope, userPreferences.key],
+        set: {
+          value: {
+            cardName: args.cardName,
+            reason: args.reason ?? "user-confirmed CC payment",
+            since: new Date().toISOString(),
+          },
+          updatedAt: new Date(),
+        },
+      });
+  }
+
+  // Retroactive fix: any tx whose signature is in the candidate set OR
+  // whose merchant name matches the cardKeywords gets flipped to
+  // transfers. This catches both the "explicit signature" path and
+  // future-stranger-named rows that nonetheless are clearly CC payments.
+  let reclassifiedCount = 0;
+  let reclassifiedAmount = 0;
+  for (const tx of txs) {
+    if (tx.ourCategory === "transfers") continue;
+    const sig = merchantSignature(tx);
+    const haystack = `${tx.merchantName ?? ""} ${tx.name ?? ""}`.toLowerCase();
+    const sigMatch = candidateSigs.has(sig);
+    const nameMatch =
+      cardKeywords.length > 0 &&
+      cardKeywords.every((kw) => haystack.includes(kw));
+    if (!sigMatch && !nameMatch) continue;
+    await db.transaction(async (txn) => {
+      await txn
+        .update(plaidTransactions)
+        .set({ ourCategory: "transfers" })
+        .where(eq(plaidTransactions.id, tx.id));
+      if (tx.expenseId) {
+        await txn
+          .update(expenses)
+          .set({ category: "transfers" })
+          .where(eq(expenses.id, tx.expenseId));
+      }
+    });
+    reclassifiedCount++;
+    reclassifiedAmount += tx.amount;
+  }
+
+  return {
+    kind: "payment_to_card_aliased",
+    merchantSignature: [...candidateSigs].join(", ") || explicitSig,
+    cardName: args.cardName,
+    reclassifiedCount,
+    reclassifiedAmount,
+  };
+}
+
+async function runHideCategory(
+  args: z.infer<typeof hideCategoryFromSpendSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  const cat = args.category.trim().toLowerCase();
+  // Read existing, append, dedupe, write back.
+  const existing = await db
+    .select()
+    .from(userPreferences)
+    .where(
+      and(
+        eq(userPreferences.userId, ctx.userId),
+        eq(userPreferences.scope, "spend"),
+        eq(userPreferences.key, "hide_categories"),
+      ),
+    )
+    .limit(1);
+  const current = Array.isArray(existing[0]?.value)
+    ? (existing[0]!.value as string[])
+    : [];
+  const next = Array.from(new Set([...current, cat]));
+  await db
+    .insert(userPreferences)
+    .values({
+      userId: ctx.userId,
+      scope: "spend",
+      key: "hide_categories",
+      value: next,
+    })
+    .onConflictDoUpdate({
+      target: [userPreferences.userId, userPreferences.scope, userPreferences.key],
+      set: { value: next, updatedAt: new Date() },
+    });
+  return { kind: "category_hidden", category: cat, reason: args.reason ?? "" };
+}
+
+async function runPinToHome(
+  args: z.infer<typeof pinToHomeSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  const tileKind = args.tileKind.trim().toLowerCase();
+  const existing = await db
+    .select()
+    .from(userPreferences)
+    .where(
+      and(
+        eq(userPreferences.userId, ctx.userId),
+        eq(userPreferences.scope, "today"),
+        eq(userPreferences.key, "pinned_tiles"),
+      ),
+    )
+    .limit(1);
+  const current = Array.isArray(existing[0]?.value)
+    ? (existing[0]!.value as string[])
+    : [];
+  const next = Array.from(new Set([...current, tileKind]));
+  await db
+    .insert(userPreferences)
+    .values({
+      userId: ctx.userId,
+      scope: "today",
+      key: "pinned_tiles",
+      value: next,
+    })
+    .onConflictDoUpdate({
+      target: [userPreferences.userId, userPreferences.scope, userPreferences.key],
+      set: { value: next, updatedAt: new Date() },
+    });
+  // Friendly label for the confirmation card.
+  const labels: Record<string, string> = {
+    subscriptions_overview: "Subscriptions overview",
+    credit_health: "Credit health",
+    spending_vs_avg: "Spending vs your average",
+    upcoming_bills: "Upcoming bills",
+    debt_breakdown: "Debt breakdown",
+  };
+  return {
+    kind: "home_tile_pinned",
+    tileKind,
+    label: labels[tileKind] ?? tileKind.replace(/_/g, " "),
+  };
+}
+
+async function runSetOnboardingField(
+  args: z.infer<typeof setOnboardingFieldSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  // Onboarding values live in tilly_life_context (or equivalent). For this
+  // pass we write to user_preferences so the Today + chat layers can read
+  // immediately, AND post to /api/tilly/me/* if the route exists. The
+  // App Settings screen reads from the same source on next mount.
+  const field = args.field;
+  const value = String(args.value);
+  await db
+    .insert(userPreferences)
+    .values({
+      userId: ctx.userId,
+      scope: "onboarding",
+      key: field,
+      value,
+    })
+    .onConflictDoUpdate({
+      target: [userPreferences.userId, userPreferences.scope, userPreferences.key],
+      set: { value, updatedAt: new Date() },
+    });
+  return { kind: "onboarding_field_set", field, value };
+}
+
+// ─── Inverse handlers ──────────────────────────────────────────────────
+
+async function runUnhideCategory(
+  args: z.infer<typeof unhideCategorySchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  const cat = args.category.trim().toLowerCase();
+  const existing = await db
+    .select()
+    .from(userPreferences)
+    .where(
+      and(
+        eq(userPreferences.userId, ctx.userId),
+        eq(userPreferences.scope, "spend"),
+        eq(userPreferences.key, "hide_categories"),
+      ),
+    )
+    .limit(1);
+  const current = Array.isArray(existing[0]?.value)
+    ? (existing[0]!.value as string[])
+    : [];
+  const next = current.filter((c) => c.toLowerCase() !== cat);
+  if (next.length === 0) {
+    // Delete the row entirely so the prefs response stops carrying an
+    // empty array. Keeps MemoryInspector tidy.
+    await db
+      .delete(userPreferences)
+      .where(
+        and(
+          eq(userPreferences.userId, ctx.userId),
+          eq(userPreferences.scope, "spend"),
+          eq(userPreferences.key, "hide_categories"),
+        ),
+      );
+  } else {
+    await db
+      .update(userPreferences)
+      .set({ value: next, updatedAt: new Date() })
+      .where(
+        and(
+          eq(userPreferences.userId, ctx.userId),
+          eq(userPreferences.scope, "spend"),
+          eq(userPreferences.key, "hide_categories"),
+        ),
+      );
+  }
+  return { kind: "category_unhidden", category: cat };
+}
+
+async function runRemovePaymentToOwnCardAlias(
+  args: z.infer<typeof removePaymentToOwnCardAliasSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  // Mirror markPaymentToOwnCard's matching logic so undo finds the same
+  // rows. cardKeywords identifies WHICH alias prefs apply, then we
+  // delete those prefs AND retroactively flip plaid_transactions back
+  // to the freshly-derived mapPlaidCategory result.
+  const cardKeywords = args.cardName
+    .toLowerCase()
+    .split(/[\s\-_]+/)
+    .map((w) => w.replace(/[^a-z0-9]/g, ""))
+    .filter((w) => w.length >= 3 && !["the", "and", "card", "visa", "vsa"].includes(w));
+
+  // Find aliased signatures where the cardName matches the stored value.
+  const allPlaidPrefs = await db
+    .select()
+    .from(userPreferences)
+    .where(
+      and(
+        eq(userPreferences.userId, ctx.userId),
+        eq(userPreferences.scope, "plaid"),
+      ),
+    );
+  const aliasPrefs = allPlaidPrefs.filter((p) =>
+    p.key.startsWith("alias_payment_to_card:"),
+  );
+  const matchedKeys = aliasPrefs.filter((p) => {
+    const storedCard = String(
+      ((p.value as any) ?? {}).cardName ?? "",
+    ).toLowerCase();
+    return cardKeywords.length === 0
+      ? false
+      : cardKeywords.every((kw) => storedCard.includes(kw));
+  });
+  const unaliasedSignatures = new Set(
+    matchedKeys.map((p) => p.key.slice("alias_payment_to_card:".length)),
+  );
+
+  // Delete the matched prefs.
+  for (const p of matchedKeys) {
+    await db
+      .delete(userPreferences)
+      .where(
+        and(
+          eq(userPreferences.userId, ctx.userId),
+          eq(userPreferences.scope, "plaid"),
+          eq(userPreferences.key, p.key),
+        ),
+      );
+  }
+
+  // Retroactive: any plaid_transaction currently sitting in "transfers"
+  // whose live signature is in unaliasedSignatures gets re-classified
+  // back through mapPlaidCategory with the merchant hints.
+  const txs = await db
+    .select()
+    .from(plaidTransactions)
+    .where(eq(plaidTransactions.coupleId, ctx.householdId))
+    .limit(500);
+  let restoredCount = 0;
+  let restoredAmount = 0;
+  // Lazy import mapPlaidCategory to avoid a circular hot-path import.
+  const { mapPlaidCategory } = await import("../../plaid");
+  for (const tx of txs) {
+    const sig = merchantSignature(tx);
+    if (!unaliasedSignatures.has(sig)) continue;
+    if (tx.ourCategory !== "transfers") continue;
+    const restoredCat = mapPlaidCategory(
+      tx.plaidCategory as string[] | null,
+      tx.personalFinanceCategory as { primary?: string; detailed?: string } | null,
+      { name: tx.name, merchantName: tx.merchantName },
+    );
+    await db.transaction(async (txn) => {
+      await txn
+        .update(plaidTransactions)
+        .set({ ourCategory: restoredCat })
+        .where(eq(plaidTransactions.id, tx.id));
+      if (tx.expenseId) {
+        await txn
+          .update(expenses)
+          .set({ category: restoredCat })
+          .where(eq(expenses.id, tx.expenseId));
+      }
+    });
+    restoredCount++;
+    restoredAmount += tx.amount;
+  }
+
+  return {
+    kind: "payment_to_card_unaliased",
+    cardName: args.cardName,
+    restoredCount,
+    restoredAmount,
+  };
+}
+
+async function runUnpinFromHome(
+  args: z.infer<typeof unpinFromHomeSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  const tileKind = args.tileKind.trim().toLowerCase();
+  const existing = await db
+    .select()
+    .from(userPreferences)
+    .where(
+      and(
+        eq(userPreferences.userId, ctx.userId),
+        eq(userPreferences.scope, "today"),
+        eq(userPreferences.key, "pinned_tiles"),
+      ),
+    )
+    .limit(1);
+  const current = Array.isArray(existing[0]?.value)
+    ? (existing[0]!.value as string[])
+    : [];
+  const next = current.filter((c) => c.toLowerCase() !== tileKind);
+  if (next.length === 0) {
+    await db
+      .delete(userPreferences)
+      .where(
+        and(
+          eq(userPreferences.userId, ctx.userId),
+          eq(userPreferences.scope, "today"),
+          eq(userPreferences.key, "pinned_tiles"),
+        ),
+      );
+  } else {
+    await db
+      .update(userPreferences)
+      .set({ value: next, updatedAt: new Date() })
+      .where(
+        and(
+          eq(userPreferences.userId, ctx.userId),
+          eq(userPreferences.scope, "today"),
+          eq(userPreferences.key, "pinned_tiles"),
+        ),
+      );
+  }
+  const labels: Record<string, string> = {
+    subscriptions_overview: "Subscriptions overview",
+    credit_health: "Credit health",
+    spending_vs_avg: "Spending vs your average",
+    upcoming_bills: "Upcoming bills",
+    debt_breakdown: "Debt breakdown",
+  };
+  return {
+    kind: "home_tile_unpinned",
+    tileKind,
+    label: labels[tileKind] ?? tileKind.replace(/_/g, " "),
+  };
+}
+
+async function runUnsetOnboardingField(
+  args: z.infer<typeof unsetOnboardingFieldSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  await db
+    .delete(userPreferences)
+    .where(
+      and(
+        eq(userPreferences.userId, ctx.userId),
+        eq(userPreferences.scope, "onboarding"),
+        eq(userPreferences.key, args.field),
+      ),
+    );
+  return { kind: "onboarding_field_unset", field: args.field };
+}
+
+async function runDeleteDream(
+  args: z.infer<typeof deleteDreamSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult | null> {
+  const normalized = args.name.trim().toLowerCase();
+  const matches = await db
+    .select()
+    .from(goals)
+    .where(eq(goals.coupleId, ctx.householdId))
+    .limit(50);
+  const target = matches.find(
+    (g) => g.name.trim().toLowerCase() === normalized,
+  );
+  if (!target) return null; // nothing to delete; tool is a no-op
+  await db.delete(goals).where(eq(goals.id, target.id));
+  return { kind: "dream_deleted", name: target.name };
+}

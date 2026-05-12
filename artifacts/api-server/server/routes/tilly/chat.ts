@@ -28,7 +28,14 @@ import {
   tillyNudges,
   tillyScoutJobs,
   users,
+  goals,
 } from "../../../shared/schema";
+import { getToolDefs, type ToolResult } from "../../tilly/tools/registry";
+import { runWithTools } from "../../tilly/llm/tool-loop";
+import { OpenRouterLLM } from "../../tilly/llm/openrouter";
+import { buildSystemPrompts } from "../../tilly/persona";
+import { buildCashFlowSummary } from "../../tilly/cash-flow-summary";
+import type { LLMTurn } from "../../tilly/llm/types";
 import { enqueueScout } from "../../tilly/scout/orchestrator";
 import { distillUser } from "../../tilly/nightly-distiller";
 import {
@@ -122,9 +129,27 @@ type ScoutWireOption = {
 };
 type WaitWireSource = { source: string; url: string; evidence: string };
 
+/**
+ * Tool results attached to a Tilly turn. The post-extractor finds 0..N
+ * tool calls in the user's message; each gets dispatched (registry.ts)
+ * and the results travel back to the client which renders one inline
+ * preview card per result. Single-tool turns are most common, but
+ * multi-tool ones (e.g. "I support 4 people in Toronto, also create a
+ * dream for X") are supported.
+ */
 type WireMessage =
   | { id: string; role: "user"; kind: "text"; body: string; createdAt: string }
-  | { id: string; role: "tilly"; kind: "text"; body: string; createdAt: string }
+  | {
+      id: string;
+      role: "tilly";
+      kind: "text";
+      body: string;
+      createdAt: string;
+      // Backward-compatible single-tool field (legacy clients).
+      toolResult?: ToolResult;
+      // New: array of all tool results from this turn.
+      toolResults?: ToolResult[];
+    }
   | {
       id: string;
       role: "tilly";
@@ -474,7 +499,7 @@ export function mountTillyChatRoutes(app: Express): void {
           // Without this, the LLM has nothing to anchor "Starting buffer"
           // and either refuses structured output or returns a fabricated
           // ledger — both end up falling through to plain text.
-          const state = await buildFinancialStateSummary(householdId);
+          const state = await buildFinancialStateSummary(householdId, userId);
           // Pull recent expenses too so the "weekly drain" line is real.
           analysisPayload = await analyzeAffordability({
             userMessage: message,
@@ -560,7 +585,7 @@ export function mountTillyChatRoutes(app: Express): void {
 
         const [retrievedMemories, state, dossierRow, tillyCfg] = await Promise.all([
           hybridRetrieve(userId, message),
-          buildFinancialStateSummary(householdId),
+          buildFinancialStateSummary(householdId, userId),
           getLatestDossier(userId),
           getTillyConfig(),
         ]);
@@ -587,6 +612,20 @@ export function mountTillyChatRoutes(app: Express): void {
           sections.push(
             `What you remember about them (in your voice, from RAG):\n${memSnippets.map((s) => `- ${s}`).join("\n")}`,
           );
+        }
+
+        // Cash-flow timing block — the timeline of money in + out so
+        // Tilly references upcoming paychecks and recurring bills BEFORE
+        // answering "can I afford X" rather than only looking at the
+        // headline. Non-fatal: if the query fails we just skip the
+        // block; the reply still goes out.
+        try {
+          const cashFlow = await buildCashFlowSummary(userId, householdId);
+          if (cashFlow.hasData) {
+            sections.push(cashFlow.text);
+          }
+        } catch (cfErr) {
+          console.warn("[chat] cash-flow summary lookup failed:", cfErr);
         }
 
         // Task #24 follow-up context: if this household ran an analysis
@@ -695,14 +734,67 @@ export function mountTillyChatRoutes(app: Express): void {
           promptSize: extraSystem?.length ?? 0,
         });
 
-        const response = await callTilly({
-          toneKey: tone,
-          messages: history,
-          extraSystem,
-          userId,
-          route: "chat",
-        });
-        const text = response.text;
+        // Native tool_use path: a single OpenRouter call with the
+        // `tools` parameter. Tilly may emit text only, tool_calls only,
+        // or both — runWithTools drives the conversation loop, executes
+        // each tool through the registry, and returns the final text +
+        // toolResults in one shot. Replaces the old post-extractor
+        // pattern (Tilly text → second Haiku call to find intent).
+        const llm = new OpenRouterLLM(
+          process.env.TILLY_CHAT_MODEL || undefined,
+        );
+        const initialTurns: LLMTurn[] = history.map((h) => ({
+          role: h.role === "user" ? ("user" as const) : ("assistant" as const),
+          content: h.content,
+        }));
+        const systemPrompts = await buildSystemPrompts(
+          tone,
+          extraSystem ? [extraSystem] : [],
+        );
+        let text = "";
+        let toolResults: ToolResult[] = [];
+        try {
+          const out = await runWithTools({
+            llm,
+            systemPrompts,
+            initialTurns,
+            tools: getToolDefs(),
+            ctx: { userId, householdId },
+            meta: { userId, route: "chat" },
+          });
+          text = out.text;
+          toolResults = out.toolResults;
+          // Hallucination sentinel: if Tilly's text claims a scout is in
+          // flight but no scout/wait tool actually fired, log loudly so
+          // we catch the regression in production. Pure observability —
+          // does not block or rewrite the response.
+          const claimsScout =
+            /\b(scouts? are running|i'?ll check|let me look (that |it )?up|i'?m looking (into|up)|i'?ll find|looking up sale history|i'?ll scout)\b/i.test(
+              out.text,
+            );
+          const firedScout = out.toolResults.some(
+            (r) => r.kind === "scout_started" || r.kind === "wait_started",
+          );
+          if (claimsScout && !firedScout) {
+            console.warn(
+              `[chat] HALLUCINATION: reply claims scout in flight but no findOptions/predictSalePrice fired. userId=${userId} userMsg="${message.slice(0, 120)}" reply="${out.text.slice(0, 200)}"`,
+            );
+          }
+        } catch (err) {
+          // If tool_use fails (model doesn't support it, transient
+          // OpenRouter error, etc.), fall back to plain text reply.
+          // Tools won't fire this turn — rare path, logged so we notice.
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn("[chat] tool-loop failed, falling back to text:", msg);
+          const response = await callTilly({
+            toneKey: tone,
+            messages: history,
+            extraSystem,
+            userId,
+            route: "chat",
+          });
+          text = response.text;
+        }
         // Detect whether Tilly promised a follow-up — Haiku 4.5 classifier
         // (~1-2s, ~250 tok). Inline so the row exists by the time we return,
         // and the client can refetch reminders on the same mutation success.
@@ -790,6 +882,12 @@ export function mountTillyChatRoutes(app: Express): void {
           console.warn("[chat] reminder persist failed:", err);
         }
 
+        // toolResults already populated by runWithTools above. Keep the
+        // legacy single-tool field for backward compat with older
+        // clients that read `toolResult` (singular).
+        const legacySingleToolResult =
+          toolResults.length === 1 ? toolResults[0] : undefined;
+
         const [tillyRow] = await db
           .insert(guardianConversations)
           .values({
@@ -806,6 +904,8 @@ export function mountTillyChatRoutes(app: Express): void {
           kind: "text",
           body: text,
           createdAt: tillyRow.createdAt.toISOString(),
+          toolResult: legacySingleToolResult,
+          toolResults: toolResults.length > 0 ? toolResults : undefined,
         };
         emitEventAsync({
           userId,

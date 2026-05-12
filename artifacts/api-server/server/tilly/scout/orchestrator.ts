@@ -127,6 +127,7 @@ type StrategyDef = {
  */
 function buildFindStrategies(query: string, location?: string | null): StrategyDef[] {
   const loc = (location ?? "Canada").trim();
+  const isCanadian = isCanadianLocation(loc);
   return [
     // (1) Secondhand inventory — Kijiji + Karrot scoped, recent posts only.
     {
@@ -134,25 +135,53 @@ function buildFindStrategies(query: string, location?: string | null): StrategyD
       domains: ["kijiji.ca", "karrot.ca", "facebook.com", "marketplace.facebook.com"],
       timeRange: "month",
     },
-    // (2) Current sales / deals — RFD + open web. Time-bound to the
-    // last month so we don't surface a 2014 Hudson's Bay deal.
+    // (2) Current sales / deals — RFD + open web + .ca big-box. Time-
+    // bound to the last month so we don't surface a 2014 Hudson's Bay
+    // deal. Including amazon.ca / bestbuy.ca / walmart.ca / staples.ca /
+    // costco.ca so a Canadian user gets Canadian retailer links and CAD
+    // pricing instead of being routed through amazon.com.
     {
-      query: `${query} sale Canada deal`,
-      domains: ["redflagdeals.com", "smartcanucks.ca"],
+      query: isCanadian
+        ? `${query} sale Canada deal site:amazon.ca OR site:bestbuy.ca OR site:walmart.ca`
+        : `${query} sale deal`,
+      domains: isCanadian
+        ? [
+            "redflagdeals.com",
+            "smartcanucks.ca",
+            "amazon.ca",
+            "bestbuy.ca",
+            "walmart.ca",
+            "staples.ca",
+            "costco.ca",
+          ]
+        : ["amazon.com", "bestbuy.com", "walmart.com"],
       excludeDomains: DEFUNCT_CANADIAN_RETAILERS,
       includeAnswer: true,
       timeRange: "month",
     },
     // (3) Off-brand or refurb alternatives — open web, but recency-bounded
     // and with the defunct-retailer blocklist so we don't link to stores
-    // that don't exist anymore.
+    // that don't exist anymore. When location is Canadian, append
+    // "Canada" to the query so Tavily biases regional inventory.
     {
-      query: `${query} cheaper alternative refurbished`,
+      query: isCanadian
+        ? `${query} cheaper alternative refurbished Canada`
+        : `${query} cheaper alternative refurbished`,
       excludeDomains: DEFUNCT_CANADIAN_RETAILERS,
       includeAnswer: true,
       timeRange: "year",
     },
   ];
+}
+
+/** Catch the common ways a Canadian location lands in the location
+ * field — explicit "Canada", any major Canadian city, or province
+ * names. Used to flip retailer / domain scoping. */
+function isCanadianLocation(loc: string): boolean {
+  const l = loc.toLowerCase();
+  return /\b(canada|toronto|waterloo|kitchener|guelph|hamilton|ottawa|montreal|québec|quebec|vancouver|calgary|edmonton|winnipeg|halifax|victoria|saskatoon|regina|st\.? john'?s|mississauga|brampton|markham|burlington|oakville|london (on|ontario)|ontario|alberta|manitoba|saskatchewan|nova scotia|new brunswick|newfoundland|pei|prince edward|british columbia|bc)\b/.test(
+    l,
+  );
 }
 
 /**

@@ -35,9 +35,103 @@ import type { TillyMessage } from "../api/types";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { btApi } from "../api/client";
 
+type ToolPreview =
+  | {
+      kind: "dream_created";
+      dreamId: string;
+      name: string;
+      targetAmount: number;
+      monthlyContribution: number;
+      emoji: string;
+    }
+  | {
+      kind: "payment_to_card_aliased";
+      merchantSignature: string;
+      cardName: string;
+      reclassifiedCount: number;
+      reclassifiedAmount: number;
+    }
+  | {
+      kind: "category_hidden";
+      category: string;
+      reason: string;
+    }
+  | {
+      kind: "home_tile_pinned";
+      tileKind: string;
+      label: string;
+    }
+  | {
+      kind: "onboarding_field_set";
+      field: string;
+      value: string;
+    }
+  // Inverse-tool result variants — rendered inline same as forward.
+  | { kind: "category_unhidden"; category: string }
+  | {
+      kind: "payment_to_card_unaliased";
+      cardName: string;
+      restoredCount: number;
+      restoredAmount: number;
+    }
+  | { kind: "home_tile_unpinned"; tileKind: string; label: string }
+  | { kind: "onboarding_field_unset"; field: string }
+  | { kind: "dream_deleted"; name: string }
+  | {
+      kind: "category_inclusion_set";
+      category: string;
+      includeInSpend: boolean;
+      previouslyIncluded: boolean;
+    }
+  | {
+      kind: "merchant_category_set";
+      merchantSignature: string;
+      displayName: string;
+      fromCategory: string;
+      toCategory: string;
+      reclassifiedCount: number;
+    }
+  | {
+      kind: "scout_started";
+      mode: "find";
+      jobId: string;
+      query: string;
+      location: string | null;
+    }
+  | {
+      kind: "wait_started";
+      mode: "wait";
+      jobId: string;
+      query: string;
+      location: string | null;
+    }
+  | {
+      kind: "watchlist_item_added";
+      itemId: string;
+      name: string;
+      estimatedPrice: number | null;
+    }
+  | {
+      kind: "income_aliased_to_transfer";
+      merchantSignature: string;
+      sourceName: string;
+      reclassifiedCount: number;
+      reclassifiedAmount: number;
+    };
+
+// Backward-compat alias for the existing single-tool field.
+type DreamPreview = Extract<ToolPreview, { kind: "dream_created" }>;
+
 type Msg =
   | { id: string; role: "user"; kind: "text"; body: string }
-  | { id: string; role: "tilly"; kind: "text"; body: string }
+  | {
+      id: string;
+      role: "tilly";
+      kind: "text";
+      body: string;
+      toolResult?: ToolPreview;
+      toolResults?: ToolPreview[];
+    }
   | { id: string; role: "tilly"; kind: "typing" }
   | {
       id: string;
@@ -135,7 +229,14 @@ function toLocal(m: TillyMessage): Msg {
       errorText: m.errorText,
     };
   }
-  return { id: m.id, role: "tilly", kind: "text", body: m.body };
+  return {
+    id: m.id,
+    role: "tilly",
+    kind: "text",
+    body: m.body,
+    toolResult: (m as any).toolResult as ToolPreview | undefined,
+    toolResults: (m as any).toolResults as ToolPreview[] | undefined,
+  };
 }
 
 export function BTGuardian() {
@@ -262,7 +363,14 @@ export function BTGuardian() {
           <BTLabel color={t.inkSoft} size={10}>memory</BTLabel>
         </Pressable>
       </View>
-      <MemoryInspector visible={memoryOpen} onClose={() => setMemoryOpen(false)} />
+      <MemoryInspector
+        visible={memoryOpen}
+        onClose={() => setMemoryOpen(false)}
+        onPrefillCompose={(seed) => {
+          setMemoryOpen(false);
+          setDraft(seed);
+        }}
+      />
 
       <BTRule color={t.rule} />
 
@@ -734,9 +842,487 @@ function Bubble({
         {confirmedReminder ? (
           <ReminderConfirmationChip reminder={confirmedReminder} />
         ) : null}
+        {/* Tool result previews — one inline card per tool the unified
+            extractor fired this turn. Multi-tool turns ("I'm 38, support
+            4, in Toronto") render multiple cards stacked. Falls back to
+            the legacy single `toolResult` when only one fired (older
+            client field). */}
+        {m.kind === "text"
+          ? renderToolPreviews(m.toolResults, m.toolResult, t)
+          : null}
       </View>
     </View>
   );
+}
+
+function renderToolPreviews(
+  toolResults: ToolPreview[] | undefined,
+  legacy: ToolPreview | undefined,
+  t: ReturnType<typeof useBT>["t"],
+) {
+  const results = toolResults && toolResults.length > 0
+    ? toolResults
+    : legacy
+      ? [legacy]
+      : [];
+  if (results.length === 0) return null;
+  return (
+    <View style={{ marginTop: 8, gap: 6 }}>
+      {results.map((r, i) => (
+        <ToolPreviewCard key={`${r.kind}-${i}`} result={r} t={t} />
+      ))}
+    </View>
+  );
+}
+
+function ToolPreviewCard({
+  result,
+  t,
+}: {
+  result: ToolPreview;
+  t: ReturnType<typeof useBT>["t"];
+}) {
+  const baseStyle = {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    backgroundColor: t.accentSoft,
+    borderColor: t.accent,
+  };
+
+  if (result.kind === "dream_created") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 22 }}>{result.emoji || "✺"}</Text>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={{
+              fontFamily: BTFonts.serif,
+              fontSize: 14,
+              fontWeight: "600",
+              color: t.ink,
+            }}
+          >
+            {result.name}
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 11,
+              color: t.inkSoft,
+              marginTop: 2,
+            }}
+          >
+            ${result.targetAmount.toFixed(0)} target
+            {result.monthlyContribution > 0
+              ? ` · $${result.monthlyContribution.toFixed(0)}/mo`
+              : ""}{" "}
+            · saved as a Dream
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (result.kind === "payment_to_card_aliased") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>💳</Text>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={{
+              fontFamily: BTFonts.serif,
+              fontSize: 13,
+              fontWeight: "600",
+              color: t.ink,
+            }}
+          >
+            Stopped counting {result.cardName} as spending
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 11,
+              color: t.inkSoft,
+              marginTop: 2,
+            }}
+          >
+            {result.reclassifiedCount} past charge
+            {result.reclassifiedCount === 1 ? "" : "s"} · $
+            {Math.round(result.reclassifiedAmount).toLocaleString()} moved out
+            of loans
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 10,
+              color: t.inkMute,
+              marginTop: 4,
+              fontStyle: "italic",
+            }}
+          >
+            Not what you meant? Tell me to bring {result.cardName} back.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (result.kind === "income_aliased_to_transfer") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>↔️</Text>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={{
+              fontFamily: BTFonts.serif,
+              fontSize: 13,
+              fontWeight: "600",
+              color: t.ink,
+            }}
+          >
+            Stopped counting {result.sourceName} as income
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 11,
+              color: t.inkSoft,
+              marginTop: 2,
+            }}
+          >
+            {result.reclassifiedCount} past deposit
+            {result.reclassifiedCount === 1 ? "" : "s"} · $
+            {Math.round(result.reclassifiedAmount).toLocaleString()} treated as
+            transfer now
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 10,
+              color: t.inkMute,
+              marginTop: 4,
+              fontStyle: "italic",
+            }}
+          >
+            Your savings rate just dropped accordingly. Say so if you want it back.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (result.kind === "category_hidden") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>🙈</Text>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 12,
+              color: t.ink,
+            }}
+          >
+            Hidden <Text style={{ fontWeight: "700" }}>{result.category}</Text>{" "}
+            from your Spend page.
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 10,
+              color: t.inkMute,
+              marginTop: 4,
+              fontStyle: "italic",
+            }}
+          >
+            Not what you meant? Tell me to bring {result.category} back, or
+            open Memory.
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (result.kind === "home_tile_pinned") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>📌</Text>
+        <Text
+          style={{
+            flex: 1,
+            fontFamily: BTFonts.sans,
+            fontSize: 12,
+            color: t.ink,
+          }}
+        >
+          Pinned <Text style={{ fontWeight: "700" }}>{result.label}</Text> to
+          your Today screen.
+        </Text>
+      </View>
+    );
+  }
+
+  if (result.kind === "onboarding_field_set") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>📝</Text>
+        <Text
+          style={{
+            flex: 1,
+            fontFamily: BTFonts.sans,
+            fontSize: 12,
+            color: t.ink,
+          }}
+        >
+          Noted: {humanizeOnboardingField(result.field)} ={" "}
+          <Text style={{ fontWeight: "700" }}>{result.value}</Text>
+        </Text>
+      </View>
+    );
+  }
+
+  // ─── Inverse-tool variants ──────────────────────────────────────────
+  if (result.kind === "category_unhidden") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>👁️</Text>
+        <Text
+          style={{
+            flex: 1,
+            fontFamily: BTFonts.sans,
+            fontSize: 12,
+            color: t.ink,
+          }}
+        >
+          <Text style={{ fontWeight: "700" }}>{result.category}</Text> visible
+          on your Spend page again.
+        </Text>
+      </View>
+    );
+  }
+
+  if (result.kind === "payment_to_card_unaliased") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>↩️</Text>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={{
+              fontFamily: BTFonts.serif,
+              fontSize: 13,
+              fontWeight: "600",
+              color: t.ink,
+            }}
+          >
+            {result.cardName} payments back as spending
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 11,
+              color: t.inkSoft,
+              marginTop: 2,
+            }}
+          >
+            {result.restoredCount} row
+            {result.restoredCount === 1 ? "" : "s"} · $
+            {Math.round(result.restoredAmount).toLocaleString()} restored to
+            their original categories
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (result.kind === "home_tile_unpinned") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>📌</Text>
+        <Text
+          style={{
+            flex: 1,
+            fontFamily: BTFonts.sans,
+            fontSize: 12,
+            color: t.ink,
+          }}
+        >
+          Unpinned <Text style={{ fontWeight: "700" }}>{result.label}</Text>{" "}
+          from Today.
+        </Text>
+      </View>
+    );
+  }
+
+  if (result.kind === "onboarding_field_unset") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>🧹</Text>
+        <Text
+          style={{
+            flex: 1,
+            fontFamily: BTFonts.sans,
+            fontSize: 12,
+            color: t.ink,
+          }}
+        >
+          Cleared{" "}
+          <Text style={{ fontWeight: "700" }}>
+            {humanizeOnboardingField(result.field)}
+          </Text>{" "}
+          from what I remember.
+        </Text>
+      </View>
+    );
+  }
+
+  if (result.kind === "dream_deleted") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>🗑️</Text>
+        <Text
+          style={{
+            flex: 1,
+            fontFamily: BTFonts.sans,
+            fontSize: 12,
+            color: t.ink,
+          }}
+        >
+          Deleted <Text style={{ fontWeight: "700" }}>{result.name}</Text>{" "}
+          dream.
+        </Text>
+      </View>
+    );
+  }
+
+  if (result.kind === "merchant_category_set") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>↪️</Text>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={{
+              fontFamily: BTFonts.serif,
+              fontSize: 13,
+              fontWeight: "600",
+              color: t.ink,
+            }}
+          >
+            Moved {result.displayName}
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 11,
+              color: t.inkSoft,
+              marginTop: 2,
+            }}
+          >
+            {result.fromCategory} → {result.toCategory}
+            {result.reclassifiedCount > 0
+              ? ` · ${result.reclassifiedCount} past charge${result.reclassifiedCount === 1 ? "" : "s"} updated`
+              : ""}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (result.kind === "watchlist_item_added") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>👀</Text>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={{
+              fontFamily: BTFonts.serif,
+              fontSize: 13,
+              fontWeight: "600",
+              color: t.ink,
+            }}
+          >
+            On your watchlist
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 12,
+              color: t.inkSoft,
+              marginTop: 2,
+            }}
+          >
+            {result.name}
+            {result.estimatedPrice
+              ? ` · ≈ $${Math.round(result.estimatedPrice).toLocaleString()}`
+              : ""}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (result.kind === "scout_started" || result.kind === "wait_started") {
+    // Lightweight pill — the real scout/wait card lands as a separate
+    // guardian_conversations row on the next history refetch (see
+    // useTilly cache invalidation). This pill just confirms the tool
+    // fired so the user understands Tilly is actually working on it.
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>✦</Text>
+        <Text
+          style={{
+            flex: 1,
+            fontFamily: BTFonts.sans,
+            fontSize: 12,
+            color: t.ink,
+          }}
+        >
+          {result.mode === "wait" ? "Looking up sale history for " : "Scouting "}
+          <Text style={{ fontWeight: "700" }}>{result.query}</Text>
+          {result.location ? ` in ${result.location}` : ""}.
+        </Text>
+      </View>
+    );
+  }
+
+  if (result.kind === "category_inclusion_set") {
+    const verb = result.includeInSpend ? "Counting" : "Treating";
+    const dest = result.includeInSpend ? "monthly spend" : "money flow only";
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>{result.includeInSpend ? "➕" : "➖"}</Text>
+        <Text
+          style={{
+            flex: 1,
+            fontFamily: BTFonts.sans,
+            fontSize: 12,
+            color: t.ink,
+          }}
+        >
+          {verb} <Text style={{ fontWeight: "700" }}>{result.category}</Text>{" "}
+          as {dest}.
+        </Text>
+      </View>
+    );
+  }
+
+  return null;
+}
+
+function humanizeOnboardingField(field: string): string {
+  const map: Record<string, string> = {
+    employmentType: "work",
+    ageBand: "age",
+    city: "city",
+    dependents: "people you support",
+    supportNote: "context",
+    schoolName: "school",
+  };
+  return map[field] ?? field;
 }
 
 /**
@@ -1289,9 +1875,10 @@ function ScoutBubble({
               <Text
                 style={{
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
-                  letterSpacing: 0.6,
+                  fontSize: 11,
+                  letterSpacing: 0.8,
                   textTransform: "uppercase",
+                  fontWeight: "700",
                   color: t.accent,
                 }}
                 numberOfLines={1}
@@ -1315,8 +1902,11 @@ function ScoutBubble({
             <Text
               style={{
                 fontFamily: BTFonts.sans,
-                fontSize: 13,
+                fontSize: 15,
+                fontWeight: "600",
                 color: t.ink,
+                lineHeight: 21,
+                marginTop: 2,
               }}
               numberOfLines={2}
             >
@@ -1324,11 +1914,12 @@ function ScoutBubble({
             </Text>
             <Text
               style={{
-                fontFamily: BTFonts.serifItalic,
-                fontSize: 12,
+                fontFamily: BTFonts.serif,
+                fontSize: 14,
                 color: t.inkSoft,
+                lineHeight: 20,
               }}
-              numberOfLines={2}
+              numberOfLines={3}
             >
               {opt.why}
             </Text>
@@ -1414,9 +2005,10 @@ function WaitBubble({ m }: { m: Extract<Msg, { kind: "wait" }> }) {
               <Text
                 style={{
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
-                  letterSpacing: 0.6,
+                  fontSize: 11,
+                  letterSpacing: 0.8,
                   textTransform: "uppercase",
+                  fontWeight: "700",
                   color: t.inkSoft,
                 }}
               >
@@ -1438,9 +2030,10 @@ function WaitBubble({ m }: { m: Extract<Msg, { kind: "wait" }> }) {
               <Text
                 style={{
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
-                  letterSpacing: 0.6,
+                  fontSize: 11,
+                  letterSpacing: 0.8,
                   textTransform: "uppercase",
+                  fontWeight: "700",
                   color: t.inkSoft,
                 }}
               >
@@ -1463,9 +2056,10 @@ function WaitBubble({ m }: { m: Extract<Msg, { kind: "wait" }> }) {
               <Text
                 style={{
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
-                  letterSpacing: 0.6,
+                  fontSize: 11,
+                  letterSpacing: 0.8,
                   textTransform: "uppercase",
+                  fontWeight: "700",
                   color: t.inkSoft,
                 }}
               >
@@ -1501,9 +2095,10 @@ function WaitBubble({ m }: { m: Extract<Msg, { kind: "wait" }> }) {
               <Text
                 style={{
                   fontFamily: BTFonts.mono,
-                  fontSize: 9,
-                  letterSpacing: 0.6,
+                  fontSize: 11,
+                  letterSpacing: 0.8,
                   textTransform: "uppercase",
+                  fontWeight: "700",
                   color: t.accent,
                 }}
                 numberOfLines={1}
@@ -1512,11 +2107,13 @@ function WaitBubble({ m }: { m: Extract<Msg, { kind: "wait" }> }) {
               </Text>
               <Text
                 style={{
-                  fontFamily: BTFonts.serifItalic,
-                  fontSize: 12,
-                  color: t.inkSoft,
+                  fontFamily: BTFonts.serif,
+                  fontSize: 14,
+                  color: t.ink,
+                  lineHeight: 20,
+                  marginTop: 4,
                 }}
-                numberOfLines={3}
+                numberOfLines={4}
               >
                 {s.evidence}
               </Text>
