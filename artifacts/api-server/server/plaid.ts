@@ -357,13 +357,30 @@ export function shouldAutoAcceptPlaidTransaction(
   // can be large) and we already gate by PFC=INCOME.
   if (primary === "INCOME") return true;
 
+  // TRANSFER_IN: now also auto-accepted. mapPlaidCategory routes
+  // these to income / cashback / credit_adjustment / transfers based
+  // on detailed PFC. None of those bucket warrants manual approval —
+  // paycheck-shaped deposits should not sit in a pending queue
+  // demanding the user click 'accept' before they count as income.
+  // amount-cap doesn't apply (paychecks are commonly > $500).
+  if (primary === "TRANSFER_IN") return true;
+
+  // Any other inflow (amount < 0) — auto-accept. Includes the case
+  // where Plaid gave us no PFC at all but it's clearly money coming
+  // in. The noisy-keyword filter below was built for outflow noise
+  // (interest charges, wire-transfer fees out, etc.) — it shouldn't
+  // gate deposits. If the user wanted a deposit reclassified they
+  // can do it from the Cash Flow page; silently parking it in
+  // pending was the cause of the "$24k earned but 2 line items"
+  // bug.
+  if (tx.amount < 0) return true;
+
   if (tx.amount > AUTO_ACCEPT_AMOUNT_CAP) return false;
 
   const detailed = (tx.personal_finance_category?.detailed || "").toUpperCase();
   if (
     primary === "BANK_FEES" ||
     primary === "LOAN_PAYMENTS" ||
-    primary === "TRANSFER_IN" ||
     primary === "TRANSFER_OUT"
   ) return false;
   if (detailed.includes("INTEREST_CHARGE") || detailed.includes("OVERDRAFT") || detailed.includes("ATM_FEE")) return false;
