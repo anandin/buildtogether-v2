@@ -1120,24 +1120,19 @@ async function buildHorizon(args: {
   // Income total = sum of the income sources we're about to show the
   // user. Single source of truth — the headline "$X EARNED" on the
   // Horizon panel matches the sum of the rows under "Where it comes
-  // from this month" exactly, every time.
-  const incomeFromSources = incomeSources.reduce((s, c) => s + c.amt, 0);
-
-  // Fallback only when we have zero income rows for the CURRENT month:
-  // the user might be in their first few days of a month with no
-  // paycheck synced yet — fall back to getMonthlyIncome's estimate /
-  // self-report so Home + Horizon don't go to $0. For historical
-  // months we trust the actual rows (estimating last April's pay
-  // would be nonsense).
-  let income = incomeFromSources;
-  if (
-    incomeFromSources === 0 &&
-    range === "month" &&
-    isCurrentMonth(now, tz, windowStartIso)
-  ) {
-    const mi = await getMonthlyIncome(userId, householdId, now);
-    income = mi.amount;
-  }
+  // from this month" exactly, every time. No fallback, no estimate.
+  //
+  // Previously we fell back to getMonthlyIncome (which estimates from
+  // trailing-35-day paychecks) when this month's income rows were
+  // empty. That created a phantom number: Horizon would show $14k
+  // earned while the income list below it was empty, because the
+  // user's actual May deposits were classified as 'other' or
+  // 'transfers' instead of 'income'. The honest answer is to show
+  // what's actually classified. If income reads $0 mid-month, that's
+  // a signal something's misclassified — the user reclassifies via
+  // Categories · cash flow, or hits Reset all transactions to
+  // re-pull with the latest classifier.
+  const income = incomeSources.reduce((s, c) => s + c.amt, 0);
 
   const surplus = income - totalSpent;
   // savingsRate is signed: negative when underwater. Zero income →
