@@ -174,6 +174,22 @@ async function logAICall(data: {
   }
 }
 
+/**
+ * Plaid often returns the same opaque label in `merchant_name` that the
+ * bank put on the statement — "LOAN PYMT", "PAYMENT", "BILL PAY",
+ * "TRANSFER". When the row's underlying `name` field carries a longer
+ * descriptor, prefer that. The user-facing rename tool still wins; this
+ * is only the default when no override is set.
+ */
+function isGenericMerchantName(s: string | null | undefined): boolean {
+  if (!s) return true;
+  const norm = s.trim().toUpperCase();
+  if (norm.length === 0) return true;
+  return /^(LOAN[\s_]?(?:PYMT|PAYMENT|PMT)?|MTG[\s_]?(?:PYMT|PAYMENT|PMT)?|PAYMENT|PYMT|PMT|TRANSFER|XFER|TFR|ETFR|ACH|ACH[\s_]?PAYMENT|ATM|DEPOSIT|WITHDRAWAL|WITHDRAW|BILL[\s_]?PAY|BILLPAY|CHECK|CHK|DEBIT|CREDIT|FEE|INTEREST|INT[\s_]?PYMT|BANK[\s_]?PYMT|EFT|POS|PURCHASE)$/.test(
+    norm,
+  );
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // ==================== PLAID sync helper (shared by exchange + sync endpoints) ====================
   /**
@@ -259,8 +275,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // it can auto-accept (skip pending queue) OR auto-ignore (drop the
         // row). Both branches still write a plaid_transactions row so
         // future syncs dedupe correctly.
-        const rule = !tx.pending ? await findRule(item.coupleId, sig) : null;
-        const ruleOutcome = applyRuleToPlaidTx(tx, rule);
+        //
+        // Always fetch the rule (even for pending txs) so we can apply
+        // displayNameOverride to fresh rows. The auto-accept / auto-ignore
+        // decision still respects the previous pending gate via the
+        // ruleOutcome guard below.
+        const rule = await findRule(item.coupleId, sig);
+        const ruleOutcome = !tx.pending
+          ? applyRuleToPlaidTx(tx, rule)
+          : { kind: "none" as const };
+
+        // Resolve the effective merchant display name:
+        //   1. User-supplied displayNameOverride from merchant_rules wins.
+        //   2. Otherwise, if Plaid's merchant_name is a generic placeholder
+        //      ("LOAN PYMT", "PAYMENT", "TRANSFER", "BILL PAY") and the
+        //      underlying `name` field is more descriptive, prefer name —
+        //      it usually carries the actual descriptor the bank sent.
+        //   3. Otherwise, Plaid's merchant_name.
+        const overrideName = rule?.displayNameOverride?.trim() || null;
+        const rawMerchant = (tx.merchant_name || "").trim();
+        const rawName = (tx.name || "").trim();
+        const effectiveMerchantName =
+          overrideName ||
+          (isGenericMerchantName(rawMerchant) && rawName.length > rawMerchant.length
+            ? rawName
+            : rawMerchant) ||
+          null;
 
         // Phase 3: when no rule exists yet AND Plaid's mapping landed on
         // "other", ask Tilly. High-confidence answers replace ourCat
@@ -363,7 +403,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               accountId: tx.account_id,
               amount: tx.amount,
               date: txDate,
-              merchantName: tx.merchant_name || null,
+              merchantName: effectiveMerchantName,
               name: tx.name || "Unknown",
               plaidCategory: tx.category || null,
               personalFinanceCategory: tx.personal_finance_category || null,
@@ -392,8 +432,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const [expense] = await txn.insert(expenses).values({
                 coupleId: item.coupleId,
                 amount: tx.amount,
-                description: tx.merchant_name || tx.name || "Unknown",
-                merchant: tx.merchant_name || tx.name || null,
+                description: effectiveMerchantName || tx.name || "Unknown",
+                merchant: effectiveMerchantName || tx.name || null,
                 category: ruleCategory,
                 date: txDate,
                 paidBy,

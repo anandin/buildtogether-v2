@@ -412,6 +412,7 @@ const CRITICAL_STATEMENTS: string[] = [
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "merchant_rules_couple_signature_uniq"
      ON "merchant_rules" ("couple_id", "signature")`,
+  `ALTER TABLE "merchant_rules" ADD COLUMN IF NOT EXISTS "display_name_override" text`,
   // Lightweight debug-trace table. Survives Vercel Fluid instance recycling
   // so we can correlate "what the iPhone got" against UI behavior. Cleaned
   // up automatically on a 24-hour TTL window inside the audit endpoint.

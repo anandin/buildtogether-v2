@@ -61,6 +61,11 @@ export const TOOL_NAMES = [
   // future syncs land in the new category, and (when retroactive=true)
   // updates every existing tx + linked expense in one batch.
   "setMerchantCategory",
+  // Per-merchant display-name override. "Rename LOAN PYMT to Mortgage"
+  // — replaces Plaid's cryptic descriptor with a human-readable name
+  // across Spend, Categories, Pending, etc. Persists on merchant_rules
+  // so future syncs of the same merchant pick up the new name.
+  "renameMerchant",
   // Scout / wait — Tilly's only path to live retailer data. Without
   // these she hits her knowledge ceiling on "when does X go on sale?"
   // and "find me cheaper Y" and incorrectly says "I can't see that."
@@ -176,6 +181,17 @@ export type ToolResult =
       reclassifiedCount: number;
     }
   | {
+      kind: "merchant_renamed";
+      merchantSignature: string;
+      previousName: string;
+      newName: string;
+      // How many plaid_transactions + linked expenses were updated
+      // retroactively. 0 when no past rows matched the signature/keyword
+      // search (the override is still written to merchant_rules so future
+      // syncs pick it up).
+      renamedCount: number;
+    }
+  | {
       kind: "scout_started";
       mode: "find";
       jobId: string;
@@ -276,6 +292,20 @@ const setMerchantCategorySchema = z.object({
   retroactive: z.boolean().optional(),
 });
 
+const renameMerchantSchema = z.object({
+  /** Lowercased simplified merchant key OR a fuzzy match string from the
+   * user's message. Tilly extracts what the user pointed at ("LOAN PYMT",
+   * "scotialn vsa"); the handler resolves to actual signatures in this
+   * household via signature equality + name keyword fallback, same shape
+   * as markPaymentToOwnCard. */
+  merchantSignature: z.string().min(1),
+  /** New display name as the user wants to see it. Preserved verbatim
+   * (with leading/trailing whitespace trimmed) — no title-casing, no
+   * canonicalization. "Mortgage", "Spotify (Family)", "Mom — rent share". */
+  displayName: z.string().min(1),
+  reason: z.string().optional(),
+});
+
 const findOptionsSchema = z.object({
   query: z.string().min(1),
   /** Optional city to scope local secondhand inventory (Marketplace,
@@ -319,6 +349,7 @@ const TOOL_SCHEMAS: Record<ToolName, z.ZodType> = {
   deleteDream: deleteDreamSchema,
   setCategoryInclusion: setCategoryInclusionSchema,
   setMerchantCategory: setMerchantCategorySchema,
+  renameMerchant: renameMerchantSchema,
   findOptions: findOptionsSchema,
   predictSalePrice: predictSalePriceSchema,
   addToWatchlist: addToWatchlistSchema,
@@ -400,6 +431,24 @@ const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
     "merchantSignature: lowercased simplified merchant key (e.g. 'lincoln afs ca apy', " +
     "'doordash', 'spotify'). category: the destination category name. retroactive: " +
     "default true — past transactions for this merchant get moved too.",
+  renameMerchant:
+    "Rename a merchant from Plaid's cryptic descriptor to something readable. " +
+    "Use whenever the user points at a transaction label and tells you what it " +
+    "actually is — even if the user doesn't say the word 'rename'. Triggers: " +
+    "'rename LOAN PYMT to Mortgage', 'call SCOTIALN VSA Scotia Visa', 'that's " +
+    "really my mortgage', 'LOAN PYMT is around 2900 every month, it's my " +
+    "mortgage', 'call it Rogers internet', 'name that one Mom rent'. The " +
+    "user identifying what a transaction IS = a rename request — fire this " +
+    "tool, don't tell them to do it on the Transactions screen. " +
+    "merchantSignature: the merchant string the user pointed at (lowercased; " +
+    "the handler fuzzy-matches against the user's actual transactions, same as " +
+    "markPaymentToOwnCard). displayName: the new readable name preserved " +
+    "verbatim ('Mortgage', 'Spotify Family', 'Mom — rent share'). " +
+    "Retroactively updates every existing tx + linked expense, and future " +
+    "syncs of the same merchant pick up the new name automatically. NOTE: " +
+    "rename is about the LABEL only — if the category is also wrong, fire " +
+    "renameMerchant AND setMerchantCategory in the same turn (e.g. 'this is " +
+    "my mortgage, around 2900/month' → rename to Mortgage + move to housing).",
   findOptions:
     "Live web search for ALTERNATIVES — cheaper versions, secondhand " +
     "inventory, similar products. Use whenever the user is shopping for a " +
@@ -570,6 +619,11 @@ export async function executeTool(
     case "setMerchantCategory":
       return await runSetMerchantCategory(
         parsed.data as z.infer<typeof setMerchantCategorySchema>,
+        ctx,
+      );
+    case "renameMerchant":
+      return await runRenameMerchant(
+        parsed.data as z.infer<typeof renameMerchantSchema>,
         ctx,
       );
     case "findOptions":
@@ -936,6 +990,150 @@ async function runSetMerchantCategory(
     fromCategory,
     toCategory: newCat,
     reclassifiedCount,
+  };
+}
+
+/**
+ * Per-merchant display-name override. Resolves the merchant the user
+ * pointed at via the same fuzzy-match shape as markPaymentToOwnCard:
+ * (1) the user's string lowercased+normalized into a signature, plus
+ * (2) every transaction in this household whose merchantName/name
+ * contains the same distinctive tokens. Writes the override to
+ * merchant_rules.displayNameOverride for each matched signature, then
+ * propagates the new name into plaid_transactions.merchantName and the
+ * linked expenses.merchant column so every existing surface (Spend,
+ * Categories drill-in, Pending) shows the new label without a re-sync.
+ */
+async function runRenameMerchant(
+  args: z.infer<typeof renameMerchantSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult | null> {
+  const newName = args.displayName.trim();
+  if (!newName) return null;
+
+  const explicitSig = merchantSignature({
+    merchantName: args.merchantSignature,
+    name: args.merchantSignature,
+    amount: 0,
+  });
+  const keywords = args.merchantSignature
+    .toLowerCase()
+    .split(/[\s\-_]+/)
+    .map((w) => w.replace(/[^a-z0-9]/g, ""))
+    .filter(
+      (w) =>
+        w.length >= 3 &&
+        !["the", "and", "for", "from", "pmt", "pymt", "payment"].includes(w),
+    );
+
+  // Pull a broad slice of this household's transactions so we can match
+  // either by exact signature or by name-keyword overlap. Mirrors the
+  // 500-row cap used by markPaymentToOwnCard.
+  const txs = await db
+    .select()
+    .from(plaidTransactions)
+    .where(eq(plaidTransactions.coupleId, ctx.householdId))
+    .limit(500);
+
+  const candidateSigs = new Set<string>();
+  if (explicitSig) candidateSigs.add(explicitSig);
+  for (const tx of txs) {
+    const sig = merchantSignature(tx);
+    const haystack = `${tx.merchantName ?? ""} ${tx.name ?? ""}`.toLowerCase();
+    if (keywords.length === 0) continue;
+    const allMatch = keywords.every((kw) => haystack.includes(kw));
+    if (allMatch) candidateSigs.add(sig);
+  }
+
+  // Snapshot the previous display name for the confirmation card.
+  // Prefer the most-frequent merchantName across matched rows, falling
+  // back to the explicit signature itself.
+  let previousName = explicitSig || args.merchantSignature;
+  for (const tx of txs) {
+    const sig = merchantSignature(tx);
+    if (!candidateSigs.has(sig)) continue;
+    const candidate = (tx.merchantName ?? tx.name ?? "").trim();
+    if (candidate) {
+      previousName = candidate;
+      break;
+    }
+  }
+
+  // Persist the override on merchant_rules for each candidate signature.
+  // Upsert: a row may already exist (auto-learned from prior accepts)
+  // OR be missing. Either way we set displayNameOverride without
+  // disturbing category/autoAccept/autoIgnore.
+  for (const sig of candidateSigs) {
+    const existing = await db
+      .select()
+      .from(merchantRules)
+      .where(
+        and(
+          eq(merchantRules.coupleId, ctx.householdId),
+          eq(merchantRules.signature, sig),
+        ),
+      )
+      .limit(1);
+    if (existing[0]) {
+      await db
+        .update(merchantRules)
+        .set({
+          displayNameOverride: newName,
+          // Keep lastMerchant fresh so the drill-in row label stays
+          // sensible if a future migration ever ignores the override.
+          lastMerchant: newName,
+          updatedAt: new Date(),
+        })
+        .where(eq(merchantRules.id, existing[0].id));
+    } else {
+      await db.insert(merchantRules).values({
+        coupleId: ctx.householdId,
+        signature: sig,
+        lastMerchant: newName,
+        displayNameOverride: newName,
+        autoAccept: false,
+        autoIgnore: false,
+        hitCount: 0,
+        ignoreCount: 0,
+        source: "user_moved",
+      });
+    }
+  }
+
+  // Retroactive write-through: update every existing matching plaid_tx
+  // (and its linked expense) so Spend / Categories / Pending render the
+  // new label immediately. Match-conditions mirror the markPayment helper:
+  // signature equality OR keyword overlap.
+  let renamedCount = 0;
+  for (const tx of txs) {
+    const sig = merchantSignature(tx);
+    const haystack = `${tx.merchantName ?? ""} ${tx.name ?? ""}`.toLowerCase();
+    const sigMatch = candidateSigs.has(sig);
+    const nameMatch =
+      keywords.length > 0 && keywords.every((kw) => haystack.includes(kw));
+    if (!sigMatch && !nameMatch) continue;
+    if ((tx.merchantName ?? "").trim() === newName) continue;
+    await db.transaction(async (txn) => {
+      await txn
+        .update(plaidTransactions)
+        .set({ merchantName: newName })
+        .where(eq(plaidTransactions.id, tx.id));
+      if (tx.expenseId) {
+        await txn
+          .update(expenses)
+          .set({ merchant: newName, description: newName })
+          .where(eq(expenses.id, tx.expenseId));
+      }
+    });
+    renamedCount++;
+  }
+
+  return {
+    kind: "merchant_renamed",
+    merchantSignature: [...candidateSigs].join(", ") || explicitSig,
+    previousName,
+    newName,
+    renamedCount,
   };
 }
 

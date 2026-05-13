@@ -243,6 +243,10 @@ function CategoryDrillIn({
     signature: string;
     displayName: string;
   } | null>(null);
+  const [renaming, setRenaming] = useState<{
+    signature: string;
+    displayName: string;
+  } | null>(null);
 
   const merchants = useQuery({
     enabled: !!category,
@@ -251,6 +255,16 @@ function CategoryDrillIn({
     staleTime: 30_000,
   });
 
+  const invalidateMerchantSurfaces = () => {
+    qc.invalidateQueries({ queryKey: ["/api/tilly/categories"] });
+    qc.invalidateQueries({ queryKey: ["/api/tilly/categories/merchants"] });
+    qc.invalidateQueries({ queryKey: ["/api/tilly/spend-pattern"] });
+    qc.invalidateQueries({ queryKey: ["/api/tilly/today"] });
+    qc.invalidateQueries({ queryKey: ["/api/expenses"] });
+    qc.invalidateQueries({ queryKey: ["/api/plaid/pending"] });
+    qc.invalidateQueries({ queryKey: ["/api/plaid/pending-grouped"] });
+  };
+
   const move = useMutation({
     mutationFn: (vars: {
       merchantSignature: string;
@@ -258,14 +272,17 @@ function CategoryDrillIn({
       retroactive: boolean;
     }) => btApi.runTool("setMerchantCategory", vars),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/tilly/categories"] });
-      qc.invalidateQueries({ queryKey: ["/api/tilly/categories/merchants"] });
-      qc.invalidateQueries({ queryKey: ["/api/tilly/spend-pattern"] });
-      qc.invalidateQueries({ queryKey: ["/api/tilly/today"] });
-      qc.invalidateQueries({ queryKey: ["/api/expenses"] });
-      qc.invalidateQueries({ queryKey: ["/api/plaid/pending"] });
-      qc.invalidateQueries({ queryKey: ["/api/plaid/pending-grouped"] });
+      invalidateMerchantSurfaces();
       setPicking(null);
+    },
+  });
+
+  const rename = useMutation({
+    mutationFn: (vars: { merchantSignature: string; displayName: string }) =>
+      btApi.runTool("renameMerchant", vars),
+    onSuccess: () => {
+      invalidateMerchantSurfaces();
+      setRenaming(null);
     },
   });
 
@@ -324,9 +341,10 @@ function CategoryDrillIn({
               lineHeight: 21,
             }}
           >
-            Tap any merchant to move their transactions to a different
-            category. Past charges get re-categorized too — and future
-            charges from the same merchant land in the new home.
+            Tap a merchant to move their transactions to a different
+            category, or tap Rename to give it a readable name (LOAN PYMT
+            → Mortgage). Past charges update too — future charges from the
+            same merchant pick up the new name automatically.
           </Text>
 
           {merchants.isLoading ? (
@@ -350,53 +368,92 @@ function CategoryDrillIn({
               {list.map((m, i) => (
                 <React.Fragment key={m.signature}>
                   {i > 0 ? <BTRule color={t.rule} /> : null}
-                  <Pressable
-                    onPress={() =>
-                      setPicking({ signature: m.signature, displayName: m.displayName })
-                    }
-                    style={({ pressed }) => ({
+                  <View
+                    style={{
                       flexDirection: "row",
                       alignItems: "center",
                       paddingHorizontal: 14,
                       paddingVertical: 12,
-                      gap: 10,
-                      backgroundColor: pressed ? t.chip : "transparent",
-                    })}
+                      gap: 8,
+                    }}
                   >
-                    <View style={{ flex: 1 }}>
-                      <Text
-                        style={{
-                          color: t.ink,
-                          fontFamily: BTFonts.serif,
-                          fontSize: 15,
-                        }}
-                        numberOfLines={1}
-                      >
-                        {m.displayName}
-                      </Text>
-                      <Text
-                        style={{
-                          color: t.inkMute,
-                          fontFamily: BTFonts.mono,
-                          fontSize: 10,
-                          marginTop: 3,
-                        }}
-                      >
-                        ${Math.round(m.monthTotal).toLocaleString()} · {m.count} tx
-                      </Text>
-                    </View>
-                    <Text
-                      style={{
-                        color: t.accent,
-                        fontFamily: BTFonts.sans,
-                        fontSize: 11,
-                        fontWeight: "700",
-                        letterSpacing: 0.4,
-                      }}
+                    <Pressable
+                      onPress={() =>
+                        setPicking({ signature: m.signature, displayName: m.displayName })
+                      }
+                      style={({ pressed }) => ({
+                        flex: 1,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 10,
+                        opacity: pressed ? 0.7 : 1,
+                      })}
+                      accessibilityLabel={`Move ${m.displayName} to another category`}
                     >
-                      MOVE →
-                    </Text>
-                  </Pressable>
+                      <View style={{ flex: 1 }}>
+                        <Text
+                          style={{
+                            color: t.ink,
+                            fontFamily: BTFonts.serif,
+                            fontSize: 15,
+                          }}
+                          numberOfLines={1}
+                        >
+                          {m.displayName}
+                        </Text>
+                        <Text
+                          style={{
+                            color: t.inkMute,
+                            fontFamily: BTFonts.mono,
+                            fontSize: 10,
+                            marginTop: 3,
+                          }}
+                        >
+                          ${Math.round(m.monthTotal).toLocaleString()} · {m.count} tx
+                        </Text>
+                      </View>
+                      <Text
+                        style={{
+                          color: t.accent,
+                          fontFamily: BTFonts.sans,
+                          fontSize: 11,
+                          fontWeight: "700",
+                          letterSpacing: 0.4,
+                        }}
+                      >
+                        MOVE →
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() =>
+                        setRenaming({
+                          signature: m.signature,
+                          displayName: m.displayName,
+                        })
+                      }
+                      style={({ pressed }) => ({
+                        paddingVertical: 6,
+                        paddingHorizontal: 10,
+                        borderRadius: 999,
+                        borderWidth: 1,
+                        borderColor: t.rule,
+                        backgroundColor: pressed ? t.chip : t.surface,
+                      })}
+                      accessibilityLabel={`Rename ${m.displayName}`}
+                    >
+                      <Text
+                        style={{
+                          color: t.inkSoft,
+                          fontFamily: BTFonts.sans,
+                          fontSize: 11,
+                          fontWeight: "700",
+                          letterSpacing: 0.3,
+                        }}
+                      >
+                        ✎ RENAME
+                      </Text>
+                    </Pressable>
+                  </View>
                 </React.Fragment>
               ))}
             </View>
@@ -419,6 +476,179 @@ function CategoryDrillIn({
           }}
           working={move.isPending}
         />
+
+        <RenameMerchantSheet
+          visible={!!renaming}
+          currentName={renaming?.displayName ?? ""}
+          onCancel={() => setRenaming(null)}
+          onSubmit={(newName) => {
+            if (!renaming) return;
+            rename.mutate({
+              merchantSignature: renaming.signature,
+              displayName: newName,
+            });
+          }}
+          working={rename.isPending}
+        />
+      </View>
+    </Modal>
+  );
+}
+
+/**
+ * Rename-merchant bottom sheet. Single text field — the new display
+ * name is preserved verbatim. Submits to the renameMerchant tool which
+ * writes the override on merchant_rules and retroactively re-labels
+ * every plaid_transaction + linked expense for the matched signature.
+ */
+function RenameMerchantSheet({
+  visible,
+  currentName,
+  onCancel,
+  onSubmit,
+  working,
+}: {
+  visible: boolean;
+  currentName: string;
+  onCancel: () => void;
+  onSubmit: (newName: string) => void;
+  working: boolean;
+}) {
+  const { t } = useBT();
+  const [draft, setDraft] = useState("");
+
+  // Reset the draft each time the sheet opens for a new merchant.
+  React.useEffect(() => {
+    if (visible) setDraft("");
+  }, [visible, currentName]);
+
+  const trimmed = draft.trim();
+  const canSubmit = trimmed.length > 0 && trimmed !== currentName.trim() && !working;
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
+      <Pressable onPress={onCancel} style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)" }} />
+      <View
+        style={{
+          position: "absolute",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          backgroundColor: t.bg,
+          borderTopLeftRadius: 22,
+          borderTopRightRadius: 22,
+          paddingTop: 14,
+          paddingBottom: 30,
+          paddingHorizontal: 22,
+          gap: 16,
+        }}
+      >
+        <View style={{ alignItems: "center" }}>
+          <View
+            style={{
+              width: 40,
+              height: 4,
+              borderRadius: 2,
+              backgroundColor: t.rule,
+            }}
+          />
+        </View>
+        <View>
+          <BTLabel color={t.inkMute}>Rename</BTLabel>
+          <BTSerif size={20} color={t.ink} weight="500" style={{ marginTop: 6 }}>
+            {currentName}
+          </BTSerif>
+          <Text
+            style={{
+              color: t.inkSoft,
+              fontFamily: BTFonts.serifItalic,
+              fontSize: 13,
+              lineHeight: 19,
+              marginTop: 8,
+            }}
+          >
+            Give this merchant a readable name. Past charges get the new
+            label, and future charges from the same source pick it up
+            automatically.
+          </Text>
+        </View>
+
+        <View style={{ gap: 8 }}>
+          <BTLabel color={t.inkMute}>New name</BTLabel>
+          <TextInput
+            value={draft}
+            onChangeText={setDraft}
+            placeholder="e.g. Mortgage, Spotify Family, Mom — rent"
+            placeholderTextColor={t.inkMute}
+            autoFocus
+            autoCapitalize="sentences"
+            style={{
+              borderWidth: 1,
+              borderColor: t.rule,
+              borderRadius: 12,
+              paddingHorizontal: 14,
+              paddingVertical: 12,
+              fontFamily: BTFonts.serif,
+              fontSize: 16,
+              color: t.ink,
+              backgroundColor: t.surface,
+            }}
+          />
+        </View>
+
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          <Pressable
+            onPress={onCancel}
+            disabled={working}
+            style={({ pressed }) => ({
+              flex: 1,
+              paddingVertical: 12,
+              borderRadius: 12,
+              borderWidth: 1,
+              borderColor: t.rule,
+              alignItems: "center",
+              backgroundColor: pressed ? t.chip : t.surface,
+            })}
+          >
+            <Text
+              style={{
+                color: t.ink,
+                fontFamily: BTFonts.sans,
+                fontSize: 13,
+                fontWeight: "600",
+              }}
+            >
+              Cancel
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => canSubmit && onSubmit(trimmed)}
+            disabled={!canSubmit}
+            style={({ pressed }) => ({
+              flex: 1,
+              paddingVertical: 12,
+              borderRadius: 12,
+              alignItems: "center",
+              backgroundColor: !canSubmit ? t.rule : pressed ? t.accentSoft : t.accent,
+            })}
+          >
+            {working ? (
+              <ActivityIndicator color={t.surface} />
+            ) : (
+              <Text
+                style={{
+                  color: !canSubmit ? t.inkMute : t.surface,
+                  fontFamily: BTFonts.sans,
+                  fontSize: 13,
+                  fontWeight: "700",
+                  letterSpacing: 0.3,
+                }}
+              >
+                Rename
+              </Text>
+            )}
+          </Pressable>
+        </View>
       </View>
     </Modal>
   );

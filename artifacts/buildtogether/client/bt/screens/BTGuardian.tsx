@@ -92,6 +92,13 @@ type ToolPreview =
       reclassifiedCount: number;
     }
   | {
+      kind: "merchant_renamed";
+      merchantSignature: string;
+      previousName: string;
+      newName: string;
+      renamedCount: number;
+    }
+  | {
       kind: "scout_started";
       mode: "find";
       jobId: string;
@@ -1225,6 +1232,39 @@ function ToolPreviewCard({
             {result.fromCategory} → {result.toCategory}
             {result.reclassifiedCount > 0
               ? ` · ${result.reclassifiedCount} past charge${result.reclassifiedCount === 1 ? "" : "s"} updated`
+              : ""}
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (result.kind === "merchant_renamed") {
+    return (
+      <View style={baseStyle}>
+        <Text style={{ fontSize: 18 }}>✎</Text>
+        <View style={{ flex: 1 }}>
+          <Text
+            style={{
+              fontFamily: BTFonts.serif,
+              fontSize: 13,
+              fontWeight: "600",
+              color: t.ink,
+            }}
+          >
+            Renamed to {result.newName}
+          </Text>
+          <Text
+            style={{
+              fontFamily: BTFonts.sans,
+              fontSize: 11,
+              color: t.inkSoft,
+              marginTop: 2,
+            }}
+          >
+            {result.previousName} → {result.newName}
+            {result.renamedCount > 0
+              ? ` · ${result.renamedCount} past charge${result.renamedCount === 1 ? "" : "s"} updated`
               : ""}
           </Text>
         </View>

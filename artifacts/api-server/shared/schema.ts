@@ -881,7 +881,15 @@ export const merchantRules = pgTable("merchant_rules", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   coupleId: varchar("couple_id").notNull(),
   signature: text("signature").notNull(), // normalized merchant key
-  lastMerchant: text("last_merchant").notNull(), // human-readable display name
+  lastMerchant: text("last_merchant").notNull(), // human-readable display name (auto-tracked from Plaid)
+  // User-supplied display override. When non-null, this is shown instead
+  // of `lastMerchant` / Plaid's raw merchant_name across Spend, Categories,
+  // Pending, Tilly chat, etc. Set by the renameMerchant tool — either from
+  // Tilly chat ("rename LOAN PYMT to Mortgage") or the Categories drill-in
+  // long-press action sheet. Sync handler also applies it to new
+  // plaid_transactions rows for the same signature so the override
+  // propagates forward without a separate join.
+  displayNameOverride: text("display_name_override"),
   category: text("category"), // overrides plaid mapping when set
   defaultTags: jsonb("default_tags").$type<string[] | null>(), // string[]
   defaultNote: text("default_note"),

@@ -171,6 +171,13 @@ export type TillyToolResult =
       reclassifiedCount: number;
     }
   | {
+      kind: "merchant_renamed";
+      merchantSignature: string;
+      previousName: string;
+      newName: string;
+      renamedCount: number;
+    }
+  | {
       kind: "scout_started";
       mode: "find";
       jobId: string;

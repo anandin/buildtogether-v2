@@ -41,6 +41,8 @@ const ToolArgsSchema = z.object({
   // setOnboardingField
   field: z.string().optional(),
   value: z.union([z.string(), z.number()]).optional(),
+  // renameMerchant
+  displayName: z.string().optional(),
   // Cross-tool
   reason: z.string().optional(),
 });
@@ -54,6 +56,7 @@ const ToolCallSchema = z.object({
     "pinToHome",
     "setOnboardingField",
     "markIncomeAsTransfer",
+    "renameMerchant",
     // Inverse
     "unhideCategory",
     "removePaymentToOwnCardAlias",
@@ -104,6 +107,11 @@ Available tools:
    Triggers: "the $4000 deposit isn't real income, it's for my company card", "my employer reimburses my expenses and I move it straight to the corporate Amex — stop counting that as pay", "TD deposits aren't pay, they're reimbursements", "my parents send rent that I forward — that's not income".
    Args: { sourceName: string (user's description of the source — "TD reimbursement", "Acme expense float", "parents"), reason?: string }
    Do NOT fire for actual paychecks the user is happy to count as real take-home. The signal must be "this is a wash / I immediately forward it / it's not real income."
+
+5c. renameMerchant — when the user points at a transaction label and tells Tilly what it actually is. The signal is "X is really Y" / "call X Y" / "rename X to Y" / "X is my Y" — even when the user doesn't say the word "rename".
+   Triggers: "rename LOAN PYMT to Mortgage", "LOAN PYMT is my mortgage", "call SCOTIALN VSA Scotia Visa", "that's really my mortgage, around 2900 every month", "name that one Mom rent", "ARC INCOME is my paycheck — call it Pay".
+   Args: { merchantSignature: string (the merchant string the user pointed at, lowercased — "loan pymt", "scotialn vsa"), displayName: string (the new label preserved verbatim — "Mortgage", "Spotify Family", "Mom — rent share") }
+   When the user volunteers BOTH a name AND a category in the same breath ("LOAN PYMT is my mortgage, $2900/month" — that's housing), fire renameMerchant AND setMerchantCategory in the same array. Do NOT defer the rename to a manual transactions screen — fire this tool.
 
 5. setOnboardingField — when the user tells Tilly something about themselves that maps to a known onboarding field.
    Triggers: "I'm 38", "I support 4 people", "I live in Toronto", "I'm salaried", "I go to Laurier".
@@ -169,7 +177,7 @@ export async function extractToolCalls(input: {
     const llm = new OpenRouterLLM(
       process.env.TILLY_TOOL_EXTRACTOR_MODEL || "openai/gpt-4o-mini",
     );
-    const result = await llm.structuredOutput<{ toolCalls: ExtractedToolCall[] }>({
+    const result = await llm.structuredOutput<z.infer<typeof ResultSchema>>({
       systemPrompts: [SYSTEM_PROMPT],
       messages: [
         {
@@ -182,7 +190,9 @@ export async function extractToolCalls(input: {
       maxTokens: 384,
       meta: { route: "tilly:tool-extractor", userId: input.meta?.userId ?? null },
     });
-    return Array.isArray(result?.toolCalls) ? result.toolCalls : [];
+    return Array.isArray(result?.toolCalls)
+      ? (result.toolCalls as ExtractedToolCall[])
+      : [];
   } catch (err) {
     console.warn(
       "[tools/extractor] failed:",
