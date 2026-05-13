@@ -189,12 +189,39 @@ export function mapPlaidCategory(
     // self). Conceptually NOT spending, but the user still wants to see
     // where the money went rather than have it vanish into "other".
     if (primary === "TRANSFER_OUT") return "transfers";
-    if (primary === "TRANSFER_IN") return "other"; // money in — filtered upstream
+
+    // TRANSFER_IN — money coming in. Plaid uses this primary for a wide
+    // variety of inflows, MANY of which are real income that we
+    // previously dropped on the floor: Canadian banks (TD, RBC, Tangerine)
+    // commonly emit TRANSFER_IN.DEPOSIT for direct-deposit payroll
+    // instead of INCOME.WAGES. Route by detailed sub-category so deposits
+    // land in the right bucket. Anything we can't classify defaults to
+    // 'income' — the user can move it to transfers/cashback via the
+    // Cash Flow page if it's actually a wash.
+    if (primary === "TRANSFER_IN") {
+      if (
+        detailed.includes("PAYROLL") ||
+        detailed.includes("DEPOSIT") ||
+        detailed.includes("CASH_ADVANCES_AND_LOANS")
+      ) return "income";
+      if (detailed.includes("TAX_REFUND") || detailed.includes("RETURNED_PURCHASE"))
+        return "credit_adjustment";
+      if (detailed.includes("CASHBACK") || detailed.includes("REWARDS"))
+        return "cashback";
+      if (
+        detailed.includes("ACCOUNT_TRANSFER") ||
+        detailed.includes("INVESTMENT_AND_RETIREMENT_FUNDS") ||
+        detailed.includes("SAVINGS")
+      ) return "transfers";
+      // Unknown TRANSFER_IN variant — default to income so we never
+      // silently lose a deposit. User can reclassify if it's not real.
+      return "income";
+    }
+
     // Bank/account fees are tiny but worth tracking — students notice them.
     if (primary === "BANK_FEES") return "fees";
     // Income — paychecks + gig payments. Used by /api/tilly/monthly-summary
-    // to surface "you earned $X this month". Existing spend queries
-    // filter amount > 0 so these rows don't leak into Spend totals.
+    // to surface "you earned $X this month".
     if (primary === "INCOME") return "income";
   }
 
@@ -241,18 +268,32 @@ export function shouldImportPlaidTransaction(
   // surface monthly take-home and compute surplus on Home.
   if (primary === "INCOME") return tx.amount < 0; // sanity: must be inflow
 
-  // Transfers between user's own accounts — drop entirely. They net to
-  // zero economically and double-counting either side is confusing.
-  if (primary === "TRANSFER_IN" || primary === "TRANSFER_OUT") return false;
+  // TRANSFER_OUT — outgoing internal moves (savings deposit, paying own
+  // card from own checking). Skip when we have the matching inflow on
+  // the other side, but allow when it's the only signal we have. Today
+  // we drop them; user-facing "transfers" bucket is fed by TRANSFER_IN
+  // classification + manual reclassification via the Cash Flow page.
+  if (primary === "TRANSFER_OUT") return false;
 
-  // Legacy category fallback for the transfer/payment buckets.
+  // TRANSFER_IN — keep. mapPlaidCategory routes the row to income /
+  // cashback / credit_adjustment / transfers based on detailed PFC.
+  // We previously dropped ALL TRANSFER_IN rows here, which silently
+  // erased Canadian payroll deposits (often TRANSFER_IN.DEPOSIT) and
+  // tax refunds. The user's "$24k earned but only 2 line items"
+  // perception was real — the other paychecks landed as TRANSFER_IN
+  // and got filtered before reaching the database.
+  if (primary === "TRANSFER_IN") return true;
+
+  // Legacy category fallback for OUT transfers + payments (no PFC).
   const top = (tx.category?.[0] || "").toLowerCase();
-  if (top === "transfer" || top === "payment") return false;
+  if (top === "transfer" && tx.amount > 0) return false; // outflow only
+  if (top === "payment" && tx.amount > 0) return false;
 
-  // Refunds (inflows with no INCOME PFC) — skip; they're noise on the
-  // expense feed and not income from the user's POV either.
-  if (tx.amount < 0) return false;
-
+  // Any remaining inflow (amount < 0) without PFC at all — let it
+  // through. mapPlaidCategory defaults to "other" for these. The user
+  // can reclassify if it's actually income/cashback/etc. The cost of
+  // a noisy "other" row is much lower than the cost of silently losing
+  // a paycheck.
   return true;
 }
 

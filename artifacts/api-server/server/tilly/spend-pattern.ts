@@ -861,6 +861,16 @@ async function buildMonthOrYearPattern(
       ? `$${Math.round(totalDiscretionary).toLocaleString()} spent this month.`
       : `$${Math.round(totalDiscretionary).toLocaleString()} spent this year.`;
 
+  // Compute income sources FIRST so Horizon can derive its income total
+  // from the same row set. Single source of truth — by construction
+  // `horizon.income === sum(incomeSources[].amt)`. Previously buildHorizon
+  // ran its own parallel query that *should* have matched but was fragile
+  // to one side adding a filter the other didn't.
+  const incomeSources = await buildIncomeSources(
+    householdId,
+    cfg.startIso,
+    cfg.endIso,
+  );
   const horizon = await buildHorizon({
     userId,
     householdId,
@@ -872,12 +882,8 @@ async function buildMonthOrYearPattern(
     topCategoryAmt: topCats[0]?.[1] ?? 0,
     windowStartIso: cfg.startIso,
     windowEndIso: cfg.endIso,
+    incomeSources,
   });
-  const incomeSources = await buildIncomeSources(
-    householdId,
-    cfg.startIso,
-    cfg.endIso,
-  );
 
   return {
     ready: true,
@@ -1088,11 +1094,15 @@ async function buildHorizon(args: {
   totalSpent: number;
   topCategoryName: string | undefined;
   topCategoryAmt: number;
-  /** Inclusive window bounds — used to scope the income query so a
-   * previous month / year request doesn't accidentally sum income
-   * from the current period. */
+  /** Inclusive window bounds — kept for the trailing-avg helpers
+   * (computeTrailingAvgSavingsRate, computeMonthlyHistory) which still
+   * scan their own windows. NOT used for the income total. */
   windowStartIso: string;
   windowEndIso: string;
+  /** Single source of truth for income — same array the client renders
+   * as "Where it comes from". Horizon income = sum of these amounts,
+   * by construction. They can never diverge. */
+  incomeSources: SpendCategory[];
 }): Promise<SpendHorizon | undefined> {
   const {
     userId,
@@ -1103,35 +1113,30 @@ async function buildHorizon(args: {
     totalSpent,
     topCategoryName,
     windowStartIso,
-    windowEndIso,
+    incomeSources,
   } = args;
   if (range !== "month" && range !== "year") return undefined;
 
-  // Sum income directly in the window. Same shape for month + year now
-  // since both ranges have explicit bounds. We don't fall back to
-  // estimates / self-report for historical periods because those
-  // estimators rely on "trailing 35 days" / "latest snapshot" semantics
-  // that don't make sense when the user is looking at last April.
-  let income: number;
-  if (range === "month" && isCurrentMonth(now, tz, windowStartIso)) {
-    // Only the *current* month gets the estimate / self-report fallbacks
-    // (handles the "month just started, no paychecks yet" case the
-    // smart-home work spec'd).
+  // Income total = sum of the income sources we're about to show the
+  // user. Single source of truth — the headline "$X EARNED" on the
+  // Horizon panel matches the sum of the rows under "Where it comes
+  // from this month" exactly, every time.
+  const incomeFromSources = incomeSources.reduce((s, c) => s + c.amt, 0);
+
+  // Fallback only when we have zero income rows for the CURRENT month:
+  // the user might be in their first few days of a month with no
+  // paycheck synced yet — fall back to getMonthlyIncome's estimate /
+  // self-report so Home + Horizon don't go to $0. For historical
+  // months we trust the actual rows (estimating last April's pay
+  // would be nonsense).
+  let income = incomeFromSources;
+  if (
+    incomeFromSources === 0 &&
+    range === "month" &&
+    isCurrentMonth(now, tz, windowStartIso)
+  ) {
     const mi = await getMonthlyIncome(userId, householdId, now);
     income = mi.amount;
-  } else {
-    const rows = await db
-      .select({ amount: plaidTransactions.amount })
-      .from(plaidTransactions)
-      .where(
-        and(
-          eq(plaidTransactions.coupleId, householdId),
-          eq(plaidTransactions.ourCategory, "income"),
-          gte(plaidTransactions.date, windowStartIso),
-          lte(plaidTransactions.date, windowEndIso),
-        ),
-      );
-    income = rows.reduce((s, r) => s + Math.abs(r.amount), 0);
   }
 
   const surplus = income - totalSpent;
