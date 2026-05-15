@@ -1,0 +1,20 @@
+{
+  "idx": 7,
+  "name": "POST /api/cron/plaid-webhook-backfill without Bearer",
+  "ok": true,
+  "ms": 146,
+  "request": {
+    "method": "POST",
+    "path": "/api/cron/plaid-webhook-backfill",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "skipped": "PLAID_WEBHOOK_URL not set"
+    }
+  },
+  "expectation": "401 (or 200 if CRON_SECRET unset) — endpoint mounted",
+  "note": "status=200 — endpoint mounted ✓"
+}

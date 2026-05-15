@@ -1,0 +1,26 @@
+{
+  "idx": 11,
+  "name": "POST /api/plaid/sync (cursor-based incremental)",
+  "ok": true,
+  "ms": 671,
+  "request": {
+    "method": "POST",
+    "path": "/api/plaid/sync/220f612c-0370-4464-9159-6aed8b1b1ea4",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "synced": [
+        {
+          "itemId": "c47ea33d-1f2d-43f3-a8f8-8be054189223",
+          "added": 0,
+          "modified": 0
+        }
+      ],
+      "questionsAdded": 0
+    }
+  },
+  "expectation": "200 — runs without errors, idempotent",
+  "note": "sync ran"
+}

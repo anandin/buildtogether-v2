@@ -1,0 +1,28 @@
+{
+  "idx": 9,
+  "name": "Connect Plaid sandbox (Wells Fargo seed data)",
+  "ok": true,
+  "ms": 6237,
+  "request": {
+    "method": "POST",
+    "path": "/api/demo/connect-plaid-sandbox",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "itemId": "c47ea33d-1f2d-43f3-a8f8-8be054189223",
+      "institution": "Wells Fargo (sandbox)",
+      "transactionsAdded": 14,
+      "debug": {
+        "attempts": 2,
+        "returnedByPlaid": 16,
+        "filteredOut": 2,
+        "lastErrorCode": "total=16 txs=16 accounts=12"
+      }
+    }
+  },
+  "expectation": "200 + institution=Wells Fargo (sandbox) + ≥1 transaction imported",
+  "note": "institution=Wells Fargo (sandbox) added=14"
+}

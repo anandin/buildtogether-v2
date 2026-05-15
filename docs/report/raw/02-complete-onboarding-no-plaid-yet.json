@@ -1,0 +1,21 @@
+{
+  "idx": 2,
+  "name": "Complete onboarding (no Plaid yet)",
+  "ok": true,
+  "ms": 115,
+  "request": {
+    "method": "POST",
+    "path": "/api/household/complete-onboarding",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "firstCompletion": true,
+      "seededSnapshot": false,
+      "seededLifeContext": false
+    }
+  },
+  "expectation": "200 — household marked complete"
+}

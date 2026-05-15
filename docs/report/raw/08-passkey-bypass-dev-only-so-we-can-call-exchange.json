@@ -1,0 +1,19 @@
+{
+  "idx": 8,
+  "name": "Passkey bypass (dev-only) so we can call /exchange",
+  "ok": true,
+  "ms": 106,
+  "request": {
+    "method": "POST",
+    "path": "/api/dev/passkey-bypass",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "passkeyVerifiedAt": "2026-05-15T02:34:09.891Z"
+    }
+  },
+  "expectation": "200 + passkeyVerifiedAt set on session"
+}

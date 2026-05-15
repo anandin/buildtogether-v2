@@ -1,0 +1,28 @@
+{
+  "idx": 16,
+  "name": "Tilly chat #3 — ask Tilly what she knows about me (recall)",
+  "ok": true,
+  "ms": 2968,
+  "request": {
+    "method": "POST",
+    "path": "/api/tilly/chat",
+    "body": {
+      "message": "What do you know about me so far?"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "reply": {
+        "id": "a1a68d8b-d2c3-4ea7-9e09-bcc4cd56c50e",
+        "role": "tilly",
+        "kind": "text",
+        "body": "Here's what I've got:\n\nYou're a Laurier student in Waterloo. Vegetarian — that matters when we're talking food decisions.\n\nYou tend to stress-order on DoorDash when exams are coming up, and Wednesday afternoons are the soft spot we're working on together. When that happens, I won't lecture you. I'll just be here.\n\nThat's it so far. Everything else you tell me, I'll hold onto.",
+        "createdAt": "2026-05-15T02:34:42.317Z"
+      },
+      "createdReminder": null
+    }
+  },
+  "expectation": "Reply should reference earlier context (vegetarian / Wednesday DoorDash / stress)",
+  "note": "recalled 3/3 context buckets"
+}

@@ -1,0 +1,84 @@
+{
+  "idx": 13,
+  "name": "GET /api/tilly/today (daily brief)",
+  "ok": true,
+  "ms": 3805,
+  "request": {
+    "method": "GET",
+    "path": "/api/tilly/today"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "ready": true,
+      "greeting": "Hey.",
+      "dayLabel": "Friday morning",
+      "breathing": 0,
+      "afterRent": 0,
+      "paycheckCopy": "$4 earned · $239 spent · $30 committed",
+      "tillyInvite": "Want to talk through those loan payments?",
+      "monthly": {
+        "income": 4.22,
+        "spentToDate": 239,
+        "committedRest": 30,
+        "surplus": -265,
+        "source": "plaid"
+      },
+      "forecast": [
+        {
+          "date": "2026-05-15",
+          "expected": 10,
+          "reasons": [
+            "typical Friday spend"
+          ]
+        },
+        {
+          "date": "2026-05-16",
+          "expected": 10,
+          "reasons": [
+            "typical Saturday spend"
+          ]
+        },
+        {
+          "date": "2026-05-17",
+          "expected": 10,
+          "reasons": [
+            "typical Sunday spend"
+          ]
+        },
+        {
+          "date": "2026-05-18",
+          "expected": 20,
+          "reasons": [
+            "Apple TV+ 10"
+          ]
+        },
+        {
+          "date": "2026-05-19",
+          "expected": 10,
+          "reasons": [
+            "typical Tuesday spend"
+          ]
+        },
+        {
+          "date": "2026-05-20",
+          "expected": 30,
+          "reasons": [
+            "CitiBike 20"
+          ]
+        },
+        {
+          "date": "2026-05-21",
+          "expected": 10,
+          "reasons": [
+            "typical Thursday spend"
+          ]
+        }
+      ],
+      "openQuestions": [],
+      "bankConnected": true
+    }
+  },
+  "expectation": "200 + ready=true + tillyInvite or paycheckCopy non-empty (Today screen render path)",
+  "note": "Want to talk through those loan payments?…"
+}

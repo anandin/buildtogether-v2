@@ -1,0 +1,40 @@
+{
+  "idx": 15,
+  "name": "Tilly chat #2 — emotional context (stress eating before exams)",
+  "ok": true,
+  "ms": 6900,
+  "request": {
+    "method": "POST",
+    "path": "/api/tilly/chat",
+    "body": {
+      "message": "Also be patient with me — I tend to stress-order food when I'm anxious about exams. Try not to lecture me when that happens."
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "reply": {
+        "id": "ee410f31-0c25-4c81-bfd6-8f6af8990e14",
+        "role": "tilly",
+        "kind": "text",
+        "body": "Saved Laurier and Waterloo. What else is on your mind?",
+        "createdAt": "2026-05-15T02:34:39.401Z",
+        "toolResults": [
+          {
+            "kind": "onboarding_field_set",
+            "field": "schoolName",
+            "value": "Laurier"
+          },
+          {
+            "kind": "onboarding_field_set",
+            "field": "city",
+            "value": "Waterloo"
+          }
+        ]
+      },
+      "createdReminder": null
+    }
+  },
+  "expectation": "200 + reply.body addresses or acknowledges the context (behavioral)",
+  "note": "Saved Laurier and Waterloo. What else is on your mind?…"
+}

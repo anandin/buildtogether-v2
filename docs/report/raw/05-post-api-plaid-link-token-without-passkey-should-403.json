@@ -1,0 +1,20 @@
+{
+  "idx": 5,
+  "name": "POST /api/plaid/link-token WITHOUT passkey (should 403)",
+  "ok": true,
+  "ms": 206,
+  "request": {
+    "method": "POST",
+    "path": "/api/plaid/link-token",
+    "body": {}
+  },
+  "response": {
+    "status": 403,
+    "body": {
+      "error": "passkey_required",
+      "code": "PASSKEY_REQUIRED"
+    }
+  },
+  "expectation": "403 PASSKEY_REQUIRED — sensitive write retains gate",
+  "note": "code=PASSKEY_REQUIRED — sensitive endpoints stay gated ✓"
+}

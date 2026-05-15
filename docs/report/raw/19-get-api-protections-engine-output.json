@@ -1,0 +1,19 @@
+{
+  "idx": 19,
+  "name": "GET /api/protections (engine output)",
+  "ok": true,
+  "ms": 87,
+  "request": {
+    "method": "GET",
+    "path": "/api/protections"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "ready": true,
+      "protections": []
+    }
+  },
+  "expectation": "200 + array (possibly empty until engine runs)",
+  "note": "0 protection cards"
+}

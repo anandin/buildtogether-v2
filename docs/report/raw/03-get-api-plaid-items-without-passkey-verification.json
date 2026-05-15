@@ -1,0 +1,16 @@
+{
+  "idx": 3,
+  "name": "GET /api/plaid/items WITHOUT passkey verification",
+  "ok": true,
+  "ms": 100,
+  "request": {
+    "method": "GET",
+    "path": "/api/plaid/items/220f612c-0370-4464-9159-6aed8b1b1ea4"
+  },
+  "response": {
+    "status": 200,
+    "body": []
+  },
+  "expectation": "200 + empty array (regression: was 403 PASSKEY_REQUIRED before this PR)",
+  "note": "items=[] — gate dropped"
+}
