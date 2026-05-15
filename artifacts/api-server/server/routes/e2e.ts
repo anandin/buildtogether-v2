@@ -120,4 +120,77 @@ export function mountE2ERoutes(app: Express): void {
       res.status(500).json({ error: "issue failed" });
     }
   });
+
+  // GET /api/_e2e/duplicate-rows?merchantLike=...
+  // Returns plaid_transactions rows that share (date, amount, label) with
+  // another row in the same household. Used to diagnose why a category
+  // total drifted from its drill-in — i.e. the Canada Txd $14,724 vs
+  // $4,907.92 case. Resolves the same user as issue-session (pin or
+  // most-active), so we look at real production data without exposing
+  // anyone else's rows.
+  app.get("/api/_e2e/duplicate-rows", async (req: Request, res: Response) => {
+    const header = req.header("x-e2e-secret");
+    if (!header || header !== SECRET) {
+      return res.status(404).json({ error: "Not found" });
+    }
+    try {
+      let user;
+      if (PINNED_USER_ID) {
+        user = await db.query.users.findFirst({ where: eq(users.id, PINNED_USER_ID) });
+      } else if (PINNED_USER_EMAIL) {
+        user = await db.query.users.findFirst({ where: eq(users.email, PINNED_USER_EMAIL) });
+      } else {
+        const ranked = await db
+          .select({
+            userId: users.id,
+            cnt: sql<number>`count(${plaidTransactions.id})::int`,
+          })
+          .from(users)
+          .leftJoin(plaidTransactions, eq(plaidTransactions.coupleId, users.coupleId))
+          .groupBy(users.id, users.createdAt)
+          .orderBy(desc(sql`count(${plaidTransactions.id})`), desc(users.createdAt))
+          .limit(1);
+        const candidateId = ranked[0]?.userId;
+        if (candidateId) {
+          user = await db.query.users.findFirst({ where: eq(users.id, candidateId) });
+        }
+      }
+      if (!user?.coupleId) {
+        return res.status(404).json({ error: "no user/couple to inspect" });
+      }
+      const merchantLike = String(req.query.merchantLike ?? "").toLowerCase();
+      const rows = await db
+        .select()
+        .from(plaidTransactions)
+        .where(eq(plaidTransactions.coupleId, user.coupleId))
+        .orderBy(desc(plaidTransactions.date));
+
+      const groups = new Map<string, typeof rows>();
+      for (const r of rows) {
+        const label = (r.merchantName || r.name || "").toLowerCase();
+        if (merchantLike && !label.includes(merchantLike) && !(r.name || "").toLowerCase().includes(merchantLike)) continue;
+        const key = `${r.date}|${r.amount}|${label}`;
+        const list = groups.get(key) ?? [];
+        list.push(r);
+        groups.set(key, list);
+      }
+      const duplicates: Array<{ key: string; count: number; rows: typeof rows }> = [];
+      for (const [key, list] of groups.entries()) {
+        if (list.length > 1) duplicates.push({ key, count: list.length, rows: list });
+      }
+      duplicates.sort((a, b) => b.count - a.count);
+
+      res.json({
+        coupleId: user.coupleId,
+        userId: user.id,
+        merchantLike: merchantLike || null,
+        totalRowsScanned: rows.length,
+        duplicateGroupCount: duplicates.length,
+        duplicates: duplicates.slice(0, 20),
+      });
+    } catch (err) {
+      console.error("[e2e] duplicate-rows error:", err);
+      res.status(500).json({ error: "inspect_failed" });
+    }
+  });
 }
