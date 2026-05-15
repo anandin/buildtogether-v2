@@ -1,0 +1,27 @@
+{
+  "idx": 21,
+  "name": "POST /api/tilly/watchlist — add item, prove watchlist writes",
+  "ok": true,
+  "ms": 100,
+  "request": {
+    "method": "POST",
+    "path": "/api/tilly/watchlist",
+    "body": {
+      "name": "Nintendo Switch 2",
+      "estimatedPrice": 499
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "item": {
+        "id": "5ab9a3b1-c410-4bf1-aca0-7cc79fdd567e",
+        "name": "Nintendo Switch 2",
+        "estimatedPrice": 499,
+        "addedAt": "2026-05-15T02:34:52.918Z"
+      }
+    }
+  },
+  "expectation": "200 + item id",
+  "note": "id=5ab9a3b1-c410-4bf1-aca0-7cc79fdd567e"
+}

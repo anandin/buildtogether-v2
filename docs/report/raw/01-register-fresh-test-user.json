@@ -1,0 +1,31 @@
+{
+  "idx": 1,
+  "name": "Register fresh test user",
+  "ok": true,
+  "ms": 394,
+  "request": {
+    "method": "POST",
+    "path": "/api/auth/register",
+    "body": {
+      "email": "tilly+sbx-1778812439273@buildtogether.test",
+      "password": "test-passw0rd!!",
+      "name": "Tilly E2E"
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "user": {
+        "id": "58605ede-fbc8-4680-b098-bb2625832a32",
+        "email": "tilly+sbx-1778812439273@buildtogether.test",
+        "name": "Tilly E2E",
+        "coupleId": "220f612c-0370-4464-9159-6aed8b1b1ea4",
+        "partnerRole": "partner1"
+      },
+      "token": "02754674d56ee7fa5e3409c30dce42f63f647c9c65d39e336cedafe70145ff26",
+      "expiresAt": "2026-06-14T02:33:59.249Z"
+    }
+  },
+  "expectation": "200 + Bearer token + coupleId, no passkey ceremony",
+  "note": "email=tilly+sbx-1778812439273@buildtogether.test coupleId=220f612c-0370-4464-9159-6aed8b1b1ea4"
+}

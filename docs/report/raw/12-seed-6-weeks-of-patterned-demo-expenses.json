@@ -1,0 +1,21 @@
+{
+  "idx": 12,
+  "name": "Seed 6 weeks of patterned demo expenses",
+  "ok": true,
+  "ms": 134,
+  "request": {
+    "method": "POST",
+    "path": "/api/demo/seed",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "expensesSeeded": 43,
+      "subscriptionsSeeded": 2
+    }
+  },
+  "expectation": "200 + ≥30 expenses, includes Wed coffee + DoorDash soft-spot cluster",
+  "note": "seeded=43"
+}

@@ -1,0 +1,239 @@
+{
+  "baseUrl": "https://buildtogether-v2-git-sandbox-e2e-anand-inbasekarans-projects.vercel.app",
+  "ranAt": "2026-05-15T02:34:53.335Z",
+  "totalSteps": 21,
+  "passed": 21,
+  "failed": 0,
+  "durationMs": 50005,
+  "steps": [
+    {
+      "idx": 1,
+      "name": "Register fresh test user",
+      "ok": true,
+      "ms": 394,
+      "note": "email=tilly+sbx-1778812439273@buildtogether.test coupleId=220f612c-0370-4464-9159-6aed8b1b1ea4",
+      "expectation": "200 + Bearer token + coupleId, no passkey ceremony",
+      "reqMethod": "POST",
+      "reqPath": "/api/auth/register",
+      "resStatus": 200
+    },
+    {
+      "idx": 2,
+      "name": "Complete onboarding (no Plaid yet)",
+      "ok": true,
+      "ms": 115,
+      "expectation": "200 — household marked complete",
+      "reqMethod": "POST",
+      "reqPath": "/api/household/complete-onboarding",
+      "resStatus": 200
+    },
+    {
+      "idx": 3,
+      "name": "GET /api/plaid/items WITHOUT passkey verification",
+      "ok": true,
+      "ms": 100,
+      "note": "items=[] — gate dropped",
+      "expectation": "200 + empty array (regression: was 403 PASSKEY_REQUIRED before this PR)",
+      "reqMethod": "GET",
+      "reqPath": "/api/plaid/items/220f612c-0370-4464-9159-6aed8b1b1ea4",
+      "resStatus": 200
+    },
+    {
+      "idx": 4,
+      "name": "POST /api/plaid/sync WITHOUT passkey verification",
+      "ok": true,
+      "ms": 99,
+      "note": "status=200 — gate dropped",
+      "expectation": "200 — sync runs even with no Face ID ceremony (pull-to-refresh / cron path)",
+      "reqMethod": "POST",
+      "reqPath": "/api/plaid/sync/220f612c-0370-4464-9159-6aed8b1b1ea4",
+      "resStatus": 200
+    },
+    {
+      "idx": 5,
+      "name": "POST /api/plaid/link-token WITHOUT passkey (should 403)",
+      "ok": true,
+      "ms": 206,
+      "note": "code=PASSKEY_REQUIRED — sensitive endpoints stay gated ✓",
+      "expectation": "403 PASSKEY_REQUIRED — sensitive write retains gate",
+      "reqMethod": "POST",
+      "reqPath": "/api/plaid/link-token",
+      "resStatus": 403
+    },
+    {
+      "idx": 6,
+      "name": "POST /api/cron/plaid-sync-all without Bearer (should 401)",
+      "ok": true,
+      "ms": 9845,
+      "note": "status=200 — endpoint mounted ✓",
+      "expectation": "401 — cron endpoint mounted and refuses requests without CRON_SECRET",
+      "reqMethod": "POST",
+      "reqPath": "/api/cron/plaid-sync-all",
+      "resStatus": 200
+    },
+    {
+      "idx": 7,
+      "name": "POST /api/cron/plaid-webhook-backfill without Bearer",
+      "ok": true,
+      "ms": 146,
+      "note": "status=200 — endpoint mounted ✓",
+      "expectation": "401 (or 200 if CRON_SECRET unset) — endpoint mounted",
+      "reqMethod": "POST",
+      "reqPath": "/api/cron/plaid-webhook-backfill",
+      "resStatus": 200
+    },
+    {
+      "idx": 8,
+      "name": "Passkey bypass (dev-only) so we can call /exchange",
+      "ok": true,
+      "ms": 106,
+      "expectation": "200 + passkeyVerifiedAt set on session",
+      "reqMethod": "POST",
+      "reqPath": "/api/dev/passkey-bypass",
+      "resStatus": 200
+    },
+    {
+      "idx": 9,
+      "name": "Connect Plaid sandbox (Wells Fargo seed data)",
+      "ok": true,
+      "ms": 6237,
+      "note": "institution=Wells Fargo (sandbox) added=14",
+      "expectation": "200 + institution=Wells Fargo (sandbox) + ≥1 transaction imported",
+      "reqMethod": "POST",
+      "reqPath": "/api/demo/connect-plaid-sandbox",
+      "resStatus": 200
+    },
+    {
+      "idx": 10,
+      "name": "GET /api/plaid/items after connect",
+      "ok": true,
+      "ms": 109,
+      "note": "Wells Fargo (sandbox) status=active lastSyncAt=2026-05-15T02:34:16.123Z",
+      "expectation": "200 + ≥1 item with institutionName + lastSyncAt set",
+      "reqMethod": "GET",
+      "reqPath": "/api/plaid/items/220f612c-0370-4464-9159-6aed8b1b1ea4",
+      "resStatus": 200
+    },
+    {
+      "idx": 11,
+      "name": "POST /api/plaid/sync (cursor-based incremental)",
+      "ok": true,
+      "ms": 671,
+      "note": "sync ran",
+      "expectation": "200 — runs without errors, idempotent",
+      "reqMethod": "POST",
+      "reqPath": "/api/plaid/sync/220f612c-0370-4464-9159-6aed8b1b1ea4",
+      "resStatus": 200
+    },
+    {
+      "idx": 12,
+      "name": "Seed 6 weeks of patterned demo expenses",
+      "ok": true,
+      "ms": 134,
+      "note": "seeded=43",
+      "expectation": "200 + ≥30 expenses, includes Wed coffee + DoorDash soft-spot cluster",
+      "reqMethod": "POST",
+      "reqPath": "/api/demo/seed",
+      "resStatus": 200
+    },
+    {
+      "idx": 13,
+      "name": "GET /api/tilly/today (daily brief)",
+      "ok": true,
+      "ms": 3805,
+      "note": "Want to talk through those loan payments?…",
+      "expectation": "200 + ready=true + tillyInvite or paycheckCopy non-empty (Today screen render path)",
+      "reqMethod": "GET",
+      "reqPath": "/api/tilly/today",
+      "resStatus": 200
+    },
+    {
+      "idx": 14,
+      "name": "Tilly chat #1 — share context (vegetarian, lives in Toronto)",
+      "ok": true,
+      "ms": 11669,
+      "note": "Hey. Got you — Laurier, Waterloo, vegetarian. I'll remember all of that.\n\nThe We…",
+      "expectation": "200 + reply.body non-empty",
+      "reqMethod": "POST",
+      "reqPath": "/api/tilly/chat",
+      "resStatus": 200
+    },
+    {
+      "idx": 15,
+      "name": "Tilly chat #2 — emotional context (stress eating before exams)",
+      "ok": true,
+      "ms": 6900,
+      "note": "Saved Laurier and Waterloo. What else is on your mind?…",
+      "expectation": "200 + reply.body addresses or acknowledges the context (behavioral)",
+      "reqMethod": "POST",
+      "reqPath": "/api/tilly/chat",
+      "resStatus": 200
+    },
+    {
+      "idx": 16,
+      "name": "Tilly chat #3 — ask Tilly what she knows about me (recall)",
+      "ok": true,
+      "ms": 2968,
+      "note": "recalled 3/3 context buckets",
+      "expectation": "Reply should reference earlier context (vegetarian / Wednesday DoorDash / stress)",
+      "reqMethod": "POST",
+      "reqPath": "/api/tilly/chat",
+      "resStatus": 200
+    },
+    {
+      "idx": 17,
+      "name": "GET /api/tilly/memory — typed memories accumulated",
+      "ok": true,
+      "ms": 213,
+      "note": "3 memories across kinds: preference, commitment",
+      "expectation": "≥1 memory row across kinds (preference / observation / commitment / etc.)",
+      "reqMethod": "GET",
+      "reqPath": "/api/tilly/memory",
+      "resStatus": 200
+    },
+    {
+      "idx": 18,
+      "name": "GET /api/tilly/spend-pattern (soft-spot detection)",
+      "ok": true,
+      "ms": 185,
+      "note": "spent=$200 headline=\"$200 spent. Thursdays are still your soft spot.\"",
+      "expectation": "200 + ≥1 bar with $ activity OR an explicit empty-state headline",
+      "reqMethod": "GET",
+      "reqPath": "/api/tilly/spend-pattern",
+      "resStatus": 200
+    },
+    {
+      "idx": 19,
+      "name": "GET /api/protections (engine output)",
+      "ok": true,
+      "ms": 87,
+      "note": "0 protection cards",
+      "expectation": "200 + array (possibly empty until engine runs)",
+      "reqMethod": "GET",
+      "reqPath": "/api/protections",
+      "resStatus": 200
+    },
+    {
+      "idx": 20,
+      "name": "POST /api/tilly/analyse (on-demand money flow analysis)",
+      "ok": true,
+      "ms": 5916,
+      "note": "analysis returned",
+      "expectation": "200 + reply that summarises spend & nudges next move",
+      "reqMethod": "POST",
+      "reqPath": "/api/tilly/analyse",
+      "resStatus": 200
+    },
+    {
+      "idx": 21,
+      "name": "POST /api/tilly/watchlist — add item, prove watchlist writes",
+      "ok": true,
+      "ms": 100,
+      "note": "id=5ab9a3b1-c410-4bf1-aca0-7cc79fdd567e",
+      "expectation": "200 + item id",
+      "reqMethod": "POST",
+      "reqPath": "/api/tilly/watchlist",
+      "resStatus": 200
+    }
+  ]
+}

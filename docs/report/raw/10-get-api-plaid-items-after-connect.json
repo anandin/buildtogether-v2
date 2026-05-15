@@ -1,0 +1,25 @@
+{
+  "idx": 10,
+  "name": "GET /api/plaid/items after connect",
+  "ok": true,
+  "ms": 109,
+  "request": {
+    "method": "GET",
+    "path": "/api/plaid/items/220f612c-0370-4464-9159-6aed8b1b1ea4"
+  },
+  "response": {
+    "status": 200,
+    "body": [
+      {
+        "id": "c47ea33d-1f2d-43f3-a8f8-8be054189223",
+        "institutionName": "Wells Fargo (sandbox)",
+        "status": "active",
+        "lastSyncAt": "2026-05-15T02:34:16.123Z",
+        "lastError": null,
+        "createdAt": "2026-05-15T02:34:12.430Z"
+      }
+    ]
+  },
+  "expectation": "200 + ≥1 item with institutionName + lastSyncAt set",
+  "note": "Wells Fargo (sandbox) status=active lastSyncAt=2026-05-15T02:34:16.123Z"
+}

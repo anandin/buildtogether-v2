@@ -1,0 +1,46 @@
+{
+  "idx": 17,
+  "name": "GET /api/tilly/memory — typed memories accumulated",
+  "ok": true,
+  "ms": 213,
+  "request": {
+    "method": "GET",
+    "path": "/api/tilly/memory"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "memory": [
+        {
+          "id": "6b4bc27d-1bba-43fa-9c21-820cb2433920",
+          "kind": "preference",
+          "body": "You asked me to be patient when you stress-order food during exams. No lectures — I'll just note the pattern.",
+          "dateLabel": "Today",
+          "noticedAt": "2026-05-15T02:34:42.053Z",
+          "isMostRecent": true,
+          "archivedAt": null
+        },
+        {
+          "id": "5948470a-c1b5-4ef1-96ba-d45a6356acbc",
+          "kind": "preference",
+          "body": "You're a Laurier student in Waterloo. Vegetarian. Those facts matter when I'm helping you with food decisions.",
+          "dateLabel": "Today",
+          "noticedAt": "2026-05-15T02:34:36.905Z",
+          "isMostRecent": false,
+          "archivedAt": null
+        },
+        {
+          "id": "a20354a7-c9da-41ca-809c-48e1d296a6d8",
+          "kind": "commitment",
+          "body": "You asked me to help you stop spending so much on Wednesday afternoon DoorDash. I'm tracking that pattern — it's the one we're working on together.",
+          "dateLabel": "Today",
+          "noticedAt": "2026-05-15T02:34:36.905Z",
+          "isMostRecent": false,
+          "archivedAt": null
+        }
+      ]
+    }
+  },
+  "expectation": "≥1 memory row across kinds (preference / observation / commitment / etc.)",
+  "note": "3 memories across kinds: preference, commitment"
+}

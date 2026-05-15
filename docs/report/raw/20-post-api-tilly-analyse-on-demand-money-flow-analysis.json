@@ -1,0 +1,118 @@
+{
+  "idx": 20,
+  "name": "POST /api/tilly/analyse (on-demand money flow analysis)",
+  "ok": true,
+  "ms": 5916,
+  "request": {
+    "method": "POST",
+    "path": "/api/tilly/analyse",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "reply": {
+        "id": "3b77844f-26ea-4307-b339-7e5b8a8fda40",
+        "role": "tilly",
+        "kind": "analysis",
+        "title": "90-DAY MONEY FLOW",
+        "rows": [
+          {
+            "label": "EATOUT",
+            "amt": 379.6,
+            "sign": "-"
+          },
+          {
+            "label": "GROCERIES",
+            "amt": 235.18,
+            "sign": "-"
+          },
+          {
+            "label": "ENTERTAINMENT",
+            "amt": 90,
+            "sign": "-"
+          },
+          {
+            "label": "COFFEE",
+            "amt": 68.05,
+            "sign": "-"
+          },
+          {
+            "label": "TRANSIT",
+            "amt": 17.2,
+            "sign": "-"
+          },
+          {
+            "label": "90-DAY TOTAL",
+            "amt": 790.03,
+            "sign": "="
+          }
+        ],
+        "note": "Hey. You've spent just under $800 since mid-February — half of it on takeout, mostly DoorDash and that Wednesday Halal Guys habit we're tracking together. The other anchor is Trader Joe's at $235, which is solid for groceries. Coffee's quiet at $68 total. The pattern I see: you lean on delivery when things get tight, especially midweek. One thing to try this week — batch-cook Sunday night or grab extra from Trader Joe's that microwaves fast. That way Wednesday afternoon has a real option before the DoorDash reflex kicks in.",
+        "topMerchants": [
+          {
+            "name": "Trader Joe's",
+            "total": 235.18,
+            "count": 6
+          },
+          {
+            "name": "DoorDash · Halal Guys",
+            "total": 168.26,
+            "count": 6
+          },
+          {
+            "name": "Bluestone Lane",
+            "total": 159.06,
+            "count": 6
+          },
+          {
+            "name": "Ticketmaster",
+            "total": 90,
+            "count": 1
+          },
+          {
+            "name": "Subway",
+            "total": 52.28,
+            "count": 6
+          },
+          {
+            "name": "Joe Coffee",
+            "total": 37.9,
+            "count": 6
+          },
+          {
+            "name": "Stumptown",
+            "total": 30.15,
+            "count": 6
+          },
+          {
+            "name": "MTA",
+            "total": 17.2,
+            "count": 6
+          }
+        ],
+        "anomalies": [
+          {
+            "merchant": "Ticketmaster",
+            "total": 90,
+            "reason": "new"
+          }
+        ],
+        "openQuestions": [],
+        "memoryLine": "Drew on 2 past notes (commitment, preference).",
+        "scoutProposal": null,
+        "waitProposal": null,
+        "createdAt": "2026-05-15T02:34:52.810Z"
+      },
+      "userMessage": {
+        "id": "3146e434-91d5-4193-aa1d-406db77ee509",
+        "role": "user",
+        "kind": "text",
+        "body": "Analyse my money flow.",
+        "createdAt": "2026-05-15T02:34:46.998Z"
+      }
+    }
+  },
+  "expectation": "200 + reply that summarises spend & nudges next move",
+  "note": "analysis returned"
+}

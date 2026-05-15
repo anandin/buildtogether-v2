@@ -1,0 +1,40 @@
+{
+  "idx": 14,
+  "name": "Tilly chat #1 — share context (vegetarian, lives in Toronto)",
+  "ok": true,
+  "ms": 11669,
+  "request": {
+    "method": "POST",
+    "path": "/api/tilly/chat",
+    "body": {
+      "message": "Hey Tilly — quick context: I'm a Laurier student in Waterloo. I'm vegetarian and trying to stop spending so much on Wednesday afternoon DoorDash. Help me out."
+    }
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "reply": {
+        "id": "ba22d253-647f-4cb8-b367-08b2959b75bb",
+        "role": "tilly",
+        "kind": "text",
+        "body": "Hey. Got you — Laurier, Waterloo, vegetarian. I'll remember all of that.\n\nThe Wednesday DoorDash thing is worth taking seriously. Delivery fees plus tips on a $12 meal can quietly turn it into $20+, and if it's a weekly habit, that's *$80–100 a month* just from one afternoon slot.\n\nA few things that actually work for this pattern:\n\n**The friction fix.** Delete the app from your home screen — just move it to a folder. You don't have to quit it. You just want one extra tap between the craving and the order. Most impulse orders die in that gap.\n\n**The Wednesday anchor.** What's usually happening Wednesday afternoon — class ends, you're tired, there's nothing ready? If I know the trigger, I can help you plan around it. Even batch-cooking one thing Sunday (lentils, rice, whatever) that you know is waiting kills the craving before it starts.\n\n**The ceiling.** If you still want to use DoorDash sometimes, I can help you set a mental ceiling — say, $15 all-in. That reframes it from a habit into an occasional thing.\n\nTell me more about what Wednesday afternoon looks like and I'll get more specific.",
+        "createdAt": "2026-05-15T02:34:32.524Z",
+        "toolResults": [
+          {
+            "kind": "onboarding_field_set",
+            "field": "schoolName",
+            "value": "Laurier"
+          },
+          {
+            "kind": "onboarding_field_set",
+            "field": "city",
+            "value": "Waterloo"
+          }
+        ]
+      },
+      "createdReminder": null
+    }
+  },
+  "expectation": "200 + reply.body non-empty",
+  "note": "Hey. Got you — Laurier, Waterloo, vegetarian. I'll remember all of that.\n\nThe We…"
+}

@@ -1,0 +1,20 @@
+{
+  "idx": 4,
+  "name": "POST /api/plaid/sync WITHOUT passkey verification",
+  "ok": true,
+  "ms": 99,
+  "request": {
+    "method": "POST",
+    "path": "/api/plaid/sync/220f612c-0370-4464-9159-6aed8b1b1ea4",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "synced": [],
+      "questionsAdded": 0
+    }
+  },
+  "expectation": "200 — sync runs even with no Face ID ceremony (pull-to-refresh / cron path)",
+  "note": "status=200 — gate dropped"
+}

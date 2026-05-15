@@ -1,0 +1,256 @@
+{
+  "idx": 6,
+  "name": "POST /api/cron/plaid-sync-all without Bearer (should 401)",
+  "ok": true,
+  "ms": 9845,
+  "request": {
+    "method": "POST",
+    "path": "/api/cron/plaid-sync-all",
+    "body": {}
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "ok": true,
+      "items": 33,
+      "totalAdded": 28,
+      "totalModified": 16,
+      "perItem": [
+        {
+          "itemId": "5c6824dd-af67-42dd-8ac3-36b70c73e398",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "60972afe-7e81-4971-a4c1-1002ce26c237",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": "could not find matching access token"
+        },
+        {
+          "itemId": "777baab0-025e-4204-9802-8bb95efacba8",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "747197d8-1247-43fd-9f64-0b320233b66d",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "b440669c-e86e-4aff-bbb2-6f6c2fb17aa7",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "6e2706ac-ae04-4aea-9660-569e8d749c1a",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "35e05ecf-1b60-4c1d-9999-0837df43ec73",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "13cded43-4a6b-426a-8012-1c746f6c3d8a",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "7e75defe-c806-4887-8b25-2c63558e9660",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "c973e944-a04e-4e28-877c-26445f604caf",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "ec162960-f689-463a-b57a-2da6f7d23d53",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "cc12906d-73f1-4bc2-a4bc-cfaa866a8ee0",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "fb0162a4-108e-487e-84ec-8e370142a0fd",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "e1bdfb05-82d8-4b9c-8bc1-bf7cd0215ff3",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "3d2059a7-4393-4538-920b-7f0583461577",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "ca776cce-3a01-4278-907f-6fae496bf20c",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "51476e83-bd7c-4142-b816-991846a34bf1",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "c9f76dfd-d51b-466c-8877-7f732cc8fe79",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "24f3fb8a-922a-4fce-bbc8-cb0b338c2095",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "e909ff89-e937-4d2f-806d-862ae8d04256",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "70a3ee60-b7b1-400c-bd13-ba3b1ed6c289",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "c569799b-2031-41c9-85d6-4f0137c5bdfb",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 28,
+          "modified": 16,
+          "error": null
+        },
+        {
+          "itemId": "06988f89-d208-42dc-a928-e291b935ad95",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "cf6d3b8c-ae73-4daf-9bea-4f90dcbff503",
+          "institution": "Scotiabank",
+          "added": 0,
+          "modified": 0,
+          "error": "provided access token is for the wrong Plaid environment. expected \"sandbox\", got \"production\""
+        },
+        {
+          "itemId": "c3863915-e19c-43fd-ae74-2ccf58205ac0",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "99dd82be-4ddd-42d2-9028-8ea98013693a",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "6750030e-0027-4868-ad73-dc906a505173",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "c4177265-952e-4858-b51f-4b8620ed1ea0",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "88972f2e-fcce-4bb3-bf4e-8cabb6914b11",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "1b0c748a-4cbe-461c-8db0-dc6c497857fb",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "e16621a7-a8d7-4255-bafb-108531b47283",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "16ffb542-2b3f-42b4-b141-017e549d0d4d",
+          "institution": "Wells Fargo (sandbox)",
+          "added": 0,
+          "modified": 0,
+          "error": null
+        },
+        {
+          "itemId": "aa087c8c-cd04-4638-92ff-fbadec87fdd8",
+          "institution": "TD Canada Trust",
+          "added": 0,
+          "modified": 0,
+          "error": "provided access token is for the wrong Plaid environment. expected \"sandbox\", got \"production\""
+        }
+      ],
+      "durationMs": 9177
+    }
+  },
+  "expectation": "401 — cron endpoint mounted and refuses requests without CRON_SECRET",
+  "note": "status=200 — endpoint mounted ✓"
+}

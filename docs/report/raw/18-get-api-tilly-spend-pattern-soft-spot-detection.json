@@ -1,0 +1,177 @@
+{
+  "idx": 18,
+  "name": "GET /api/tilly/spend-pattern (soft-spot detection)",
+  "ok": true,
+  "ms": 185,
+  "request": {
+    "method": "GET",
+    "path": "/api/tilly/spend-pattern"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "ready": true,
+      "spent": 200,
+      "headline": "$200 spent. Thursdays are still your soft spot.",
+      "italicSpan": "Thursdays",
+      "bars": [
+        {
+          "d": "M",
+          "amt": 3,
+          "soft": false,
+          "today": false
+        },
+        {
+          "d": "T",
+          "amt": 9,
+          "soft": true,
+          "today": false
+        },
+        {
+          "d": "W",
+          "amt": 45,
+          "soft": true,
+          "today": false
+        },
+        {
+          "d": "T",
+          "amt": 7,
+          "soft": true,
+          "today": true
+        },
+        {
+          "d": "F",
+          "amt": 112,
+          "soft": false,
+          "today": false
+        },
+        {
+          "d": "S",
+          "amt": 24,
+          "soft": false,
+          "today": false
+        },
+        {
+          "d": "S",
+          "amt": 0,
+          "soft": false,
+          "today": false
+        }
+      ],
+      "categories": [
+        {
+          "id": "entertainment",
+          "name": "entertainment",
+          "hue": "inkSoft",
+          "context": "1 transaction · Ticketmaster",
+          "amt": 90,
+          "softSpot": false,
+          "transactions": [
+            {
+              "id": "cat-0-tx-0",
+              "name": "Ticketmaster",
+              "date": "2026-05-15",
+              "amt": 90
+            }
+          ]
+        },
+        {
+          "id": "eatout",
+          "name": "eatout",
+          "hue": "inkSoft",
+          "context": "3 transactions · Subway, DoorDash · Halal Guys, Bluestone Lane · Wednesdays especially",
+          "amt": 75,
+          "softSpot": true,
+          "transactions": [
+            {
+              "id": "cat-1-tx-0",
+              "name": "Subway",
+              "date": "2026-05-12",
+              "amt": 9.46
+            },
+            {
+              "id": "cat-1-tx-1",
+              "name": "DoorDash · Halal Guys",
+              "date": "2026-05-13",
+              "amt": 41
+            },
+            {
+              "id": "cat-1-tx-2",
+              "name": "Bluestone Lane",
+              "date": "2026-05-16",
+              "amt": 24.16
+            }
+          ]
+        },
+        {
+          "id": "groceries",
+          "name": "groceries",
+          "hue": "accent2",
+          "context": "1 transaction · Trader Joe's",
+          "amt": 22,
+          "softSpot": false,
+          "transactions": [
+            {
+              "id": "cat-2-tx-0",
+              "name": "Trader Joe's",
+              "date": "2026-05-15",
+              "amt": 21.65
+            }
+          ]
+        },
+        {
+          "id": "coffee",
+          "name": "coffee",
+          "hue": "accent",
+          "context": "2 transactions · Stumptown, Joe Coffee · Thursdays especially",
+          "amt": 11,
+          "softSpot": true,
+          "transactions": [
+            {
+              "id": "cat-3-tx-0",
+              "name": "Stumptown",
+              "date": "2026-05-13",
+              "amt": 4.09
+            },
+            {
+              "id": "cat-3-tx-1",
+              "name": "Joe Coffee",
+              "date": "2026-05-14",
+              "amt": 6.82
+            }
+          ]
+        },
+        {
+          "id": "transit",
+          "name": "transit",
+          "hue": "good",
+          "context": "1 transaction · MTA",
+          "amt": 3,
+          "softSpot": false,
+          "transactions": [
+            {
+              "id": "cat-4-tx-0",
+              "name": "MTA",
+              "date": "2026-05-11",
+              "amt": 2.77
+            }
+          ]
+        }
+      ],
+      "fixedObligations": [],
+      "today": [
+        {
+          "id": "today-0",
+          "who": "Joe Coffee",
+          "cat": "coffee",
+          "amt": 6.82,
+          "time": "today"
+        }
+      ],
+      "incomeSources": [],
+      "periodLabel": "This week"
+    }
+  },
+  "expectation": "200 + ≥1 bar with $ activity OR an explicit empty-state headline",
+  "note": "spent=$200 headline=\"$200 spent. Thursdays are still your soft spot.\""
+}
