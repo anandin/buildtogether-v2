@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
 import { requireAuth, requireCoupleAccess } from "./middleware/auth";
 import { requirePasskeyVerified, PASSKEY_FRESHNESS_MS } from "./routes/passkey";
+import { requireCron } from "./routes/cron";
 import { userCredentials } from "../shared/schema";
 import { guardianLimiter, authLimiter } from "./middleware/rateLimit";
 import { db } from "./db";
@@ -489,6 +490,159 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     return { added, modified };
   }
+
+  // ==================== CRON: PLAID FALLBACK SYNC + WEBHOOK BACKFILL ====================
+  //
+  // The primary sync path is Plaid's webhook (push). When Plaid says
+  // SYNC_UPDATES_AVAILABLE, the webhook handler fires syncPlaidItem
+  // immediately. Webhooks miss for two reasons we have to cover:
+  //
+  //   1. Items connected BEFORE PLAID_WEBHOOK_URL was set in env have
+  //      no webhook URL registered with Plaid — they'll never receive
+  //      pushes. The /plaid-webhook-backfill endpoint loops every
+  //      active item and calls plaid.itemWebhookUpdate to push the URL
+  //      retroactively. Idempotent: only touches items where
+  //      webhook_registered_at IS NULL.
+  //
+  //   2. Even with webhooks wired, Plaid occasionally drops deliveries
+  //      (rare but documented). /plaid-sync-all is the fallback that
+  //      sweeps every active item every 4h via Vercel Cron — a quiet
+  //      safety net behind webhooks. transactionsSync is cursor-based
+  //      so re-running it costs nothing when there's no new data.
+  //
+  // Both endpoints are protected by requireCron (Bearer CRON_SECRET).
+
+  app.post(
+    "/api/cron/plaid-sync-all",
+    requireCron,
+    async (_req, res) => {
+      const startedAt = Date.now();
+      try {
+        const items = await db
+          .select()
+          .from(plaidItems)
+          .where(eq(plaidItems.status, "active"));
+        let totalAdded = 0;
+        let totalModified = 0;
+        const perItem: Array<{
+          itemId: string;
+          institution: string | null;
+          added: number;
+          modified: number;
+          error: string | null;
+        }> = [];
+        for (const item of items) {
+          try {
+            const r = await syncPlaidItem(item.id);
+            totalAdded += r.added;
+            totalModified += r.modified;
+            perItem.push({
+              itemId: item.id,
+              institution: item.institutionName,
+              added: r.added,
+              modified: r.modified,
+              error: null,
+            });
+          } catch (err: any) {
+            const msg = err?.response?.data?.error_message || err?.message || String(err);
+            // Stamp lastError so the client can show "needs reconnect"
+            // UX without an extra round-trip. We don't flip status to
+            // error automatically — Plaid surfaces auth issues via the
+            // ITEM webhook, which the handler treats correctly.
+            await db
+              .update(plaidItems)
+              .set({ lastError: msg })
+              .where(eq(plaidItems.id, item.id));
+            perItem.push({
+              itemId: item.id,
+              institution: item.institutionName,
+              added: 0,
+              modified: 0,
+              error: msg,
+            });
+            console.error(`[cron] plaid-sync-all item ${item.id} failed:`, msg);
+          }
+        }
+        res.json({
+          ok: true,
+          items: items.length,
+          totalAdded,
+          totalModified,
+          perItem,
+          durationMs: Date.now() - startedAt,
+        });
+      } catch (err: any) {
+        console.error("[cron] plaid-sync-all error:", err);
+        res.status(500).json({ error: err?.message || "plaid-sync-all failed" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/cron/plaid-webhook-backfill",
+    requireCron,
+    async (_req, res) => {
+      const startedAt = Date.now();
+      const webhookUrl = process.env.PLAID_WEBHOOK_URL;
+      if (!webhookUrl) {
+        return res.json({ ok: true, skipped: "PLAID_WEBHOOK_URL not set" });
+      }
+      try {
+        const plaid = getPlaidClient();
+        if (!plaid) {
+          return res.status(503).json({ error: "Plaid not configured" });
+        }
+        const items = await db
+          .select()
+          .from(plaidItems)
+          .where(
+            and(
+              eq(plaidItems.status, "active"),
+              // Drizzle's `isNull` import path varies; SQL fragment is
+              // cheapest and clearest.
+              sql`${plaidItems.webhookRegisteredAt} IS NULL`,
+            ),
+          );
+        let updated = 0;
+        const failures: Array<{ itemId: string; error: string }> = [];
+        for (const item of items) {
+          try {
+            await plaid.itemWebhookUpdate({
+              access_token: item.accessToken,
+              webhook: webhookUrl,
+            });
+            await db
+              .update(plaidItems)
+              .set({ webhookRegisteredAt: new Date() })
+              .where(eq(plaidItems.id, item.id));
+            updated++;
+          } catch (err: any) {
+            const msg =
+              err?.response?.data?.error_message ||
+              err?.message ||
+              String(err);
+            failures.push({ itemId: item.id, error: msg });
+            console.error(
+              `[cron] plaid-webhook-backfill ${item.id} failed:`,
+              msg,
+            );
+          }
+        }
+        res.json({
+          ok: true,
+          considered: items.length,
+          updated,
+          failures,
+          durationMs: Date.now() - startedAt,
+        });
+      } catch (err: any) {
+        console.error("[cron] plaid-webhook-backfill error:", err);
+        res
+          .status(500)
+          .json({ error: err?.message || "webhook-backfill failed" });
+      }
+    },
+  );
 
   // ==================== AUTHENTICATION ENDPOINTS ====================
 
@@ -4872,6 +5026,12 @@ Return just the message text.`;
         institutionId: institution?.institution_id || null,
         institutionName: institution?.name || null,
         status: "active",
+        // The link-token request below /api/plaid/link-token passes
+        // PLAID_WEBHOOK_URL when it's set, so this item is born with
+        // the webhook URL registered with Plaid. Stamp now so the
+        // backfill cron skips it. If PLAID_WEBHOOK_URL was unset, the
+        // backfill will catch it once the env is configured.
+        webhookRegisteredAt: process.env.PLAID_WEBHOOK_URL ? new Date() : null,
       }).returning();
 
       // Kick off initial sync (non-blocking so we can respond fast)
@@ -4884,8 +5044,15 @@ Return just the message text.`;
     }
   });
 
-  // List connected banks for the couple
-  app.get("/api/plaid/items/:coupleId", requireAuth, requirePasskeyVerified, requireCoupleAccess, async (req, res) => {
+  // List connected banks for the couple.
+  //
+  // Read-only — no `requirePasskeyVerified`. Browsing your own bank
+  // list is the same trust level as viewing your expenses, and the
+  // hourly Face-ID re-prompt that the gate enforced made the screen
+  // appear empty until pull-to-refresh. Matches Monarch / Mint UX:
+  // login establishes session, reads flow freely, biometric is reserved
+  // for sensitive writes (Link, disconnect, transfer).
+  app.get("/api/plaid/items/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const rows = await db.select().from(plaidItems)
         .where(eq(plaidItems.coupleId, req.params.coupleId))
@@ -4933,7 +5100,7 @@ Return just the message text.`;
   // accept backfill explicitly skips. This endpoint fetches the last 30
   // days of posted transactions and flips matching rows so the next call
   // to /api/plaid/pending/:coupleId can auto-accept them.
-  app.post("/api/plaid/reconcile/:coupleId", requireAuth, requirePasskeyVerified, requireCoupleAccess, async (req, res) => {
+  app.post("/api/plaid/reconcile/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const plaid = getPlaidClient();
       if (!plaid) return res.status(503).json({ error: "Plaid not configured" });
@@ -4989,8 +5156,12 @@ Return just the message text.`;
     }
   });
 
-  // Pull fresh transactions for all the couple's connected banks
-  app.post("/api/plaid/sync/:coupleId", requireAuth, requirePasskeyVerified, requireCoupleAccess, async (req, res) => {
+  // Pull fresh transactions for all the couple's connected banks.
+  //
+  // Idempotent, cursor-based, read-only effect on the bank side. Not
+  // gated on passkey — Monarch/Mint/Copilot let users refresh freely
+  // and so do we. Pull-to-refresh + app-foreground both call this.
+  app.post("/api/plaid/sync/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const items = await db.select().from(plaidItems)
         .where(and(
@@ -5030,7 +5201,7 @@ Return just the message text.`;
   // over the queue once so any items that should never have been queued (back-
   // fill from before smart auto-accept landed) get folded into the spend feed
   // automatically. The user only sees the genuinely noisy items left over.
-  app.get("/api/plaid/pending/:coupleId", requireAuth, requirePasskeyVerified, requireCoupleAccess, async (req, res) => {
+  app.get("/api/plaid/pending/:coupleId", requireAuth, requireCoupleAccess, async (req, res) => {
     try {
       const coupleId = req.params.coupleId;
 
@@ -5146,7 +5317,7 @@ Return just the message text.`;
   // Atomic: claims the row via conditional UPDATE before inserting the expense,
   // so two concurrent accept calls can't double-insert. Validates note/tags from
   // the client; other override fields are passthrough (legacy).
-  app.post("/api/plaid/pending/:plaidTxnId/accept", requireAuth, requirePasskeyVerified, async (req, res) => {
+  app.post("/api/plaid/pending/:plaidTxnId/accept", requireAuth, async (req, res) => {
     try {
       const { overrides } = req.body || {};
 
@@ -5261,7 +5432,7 @@ Return just the message text.`;
   });
 
   // Ignore a pending transaction (user doesn't want to track it)
-  app.post("/api/plaid/pending/:plaidTxnId/ignore", requireAuth, requirePasskeyVerified, async (req, res) => {
+  app.post("/api/plaid/pending/:plaidTxnId/ignore", requireAuth, async (req, res) => {
     try {
       const [ptx] = await db.select().from(plaidTransactions)
         .where(eq(plaidTransactions.id, req.params.plaidTxnId))
@@ -5683,7 +5854,6 @@ Return just the message text.`;
   app.get(
     "/api/plaid/pending-grouped/:coupleId",
     requireAuth,
-    requirePasskeyVerified,
     requireCoupleAccess,
     async (req, res) => {
       try {
@@ -5789,7 +5959,6 @@ Return just the message text.`;
   app.post(
     "/api/plaid/pending-group/accept",
     requireAuth,
-    requirePasskeyVerified,
     async (req, res) => {
       try {
         const { coupleId, signature, category, tags, note, applyToFuture } = req.body || {};
@@ -5933,7 +6102,6 @@ Return just the message text.`;
   app.post(
     "/api/plaid/pending-group/ignore",
     requireAuth,
-    requirePasskeyVerified,
     async (req, res) => {
       try {
         const { coupleId, signature, applyToFuture } = req.body || {};

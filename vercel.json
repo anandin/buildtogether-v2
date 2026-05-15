@@ -17,6 +17,14 @@
     {
       "path": "/api/cron/morning-watchlist",
       "schedule": "0 * * * *"
+    },
+    {
+      "path": "/api/cron/plaid-sync-all",
+      "schedule": "17 */4 * * *"
+    },
+    {
+      "path": "/api/cron/plaid-webhook-backfill",
+      "schedule": "23 6 * * *"
     }
   ]
 }
