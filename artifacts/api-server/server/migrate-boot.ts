@@ -393,6 +393,19 @@ const CRITICAL_STATEMENTS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS "plaid_transactions_couple_status_signature_idx"
      ON "plaid_transactions" ("couple_id", "status", "signature")`,
+  // Re-imports of the same real-world Plaid debit (sync rewrite replays,
+  // item reconnects, Plaid issuing fresh transaction_ids for the same
+  // posting) slipped through the (plaid_transaction_id) unique
+  // constraint and produced 13 phantom rows totalling $5,181 of fake
+  // outflow on 2026-05-13. This partial unique index catches them at
+  // insert time: two rows with the same (couple, item, date, amount,
+  // signature) tuple are blocked. The sync handler's existing
+  // try/catch-on-duplicate logic swallows the violation silently. The
+  // WHERE clause skips legacy rows without signatures so we don't
+  // retroactively collide on old data.
+  `CREATE UNIQUE INDEX IF NOT EXISTS "plaid_transactions_couple_item_date_amount_signature_uniq"
+     ON "plaid_transactions" ("couple_id", "plaid_item_id", "date", "amount", "signature")
+     WHERE "signature" IS NOT NULL`,
   `CREATE TABLE IF NOT EXISTS "merchant_rules" (
     "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
     "couple_id" varchar NOT NULL,
