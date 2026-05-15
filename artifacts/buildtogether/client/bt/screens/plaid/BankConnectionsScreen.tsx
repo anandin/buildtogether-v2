@@ -43,7 +43,11 @@ import type { PlaidItem } from "../../api/types";
 export function BankConnectionsScreen({ onBack }: { onBack: () => void }) {
   const { t } = useBT();
   const status = usePlaidStatus();
-  const items = usePlaidItems({ silent: true });
+  // Non-silent: this screen is where the user comes to look at their
+  // banks, so a stale-passkey 403 SHOULD pop Face ID rather than
+  // silently render an empty list. Silent fetches are for ambient
+  // surfaces (badge counts, home tiles).
+  const items = usePlaidItems();
   const sync = usePlaidSync();
   const disconnect = usePlaidDisconnect();
   const resetTx = usePlaidResetTransactions();
@@ -213,7 +217,7 @@ export function BankConnectionsScreen({ onBack }: { onBack: () => void }) {
         ) : items.isError ? (
           <ErrorPanel
             t={t}
-            message="Couldn't load your banks. Verify Face ID first, then try again."
+            message="Couldn't load your banks. Check your connection and try again."
             onRetry={() => items.refetch()}
             retrying={items.isFetching}
           />

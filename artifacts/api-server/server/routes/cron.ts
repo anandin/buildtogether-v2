@@ -34,7 +34,7 @@ import { emitEventAsync } from "../tilly/event-emitter";
 import { cityToTimezone, localDateString } from "../tilly/user-tz";
 import { asc, isNull, or } from "drizzle-orm";
 
-function requireCron(req: Request, res: Response, next: NextFunction) {
+export function requireCron(req: Request, res: Response, next: NextFunction) {
   const expected = process.env.CRON_SECRET;
   if (!expected) {
     // Fail-closed in production — an unset CRON_SECRET in prod means the

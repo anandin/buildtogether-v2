@@ -746,6 +746,12 @@ export const plaidItems = pgTable("plaid_items", {
   status: text("status").notNull().default("active"), // active | error | disconnected
   lastSyncAt: timestamp("last_sync_at"),
   lastError: text("last_error"),
+  // Plaid only delivers webhooks for items whose access_token was issued
+  // with a webhook URL pre-registered at link-token creation time. Items
+  // connected before PLAID_WEBHOOK_URL was configured have no URL on
+  // record with Plaid; we backfill them via `itemWebhookUpdate` and
+  // stamp this timestamp so the backfill cron is idempotent.
+  webhookRegisteredAt: timestamp("webhook_registered_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

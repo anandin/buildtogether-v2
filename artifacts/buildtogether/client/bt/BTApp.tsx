@@ -25,6 +25,7 @@ import { BTDreams } from "./screens/BTDreams";
 import { BTProfile } from "./screens/BTProfile";
 import { Onboarding } from "./onboarding/Onboarding";
 import { useOnboardingStatus } from "./hooks/useOnboarding";
+import { usePlaidForegroundSync } from "./hooks/usePlaidForegroundSync";
 import { registerForExpoPushToken } from "@/lib/notifications";
 
 type Tab = "home" | "spend" | "guardian" | "credit" | "dreams" | "profile";
@@ -70,6 +71,11 @@ function BTShell() {
   const { t } = useBT();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>("home");
+
+  // Pull fresh bank transactions on cold open and every time the app
+  // returns to foreground. Throttled inside the hook to 60s so rapid
+  // app-switching doesn't spam the sync endpoint.
+  usePlaidForegroundSync();
 
   // Reminder UX S6 — register for an Expo push token + sync to server
   // once after onboarding. Idempotent; AsyncStorage caches the last

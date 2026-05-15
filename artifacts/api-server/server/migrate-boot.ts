@@ -468,6 +468,11 @@ const CRITICAL_STATEMENTS: string[] = [
    )`,
   `CREATE INDEX IF NOT EXISTS "watchlist_household_status_added_idx"
      ON "watchlist_items" ("household_id", "status", "added_at" DESC)`,
+
+  // Plaid item webhook backfill — track which items have already had
+  // their webhook URL pushed to Plaid via itemWebhookUpdate so the
+  // backfill is idempotent across boots.
+  `ALTER TABLE "plaid_items" ADD COLUMN IF NOT EXISTS "webhook_registered_at" timestamp`,
 ];
 
 export async function applyBootMigrations(): Promise<{
