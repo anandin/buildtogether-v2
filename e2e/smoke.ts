@@ -141,6 +141,26 @@ async function main() {
         `Spend page looks broken: spent=0, all bars 0, no fallback note. headline="${headline}"`,
       );
     }
+    // Internal-consistency check: category headline total must reconcile
+    // with the sum of its drill-in transactions. Caught 2026-05-15 by the
+    // Canada Txd bug — three plaid_transactions rows for the same real
+    // debit had the parent total show $14,724 while the drill-in showed
+    // one $4,907.92 row. Both views fed off the same payload, so the
+    // mismatch was a server-side aggregation bug. Allow $1 rounding
+    // slack since amt is rounded server-side.
+    for (const c of [...categories, ...(r.body.fixedObligations ?? [])]) {
+      if (!Array.isArray(c?.transactions) || c.transactions.length === 0) continue;
+      const drillSum = c.transactions.reduce(
+        (s: number, t: any) => s + Number(t?.amt ?? 0),
+        0,
+      );
+      const headlineAmt = Number(c.amt ?? 0);
+      if (Math.abs(headlineAmt - drillSum) > 1.0) {
+        throw new Error(
+          `category "${c.name}" total $${headlineAmt} disagrees with drill-in sum $${drillSum.toFixed(2)} (${c.transactions.length} rows)`,
+        );
+      }
+    }
     return `spent=$${spent} categories=${categories.length} headline="${headline.slice(0, 60)}"`;
   });
 

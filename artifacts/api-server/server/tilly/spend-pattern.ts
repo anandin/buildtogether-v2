@@ -115,7 +115,26 @@ async function readAllTransactions(
   // students expect "what I just logged" to be on top, not "the same
   // Plaid sandbox row repeated three times".
   out.sort((a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0));
-  return out;
+  // Collapse same-day same-amount same-merchant rows. Plaid's
+  // `plaid_transaction_id` unique constraint stops literal id collisions
+  // but banks re-post some debits (tax instalments, govt transfers) with
+  // a new id each time, so the user sees one real $4,907.92 Canada Txd
+  // show up as three plaid_transactions rows. Without this dedupe, the
+  // category total summed all three ($14,724) while the drill-in
+  // collapsed by (label, amount) and showed one — internally
+  // inconsistent UI. Dedupe at the source so every downstream consumer
+  // (bars, totals, drill-in, horizon, income, soft-spots) agrees on the
+  // same row set.
+  const seen = new Set<string>();
+  const deduped: UnifiedTx[] = [];
+  for (const t of out) {
+    const label = (t.who || t.category || "").trim().toLowerCase();
+    const key = `${t.date}|${t.amount}|${label}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(t);
+  }
+  return deduped;
 }
 
 export type DayBar = {
@@ -590,7 +609,12 @@ export async function buildWeeklyPattern(
       const txList: SpendTx[] = [];
       for (const t of rawTxs) {
         const label = (t.who || name).trim();
-        const key = `${label.toLowerCase()}::${t.amount}`;
+        // Include date in the key — readAllTransactions already
+        // collapses same-day duplicates, so this key only collapses
+        // when the data is truly duplicated. Without date, two real
+        // Tim Hortons purchases on different days at $4.50 would
+        // merge into one drill-in row.
+        const key = `${t.date}::${label.toLowerCase()}::${t.amount}`;
         if (seenKeys.has(key)) continue;
         seenKeys.add(key);
         txList.push({
@@ -776,7 +800,7 @@ async function buildMonthOrYearPattern(
     const txList: SpendTx[] = [];
     for (const t of rawTxs) {
       const label = (t.who || name).trim();
-      const key = `${label.toLowerCase()}::${t.amount}`;
+      const key = `${t.date}::${label.toLowerCase()}::${t.amount}`;
       if (seenKeys.has(key)) continue;
       seenKeys.add(key);
       txList.push({
@@ -813,7 +837,7 @@ async function buildMonthOrYearPattern(
       const txList: SpendTx[] = [];
       for (const t of rawTxs) {
         const label = (t.who || name).trim();
-        const key = `${label.toLowerCase()}::${t.amount}`;
+        const key = `${t.date}::${label.toLowerCase()}::${t.amount}`;
         if (seenKeys.has(key)) continue;
         seenKeys.add(key);
         txList.push({
