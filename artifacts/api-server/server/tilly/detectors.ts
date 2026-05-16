@@ -274,6 +274,7 @@ export async function detectAnnualBillCalendar(
   householdId: string,
   now: Date,
   tz: string,
+  cadenceOverrides: Map<string, string> = new Map(),
 ): Promise<AnnualBill | null> {
   const todayIso = localDateString(now, tz);
   const sinceIso = (() => {
@@ -314,7 +315,24 @@ export async function detectAnnualBillCalendar(
     const avgAmount = v.sum / v.dates.length;
     let cadence: "annual" | "quarterly" | "semiannual";
     let nextDate: string;
-    if (v.dates.length === 1) {
+    // User override beats inference — if they told Tilly "TD Visa
+    // Preauth Pymt is monthly, not semiannual", the override is in
+    // cadenceOverrides (keyed by merchant signature or lowercased
+    // sourceName). Override values can be "monthly" or "never" which
+    // mean "don't surface this as an upcoming annual bill" — skip.
+    const override = cadenceOverrides.get(merchant);
+    if (override === "monthly" || override === "biweekly" || override === "weekly" || override === "never") {
+      continue;
+    }
+    if (override === "annual" || override === "semiannual" || override === "quarterly") {
+      cadence = override;
+      nextDate =
+        override === "annual"
+          ? addDaysIso(lastDate, 365)
+          : override === "semiannual"
+            ? addDaysIso(lastDate, 182)
+            : addDaysIso(lastDate, 90);
+    } else if (v.dates.length === 1) {
       cadence = "annual";
       nextDate = (() => {
         const [yy, mm, dd] = lastDate.split("-").map((n) => parseInt(n, 10));
@@ -860,12 +878,13 @@ export async function runAllDetectors(
   now: Date,
   tz: string,
   variableByCategory: Map<string, number>,
+  cadenceOverrides: Map<string, string> = new Map(),
 ): Promise<Observation[]> {
   const results = await Promise.allSettled([
     detectIncomeClassificationGaps(householdId, now, tz),
     detectSeasonality(householdId, now, tz),
     detectSubscriptionCreep(householdId, now, tz),
-    detectAnnualBillCalendar(householdId, now, tz),
+    detectAnnualBillCalendar(householdId, now, tz, cadenceOverrides),
     detectRecurringObligations(householdId, now, tz),
     detectTripsAndEvents(householdId, now, tz),
     detectReclassificationLearned(userId),

@@ -88,6 +88,24 @@ export const TOOL_NAMES = [
   // forward it on. Flipping it from "income" → "transfers" stops it
   // inflating the savings rate + breathing-room math.
   "markIncomeAsTransfer",
+  // Smart Tilly v2 audit fix (2026-05-16). User-driven taxonomy: lets
+  // the user say "taxes aren't recurring, move them to one-off" and
+  // Tilly actually does it. Writes a bucket override to
+  // user_preferences; computeMonthFlow reads the override before
+  // falling back to the hardcoded RECURRING_CATS / ONE_OFF_CATS sets.
+  "setCategoryBucket",
+  // Inverse: detector found a Plaid inflow that's miscategorized
+  // (CSA Group MSP showing as 'credit_adjustment'). Tilly fires this
+  // when the user confirms — writes the alias prefand retroactively
+  // moves matching plaid_transactions to ourCategory='income'. Boosts
+  // the income side of every cashflow calc immediately.
+  "flagAsIncome",
+  // Override the cadence the annual_bill_upcoming detector inferred.
+  // TD Visa Preauth Pymt got flagged 'semiannual' from sparse 13mo
+  // history when it's really a monthly CC payment. User says "that's
+  // monthly not semiannual" → Tilly writes the override so the
+  // calendar stops surfacing it as an upcoming surprise.
+  "setMerchantCadence",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -210,6 +228,43 @@ export type ToolResult =
       itemId: string;
       name: string;
       estimatedPrice: number | null;
+    }
+  | {
+      kind: "category_bucket_set";
+      category: string;
+      previousBucket:
+        | "recurring"
+        | "one_off"
+        | "variable"
+        | "income"
+        | "adjustment";
+      newBucket:
+        | "recurring"
+        | "one_off"
+        | "variable"
+        | "income"
+        | "adjustment";
+    }
+  | {
+      kind: "income_flagged";
+      merchantSignature: string;
+      sourceName: string;
+      reclassifiedCount: number;
+      reclassifiedAmount: number;
+    }
+  | {
+      kind: "merchant_cadence_set";
+      merchantSignature: string;
+      sourceName: string;
+      previousCadence: string | null;
+      newCadence:
+        | "monthly"
+        | "biweekly"
+        | "weekly"
+        | "quarterly"
+        | "semiannual"
+        | "annual"
+        | "never";
     };
 
 // ─── Tool context (passed to every handler) ────────────────────────────────
@@ -324,6 +379,48 @@ const addToWatchlistSchema = z.object({
   estimatedPrice: z.number().positive().optional(),
 });
 
+const BUCKET_ENUM = z.enum([
+  "recurring",
+  "one_off",
+  "variable",
+  "income",
+  "adjustment",
+]);
+
+const CADENCE_ENUM = z.enum([
+  "monthly",
+  "biweekly",
+  "weekly",
+  "quarterly",
+  "semiannual",
+  "annual",
+  "never",
+]);
+
+const setCategoryBucketSchema = z.object({
+  /** Lowercase category as seen in plaid_transactions.ourCategory. */
+  category: z.string().min(1),
+  /** Where it should live in the home decomposition + projection math. */
+  bucket: BUCKET_ENUM,
+  reason: z.string().optional(),
+});
+
+const flagAsIncomeSchema = z.object({
+  /** Same shape as markIncomeAsTransfer.sourceName — fuzzy-matched
+   * against merchantName / name on plaid_transactions. */
+  sourceName: z.string().min(1),
+  merchantSignature: z.string().optional(),
+  reason: z.string().optional(),
+});
+
+const setMerchantCadenceSchema = z.object({
+  /** Fuzzy match against merchantName / name (same as the other
+   * merchant-targeting tools). */
+  sourceName: z.string().min(1),
+  cadence: CADENCE_ENUM,
+  reason: z.string().optional(),
+});
+
 const markIncomeAsTransferSchema = z.object({
   /** The user-described source of the deposit ("TD reimbursement",
    * "Acme expense reimbursement", "Mom") — keywords get extracted and
@@ -354,6 +451,9 @@ const TOOL_SCHEMAS: Record<ToolName, z.ZodType> = {
   predictSalePrice: predictSalePriceSchema,
   addToWatchlist: addToWatchlistSchema,
   markIncomeAsTransfer: markIncomeAsTransferSchema,
+  setCategoryBucket: setCategoryBucketSchema,
+  flagAsIncome: flagAsIncomeSchema,
+  setMerchantCadence: setMerchantCadenceSchema,
 };
 
 // ─── Tool descriptions for the LLM ──────────────────────────────────────
@@ -493,6 +593,34 @@ const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
     "the income merchants in their data and flip every match from 'income' " +
     "to 'transfers' retroactively + alias them for future syncs. NEVER " +
     "fire this for actual paychecks the user is happy to count.",
+  setCategoryBucket:
+    "TAXONOMY OVERRIDE. The home decomposes spend into recurring (subs, " +
+    "mortgage, insurance, utilities), one-off (taxes, fees, loans), and " +
+    "variable. When the user disputes a placement — 'taxes aren't " +
+    "recurring, they're one-off', 'put loans under recurring because " +
+    "they hit every month', 'subscriptions should be variable' — fire " +
+    "this. category: lowercased ourCategory ('taxes', 'loans', etc.). " +
+    "bucket: where it should live. Confirm: 'Done — taxes now show under " +
+    "one-off on Today.'",
+  flagAsIncome:
+    "INCOME GAP FIX. When the home or you notice a recurring inflow " +
+    "currently bucketed as transfer / credit_adjustment / other that " +
+    "the user confirms IS real income (paycheck variant, side gig, " +
+    "regular gift), fire this. Triggers: 'CSA Group MSP is my paycheck', " +
+    "'the $5k from TD is a payroll deposit, not a transfer', 'preauth " +
+    "payment is my salary'. sourceName: the user's description of the " +
+    "deposit source. Retroactively flips matching plaid_transactions to " +
+    "ourCategory='income' and aliases the merchant for future syncs. " +
+    "Real income shows up immediately in monthly take-home + projection.",
+  setMerchantCadence:
+    "CADENCE OVERRIDE. The annual bill calendar guesses cadence from " +
+    "trailing 13mo of high-value charges. With sparse data it sometimes " +
+    "miscalls a monthly CC payment as semiannual, or vice versa. When " +
+    "the user says 'TD Visa Preauth Pymt is monthly not semiannual', " +
+    "'the Scotialine $750 hits every month', or 'taxes are quarterly " +
+    "not semiannual', fire this. sourceName: the merchant the user " +
+    "named. cadence: their correction. Detector reads the override " +
+    "first on next call.",
 };
 
 /**
@@ -644,6 +772,21 @@ export async function executeTool(
     case "markIncomeAsTransfer":
       return await runMarkIncomeAsTransfer(
         parsed.data as z.infer<typeof markIncomeAsTransferSchema>,
+        ctx,
+      );
+    case "setCategoryBucket":
+      return await runSetCategoryBucket(
+        parsed.data as z.infer<typeof setCategoryBucketSchema>,
+        ctx,
+      );
+    case "flagAsIncome":
+      return await runFlagAsIncome(
+        parsed.data as z.infer<typeof flagAsIncomeSchema>,
+        ctx,
+      );
+    case "setMerchantCadence":
+      return await runSetMerchantCadence(
+        parsed.data as z.infer<typeof setMerchantCadenceSchema>,
         ctx,
       );
   }
@@ -1693,4 +1836,256 @@ async function runDeleteDream(
   if (!target) return null; // nothing to delete; tool is a no-op
   await db.delete(goals).where(eq(goals.id, target.id));
   return { kind: "dream_deleted", name: target.name };
+}
+
+// ─── Smart Tilly v2 audit fixes (2026-05-16) ────────────────────────────
+// Each of these handlers gives Tilly direct control over a thing that
+// was previously hardcoded server-side, closing the "I can't change that"
+// gap the user surfaced after the perception audit.
+
+async function runSetCategoryBucket(
+  args: z.infer<typeof setCategoryBucketSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  const cat = args.category.trim().toLowerCase();
+  const newBucket = args.bucket;
+
+  // Default bucket per the hardcoded taxonomy — what computeMonthFlow
+  // would have assigned without an override. Lets the result card show
+  // "previousBucket → newBucket" cleanly.
+  const RECURRING = new Set(["subscriptions", "insurance", "rent", "mortgage", "utilities"]);
+  const ONE_OFF = new Set(["taxes", "fees", "loans"]);
+  const ADJUSTMENT = new Set(["transfers", "cashback", "credit_adjustment"]);
+  const defaultBucket: ToolResult extends { previousBucket: infer B } ? B : never =
+    (cat === "income"
+      ? "income"
+      : ADJUSTMENT.has(cat)
+        ? "adjustment"
+        : RECURRING.has(cat)
+          ? "recurring"
+          : ONE_OFF.has(cat)
+            ? "one_off"
+            : "variable") as never;
+
+  await db
+    .insert(userPreferences)
+    .values({
+      userId: ctx.userId,
+      scope: "taxonomy",
+      key: `bucket_override.${cat}`,
+      value: { bucket: newBucket, setAt: new Date().toISOString() },
+    })
+    .onConflictDoUpdate({
+      target: [userPreferences.userId, userPreferences.scope, userPreferences.key],
+      set: {
+        value: { bucket: newBucket, setAt: new Date().toISOString() },
+        updatedAt: new Date(),
+      },
+    });
+  return {
+    kind: "category_bucket_set",
+    category: cat,
+    previousBucket: defaultBucket,
+    newBucket,
+  };
+}
+
+async function runFlagAsIncome(
+  args: z.infer<typeof flagAsIncomeSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  // Same keyword-match strategy as markIncomeAsTransfer / markPaymentTo-
+  // OwnCard. Find every plaid_transactions row whose merchantName / name
+  // contains all the distinctive tokens, flip ourCategory to 'income'.
+  const sourceKeywords = args.sourceName
+    .toLowerCase()
+    .split(/[\s\-_]+/)
+    .map((w) => w.replace(/[^a-z0-9]/g, ""))
+    .filter(
+      (w) =>
+        w.length >= 3 &&
+        !["the", "and", "for", "from", "deposit", "income", "payment", "transfer"].includes(w),
+    );
+
+  const explicitSig = args.merchantSignature
+    ? merchantSignature({
+        merchantName: args.merchantSignature,
+        name: args.merchantSignature,
+        amount: 0,
+      })
+    : "";
+
+  // Scan ALL plaid_transactions for this household — the misclassified
+  // income is currently bucketed as transfer/credit_adjustment/other,
+  // so we can't pre-filter by ourCategory.
+  const allTx = await db
+    .select()
+    .from(plaidTransactions)
+    .where(eq(plaidTransactions.coupleId, ctx.householdId))
+    .limit(1000);
+
+  const candidateSigs = new Set<string>();
+  if (explicitSig) candidateSigs.add(explicitSig);
+  for (const tx of allTx) {
+    const sig = merchantSignature(tx);
+    const haystack = `${tx.merchantName ?? ""} ${tx.name ?? ""}`.toLowerCase();
+    if (sourceKeywords.length === 0) continue;
+    const allMatch = sourceKeywords.every((kw) => haystack.includes(kw));
+    if (allMatch) candidateSigs.add(sig);
+  }
+  if (candidateSigs.size === 0) {
+    // No match — still write the alias so future syncs can apply it,
+    // but report 0 retroactive count.
+    await db
+      .insert(userPreferences)
+      .values({
+        userId: ctx.userId,
+        scope: "plaid",
+        key: `alias_to_income:${args.sourceName.toLowerCase().slice(0, 80)}`,
+        value: {
+          sourceName: args.sourceName,
+          since: new Date().toISOString(),
+          reason: args.reason ?? null,
+        },
+      })
+      .onConflictDoUpdate({
+        target: [userPreferences.userId, userPreferences.scope, userPreferences.key],
+        set: { value: { sourceName: args.sourceName, since: new Date().toISOString() } },
+      });
+    return {
+      kind: "income_flagged",
+      merchantSignature: explicitSig || args.sourceName,
+      sourceName: args.sourceName,
+      reclassifiedCount: 0,
+      reclassifiedAmount: 0,
+    };
+  }
+
+  // Retroactively reclassify matching rows to income.
+  const sigArr = [...candidateSigs];
+  const matching = allTx.filter((t) => candidateSigs.has(merchantSignature(t)));
+  const reclassifiedAmount = matching.reduce((s, t) => s + Math.abs(t.amount), 0);
+  await db
+    .update(plaidTransactions)
+    .set({ ourCategory: "income" })
+    .where(
+      and(
+        eq(plaidTransactions.coupleId, ctx.householdId),
+        inArray(
+          plaidTransactions.id,
+          matching.map((t) => t.id),
+        ),
+      ),
+    );
+
+  // Write the alias pref so the sync handler routes future occurrences.
+  for (const sig of sigArr.slice(0, 5)) {
+    await db
+      .insert(userPreferences)
+      .values({
+        userId: ctx.userId,
+        scope: "plaid",
+        key: `alias_to_income:${sig}`,
+        value: {
+          sourceName: args.sourceName,
+          since: new Date().toISOString(),
+          reason: args.reason ?? null,
+        },
+      })
+      .onConflictDoUpdate({
+        target: [userPreferences.userId, userPreferences.scope, userPreferences.key],
+        set: { value: { sourceName: args.sourceName, since: new Date().toISOString() } },
+      });
+  }
+  return {
+    kind: "income_flagged",
+    merchantSignature: sigArr[0],
+    sourceName: args.sourceName,
+    reclassifiedCount: matching.length,
+    reclassifiedAmount: Math.round(reclassifiedAmount * 100) / 100,
+  };
+}
+
+async function runSetMerchantCadence(
+  args: z.infer<typeof setMerchantCadenceSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  // Resolve the user's described merchant to a signature, same fuzzy
+  // pattern as flagAsIncome / markPaymentToOwnCard. Stored override
+  // is read by the annual_bill_upcoming detector before falling back
+  // to its date-history-based inference.
+  const sourceKeywords = args.sourceName
+    .toLowerCase()
+    .split(/[\s\-_]+/)
+    .map((w) => w.replace(/[^a-z0-9]/g, ""))
+    .filter((w) => w.length >= 3);
+
+  const allTx = await db
+    .select()
+    .from(plaidTransactions)
+    .where(eq(plaidTransactions.coupleId, ctx.householdId))
+    .limit(1000);
+  let chosenSig = "";
+  let priorCadence: string | null = null;
+  for (const tx of allTx) {
+    const sig = merchantSignature(tx);
+    const haystack = `${tx.merchantName ?? ""} ${tx.name ?? ""}`.toLowerCase();
+    if (sourceKeywords.length && sourceKeywords.every((kw) => haystack.includes(kw))) {
+      chosenSig = sig;
+      break;
+    }
+  }
+  if (!chosenSig) {
+    // Fall back to the sourceName itself as the key — future syncs
+    // can match on it even though we couldn't find a current row.
+    chosenSig = args.sourceName.toLowerCase().slice(0, 80);
+  }
+
+  // Read prior override if any (so the result card shows what changed).
+  const existing = await db
+    .select()
+    .from(userPreferences)
+    .where(
+      and(
+        eq(userPreferences.userId, ctx.userId),
+        eq(userPreferences.scope, "taxonomy"),
+        eq(userPreferences.key, `cadence_override.${chosenSig}`),
+      ),
+    )
+    .limit(1);
+  if (existing[0]?.value && typeof existing[0].value === "object") {
+    const v = existing[0].value as { cadence?: string };
+    priorCadence = v.cadence ?? null;
+  }
+
+  await db
+    .insert(userPreferences)
+    .values({
+      userId: ctx.userId,
+      scope: "taxonomy",
+      key: `cadence_override.${chosenSig}`,
+      value: {
+        cadence: args.cadence,
+        sourceName: args.sourceName,
+        setAt: new Date().toISOString(),
+      },
+    })
+    .onConflictDoUpdate({
+      target: [userPreferences.userId, userPreferences.scope, userPreferences.key],
+      set: {
+        value: {
+          cadence: args.cadence,
+          sourceName: args.sourceName,
+          setAt: new Date().toISOString(),
+        },
+        updatedAt: new Date(),
+      },
+    });
+  return {
+    kind: "merchant_cadence_set",
+    merchantSignature: chosenSig,
+    sourceName: args.sourceName,
+    previousCadence: priorCadence,
+    newCadence: args.cadence,
+  };
 }

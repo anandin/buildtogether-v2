@@ -221,26 +221,46 @@ async function computeMonthFlow(
 
   const income = await getMonthlyIncome(userId, householdId, now);
 
-  const ADJUSTMENT_CATS = new Set(["transfers", "cashback", "credit_adjustment"]);
-  // Within "fixed" (doesn't scale with day-of-month), two distinct
-  // shapes:
-  //   RECURRING = hits every month on a known cadence (mortgage,
-  //               subs, insurance, utilities). True recurring spend.
-  //   ONE_OFF   = real outflow, fixed in size, but NOT monthly. Tax
-  //               instalments, occasional loan paydowns, one-time
-  //               fees. Calling these "recurring" on the home was
-  //               the lie that prompted "taxes aren't recurring" —
-  //               splitting them out preserves honesty.
-  // Both excluded from variable daily-pace extrapolation.
-  const RECURRING_CATS = new Set([
+  // Default taxonomy buckets — overridable per-category via
+  // user_preferences scope='taxonomy' key='bucket_override.<cat>'.
+  // The override is what the setCategoryBucket tool writes, so when
+  // the user says "move taxes to one-off" the next compute uses the
+  // new placement. Without overrides, the defaults below run.
+  const DEFAULT_RECURRING = new Set([
     "subscriptions",
     "insurance",
     "rent",
     "mortgage",
     "utilities",
   ]);
-  const ONE_OFF_CATS = new Set(["taxes", "fees", "loans"]);
-  const FIXED_CATS = new Set([...RECURRING_CATS, ...ONE_OFF_CATS]);
+  const DEFAULT_ONE_OFF = new Set(["taxes", "fees", "loans"]);
+  const DEFAULT_ADJUSTMENT = new Set(["transfers", "cashback", "credit_adjustment"]);
+
+  type Bucket = "recurring" | "one_off" | "variable" | "income" | "adjustment";
+  const overrideRows = await db
+    .select({ key: userPreferences.key, value: userPreferences.value })
+    .from(userPreferences)
+    .where(
+      and(
+        eq(userPreferences.userId, userId),
+        eq(userPreferences.scope, "taxonomy"),
+      ),
+    );
+  const overrides = new Map<string, Bucket>();
+  for (const r of overrideRows) {
+    if (!r.key.startsWith("bucket_override.")) continue;
+    const cat = r.key.slice("bucket_override.".length);
+    const v = r.value as { bucket?: Bucket } | null;
+    if (v?.bucket) overrides.set(cat, v.bucket);
+  }
+  const bucketFor = (cat: string): Bucket => {
+    if (overrides.has(cat)) return overrides.get(cat)!;
+    if (cat === "income") return "income";
+    if (DEFAULT_ADJUSTMENT.has(cat)) return "adjustment";
+    if (DEFAULT_RECURRING.has(cat)) return "recurring";
+    if (DEFAULT_ONE_OFF.has(cat)) return "one_off";
+    return "variable";
+  };
 
   const [plaidRows, manualRows] = await Promise.all([
     db
@@ -306,10 +326,11 @@ async function computeMonthFlow(
   let oneOffSoFar = 0;
   const variableByCategory = new Map<string, number>();
   for (const r of allRows) {
-    if (r.category === "income" || ADJUSTMENT_CATS.has(r.category)) continue;
-    if (RECURRING_CATS.has(r.category)) {
+    const b = bucketFor(r.category);
+    if (b === "income" || b === "adjustment") continue;
+    if (b === "recurring") {
       recurringSoFar += r.amount;
-    } else if (ONE_OFF_CATS.has(r.category)) {
+    } else if (b === "one_off") {
       oneOffSoFar += r.amount;
     } else {
       variableSoFar += r.amount;
@@ -389,6 +410,17 @@ async function computeMonthFlow(
     }
   }
 
+  // Build a cadence override map so the annual_bill_upcoming detector
+  // honors user-set merchant cadences (e.g. "TD Visa Preauth is monthly,
+  // not semiannual"). Keyed by merchant signature.
+  const cadenceOverrides = new Map<string, string>();
+  for (const r of overrideRows) {
+    if (!r.key.startsWith("cadence_override.")) continue;
+    const sig = r.key.slice("cadence_override.".length);
+    const v = r.value as { cadence?: string } | null;
+    if (v?.cadence) cadenceOverrides.set(sig, v.cadence);
+  }
+
   // Smart Tilly observations — runs the 11 detectors in parallel
   // (item 1, paycheck cadence, is already part of the income calc
   // above, not a side detector). Each returns null if its pattern
@@ -399,7 +431,14 @@ async function computeMonthFlow(
   let observations: Awaited<ReturnType<typeof import("../../tilly/detectors").runAllDetectors>> = [];
   try {
     const { runAllDetectors } = await import("../../tilly/detectors");
-    observations = await runAllDetectors(userId, householdId, now, tz, variableByCategory);
+    observations = await runAllDetectors(
+      userId,
+      householdId,
+      now,
+      tz,
+      variableByCategory,
+      cadenceOverrides,
+    );
     // Fire-and-forget event emit so the obs reach the memory pipeline.
     if (observations.length > 0) {
       const { emitEvent } = await import("../../tilly/event-emitter");
