@@ -182,6 +182,196 @@ async function bestDreamTile(householdId: string) {
   };
 }
 
+/**
+ * One source of truth for the Today + monthly-summary endpoints.
+ *
+ * Two earlier bugs lived in two near-identical copies of this code:
+ *   - Each summed plaid_transactions AND the expenses mirror separately,
+ *     double-counting every auto-accepted Plaid row.
+ *   - Neither filtered out adjustments (transfers, cashback, credit_
+ *     adjustment), so chequing→savings moves and CC bill payments
+ *     inflated "spent" by thousands.
+ *
+ * This helper enforces the same taxonomy spend-pattern uses:
+ *   income      → excluded from spend (and from this fn's output entirely)
+ *   adjustment  → excluded (net-zero against the wallet)
+ *   fixed       → loans/taxes/fees/insurance — real outflow, separate line
+ *   variable    → discretionary spend, the main day-to-day signal
+ *
+ * Adds a forward-look pass: linear-extrapolate today's daily pace to
+ * month-end so the hero can show "if pace holds, you close ~$X" instead
+ * of a doom YTD number.
+ */
+async function computeMonthFlow(
+  userId: string,
+  householdId: string,
+  now: Date,
+) {
+  const { getMonthlyIncome } = await import("../../tilly/income-summary");
+  const { getUserTimezone, localDateString } = await import("../../tilly/user-tz");
+  const { subscriptions: subsTbl } = await import("../../../shared/schema");
+
+  const tz = await getUserTimezone(userId);
+  const today = localDateString(now, tz);
+  const [y, m, d] = today.split("-").map((n) => parseInt(n, 10));
+  const monthStart = `${y}-${String(m).padStart(2, "0")}-01`;
+  const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const monthEndIso = `${y}-${String(m).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
+  const daysLeft = Math.max(0, daysInMonth - d);
+
+  const income = await getMonthlyIncome(userId, householdId, now);
+
+  const ADJUSTMENT_CATS = new Set(["transfers", "cashback", "credit_adjustment"]);
+  const FIXED_CATS = new Set(["loans", "taxes", "fees", "insurance"]);
+
+  const [plaidRows, manualRows] = await Promise.all([
+    db
+      .select({
+        amount: plaidTransactions.amount,
+        ourCategory: plaidTransactions.ourCategory,
+        merchantName: plaidTransactions.merchantName,
+        name: plaidTransactions.name,
+        date: plaidTransactions.date,
+      })
+      .from(plaidTransactions)
+      .where(
+        and(
+          eq(plaidTransactions.coupleId, householdId),
+          eq(plaidTransactions.status, "accepted"),
+          gte(plaidTransactions.date, monthStart),
+          sql`${plaidTransactions.date} <= ${today}`,
+          sql`${plaidTransactions.amount} > 0`,
+        ),
+      ),
+    db
+      .select({
+        amount: expenses.amount,
+        category: expenses.category,
+        source: expenses.source,
+        merchant: expenses.merchant,
+        description: expenses.description,
+        date: expenses.date,
+      })
+      .from(expenses)
+      .where(
+        and(
+          eq(expenses.coupleId, householdId),
+          gte(expenses.date, monthStart),
+          sql`${expenses.date} <= ${today}`,
+          sql`${expenses.amount} > 0`,
+        ),
+      ),
+  ]);
+
+  type FlowRow = { amount: number; category: string; merchant: string | null; date: string };
+  const allRows: FlowRow[] = [];
+  for (const r of plaidRows) {
+    allRows.push({
+      amount: r.amount,
+      category: (r.ourCategory ?? "").toLowerCase(),
+      merchant: r.merchantName ?? r.name ?? null,
+      date: r.date,
+    });
+  }
+  for (const r of manualRows) {
+    if (r.source === "plaid") continue; // sync already mirrored this row
+    allRows.push({
+      amount: r.amount,
+      category: (r.category ?? "").toLowerCase(),
+      merchant: r.merchant ?? r.description ?? null,
+      date: r.date,
+    });
+  }
+
+  let variableSoFar = 0;
+  let fixedSoFar = 0;
+  const variableByCategory = new Map<string, number>();
+  for (const r of allRows) {
+    if (r.category === "income" || ADJUSTMENT_CATS.has(r.category)) continue;
+    if (FIXED_CATS.has(r.category)) {
+      fixedSoFar += r.amount;
+    } else {
+      variableSoFar += r.amount;
+      const k = r.category || "other";
+      variableByCategory.set(k, (variableByCategory.get(k) ?? 0) + r.amount);
+    }
+  }
+  const spentToDate = Math.round(variableSoFar + fixedSoFar);
+
+  const activeSubs = await db
+    .select({
+      amount: subsTbl.amount,
+      merchant: subsTbl.merchant,
+      lastChargedAt: subsTbl.lastChargedAt,
+      nextChargeAt: subsTbl.nextChargeAt,
+      usageNote: subsTbl.usageNote,
+    })
+    .from(subsTbl)
+    .where(
+      and(eq(subsTbl.householdId, householdId), eq(subsTbl.status, "active")),
+    );
+  let recurringBaseLoad = 0;
+  let committedRest = 0;
+  for (const r of activeSubs) {
+    const last = r.lastChargedAt?.slice(0, 10) ?? null;
+    const next = r.nextChargeAt?.slice(0, 10) ?? null;
+    if (last && last >= monthStart && last <= today) recurringBaseLoad += r.amount;
+    if (next && next > today && next <= monthEndIso) committedRest += r.amount;
+  }
+  recurringBaseLoad = Math.round(recurringBaseLoad);
+  committedRest = Math.round(committedRest);
+
+  const dailyPace = Math.round(spentToDate / d);
+  const projectedSpend = Math.round(dailyPace * daysInMonth);
+  const projectedClose = Math.round(income.amount - projectedSpend - committedRest);
+  const surplus = Math.round(income.amount - spentToDate - committedRest);
+
+  // One actionable thing. Priority: unused subs > biggest variable category
+  // > nothing-to-flag (null).
+  let leverageInsight: { kind: string; text: string; amount: number } | null = null;
+  const lowUseSubs = activeSubs.filter(
+    (s) => s.usageNote && /not used|unused|0 times|no usage/i.test(s.usageNote),
+  );
+  if (lowUseSubs.length > 0) {
+    const sum = lowUseSubs.reduce((s, r) => s + r.amount, 0);
+    leverageInsight = {
+      kind: "unused_subs",
+      amount: Math.round(sum),
+      text: `${lowUseSubs.length} subscription${lowUseSubs.length === 1 ? "" : "s"} you haven't been using = $${Math.round(sum)}/mo if paused`,
+    };
+  } else {
+    const topVar = [...variableByCategory.entries()].sort((a, b) => b[1] - a[1])[0];
+    if (topVar && topVar[1] >= 200) {
+      leverageInsight = {
+        kind: "top_variable",
+        amount: Math.round(topVar[1]),
+        text: `${topVar[0]} is your biggest variable line this month ($${Math.round(topVar[1])}). Worth a closer look?`,
+      };
+    }
+  }
+
+  return {
+    income,
+    monthStart,
+    today,
+    monthEndIso,
+    daysInMonth,
+    daysIntoMonth: d,
+    daysLeft,
+    spentToDate,
+    variableSoFar: Math.round(variableSoFar),
+    fixedSoFar: Math.round(fixedSoFar),
+    recurringBaseLoad,
+    committedRest,
+    surplus,
+    dailyPace,
+    projectedSpend,
+    projectedClose,
+    variableByCategory,
+    leverageInsight,
+  };
+}
+
 export function mountTillyInsightsRoutes(app: Express): void {
   app.get("/api/tilly/today", requireAuth, async (req: Request, res: Response) => {
     if (!req.user) return res.status(401).json({ error: "auth required" });
@@ -214,96 +404,68 @@ export function mountTillyInsightsRoutes(app: Express): void {
         bestDreamTile(householdId),
       ]);
 
-      // Anchor the hero on monthly math instead of the legacy weekly
-      // heuristic (`weeklyAllowance = max(320, weekSpent * 1.25)` was
-      // arbitrary). `breathing` now means MONTH surplus (income − spent
-      // − committed); `paycheckCopy` is the income/spent/committed
-      // breakdown. Existing mobile keys unchanged so the old hero
-      // still renders something coherent while SS8 refactors the card.
-      const { getMonthlyIncome } = await import("../../tilly/income-summary");
+      // Single source of truth via computeMonthFlow — the old inline
+      // version double-counted (sum of plaid_transactions PLUS the
+      // expenses mirror) and treated transfers / CC payments as spend.
+      // Helper produces real numbers + a forward-look projection that
+      // the new hero card consumes.
       const { forecastNextNDays } = await import("../../tilly/forecast");
-      const { localDateString, getUserTimezone } = await import("../../tilly/user-tz");
       const tzNow = new Date();
-      const tzForToday = await getUserTimezone(userId);
-      const todayLocalIso = localDateString(tzNow, tzForToday);
-      const [y, m, d] = todayLocalIso.split("-").map((n) => parseInt(n, 10));
-      const monthStartLocal = `${y}-${String(m).padStart(2, "0")}-01`;
-      const monthEndDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
-      const monthEndLocal = `${y}-${String(m).padStart(2, "0")}-${String(monthEndDay).padStart(2, "0")}`;
       let numbers: { breathing: number; afterRent: number; paycheckCopy: string };
       let forecast: Awaited<ReturnType<typeof forecastNextNDays>> = [];
-      let monthly: {
-        income: number;
-        spentToDate: number;
-        committedRest: number;
-        surplus: number;
-        source: string;
-      } | null = null;
+      let monthly:
+        | {
+            income: number;
+            spentToDate: number;
+            committedRest: number;
+            surplus: number;
+            source: string;
+          }
+        | null = null;
+      let forwardLook:
+        | {
+            daysIntoMonth: number;
+            daysInMonth: number;
+            dailyPace: number;
+            projectedSpend: number;
+            projectedClose: number;
+            recurringBaseLoad: number;
+            variableSoFar: number;
+            fixedSoFar: number;
+            leverageInsight: { kind: string; text: string; amount: number } | null;
+          }
+        | null = null;
       try {
-        const income = await getMonthlyIncome(userId, householdId, tzNow);
-        const [plaidSpent, manualSpent] = await Promise.all([
-          db
-            .select({ amount: plaidTransactions.amount })
-            .from(plaidTransactions)
-            .where(
-              and(
-                eq(plaidTransactions.coupleId, householdId),
-                eq(plaidTransactions.status, "accepted"),
-                gte(plaidTransactions.date, monthStartLocal),
-                sql`${plaidTransactions.date} <= ${todayLocalIso}`,
-                sql`${plaidTransactions.amount} > 0`,
-              ),
-            ),
-          db
-            .select({ amount: expenses.amount })
-            .from(expenses)
-            .where(
-              and(
-                eq(expenses.coupleId, householdId),
-                gte(expenses.date, monthStartLocal),
-                sql`${expenses.date} <= ${todayLocalIso}`,
-                sql`${expenses.amount} > 0`,
-              ),
-            ),
-        ]);
-        const spentToDate = Math.round(
-          plaidSpent.reduce((s, r) => s + r.amount, 0) +
-            manualSpent.reduce((s, r) => s + r.amount, 0),
-        );
-        const { subscriptions: subsTbl } = await import("../../../shared/schema");
-        const subs = await db
-          .select({ amount: subsTbl.amount, nextChargeAt: subsTbl.nextChargeAt })
-          .from(subsTbl)
-          .where(
-            and(
-              eq(subsTbl.householdId, householdId),
-              eq(subsTbl.status, "active"),
-            ),
-          );
-        const committedRest = Math.round(
-          subs.reduce((s, r) => {
-            if (!r.nextChargeAt) return s;
-            const dd = r.nextChargeAt.slice(0, 10);
-            if (dd > todayLocalIso && dd <= monthEndLocal) return s + r.amount;
-            return s;
-          }, 0),
-        );
-        const surplus = Math.round(income.amount - spentToDate - committedRest);
+        const flow = await computeMonthFlow(userId, householdId, tzNow);
         monthly = {
-          income: income.amount,
-          spentToDate,
-          committedRest,
-          surplus,
-          source: income.source,
+          income: flow.income.amount,
+          spentToDate: flow.spentToDate,
+          committedRest: flow.committedRest,
+          surplus: flow.surplus,
+          source: flow.income.source,
         };
-        const paycheckCopy = income.amount > 0
-          ? `$${Math.round(income.amount)} earned · $${spentToDate} spent · $${committedRest} committed`
-          : plaidConnected
-            ? "Tell Tilly your monthly income to anchor this"
-            : "Connect a bank or tell Tilly your income";
+        forwardLook = {
+          daysIntoMonth: flow.daysIntoMonth,
+          daysInMonth: flow.daysInMonth,
+          dailyPace: flow.dailyPace,
+          projectedSpend: flow.projectedSpend,
+          projectedClose: flow.projectedClose,
+          recurringBaseLoad: flow.recurringBaseLoad,
+          variableSoFar: flow.variableSoFar,
+          fixedSoFar: flow.fixedSoFar,
+          leverageInsight: flow.leverageInsight,
+        };
+        // paycheckCopy is now forward-looking: pace + projection, not
+        // the old "$X earned · $Y spent · $Z committed" doom string.
+        const paycheckCopy =
+          flow.income.amount > 0
+            ? `~$${flow.dailyPace}/day pace · projected close $${flow.projectedClose >= 0 ? "+" : ""}${flow.projectedClose}`
+            : plaidConnected
+              ? "Tell Tilly your monthly income to anchor this"
+              : "Connect a bank or tell Tilly your income";
         numbers = {
-          breathing: Math.max(0, surplus),
-          afterRent: Math.max(0, surplus),
+          breathing: Math.max(0, flow.surplus),
+          afterRent: Math.max(0, flow.surplus),
           paycheckCopy,
         };
         forecast = await forecastNextNDays(userId, householdId, 7, tzNow);
@@ -417,6 +579,11 @@ export function mountTillyInsightsRoutes(app: Express): void {
         monthly,
         forecast,
         openQuestions,
+        // Forecast-led hero data — pace, projected close, decomposition,
+        // and one actionable insight. The client's new BTHome card reads
+        // from here when present; falls back to monthly + paycheckCopy
+        // when not (so older builds keep rendering coherently).
+        forwardLook,
         // Authoritative signal for the mobile to decide between the
         // "connect your bank" empty state and the connected-state hero
         // card. Computed from plaid_items above; prevents the empty
@@ -447,86 +614,31 @@ export function mountTillyInsightsRoutes(app: Express): void {
         return res.json({ ready: false, reason: "no_household" });
       }
       try {
-        const { getMonthlyIncome } = await import("../../tilly/income-summary");
-        const { getUserTimezone, localDateString } = await import("../../tilly/user-tz");
-        const now = new Date();
-        const tz = await getUserTimezone(userId);
-        const today = localDateString(now, tz);
-        const [y, m, d] = today.split("-").map((n) => parseInt(n, 10));
-        const monthStart = `${y}-${String(m).padStart(2, "0")}-01`;
-        const monthEnd = new Date(Date.UTC(y, m, 0)); // last day of this month
-        const daysInMonth = monthEnd.getUTCDate();
-        const daysLeft = Math.max(0, daysInMonth - d);
-
-        // Income — Plaid-preferred, self-report fallback.
-        const income = await getMonthlyIncome(userId, householdId, now);
-
-        // Spent month-to-date — accepted plaid tx (amount > 0) plus
-        // manual expenses, both in [monthStart, today].
-        const [plaidSpent, manualSpent] = await Promise.all([
-          db
-            .select({ amount: plaidTransactions.amount })
-            .from(plaidTransactions)
-            .where(
-              and(
-                eq(plaidTransactions.coupleId, householdId),
-                eq(plaidTransactions.status, "accepted"),
-                gte(plaidTransactions.date, monthStart),
-                sql`${plaidTransactions.date} <= ${today}`,
-                sql`${plaidTransactions.amount} > 0`,
-              ),
-            ),
-          db
-            .select({ amount: expenses.amount })
-            .from(expenses)
-            .where(
-              and(
-                eq(expenses.coupleId, householdId),
-                gte(expenses.date, monthStart),
-                sql`${expenses.date} <= ${today}`,
-                sql`${expenses.amount} > 0`,
-              ),
-            ),
-        ]);
-        const spentToDate = Math.round(
-          plaidSpent.reduce((s, r) => s + r.amount, 0) +
-            manualSpent.reduce((s, r) => s + r.amount, 0),
-        );
-
-        // Committed rest-of-month — subscriptions with nextChargeAt
-        // between (today, monthEnd]. Tight: we only count what we
-        // KNOW will hit; baseline-style "you'll probably spend $X more
-        // discretionary" lives on the day-by-day forecast instead.
-        const { subscriptions: subsTbl } = await import("../../../shared/schema");
-        const monthEndIso = `${y}-${String(m).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
-        const upcomingSubs = await db
-          .select({ amount: subsTbl.amount, nextChargeAt: subsTbl.nextChargeAt })
-          .from(subsTbl)
-          .where(
-            and(
-              eq(subsTbl.householdId, householdId),
-              eq(subsTbl.status, "active"),
-            ),
-          );
-        const committedRest = Math.round(
-          upcomingSubs.reduce((s, r) => {
-            if (!r.nextChargeAt) return s;
-            const d = r.nextChargeAt.slice(0, 10);
-            if (d > today && d <= monthEndIso) return s + r.amount;
-            return s;
-          }, 0),
-        );
-
-        const surplus = Math.round(income.amount - spentToDate - committedRest);
-
+        const flow = await computeMonthFlow(userId, householdId, new Date());
+        const [yy, mm] = flow.today.split("-");
         res.json({
           ready: true,
-          month: `${y}-${String(m).padStart(2, "0")}`,
-          income: { amount: income.amount, source: income.source, note: income.note ?? null },
-          spentToDate,
-          committedRest,
-          surplus,
-          daysLeft,
+          month: `${yy}-${mm}`,
+          income: {
+            amount: flow.income.amount,
+            source: flow.income.source,
+            note: flow.income.note ?? null,
+          },
+          spentToDate: flow.spentToDate,
+          committedRest: flow.committedRest,
+          surplus: flow.surplus,
+          daysLeft: flow.daysLeft,
+          forwardLook: {
+            daysIntoMonth: flow.daysIntoMonth,
+            daysInMonth: flow.daysInMonth,
+            dailyPace: flow.dailyPace,
+            projectedSpend: flow.projectedSpend,
+            projectedClose: flow.projectedClose,
+            recurringBaseLoad: flow.recurringBaseLoad,
+            variableSoFar: flow.variableSoFar,
+            fixedSoFar: flow.fixedSoFar,
+            leverageInsight: flow.leverageInsight,
+          },
         });
       } catch (err) {
         console.error("/api/tilly/monthly-summary error:", err);

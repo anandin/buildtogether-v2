@@ -138,6 +138,11 @@ export function BTHome({ onNav }: Props) {
   const forecast = today_?.forecast ?? [];
   const weekDays = nextFiveDays(remindersAll.data?.reminders ?? [], forecast);
   const monthly = today_?.monthly ?? null;
+  const forwardLook = today_?.forwardLook ?? null;
+  const monthName = (() => {
+    const m = new Date().getMonth();
+    return ["January","February","March","April","May","June","July","August","September","October","November","December"][m];
+  })();
 
   return (
     <ScrollView
@@ -183,7 +188,14 @@ export function BTHome({ onNav }: Props) {
               }}
             >
               {hasMoneyData
-                ? `$${today_!.breathing} of breathing room. ${today_!.paycheckCopy}`
+                ? // Forward-looking sub-line. Old "$X of breathing room.
+                  // $Y earned · $Z spent · $W committed" was the
+                  // doom-summary the user explicitly hated. The hero
+                  // card below carries the numbers; this line just sets
+                  // a quiet temporal anchor.
+                  forwardLook
+                  ? `Day ${forwardLook.daysIntoMonth} of ${forwardLook.daysInMonth}. Tilly's been watching.`
+                  : (today_!.paycheckCopy ?? "")
                 : "Connect your bank when you're ready and your real numbers light up here. Until then, ask me anything."}
             </Text>
           ) : null}
@@ -192,78 +204,134 @@ export function BTHome({ onNav }: Props) {
         {isFirstLoad ? (
           <SkeletonHeroCard t={t} />
         ) : hasMoneyData ? (
+          // Forecast-led hero. Old version led with a giant SURPLUS YTD
+          // number that doom-summarized the month and then shamed with
+          // "$X earned · $Y spent · $Z committed" — a budget-app
+          // scoreboard. New version leads with where the month is
+          // HEADING (projected close), shows the calm decomposition
+          // underneath, and surfaces one specific actionable thing.
           <BTCard t={t} inverted padding={22} radius={18}>
             <BTStripes color={t.invertedFg} opacity={0.07} />
-            <BTLabel color={t.invertedFgMute}>
-              {monthly && monthly.source !== "none" ? "This month" : "Available now"}
-            </BTLabel>
-            <View style={{ marginTop: 14 }}>
-              <BTCurrency
-                amount={monthly && monthly.source !== "none" ? monthly.surplus : today_!.afterRent}
-                size={64}
-                color={t.invertedFg}
-              />
-            </View>
-            {monthly && monthly.source !== "none" ? (
-              <View style={{ marginTop: 10, gap: 4 }}>
+            {forwardLook ? (
+              <>
                 <Text
                   style={{
                     color: t.invertedFgMute,
                     fontFamily: BTFonts.mono,
                     fontSize: 11,
                     letterSpacing: 0.8,
+                    textTransform: "uppercase",
                   }}
                 >
-                  SURPLUS · INCOME − SPENT − COMMITTED
+                  {monthName.toUpperCase()} · {forwardLook.daysInMonth - forwardLook.daysIntoMonth} DAYS TO PAYDAY
                 </Text>
+                <View style={{ marginTop: 14 }}>
+                  <BTCurrency
+                    amount={forwardLook.projectedClose}
+                    size={56}
+                    color={
+                      forwardLook.projectedClose >= 0 ? t.invertedFg : t.invertedFg
+                    }
+                  />
+                </View>
                 <Text
                   style={{
-                    color: t.invertedFg,
+                    color: t.invertedFgMute,
                     fontFamily: BTFonts.serif,
-                    fontSize: 14,
-                    lineHeight: 20,
-                    marginTop: 2,
+                    fontSize: 13,
+                    fontStyle: "italic",
+                    marginTop: 4,
                   }}
                 >
-                  ${Math.round(monthly.income).toLocaleString()} earned ·{" "}
-                  ${monthly.spentToDate.toLocaleString()} spent ·{" "}
-                  ${monthly.committedRest.toLocaleString()} still committed
+                  projected close · if pace holds
                 </Text>
-              </View>
-            ) : null}
-            <View
-              style={{
-                flexDirection: "row",
-                justifyContent: "space-between",
-                alignItems: "flex-end",
-                marginTop: 14,
-              }}
-            >
-              <Text
-                style={{
-                  color: t.invertedFgMute,
-                  fontFamily: BTFonts.sans,
-                  fontSize: 12,
-                  lineHeight: 17,
-                  flex: 1,
-                  paddingRight: 12,
-                }}
-              >
-                {today_!.paycheckCopy}
-              </Text>
-              <View
-                style={{
-                  width: 42,
-                  height: 42,
-                  borderRadius: 21,
-                  backgroundColor: t.accent,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Text style={{ fontSize: 20, color: t.ink, fontFamily: BTFonts.serif }}>↗</Text>
-              </View>
-            </View>
+
+                <View style={{ marginTop: 18, gap: 8 }}>
+                  <DecompRow
+                    t={t}
+                    label="recurring base"
+                    amount={forwardLook.recurringBaseLoad + forwardLook.fixedSoFar}
+                    note={
+                      forwardLook.recurringBaseLoad > 0 || forwardLook.fixedSoFar > 0
+                        ? "subs + fixed (rent, loans, taxes)"
+                        : "no recurring detected yet"
+                    }
+                  />
+                  <DecompRow
+                    t={t}
+                    label="variable so far"
+                    amount={forwardLook.variableSoFar}
+                    note={`~$${forwardLook.dailyPace}/day pace`}
+                  />
+                  <DecompRow
+                    t={t}
+                    label="ahead this month"
+                    amount={monthly ? monthly.committedRest : 0}
+                    note="known upcoming charges"
+                  />
+                </View>
+
+                {forwardLook.leverageInsight ? (
+                  <View
+                    style={{
+                      marginTop: 16,
+                      paddingTop: 14,
+                      borderTopWidth: 1,
+                      borderTopColor: `${t.invertedFg}22`,
+                      flexDirection: "row",
+                      alignItems: "flex-start",
+                      gap: 10,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: t.accent,
+                        fontFamily: BTFonts.serif,
+                        fontSize: 18,
+                      }}
+                    >
+                      ↗
+                    </Text>
+                    <Text
+                      style={{
+                        color: t.invertedFg,
+                        fontFamily: BTFonts.sans,
+                        fontSize: 13,
+                        lineHeight: 19,
+                        flex: 1,
+                      }}
+                    >
+                      {forwardLook.leverageInsight.text}
+                    </Text>
+                  </View>
+                ) : null}
+              </>
+            ) : (
+              // Older API response without forwardLook — render the
+              // legacy "Available now" line so nothing breaks during
+              // the rollout window.
+              <>
+                <BTLabel color={t.invertedFgMute}>Available now</BTLabel>
+                <View style={{ marginTop: 14 }}>
+                  <BTCurrency
+                    amount={today_!.afterRent}
+                    size={64}
+                    color={t.invertedFg}
+                  />
+                </View>
+                <Text
+                  style={{
+                    color: t.invertedFgMute,
+                    fontFamily: BTFonts.sans,
+                    fontSize: 12,
+                    lineHeight: 17,
+                    marginTop: 12,
+                  }}
+                >
+                  {today_!.paycheckCopy}
+                </Text>
+              </>
+            )}
           </BTCard>
         ) : (
           <BTCard t={t} inverted padding={22} radius={18}>
@@ -517,6 +585,62 @@ export function BTHome({ onNav }: Props) {
  * never sees a confident "Connect your bank" empty state when their
  * data is actually about to arrive.
  */
+// One row of the forecast hero's decomposition. Three of these stack:
+// recurring base, variable so far, ahead this month. Flat numbers, no
+// bars or progress meters — this is a calm read, not a competition.
+function DecompRow({
+  t,
+  label,
+  amount,
+  note,
+}: {
+  t: BTTheme;
+  label: string;
+  amount: number;
+  note?: string;
+}) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "baseline", gap: 10 }}>
+      <Text
+        style={{
+          color: t.invertedFgMute,
+          fontFamily: BTFonts.mono,
+          fontSize: 10,
+          letterSpacing: 0.7,
+          textTransform: "uppercase",
+          flex: 1,
+        }}
+      >
+        {label}
+      </Text>
+      <Text
+        style={{
+          color: t.invertedFg,
+          fontFamily: BTFonts.serif,
+          fontSize: 17,
+        }}
+      >
+        ${amount.toLocaleString()}
+      </Text>
+      {note ? (
+        <Text
+          style={{
+            color: t.invertedFgMute,
+            fontFamily: BTFonts.sans,
+            fontSize: 11,
+            fontStyle: "italic",
+            width: 130,
+            textAlign: "right",
+          }}
+          numberOfLines={1}
+        >
+          {note}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
 function SkeletonHeroCard({ t }: { t: BTTheme }) {
   const shimmer = useRef(new Animated.Value(0)).current;
   useEffect(() => {

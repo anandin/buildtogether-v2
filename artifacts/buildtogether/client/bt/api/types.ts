@@ -64,6 +64,33 @@ export type TodayBrief =
        * from showing when surplus is \$0 (no detected income) but
        * banks ARE wired. */
       bankConnected?: boolean;
+      /** Forecast-led hero data — lead with where the month is heading,
+       * not where it's been. Replaces the SURPLUS/INCOME-SPENT-COMMITTED
+       * doom panel with pace + projection + one actionable insight.
+       * Optional so older API responses keep parsing. */
+      forwardLook?: {
+        daysIntoMonth: number;
+        daysInMonth: number;
+        /** spentToDate / daysIntoMonth — rounded. */
+        dailyPace: number;
+        /** dailyPace × daysInMonth. */
+        projectedSpend: number;
+        /** income − projectedSpend − committedRest. Signed. */
+        projectedClose: number;
+        /** Active subscriptions whose lastChargedAt landed in this month. */
+        recurringBaseLoad: number;
+        /** Discretionary spend MTD. */
+        variableSoFar: number;
+        /** loans + taxes + fees + insurance MTD. */
+        fixedSoFar: number;
+        /** One actionable thing — paused-worthy sub or biggest variable
+         * line. Null when nothing's worth flagging. */
+        leverageInsight: {
+          kind: string;
+          text: string;
+          amount: number;
+        } | null;
+      } | null;
     };
 
 export type TillyQuestion = {

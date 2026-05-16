@@ -200,7 +200,18 @@ export type WeeklyPattern = {
 export type SpendVerdictTone = "good" | "ok" | "warn" | "edge" | "bad";
 
 export type SpendVerdict = {
-  label: "Soaring" | "Steady" | "Tight" | "Edge" | "Underwater";
+  // Reset 2026-05-15 from doom-coded labels (Soaring/Underwater) to
+  // temperate ones (Roomy/Heavier). Old values kept in the union for
+  // any persisted state or older client builds reading them.
+  label:
+    | "Roomy"
+    | "Steady"
+    | "Tight"
+    | "On the line"
+    | "Heavier"
+    | "Soaring"
+    | "Edge"
+    | "Underwater";
   tone: SpendVerdictTone;
   /** 0-10. Soaring 7-10, Steady 6-9, Tight 4-7, Edge 3, Underwater 0-2. */
   score: number;
@@ -1042,15 +1053,22 @@ function bucketVerdict(
   topCategoryName: string | undefined,
   range: SpendRange,
 ): SpendVerdict {
+  // Verdict copy reset 2026-05-15 after the user pushed back on
+  // "UNDERWATER · 0/10 · You spent more than you earned" framing —
+  // exactly the budget-app shaming pattern Tilly is supposed to avoid.
+  // Labels are now temperate ("heavier", "tight", "steady") and the
+  // closing line points forward ("worth a look together") instead of
+  // back ("the line broke"). The score field is preserved for client
+  // compat but the year view no longer renders it.
   const topCat = topCategoryName ? topCategoryName : null;
   const rangeWord = range === "year" ? "this year" : "this month";
   if (savingsRate >= 25) {
     return {
-      label: "Soaring",
+      label: "Roomy",
       tone: "good",
       score: Math.min(10, 7 + Math.round((savingsRate - 25) / 5)),
-      weatherLabel: "Clear skies. Well above the line.",
-      closingLine: `Strong ${rangeWord}. The line held with room to spare.`,
+      weatherLabel: "Plenty of room above the line.",
+      closingLine: `A roomy ${rangeWord}. Easy to breathe.`,
     };
   }
   if (savingsRate >= 15) {
@@ -1058,10 +1076,10 @@ function bucketVerdict(
       label: "Steady",
       tone: "ok",
       score: Math.min(9, 6 + Math.round((savingsRate - 15) / 5)),
-      weatherLabel: "Healthy breathing room.",
+      weatherLabel: "Comfortable breathing room.",
       closingLine: topCat
-        ? `${capitalize(topCat)} drank the deepest. Everything else stayed in range.`
-        : `Comfortably under the line ${rangeWord}.`,
+        ? `${capitalize(topCat)} took the most space. Everything else stayed quiet.`
+        : `Steady ${rangeWord}. Nothing pulling out of shape.`,
     };
   }
   if (savingsRate >= 5) {
@@ -1069,29 +1087,29 @@ function bucketVerdict(
       label: "Tight",
       tone: "warn",
       score: Math.min(7, 4 + Math.round((savingsRate - 5) / 5)),
-      weatherLabel: "Getting close to the line.",
+      weatherLabel: "A little tight, still above the line.",
       closingLine: topCat
-        ? `Close call. ${capitalize(topCat)} ran hottest.`
-        : `Close call ${rangeWord}. Most categories ran hotter than usual.`,
+        ? `${capitalize(topCat)} ran hot ${rangeWord}. Worth one tweak?`
+        : `Tight ${rangeWord}. One small change goes a long way.`,
     };
   }
   if (savingsRate >= 0) {
     return {
-      label: "Edge",
+      label: "On the line",
       tone: "edge",
       score: 3,
-      weatherLabel: "Living right at the line.",
-      closingLine: `Touched the line ${rangeWord}. One slip and you're under.`,
+      weatherLabel: "Right at the line.",
+      closingLine: `Living at the line ${rangeWord}. Let's pick one thing to soften.`,
     };
   }
   return {
-    label: "Underwater",
+    label: "Heavier",
     tone: "bad",
     score: Math.max(0, 2 + Math.round(savingsRate / 5)),
-    weatherLabel: "You spent more than you earned.",
+    weatherLabel: `Heavier ${rangeWord} than usual.`,
     closingLine: topCat
-      ? `The line broke ${rangeWord}. ${capitalize(topCat)} pulled hardest. Worth a closer look together?`
-      : `The line broke ${rangeWord}. Worth a closer look together?`,
+      ? `${capitalize(topCat)} took the most this ${rangeWord === "this year" ? "year" : "month"}. Want to look at it together?`
+      : `A heavier ${rangeWord}. Want to look at where together?`,
   };
 }
 
@@ -1313,11 +1331,19 @@ async function computeTrailingAvgSavingsRate(
         ),
     ]);
     const income = incomeRows.reduce((s, r) => s + Math.abs(r.amount), 0);
-    // Spend = everything except income. Don't strip transfers — when we
-    // do that for the headline, it's to exclude move-between-own-accounts;
-    // here we want the whole outflow picture against income.
+    // Spend = everything except income AND except adjustments (transfers,
+    // cashback, credit_adjustment). Earlier this fn included them as
+    // "whole outflow picture against income", but that's not what the
+    // savings-rate calc actually wants — transfers are wallet shuffles
+    // and CC payment-backs double-count purchases already in spend. The
+    // trailing-avg-savings-rate fed the Horizon verdict, so this is why
+    // months sometimes flipped UNDERWATER on weeks they shouldn't have.
+    const ADJUSTMENT_CATS = new Set(["transfers", "cashback", "credit_adjustment"]);
     const spend = spendRows
-      .filter((r) => (r.ourCategory ?? "").toLowerCase() !== "income")
+      .filter((r) => {
+        const c = (r.ourCategory ?? "").toLowerCase();
+        return c !== "income" && !ADJUSTMENT_CATS.has(c);
+      })
       .reduce((s, r) => s + Math.abs(r.amount), 0);
     if (income > 0) {
       rates.push(((income - spend) / income) * 100);
@@ -1379,12 +1405,21 @@ async function computeMonthlyHistory(
 
   const incomeByMonth = new Array(12).fill(0);
   const spendByMonth = new Array(12).fill(0);
+  // Same taxonomy spend-pattern + monthly-summary use: adjustments are
+  // own-account moves (transfers), credit card payments-back, and
+  // statement credits — they net to zero against the wallet and would
+  // double-count real spend if treated as outflow. Previously every
+  // non-income row was summed as "spend", which made each month's bar
+  // 2-3× the true burn (a $4k CC payment showed up as $4k spend on TOP
+  // of the original purchases that built up that bill).
+  const ADJUSTMENT_CATS = new Set(["transfers", "cashback", "credit_adjustment"]);
   for (const r of rows) {
     const m = parseInt(r.date.slice(5, 7), 10) - 1;
     if (m < 0 || m > 11) continue;
     const cat = (r.ourCategory ?? "").toLowerCase();
     const abs = Math.abs(r.amount);
     if (cat === "income") incomeByMonth[m] += abs;
+    else if (ADJUSTMENT_CATS.has(cat)) continue;
     else spendByMonth[m] += abs;
   }
 

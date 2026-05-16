@@ -348,7 +348,7 @@ function HorizonSurplus({
       >
         {underwater ? "−" : ""}${Math.abs(surplus).toLocaleString()}{" "}
         <Text style={{ fontSize: 20, color: t.inkSoft, letterSpacing: 0 }}>
-          {underwater ? "over" : "left"}
+          {underwater ? "heavier" : "to spare"}
         </Text>
       </Text>
       <Text
@@ -613,7 +613,7 @@ function HorizonPanel({
                   fontWeight: "700",
                 }}
               >
-                −${Math.abs(horizon.surplus).toLocaleString()} UNDERWATER
+                −${Math.abs(horizon.surplus).toLocaleString()} HEAVIER
               </Text>
             </View>
           </View>
@@ -927,8 +927,8 @@ function HorizonYearList({
             fontFamily: BTFonts.serifItalic,
           }}
         >
-          {underCount} under the line · {overCount} over
-          {noDataCount > 0 ? ` · ${noDataCount} no income data` : ""}
+          {underCount} with room · {overCount} heavier
+          {noDataCount > 0 ? ` · ${noDataCount} still settling` : ""}
         </Text>
       </View>
       {months.map((m, i) => {
@@ -1033,12 +1033,26 @@ function HorizonYearList({
                   style={{
                     fontSize: 10,
                     fontFamily: BTFonts.sans,
-                    color: t.bad,
-                    fontWeight: "600",
+                    color: t.inkSoft,
+                    fontWeight: "500",
                     letterSpacing: 0.4,
+                    fontStyle: "italic",
                   }}
                 >
-                  over
+                  heavier
+                </Text>
+              ) : !m.isFuture && !noData && m.income > 0 && monthSurplus > 0 ? (
+                <Text
+                  style={{
+                    fontSize: 10,
+                    fontFamily: BTFonts.sans,
+                    color: t.inkSoft,
+                    fontWeight: "500",
+                    letterSpacing: 0.4,
+                    fontStyle: "italic",
+                  }}
+                >
+                  to spare
                 </Text>
               ) : null}
             </View>
@@ -1063,14 +1077,14 @@ function HorizonYearList({
           }}
         >
           {overCount === 0 && underCount > 0
-            ? "The line held all year."
+            ? "Steady year so far."
             : overCount === 0 && underCount === 0
               ? noDataCount > 0
                 ? "Not enough income synced yet to draw the year."
                 : "Nothing landed yet this year."
               : overCount <= 2 && underCount >= overCount
-                ? `${overCount} month${overCount === 1 ? "" : "s"} over the line. The rest under. The line held.`
-                : `${overCount} month${overCount === 1 ? "" : "s"} over the line. Worth zooming out.`}
+                ? `Mostly steady. ${overCount} month${overCount === 1 ? "" : "s"} ran heavier — worth a closer look together?`
+                : `${overCount} heavier month${overCount === 1 ? "" : "s"} so far. Want to look at where the weight came from?`}
         </Text>
       </View>
     </BTCard>
@@ -1388,7 +1402,14 @@ function BTSpendBody() {
               surplus={horizon.surplus}
               weatherLabel={horizon.verdict.weatherLabel}
             />
-            <ScoreDots t={t} score={horizon.verdict.score} tone={horizon.verdict.tone} />
+            {/* Score dots only on the month view. The year view used to
+                render a 0/10 next to the verdict pill which read as
+                public shaming — exactly what Tilly's supposed to avoid.
+                The year now leads with the trend + the corrected real
+                burn instead. */}
+            {range === "month" ? (
+              <ScoreDots t={t} score={horizon.verdict.score} tone={horizon.verdict.tone} />
+            ) : null}
             {range === "month" ? (
               <HorizonPanel t={t} horizon={horizon} categories={horizonCategories} />
             ) : null}
