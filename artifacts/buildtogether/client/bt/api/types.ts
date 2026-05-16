@@ -90,6 +90,17 @@ export type TodayBrief =
           text: string;
           amount: number;
         } | null;
+        /** income.amount + projected upcoming paychecks this month. */
+        incomeProjected?: number;
+        /** Cadence-detected paycheck projection for the rest of the
+         * month. Lets the hero say "Next paycheck May 30 (+$X)"
+         * instead of pretending you only earn one cheque/month. */
+        incomeProjection?: {
+          projectedRemaining: number;
+          cadence: "weekly" | "biweekly" | "monthly" | "irregular" | "unknown";
+          typicalAmount: number;
+          nextPaycheckDate: string | null;
+        };
       } | null;
     };
 

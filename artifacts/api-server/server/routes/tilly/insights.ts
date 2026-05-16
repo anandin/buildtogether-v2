@@ -207,7 +207,7 @@ async function computeMonthFlow(
   householdId: string,
   now: Date,
 ) {
-  const { getMonthlyIncome } = await import("../../tilly/income-summary");
+  const { getMonthlyIncome, projectRemainingIncomeForMonth } = await import("../../tilly/income-summary");
   const { getUserTimezone, localDateString } = await import("../../tilly/user-tz");
   const { subscriptions: subsTbl } = await import("../../../shared/schema");
 
@@ -345,7 +345,16 @@ async function computeMonthFlow(
   const dailyPace = Math.round(variableSoFar / d);
   const variableProjectedRest = Math.round(dailyPace * daysLeft);
   const projectedSpend = spentToDate + variableProjectedRest + committedRest;
-  const projectedClose = Math.round(income.amount - projectedSpend);
+
+  // Income projection — biweekly/monthly/weekly cadence detection
+  // walks forward from the last paycheck and adds typicalAmount for
+  // each landing inside (today, monthEnd]. Without this, mid-month
+  // users with biweekly pay see a doom forecast because Tilly only
+  // counts the one paycheck that's already hit, ignoring the second
+  // one she should KNOW is coming.
+  const incomeProjection = await projectRemainingIncomeForMonth(householdId, now, tz);
+  const incomeProjected = Math.round(income.amount + incomeProjection.projectedRemaining);
+  const projectedClose = Math.round(incomeProjected - projectedSpend);
   const surplus = Math.round(income.amount - spentToDate - committedRest);
 
   // One actionable thing. Priority: unused subs > biggest variable category
@@ -391,6 +400,8 @@ async function computeMonthFlow(
     projectedClose,
     variableByCategory,
     leverageInsight,
+    incomeProjection,
+    incomeProjected,
   };
 }
 
@@ -660,6 +671,8 @@ export function mountTillyInsightsRoutes(app: Express): void {
             variableSoFar: flow.variableSoFar,
             fixedSoFar: flow.fixedSoFar,
             leverageInsight: flow.leverageInsight,
+            incomeProjected: flow.incomeProjected,
+            incomeProjection: flow.incomeProjection,
           },
         });
       } catch (err) {

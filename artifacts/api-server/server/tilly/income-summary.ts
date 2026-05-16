@@ -186,3 +186,104 @@ export async function getIncomeCadence(
     );
   return inferCadence(rows.map((r) => r.date));
 }
+
+/**
+ * Project income that will land between today and month-end based on
+ * paycheck cadence. Critical for the Today hero's "projected close"
+ * number — without it, mid-month users with biweekly pay see a doom
+ * forecast because Tilly only counts the one paycheck that's already
+ * hit, ignoring the second one she should KNOW is coming.
+ *
+ * Cadence rules:
+ *   biweekly → next paycheck = lastDate + 14d, repeat until > monthEnd
+ *   semi-monthly approximation: biweekly already handles 2/month for
+ *     most cases. True semi-monthly (15th + last day) cadence isn't
+ *     detected separately yet — biweekly is close enough.
+ *   monthly → one paycheck per month; if already hit, none more
+ *   weekly → 4-5 per month; project remaining
+ *   irregular / unknown → no projection (return 0); we don't fabricate
+ *
+ * Typical amount = mean of trailing income amounts (90d). Heuristic but
+ * tracks reality well enough for "you'll close near $X".
+ */
+export async function projectRemainingIncomeForMonth(
+  householdId: string,
+  now: Date,
+  tz: string,
+): Promise<{
+  projectedRemaining: number;
+  cadence: IncomeCadence;
+  typicalAmount: number;
+  nextPaycheckDate: string | null;
+}> {
+  const sinceIso = localDaysAgoIso(now, tz, 90);
+  const todayIso = localDateString(now, tz);
+  const [yearStr, monthStr] = todayIso.split("-");
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(monthStr, 10);
+  const lastDayOfMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const monthEndIso = `${yearStr}-${monthStr}-${String(lastDayOfMonth).padStart(2, "0")}`;
+
+  const rows = await db
+    .select({ date: plaidTransactions.date, amount: plaidTransactions.amount })
+    .from(plaidTransactions)
+    .where(
+      and(
+        eq(plaidTransactions.coupleId, householdId),
+        eq(plaidTransactions.ourCategory, "income"),
+        gte(plaidTransactions.date, sinceIso),
+      ),
+    );
+
+  if (rows.length === 0) {
+    return { projectedRemaining: 0, cadence: "unknown", typicalAmount: 0, nextPaycheckDate: null };
+  }
+
+  const cadence = inferCadence(rows.map((r) => r.date));
+  const typicalAmount =
+    rows.reduce((s, r) => s + Math.abs(r.amount), 0) / rows.length;
+
+  const sortedDates = [...rows.map((r) => r.date)].sort();
+  const lastDate = sortedDates[sortedDates.length - 1];
+  if (!lastDate) {
+    return { projectedRemaining: 0, cadence, typicalAmount, nextPaycheckDate: null };
+  }
+
+  const stepDays =
+    cadence === "weekly" ? 7 :
+    cadence === "biweekly" ? 14 :
+    cadence === "monthly" ? 30 :
+    null;
+  if (!stepDays) {
+    return { projectedRemaining: 0, cadence, typicalAmount, nextPaycheckDate: null };
+  }
+
+  // Walk forward from lastDate by stepDays. Each landing inside
+  // (today, monthEnd] adds one typicalAmount. Cap at 6 hops to avoid
+  // any infinite-loop edge case.
+  const addDaysIso = (iso: string, days: number): string => {
+    const [y, m, d] = iso.split("-").map((n) => parseInt(n, 10));
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    dt.setUTCDate(dt.getUTCDate() + days);
+    return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+  };
+
+  let cursor = lastDate;
+  let firstUpcoming: string | null = null;
+  let projected = 0;
+  for (let hop = 0; hop < 6; hop++) {
+    cursor = addDaysIso(cursor, stepDays);
+    if (cursor > monthEndIso) break;
+    if (cursor > todayIso) {
+      projected += typicalAmount;
+      if (!firstUpcoming) firstUpcoming = cursor;
+    }
+  }
+
+  return {
+    projectedRemaining: Math.round(projected * 100) / 100,
+    cadence,
+    typicalAmount: Math.round(typicalAmount * 100) / 100,
+    nextPaycheckDate: firstUpcoming,
+  };
+}

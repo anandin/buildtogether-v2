@@ -245,6 +245,30 @@ export function BTHome({ onNav }: Props) {
                 >
                   projected close · if pace holds
                 </Text>
+                {/* If a future paycheck is expected this month, name the
+                    date + amount. Without this the projection looked
+                    catastrophic for biweekly users mid-month who had
+                    only one cheque counted so far — Tilly knows the
+                    cadence, she should USE it. */}
+                {forwardLook.incomeProjection &&
+                forwardLook.incomeProjection.nextPaycheckDate &&
+                forwardLook.incomeProjection.projectedRemaining > 0 ? (
+                  <Text
+                    style={{
+                      color: t.accent,
+                      fontFamily: BTFonts.sans,
+                      fontSize: 12,
+                      lineHeight: 17,
+                      marginTop: 8,
+                    }}
+                  >
+                    Next paycheck ~{
+                      formatNextPaycheck(forwardLook.incomeProjection.nextPaycheckDate)
+                    } · +${Math.round(
+                      forwardLook.incomeProjection.projectedRemaining,
+                    ).toLocaleString()} expected
+                  </Text>
+                ) : null}
 
                 <View style={{ marginTop: 18, gap: 8 }}>
                   {/* fixedSoFar = loans + taxes + fees + insurance +
@@ -652,6 +676,19 @@ function DecompRow({
       ) : null}
     </View>
   );
+}
+
+// "2026-05-30" → "May 30". Local-friendly short label for the next
+// paycheck preview line on the hero. Falls back to the raw ISO if
+// parsing fails (e.g. unexpected shape).
+function formatNextPaycheck(iso: string): string {
+  try {
+    const [, m, d] = iso.split("-").map((n) => parseInt(n, 10));
+    const monthShort = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][m - 1];
+    return `${monthShort} ${d}`;
+  } catch {
+    return iso;
+  }
 }
 
 function SkeletonHeroCard({ t }: { t: BTTheme }) {
