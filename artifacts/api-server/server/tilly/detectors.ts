@@ -73,6 +73,7 @@ export async function detectIncomeClassificationGaps(
   householdId: string,
   now: Date,
   tz: string,
+  userId?: string,
 ): Promise<IncomeClassificationGap | null> {
   const sinceIso = localDaysAgoIso(now, tz, 60);
   const rows = await db
@@ -92,16 +93,55 @@ export async function detectIncomeClassificationGaps(
       ),
     );
 
+  // Pull the user's dismissals so we never re-flag merchants they've
+  // already said "no, this isn't income, stop suggesting it" for. The
+  // dismissAsNotIncome tool writes scope='taxonomy' key='dismissed_as_income.<sig>'.
+  // Without this read, the detector kept surfacing TD Trust Toronto +
+  // Preauth Pymt + Thank You TD even after the user dismissed them,
+  // which is exactly the bug surfaced 2026-05-16.
+  const dismissedSigs = new Set<string>();
+  if (userId) {
+    try {
+      const dismissals = await db
+        .select({ key: userPreferences.key })
+        .from(userPreferences)
+        .where(
+          and(
+            eq(userPreferences.userId, userId),
+            eq(userPreferences.scope, "taxonomy"),
+          ),
+        );
+      for (const d of dismissals) {
+        if (d.key.startsWith("dismissed_as_income.")) {
+          dismissedSigs.add(d.key.slice("dismissed_as_income.".length));
+        }
+      }
+    } catch (err) {
+      // Non-fatal — failure to read prefs just means we may re-flag
+      // dismissed merchants; the user can dismiss again.
+      console.warn("[detector] dismissals fetch failed:", err);
+    }
+  }
+
+  // Local copy of the merchantSignature helper logic so the detector
+  // stays self-contained. Same shape used by the dismissAsNotIncome tool.
+  const sigFor = (merch: string, name: string): string => {
+    const raw = (merch || name || "").trim().toLowerCase();
+    return raw.replace(/\s+/g, " ").slice(0, 80);
+  };
+
   const byMerchant = new Map<
     string,
-    { count: number; sum: number; lastDate: string; cat: string }
+    { sig: string; count: number; sum: number; lastDate: string; cat: string }
   >();
   for (const r of rows) {
     const cat = (r.ourCategory ?? "").toLowerCase();
     if (cat === "income") continue;
     const merch = (r.merchantName ?? r.name ?? "").trim().toLowerCase();
     if (!merch) continue;
-    const e = byMerchant.get(merch) ?? { count: 0, sum: 0, lastDate: r.date, cat };
+    const sig = sigFor(r.merchantName ?? "", r.name ?? "");
+    if (dismissedSigs.has(sig)) continue; // user already said no
+    const e = byMerchant.get(merch) ?? { sig, count: 0, sum: 0, lastDate: r.date, cat };
     e.count += 1;
     e.sum += Math.abs(r.amount);
     if (r.date > e.lastDate) e.lastDate = r.date;
@@ -881,7 +921,7 @@ export async function runAllDetectors(
   cadenceOverrides: Map<string, string> = new Map(),
 ): Promise<Observation[]> {
   const results = await Promise.allSettled([
-    detectIncomeClassificationGaps(householdId, now, tz),
+    detectIncomeClassificationGaps(householdId, now, tz, userId),
     detectSeasonality(householdId, now, tz),
     detectSubscriptionCreep(householdId, now, tz),
     detectAnnualBillCalendar(householdId, now, tz, cadenceOverrides),

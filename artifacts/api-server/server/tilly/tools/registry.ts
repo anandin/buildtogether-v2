@@ -106,6 +106,15 @@ export const TOOL_NAMES = [
   // monthly not semiannual" → Tilly writes the override so the
   // calendar stops surfacing it as an upcoming surprise.
   "setMerchantCadence",
+  // 2026-05-16 follow-up fix. The income_classification_gap detector
+  // kept flagging recurring inflows that were ALREADY correctly
+  // bucketed as transfers (TD Trust Toronto, Preauthorized Payment,
+  // Thank You TD Canada Trust — all CC payment wash transactions).
+  // User said "those are credit card payments" → Tilly fired
+  // markPaymentToOwnCard which correctly did nothing (rows already
+  // transfers) but then falsely claimed success. The right answer is
+  // to mark them as DISMISSED so the detector stops surfacing them.
+  "dismissAsNotIncome",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -265,6 +274,16 @@ export type ToolResult =
         | "semiannual"
         | "annual"
         | "never";
+    }
+  | {
+      kind: "income_dismissed";
+      merchantSignature: string;
+      sourceName: string;
+      /** How many candidate merchants got dismissed in this call (1
+       * usually, but if the user names a fuzzy term we may match
+       * multiple recurring inflows). */
+      dismissedCount: number;
+      reason: string | null;
     };
 
 // ─── Tool context (passed to every handler) ────────────────────────────────
@@ -413,6 +432,15 @@ const flagAsIncomeSchema = z.object({
   reason: z.string().optional(),
 });
 
+const dismissAsNotIncomeSchema = z.object({
+  /** User's description of the merchant — e.g. "TD Trust Toronto",
+   * "preauthorized payment", "Thank You TD Canada Trust", or "all of
+   * them" when the detector surfaced a batch. Fuzzy-matched against
+   * the income_classification_gap candidates. */
+  sourceName: z.string().min(1),
+  reason: z.string().optional(),
+});
+
 const setMerchantCadenceSchema = z.object({
   /** Fuzzy match against merchantName / name (same as the other
    * merchant-targeting tools). */
@@ -454,6 +482,7 @@ const TOOL_SCHEMAS: Record<ToolName, z.ZodType> = {
   setCategoryBucket: setCategoryBucketSchema,
   flagAsIncome: flagAsIncomeSchema,
   setMerchantCadence: setMerchantCadenceSchema,
+  dismissAsNotIncome: dismissAsNotIncomeSchema,
 };
 
 // ─── Tool descriptions for the LLM ──────────────────────────────────────
@@ -621,6 +650,19 @@ const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
     "not semiannual', fire this. sourceName: the merchant the user " +
     "named. cadence: their correction. Detector reads the override " +
     "first on next call.",
+  dismissAsNotIncome:
+    "DISMISS A FALSE INCOME SUGGESTION. The income_classification_gap " +
+    "detector surfaces recurring inflows that LOOK like income but might " +
+    "not be (often CC payment wash transactions, paying yourself back, " +
+    "Plaid mirroring the same transaction across linked accounts). When " +
+    "the user confirms the suggestion is wrong — 'those are credit card " +
+    "payments', 'that's me paying my Visa', 'no, that's not income', " +
+    "'stop flagging Preauthorized Payment', 'dismiss those' — fire this. " +
+    "sourceName: the merchant they named, or 'all' / 'all of them' when " +
+    "they want to dismiss every current candidate. Writes a pref the " +
+    "detector reads to suppress future suggestions. DO NOT use this for " +
+    "fixing categorization — use flagAsIncome (real income) or " +
+    "markIncomeAsTransfer (income → wash) for those.",
 };
 
 /**
@@ -787,6 +829,11 @@ export async function executeTool(
     case "setMerchantCadence":
       return await runSetMerchantCadence(
         parsed.data as z.infer<typeof setMerchantCadenceSchema>,
+        ctx,
+      );
+    case "dismissAsNotIncome":
+      return await runDismissAsNotIncome(
+        parsed.data as z.infer<typeof dismissAsNotIncomeSchema>,
         ctx,
       );
   }
@@ -2087,5 +2134,103 @@ async function runSetMerchantCadence(
     sourceName: args.sourceName,
     previousCadence: priorCadence,
     newCadence: args.cadence,
+  };
+}
+
+async function runDismissAsNotIncome(
+  args: z.infer<typeof dismissAsNotIncomeSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  // Match the user's named merchant against the income_gap candidates.
+  // Special-case "all" / "all of them" / "all three" → dismiss every
+  // current candidate the detector would surface. Otherwise fuzzy-match
+  // against recent inflow merchants.
+  const lower = args.sourceName.toLowerCase().trim();
+  const dismissAll = /^all(\s|$)|all of them|all three|all of these|all the (one|three|four)s?/i.test(
+    lower,
+  );
+
+  // Scan recent inflows (Plaid signs income negative).
+  const since = new Date(Date.now() - 90 * 24 * 3600 * 1000);
+  const sinceIso = since.toISOString().slice(0, 10);
+  const inflows = await db
+    .select()
+    .from(plaidTransactions)
+    .where(
+      and(
+        eq(plaidTransactions.coupleId, ctx.householdId),
+        sql`${plaidTransactions.date} >= ${sinceIso}`,
+        sql`${plaidTransactions.amount} < 0`,
+      ),
+    )
+    .limit(1000);
+
+  // Group by merchant signature, like the detector does.
+  const byMerchant = new Map<string, { sig: string; count: number; sum: number; merch: string }>();
+  for (const r of inflows) {
+    const cat = (r.ourCategory ?? "").toLowerCase();
+    if (cat === "income") continue;
+    const sig = merchantSignature(r);
+    const merch = (r.merchantName ?? r.name ?? "").trim();
+    if (!merch) continue;
+    const e = byMerchant.get(sig) ?? { sig, count: 0, sum: 0, merch };
+    e.count += 1;
+    e.sum += Math.abs(r.amount);
+    byMerchant.set(sig, e);
+  }
+
+  const sourceKeywords = lower
+    .split(/[\s\-_]+/)
+    .map((w) => w.replace(/[^a-z0-9]/g, ""))
+    .filter((w) => w.length >= 3 && !["the", "and", "all", "those", "these", "them"].includes(w));
+
+  const toDismiss: Array<{ sig: string; merch: string }> = [];
+  for (const e of byMerchant.values()) {
+    if (e.count < 2) continue; // detector requires ≥2 hits to flag
+    if (e.sum / e.count < 100) continue; // detector min $100/avg
+    if (dismissAll) {
+      toDismiss.push({ sig: e.sig, merch: e.merch });
+      continue;
+    }
+    const haystack = e.merch.toLowerCase();
+    if (sourceKeywords.length && sourceKeywords.every((kw) => haystack.includes(kw))) {
+      toDismiss.push({ sig: e.sig, merch: e.merch });
+    }
+  }
+
+  // Persist a dismissal pref for each. Detector reads scope='taxonomy'
+  // key='dismissed_as_income.<sig>' and skips matching candidates.
+  for (const d of toDismiss) {
+    await db
+      .insert(userPreferences)
+      .values({
+        userId: ctx.userId,
+        scope: "taxonomy",
+        key: `dismissed_as_income.${d.sig}`,
+        value: {
+          merchant: d.merch,
+          reason: args.reason ?? null,
+          dismissedAt: new Date().toISOString(),
+        },
+      })
+      .onConflictDoUpdate({
+        target: [userPreferences.userId, userPreferences.scope, userPreferences.key],
+        set: {
+          value: {
+            merchant: d.merch,
+            reason: args.reason ?? null,
+            dismissedAt: new Date().toISOString(),
+          },
+          updatedAt: new Date(),
+        },
+      });
+  }
+
+  return {
+    kind: "income_dismissed",
+    merchantSignature: toDismiss[0]?.sig ?? args.sourceName,
+    sourceName: toDismiss[0]?.merch ?? args.sourceName,
+    dismissedCount: toDismiss.length,
+    reason: args.reason ?? null,
   };
 }

@@ -195,6 +195,11 @@ async function runOneToolCall(
  * regardless — this strip only affects what the LLM sees.
  */
 function summariseResultForModel(r: ToolResult): Record<string, unknown> {
+  // `ok` reflects ACTUAL EFFECT, not just "tool ran without crashing".
+  // When reclassifiedCount/restoredCount/dismissedCount/renamedCount === 0,
+  // ok=false so the LLM sees the no-op explicitly and (per the persona
+  // rule) won't claim "Done." 2026-05-16 fix — without this, Tilly
+  // falsely confirmed "fixed all three" when the tool moved 0 rows.
   switch (r.kind) {
     case "dream_created":
       return {
@@ -206,19 +211,80 @@ function summariseResultForModel(r: ToolResult): Record<string, unknown> {
       };
     case "payment_to_card_aliased":
       return {
-        ok: true,
+        ok: r.reclassifiedCount > 0,
         kind: r.kind,
         cardName: r.cardName,
         reclassifiedCount: r.reclassifiedCount,
         reclassifiedAmount: r.reclassifiedAmount,
+        note:
+          r.reclassifiedCount === 0
+            ? "alias pref saved but NO past rows matched — those merchants may already be in transfers, or the cardName didn't fuzzy-match any current data. Tell the user honestly, don't claim 'Done'."
+            : undefined,
       };
     case "payment_to_card_unaliased":
       return {
-        ok: true,
+        ok: r.restoredCount > 0,
         kind: r.kind,
         cardName: r.cardName,
         restoredCount: r.restoredCount,
         restoredAmount: r.restoredAmount,
+        note: r.restoredCount === 0 ? "no rows restored — likely no prior alias active." : undefined,
+      };
+    case "income_aliased_to_transfer":
+      return {
+        ok: r.reclassifiedCount > 0,
+        kind: r.kind,
+        sourceName: r.sourceName,
+        reclassifiedCount: r.reclassifiedCount,
+        reclassifiedAmount: r.reclassifiedAmount,
+        note:
+          r.reclassifiedCount === 0
+            ? "no income rows matched the sourceName — those merchants may not currently be in 'income', or fuzzy-match found nothing."
+            : undefined,
+      };
+    case "income_flagged":
+      return {
+        ok: r.reclassifiedCount > 0,
+        kind: r.kind,
+        sourceName: r.sourceName,
+        reclassifiedCount: r.reclassifiedCount,
+        reclassifiedAmount: r.reclassifiedAmount,
+        note:
+          r.reclassifiedCount === 0
+            ? "alias saved for future syncs but NO past rows matched — fuzzy-match found nothing in current data."
+            : undefined,
+      };
+    case "income_dismissed":
+      return {
+        ok: r.dismissedCount > 0,
+        kind: r.kind,
+        sourceName: r.sourceName,
+        dismissedCount: r.dismissedCount,
+        note:
+          r.dismissedCount === 0
+            ? "no candidates matched — either no current income-classification-gap suggestions, or sourceName didn't match any."
+            : undefined,
+      };
+    case "merchant_renamed":
+      return {
+        ok: r.renamedCount > 0,
+        kind: r.kind,
+        previousName: r.previousName,
+        newName: r.newName,
+        renamedCount: r.renamedCount,
+        note:
+          r.renamedCount === 0
+            ? "rename rule saved for future syncs but no past rows matched the lookup."
+            : undefined,
+      };
+    case "merchant_category_set":
+      return {
+        ok: true, // setting always succeeds; the rule is what matters
+        kind: r.kind,
+        displayName: r.displayName,
+        fromCategory: r.fromCategory,
+        toCategory: r.toCategory,
+        reclassifiedCount: r.reclassifiedCount,
       };
     default:
       return { ok: true, ...r };
