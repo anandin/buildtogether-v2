@@ -449,4 +449,47 @@ export function mountCronRoutes(app: Express): void {
       }
     },
   );
+
+  // Smart Tilly #11 — record predicted close + accept variants for the
+  // current month every day, so by month-end we have a snapshot of the
+  // last projection. Idempotent upsert keyed on (household, month).
+  app.post(
+    "/api/cron/record-projection-history",
+    requireCron,
+    async (_req: Request, res: Response) => {
+      try {
+        const { recordProjectionForAll } = await import(
+          "../tilly/projection-history"
+        );
+        const out = await recordProjectionForAll();
+        res.json({ ok: true, ...out });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("/api/cron/record-projection-history error:", msg);
+        res.status(500).json({ error: "record cron failed", debug: msg });
+      }
+    },
+  );
+
+  // Smart Tilly #11 — at the start of each month, settle the prior
+  // month: compute actual close from the now-final ledger and stamp
+  // settled_at on the matching projection_history row. The detector
+  // reads (predicted - actual) to surface accuracy.
+  app.post(
+    "/api/cron/settle-projection-history",
+    requireCron,
+    async (_req: Request, res: Response) => {
+      try {
+        const { settleProjectionsForAll } = await import(
+          "../tilly/projection-history"
+        );
+        const out = await settleProjectionsForAll();
+        res.json({ ok: true, ...out });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("/api/cron/settle-projection-history error:", msg);
+        res.status(500).json({ error: "settle cron failed", debug: msg });
+      }
+    },
+  );
 }

@@ -393,6 +393,20 @@ const CRITICAL_STATEMENTS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS "plaid_transactions_couple_status_signature_idx"
      ON "plaid_transactions" ("couple_id", "status", "signature")`,
+  // Projection history — records computeMonthFlow's projected_close at
+  // (a) the time the projection was made and (b) the actual close once
+  // the month rolls over. The detector reads this to surface "Tilly's
+  // been within $X on average" + uses error to weight future
+  // projections. One row per (household, month).
+  `CREATE TABLE IF NOT EXISTS "projection_history" (
+    "household_id" varchar NOT NULL,
+    "month" text NOT NULL,
+    "predicted_close" real NOT NULL,
+    "actual_close" real NOT NULL DEFAULT 0,
+    "predicted_at" timestamp NOT NULL DEFAULT now(),
+    "settled_at" timestamp,
+    PRIMARY KEY ("household_id", "month")
+  )`,
   // Re-imports of the same real-world Plaid debit (sync rewrite replays,
   // item reconnects, Plaid issuing fresh transaction_ids for the same
   // posting) slipped through the (plaid_transaction_id) unique

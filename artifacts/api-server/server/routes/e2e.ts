@@ -343,4 +343,65 @@ export function mountE2ERoutes(app: Express): void {
       res.status(500).json({ error: "cleanup_failed", message: (err as Error).message });
     }
   });
+
+  // Smart Tilly verification endpoint — runs every detector against the
+  // resolved user (same as issue-session) and returns the full set of
+  // observations + supporting context. Lets the report assembly script
+  // capture sample output without going through chat or rendering UI.
+  app.get("/api/_e2e/detectors-snapshot", async (req: Request, res: Response) => {
+    const header = req.header("x-e2e-secret");
+    if (!header || header !== SECRET) {
+      return res.status(404).json({ error: "Not found" });
+    }
+    try {
+      let user;
+      if (PINNED_USER_ID) {
+        user = await db.query.users.findFirst({ where: eq(users.id, PINNED_USER_ID) });
+      } else if (PINNED_USER_EMAIL) {
+        user = await db.query.users.findFirst({ where: eq(users.email, PINNED_USER_EMAIL) });
+      } else {
+        const ranked = await db
+          .select({
+            userId: users.id,
+            cnt: sql<number>`count(${plaidTransactions.id})::int`,
+          })
+          .from(users)
+          .leftJoin(plaidTransactions, eq(plaidTransactions.coupleId, users.coupleId))
+          .groupBy(users.id, users.createdAt)
+          .orderBy(desc(sql`count(${plaidTransactions.id})`), desc(users.createdAt))
+          .limit(1);
+        const candidateId = ranked[0]?.userId;
+        if (candidateId) {
+          user = await db.query.users.findFirst({ where: eq(users.id, candidateId) });
+        }
+      }
+      if (!user?.coupleId) {
+        return res.status(404).json({ error: "no user/couple to inspect" });
+      }
+      const { runAllDetectors } = await import("../tilly/detectors");
+      const { getUserTimezone } = await import("../tilly/user-tz");
+      const tz = await getUserTimezone(user.id);
+      const observations = await runAllDetectors(
+        user.id,
+        user.coupleId,
+        new Date(),
+        tz,
+        new Map(),
+      );
+      res.json({
+        userId: user.id,
+        coupleId: user.coupleId,
+        tz,
+        timestamp: new Date().toISOString(),
+        observationCount: observations.length,
+        observations,
+      });
+    } catch (err) {
+      console.error("[e2e] detectors-snapshot error:", err);
+      res.status(500).json({
+        error: "snapshot_failed",
+        message: (err as Error).message,
+      });
+    }
+  });
 }

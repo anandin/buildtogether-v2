@@ -381,6 +381,49 @@ async function computeMonthFlow(
     }
   }
 
+  // Smart Tilly observations — runs the 11 detectors in parallel
+  // (item 1, paycheck cadence, is already part of the income calc
+  // above, not a side detector). Each returns null if its pattern
+  // doesn't fire, or a typed observation if it does. Failures
+  // swallow per-detector via Promise.allSettled in runAllDetectors.
+  // Observations are also emitted as events so the nightly distiller
+  // can lift stable patterns into typed memories the dossier reads.
+  let observations: Awaited<ReturnType<typeof import("../../tilly/detectors").runAllDetectors>> = [];
+  try {
+    const { runAllDetectors } = await import("../../tilly/detectors");
+    observations = await runAllDetectors(userId, householdId, now, tz, variableByCategory);
+    // Fire-and-forget event emit so the obs reach the memory pipeline.
+    if (observations.length > 0) {
+      const { emitEvent } = await import("../../tilly/event-emitter");
+      const kindMap: Record<string, import("../../tilly/event-emitter").EventKind> = {
+        income_classification_gap: "obs_income_classification_gap",
+        seasonality: "obs_seasonality",
+        subscription_creep: "obs_subscription_creep",
+        annual_bill_upcoming: "obs_annual_calendar",
+        recurring_obligation: "obs_recurring_obligation_due",
+        trip_detected: "obs_trip_detected",
+        reclassification_learned: "obs_reclassification_learned",
+        nudge_followup: "obs_nudge_followup",
+        pattern_explanation: "obs_pattern_explanation",
+        projection_accuracy: "obs_projection_recorded",
+        multi_month_trend: "obs_multi_month_trend",
+      };
+      for (const obs of observations) {
+        const kind = kindMap[obs.kind];
+        if (!kind) continue;
+        // Don't await — observations are advisory, not critical path.
+        emitEvent({
+          userId,
+          householdId,
+          kind,
+          payload: obs as unknown as Record<string, unknown>,
+        }).catch((e) => console.warn("obs emit failed:", e));
+      }
+    }
+  } catch (err) {
+    console.warn("[smart-tilly] detector batch failed:", err);
+  }
+
   return {
     income,
     monthStart,
@@ -402,6 +445,7 @@ async function computeMonthFlow(
     leverageInsight,
     incomeProjection,
     incomeProjected,
+    observations,
   };
 }
 
@@ -673,6 +717,7 @@ export function mountTillyInsightsRoutes(app: Express): void {
             leverageInsight: flow.leverageInsight,
             incomeProjected: flow.incomeProjected,
             incomeProjection: flow.incomeProjection,
+            observations: flow.observations,
           },
         });
       } catch (err) {

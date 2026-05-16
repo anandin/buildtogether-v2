@@ -25,6 +25,14 @@
     {
       "path": "/api/cron/plaid-webhook-backfill",
       "schedule": "23 6 * * *"
+    },
+    {
+      "path": "/api/cron/settle-projection-history",
+      "schedule": "11 5 1 * *"
+    },
+    {
+      "path": "/api/cron/record-projection-history",
+      "schedule": "33 5 * * *"
     }
   ]
 }

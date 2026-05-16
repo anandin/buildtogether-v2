@@ -101,6 +101,14 @@ export type TodayBrief =
           typicalAmount: number;
           nextPaycheckDate: string | null;
         };
+        /** Smart Tilly detector output — array of typed observations
+         * fired by the per-call detectors. Each entry has a discriminated
+         * `kind` field; client can render any subset it cares about
+         * (Year view consumes multi_month_trend; Today consumes
+         * subscription_creep + annual_bill_upcoming + nudge_followup;
+         * chat consumes income_classification_gap + pattern_explanation).
+         * Empty array when no detectors fired. */
+        observations?: Array<{ kind: string; [k: string]: unknown }>;
       } | null;
     };
 

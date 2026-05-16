@@ -40,7 +40,22 @@ export type EventKind =
   | "nudge_acted_on"
   | "nudge_ignored"
   // On-demand "Analyse my money flow" (task #24)
-  | "analysis_run";
+  | "analysis_run"
+  // Smart Tilly observations — written every time computeMonthFlow runs
+  // a detector that fires. Distilled nightly into typed memories that
+  // future analyses condition on. Each event payload carries the
+  // detector's typed observation shape.
+  | "obs_income_classification_gap"
+  | "obs_seasonality"
+  | "obs_subscription_creep"
+  | "obs_annual_calendar"
+  | "obs_recurring_obligation_due"
+  | "obs_trip_detected"
+  | "obs_reclassification_learned"
+  | "obs_nudge_followup"
+  | "obs_pattern_explanation"
+  | "obs_projection_recorded"
+  | "obs_multi_month_trend";
 
 export type EventPayload = Record<string, unknown>;
 
