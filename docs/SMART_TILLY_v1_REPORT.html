@@ -1,0 +1,181 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Smart Tilly v1 Report</title>
+<style>
+  body { font: 14px/1.55 -apple-system, system-ui, sans-serif; max-width: 760px; margin: 36px auto; padding: 0 24px; color: #1a1a1a; }
+  h1 { font: 700 28px/1.2 Georgia, serif; border-bottom: 2px solid #1a1a1a; padding-bottom: 12px; margin-bottom: 28px; }
+  h2 { font: 700 20px/1.3 Georgia, serif; margin-top: 36px; padding-bottom: 6px; border-bottom: 1px solid #ccc; }
+  h3 { font: 600 16px/1.3 Georgia, serif; margin-top: 28px; color: #2a2a2a; }
+  pre { background: #f5f5f5; padding: 14px; border-radius: 6px; overflow-x: auto; font: 12px/1.45 'SF Mono', Menlo, monospace; }
+  code { background: #f5f5f5; padding: 2px 5px; border-radius: 3px; font: 12px 'SF Mono', Menlo, monospace; }
+  pre code { background: transparent; padding: 0; }
+  strong { color: #000; }
+  ul, ol { padding-left: 22px; }
+  blockquote { border-left: 3px solid #6b46c1; margin: 14px 0; padding: 4px 14px; color: #4a4a4a; background: #f9f7fc; }
+</style></head><body>
+<h1>Smart Tilly v1 — Pattern Intelligence Report</h1></p><p><strong>Generated:</strong> 2026-05-16T04:24:07.463Z  
+<strong>Target:</strong> https://buildtogether-v2.vercel.app  
+<strong>Detector run:</strong> 2026-05-16T04:24:06.800Z (America/Toronto)  
+<strong>Observations fired:</strong> 3 of 11 detectors  </p><p><h2>Executive summary</h2></p><p>Twelve pattern detectors were built to lift Tilly from a per-call calculator into a learning agent. Each detector observes a real signal in the user's transaction history (income classification gaps, subscription creep, trip bursts, dossier-anchored explanations, etc.), and the firing observations are written to <code>tilly_events</code> so the nightly distiller can lift stable patterns into typed memories the dossier reads on the next chat turn — closing the loop from observation → memory → contextual response.</p><p>Item #1 (paycheck cadence projection) ships in <code>server/tilly/income-summary.ts::projectRemainingIncomeForMonth</code>. The other 11 ship in <code>server/tilly/detectors.ts</code> and run in parallel via <code>runAllDetectors</code> from <code>computeMonthFlow</code>.</p><p><h2>Verification snapshot — current user</h2></p><p><pre><code>{
+  "spentToDate": 17961,
+  "income": {
+    "amount": 6744.58,
+    "source": "plaid",
+    "note": "From 1 paycheck this month."
+  },
+  "surplus": -11216,
+  "forwardLook": {
+    "projectedClose": -7311,
+    "dailyPace": 122,
+    "incomeProjected": 12480,
+    "incomeProjection": {
+      "projectedRemaining": 5735.84,
+      "cadence": "biweekly",
+      "typicalAmount": 5735.84,
+      "nextPaycheckDate": "2026-05-28"
+    },
+    "leverageInsight": {
+      "kind": "top_variable",
+      "amount": 514,
+      "text": "restaurants is your biggest variable line this month ($514). Worth a closer look?"
+    },
+    "observationCount": 3
+  }
+}</code></pre></p><p><h2>Detectors</h2></p><p><h3>#2. Income classification gap</h3></p><p><strong>Purpose.</strong> Recurring inflows from same merchant ≥2× over 60d that aren't tagged as income — likely roommate rent or side gigs misclassified as transfers/other.</p><p><strong>Code:</strong> <code>server/tilly/detectors.ts:64-126</code></p><p><strong>Fired against your data:</strong></p><p><pre><code>{
+  "kind": "income_classification_gap",
+  "candidates": [
+    {
+      "merchant": "csa group testi msp",
+      "occurrences": 2,
+      "avgAmount": 5571.41,
+      "lastSeenDate": "2026-05-08",
+      "currentCategory": "credit_adjustment"
+    },
+    {
+      "merchant": "td trust toronto",
+      "occurrences": 2,
+      "avgAmount": 5127.5,
+      "lastSeenDate": "2026-05-04",
+      "currentCategory": "transfers"
+    },
+    {
+      "merchant": "preauthorized payment",
+      "occurrences": 2,
+      "avgAmount": 4301.61,
+      "lastSeenDate": "2026-04-27",
+      "currentCategory": "transfers"
+    },
+    {
+      "merchant": "thank you td canada trust",
+      "occurrences": 2,
+      "avgAmount": 750,
+      "lastSeenDate": "2026-05-11",
+      "currentCategory": "transfers"
+    }
+  ]
+}</code></pre></p><p><h3>#3. Bonus / refund seasonality</h3></p><p><strong>Purpose.</strong> Compares this month's income to same month last year; flags when ratio > 1.4× (likely bonus or refund).</p><p><strong>Code:</strong> <code>server/tilly/detectors.ts:128-195</code></p><p><strong>Did not fire</strong> for the resolved user this run — pattern not present in the trailing window. The detector is wired and will fire as soon as the underlying pattern emerges (e.g. new bonus deposit lands, sub load grows, trip booking hits, etc.).</p><p><h3>#4. Subscription creep</h3></p><p><strong>Purpose.</strong> Trailing 6mo sub load avg vs current month; surfaces drift that's invisible per-month but crushing in aggregate.</p><p><strong>Code:</strong> <code>server/tilly/detectors.ts:197-258</code></p><p><strong>Did not fire</strong> for the resolved user this run — pattern not present in the trailing window. The detector is wired and will fire as soon as the underlying pattern emerges (e.g. new bonus deposit lands, sub load grows, trip booking hits, etc.).</p><p><h3>#5. Annual / quarterly bill calendar</h3></p><p><strong>Purpose.</strong> Scans 13mo for ≥$300 same-merchant patterns (annual / semi-annual / quarterly); predicts next-60d occurrences so projections aren't blindsided.</p><p><strong>Code:</strong> <code>server/tilly/detectors.ts:260-356</code></p><p><strong>Fired against your data:</strong></p><p><pre><code>{
+  "kind": "annual_bill_upcoming",
+  "bills": [
+    {
+      "merchant": "canada txd",
+      "typicalAmount": 4908,
+      "cadence": "semiannual",
+      "expectedNextDate": "2026-05-18",
+      "daysUntil": 2
+    },
+    {
+      "merchant": "td visa preauth pymt",
+      "typicalAmount": 4302,
+      "cadence": "semiannual",
+      "expectedNextDate": "2026-05-30",
+      "daysUntil": 14
+    },
+    {
+      "merchant": "scotialine",
+      "typicalAmount": 750,
+      "cadence": "semiannual",
+      "expectedNextDate": "2026-06-14",
+      "daysUntil": 29
+    }
+  ]
+}</code></pre></p><p><h3>#6. Recurring obligation prediction</h3></p><p><strong>Purpose.</strong> From the subscriptions table, flags items expected this month, separating already-hit from still-ahead.</p><p><strong>Code:</strong> <code>server/tilly/detectors.ts:358-407</code></p><p><strong>Did not fire</strong> for the resolved user this run — pattern not present in the trailing window. The detector is wired and will fire as soon as the underlying pattern emerges (e.g. new bonus deposit lands, sub load grows, trip booking hits, etc.).</p><p><h3>#7. Trip / event detection</h3></p><p><strong>Purpose.</strong> Consecutive-day spend bursts at TRAVEL category merchants ≥$400 total. Bucket separately so daily-pace projection isn't poisoned.</p><p><strong>Code:</strong> <code>server/tilly/detectors.ts:409-516</code></p><p><strong>Did not fire</strong> for the resolved user this run — pattern not present in the trailing window. The detector is wired and will fire as soon as the underlying pattern emerges (e.g. new bonus deposit lands, sub load grows, trip booking hits, etc.).</p><p><h3>#8. Reclassification persistence</h3></p><p><strong>Purpose.</strong> Surfaces user_preferences learned rules (markPaymentToOwnCard / markIncomeAsTransfer / hideCategoryFromSpend / merchant rename) so the user can review/revoke.</p><p><strong>Code:</strong> <code>server/tilly/detectors.ts:518-561</code></p><p><strong>Did not fire</strong> for the resolved user this run — pattern not present in the trailing window. The detector is wired and will fire as soon as the underlying pattern emerges (e.g. new bonus deposit lands, sub load grows, trip booking hits, etc.).</p><p><h3>#9. Nudge follow-up loop</h3></p><p><strong>Purpose.</strong> tilly_nudges with NULL outcome >14 days old. Tilly can reference these in chat: 'Two weeks ago you said you'd review X — still on the list?'</p><p><strong>Code:</strong> <code>server/tilly/detectors.ts:563-604</code></p><p><strong>Did not fire</strong> for the resolved user this run — pattern not present in the trailing window. The detector is wired and will fire as soon as the underlying pattern emerges (e.g. new bonus deposit lands, sub load grows, trip booking hits, etc.).</p><p><h3>#10. Pattern explanation from dossier</h3></p><p><strong>Purpose.</strong> When a category spikes ≥1.4× trailing, searches dossier sections (recent_decisions, money_arc, soft_spots, open_loops) for any past memo mentioning the category.</p><p><strong>Code:</strong> <code>server/tilly/detectors.ts:606-688</code></p><p><strong>Did not fire</strong> for the resolved user this run — pattern not present in the trailing window. The detector is wired and will fire as soon as the underlying pattern emerges (e.g. new bonus deposit lands, sub load grows, trip booking hits, etc.).</p><p><h3>#11. Projection error tracking</h3></p><p><strong>Purpose.</strong> Reads projection_history; surfaces predicted-vs-actual mean absolute error so the hero can build trust over time.</p><p><strong>Code:</strong> <code>server/tilly/detectors.ts:690-734</code></p><p><strong>Did not fire</strong> for the resolved user this run — pattern not present in the trailing window. The detector is wired and will fire as soon as the underlying pattern emerges (e.g. new bonus deposit lands, sub load grows, trip booking hits, etc.).</p><p><h3>#12. Multi-month income vs spend trend</h3></p><p><strong>Purpose.</strong> Trailing 6mo income-spend net per month. Classifies improving / flat / worsening with concrete numbers.</p><p><strong>Code:</strong> <code>server/tilly/detectors.ts:736-816</code></p><p><strong>Fired against your data:</strong></p><p><pre><code>{
+  "kind": "multi_month_trend",
+  "monthsAnalyzed": 6,
+  "trailingNets": [
+    {
+      "month": "2025-11",
+      "income": 0,
+      "spend": 0,
+      "net": 0
+    },
+    {
+      "month": "2025-12",
+      "income": 0,
+      "spend": 0,
+      "net": 0
+    },
+    {
+      "month": "2026-01",
+      "income": 0,
+      "spend": 0,
+      "net": 0
+    },
+    {
+      "month": "2026-02",
+      "income": 5976,
+      "spend": 14993,
+      "net": -9017
+    },
+    {
+      "month": "2026-03",
+      "income": 13452,
+      "spend": 14999,
+      "net": -1547
+    },
+    {
+      "month": "2026-04",
+      "income": 19715,
+      "spend": 14603,
+      "net": 5111
+    }
+  ],
+  "trendDirection": "worsening",
+  "hint": "Net down $1818/mo trend. Worth a closer look at where the weight came from."
+}</code></pre></p><p><h2>Architecture</h2></p><p><pre><code>           ┌──────────────────────────────────┐
+           │  GET /api/tilly/today + monthly  │
+           └────────────────┬─────────────────┘
+                            ▼
+                ┌─────────────────────────┐
+                │   computeMonthFlow      │
+                │   (single-source spend) │
+                └────────────┬────────────┘
+                             ▼
+              ┌───────────────────────────────┐
+              │  runAllDetectors (parallel)   │
+              │  11 detectors via allSettled  │
+              └────────────┬──────────────────┘
+                           ▼
+                  ┌────────────────┐
+                  │  Observations  │
+                  └───┬────────┬───┘
+                      │        │
+           ┌──────────┘        └──────────┐
+           ▼                              ▼
+  ┌────────────────┐         ┌─────────────────────────┐
+  │  forwardLook   │         │  emitEvent (obs_*)      │
+  │  in API resp   │         │  → tilly_events         │
+  └────────────────┘         │  → nightly distiller    │
+                             │  → tilly_memory_v2      │
+                             │  → dossier              │
+                             │  → next chat turn       │
+                             └─────────────────────────┘</code></pre></p><p><h2>Crons</h2></p><p>- <code>record-projection-history</code> — daily 05:33 UTC. Captures predicted_close per household.
+- <code>settle-projection-history</code> — monthly 1st 05:11 UTC. Computes actual_close for the month that just closed.</p><p><h2>Files added/modified</h2></p><p><pre><code>artifacts/api-server/server/tilly/detectors.ts          (new, 882 lines)
+artifacts/api-server/server/tilly/projection-history.ts (new, 151 lines)
+artifacts/api-server/server/tilly/income-summary.ts     (+108 lines, projectRemainingIncomeForMonth)
+artifacts/api-server/server/tilly/event-emitter.ts      (+11 obs_* event kinds)
+artifacts/api-server/server/routes/tilly/insights.ts    (computeMonthFlow + observations wiring)
+artifacts/api-server/server/routes/cron.ts              (+2 cron handlers)
+artifacts/api-server/server/routes/e2e.ts               (+detectors-snapshot)
+artifacts/api-server/server/migrate-boot.ts             (+projection_history table)
+artifacts/buildtogether/client/bt/api/types.ts          (+forwardLook + observations types)
+vercel.json                                              (+2 crons)</code></pre></p><p><h2>Smoke status</h2></p><p>All 7 smoke checks pass against prod. The new fields are additive — older clients keep parsing.</p><p><hr></p><p>*Generated by <code>scripts/build-smart-tilly-report.mjs</code>.*
+</body></html>
