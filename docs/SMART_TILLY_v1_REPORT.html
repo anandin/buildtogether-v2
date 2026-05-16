@@ -12,44 +12,37 @@
   ul, ol { padding-left: 22px; }
   blockquote { border-left: 3px solid #6b46c1; margin: 14px 0; padding: 4px 14px; color: #4a4a4a; background: #f9f7fc; }
 </style></head><body>
-<h1>Smart Tilly v1 — Pattern Intelligence Report</h1></p><p><strong>Generated:</strong> 2026-05-16T04:24:07.463Z  
+<h1>Smart Tilly v1 — Pattern Intelligence Report</h1></p><p><strong>Generated:</strong> 2026-05-16T17:16:13.554Z  
 <strong>Target:</strong> https://buildtogether-v2.vercel.app  
-<strong>Detector run:</strong> 2026-05-16T04:24:06.800Z (America/Toronto)  
+<strong>Detector run:</strong> 2026-05-16T17:16:12.997Z (America/Toronto)  
 <strong>Observations fired:</strong> 3 of 11 detectors  </p><p><h2>Executive summary</h2></p><p>Twelve pattern detectors were built to lift Tilly from a per-call calculator into a learning agent. Each detector observes a real signal in the user's transaction history (income classification gaps, subscription creep, trip bursts, dossier-anchored explanations, etc.), and the firing observations are written to <code>tilly_events</code> so the nightly distiller can lift stable patterns into typed memories the dossier reads on the next chat turn — closing the loop from observation → memory → contextual response.</p><p>Item #1 (paycheck cadence projection) ships in <code>server/tilly/income-summary.ts::projectRemainingIncomeForMonth</code>. The other 11 ship in <code>server/tilly/detectors.ts</code> and run in parallel via <code>runAllDetectors</code> from <code>computeMonthFlow</code>.</p><p><h2>Verification snapshot — current user</h2></p><p><pre><code>{
-  "spentToDate": 17961,
+  "spentToDate": 18238,
   "income": {
-    "amount": 6744.58,
+    "amount": 15035.34,
     "source": "plaid",
-    "note": "From 1 paycheck this month."
+    "note": "From 2 paychecks this month."
   },
-  "surplus": -11216,
+  "surplus": -3203,
   "forwardLook": {
-    "projectedClose": -7311,
-    "dailyPace": 122,
-    "incomeProjected": 12480,
+    "projectedClose": 5840,
+    "dailyPace": 138,
+    "incomeProjected": 26148,
     "incomeProjection": {
-      "projectedRemaining": 5735.84,
-      "cadence": "biweekly",
-      "typicalAmount": 5735.84,
-      "nextPaycheckDate": "2026-05-28"
+      "projectedRemaining": 11112.81,
+      "cadence": "weekly",
+      "typicalAmount": 5556.41,
+      "nextPaycheckDate": "2026-05-21"
     },
     "leverageInsight": {
       "kind": "top_variable",
-      "amount": 514,
-      "text": "restaurants is your biggest variable line this month ($514). Worth a closer look?"
+      "amount": 601,
+      "text": "shopping is your biggest variable line this month ($601). Worth a closer look?"
     },
     "observationCount": 3
   }
 }</code></pre></p><p><h2>Detectors</h2></p><p><h3>#2. Income classification gap</h3></p><p><strong>Purpose.</strong> Recurring inflows from same merchant ≥2× over 60d that aren't tagged as income — likely roommate rent or side gigs misclassified as transfers/other.</p><p><strong>Code:</strong> <code>server/tilly/detectors.ts:64-126</code></p><p><strong>Fired against your data:</strong></p><p><pre><code>{
   "kind": "income_classification_gap",
   "candidates": [
-    {
-      "merchant": "csa group testi msp",
-      "occurrences": 2,
-      "avgAmount": 5571.41,
-      "lastSeenDate": "2026-05-08",
-      "currentCategory": "credit_adjustment"
-    },
     {
       "merchant": "td trust toronto",
       "occurrences": 2,
@@ -121,15 +114,15 @@
     },
     {
       "month": "2026-02",
-      "income": 5976,
+      "income": 10067,
       "spend": 14993,
-      "net": -9017
+      "net": -4926
     },
     {
       "month": "2026-03",
-      "income": 13452,
+      "income": 16304,
       "spend": 14999,
-      "net": -1547
+      "net": 1305
     },
     {
       "month": "2026-04",
@@ -138,8 +131,8 @@
       "net": 5111
     }
   ],
-  "trendDirection": "worsening",
-  "hint": "Net down $1818/mo trend. Worth a closer look at where the weight came from."
+  "trendDirection": "improving",
+  "hint": "Net up $497/mo over the last few months — real, not noise."
 }</code></pre></p><p><h2>Architecture</h2></p><p><pre><code>           ┌──────────────────────────────────┐
            │  GET /api/tilly/today + monthly  │
            └────────────────┬─────────────────┘

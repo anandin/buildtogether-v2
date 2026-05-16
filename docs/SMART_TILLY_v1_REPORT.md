@@ -1,8 +1,8 @@
 # Smart Tilly v1 — Pattern Intelligence Report
 
-**Generated:** 2026-05-16T04:24:07.463Z  
+**Generated:** 2026-05-16T17:16:13.554Z  
 **Target:** https://buildtogether-v2.vercel.app  
-**Detector run:** 2026-05-16T04:24:06.800Z (America/Toronto)  
+**Detector run:** 2026-05-16T17:16:12.997Z (America/Toronto)  
 **Observations fired:** 3 of 11 detectors  
 
 ## Executive summary
@@ -15,27 +15,27 @@ Item #1 (paycheck cadence projection) ships in `server/tilly/income-summary.ts::
 
 ```json
 {
-  "spentToDate": 17961,
+  "spentToDate": 18238,
   "income": {
-    "amount": 6744.58,
+    "amount": 15035.34,
     "source": "plaid",
-    "note": "From 1 paycheck this month."
+    "note": "From 2 paychecks this month."
   },
-  "surplus": -11216,
+  "surplus": -3203,
   "forwardLook": {
-    "projectedClose": -7311,
-    "dailyPace": 122,
-    "incomeProjected": 12480,
+    "projectedClose": 5840,
+    "dailyPace": 138,
+    "incomeProjected": 26148,
     "incomeProjection": {
-      "projectedRemaining": 5735.84,
-      "cadence": "biweekly",
-      "typicalAmount": 5735.84,
-      "nextPaycheckDate": "2026-05-28"
+      "projectedRemaining": 11112.81,
+      "cadence": "weekly",
+      "typicalAmount": 5556.41,
+      "nextPaycheckDate": "2026-05-21"
     },
     "leverageInsight": {
       "kind": "top_variable",
-      "amount": 514,
-      "text": "restaurants is your biggest variable line this month ($514). Worth a closer look?"
+      "amount": 601,
+      "text": "shopping is your biggest variable line this month ($601). Worth a closer look?"
     },
     "observationCount": 3
   }
@@ -56,13 +56,6 @@ Item #1 (paycheck cadence projection) ships in `server/tilly/income-summary.ts::
 {
   "kind": "income_classification_gap",
   "candidates": [
-    {
-      "merchant": "csa group testi msp",
-      "occurrences": 2,
-      "avgAmount": 5571.41,
-      "lastSeenDate": "2026-05-08",
-      "currentCategory": "credit_adjustment"
-    },
     {
       "merchant": "td trust toronto",
       "occurrences": 2,
@@ -222,15 +215,15 @@ Item #1 (paycheck cadence projection) ships in `server/tilly/income-summary.ts::
     },
     {
       "month": "2026-02",
-      "income": 5976,
+      "income": 10067,
       "spend": 14993,
-      "net": -9017
+      "net": -4926
     },
     {
       "month": "2026-03",
-      "income": 13452,
+      "income": 16304,
       "spend": 14999,
-      "net": -1547
+      "net": 1305
     },
     {
       "month": "2026-04",
@@ -239,8 +232,8 @@ Item #1 (paycheck cadence projection) ships in `server/tilly/income-summary.ts::
       "net": 5111
     }
   ],
-  "trendDirection": "worsening",
-  "hint": "Net down $1818/mo trend. Worth a closer look at where the weight came from."
+  "trendDirection": "improving",
+  "hint": "Net up $497/mo over the last few months — real, not noise."
 }
 ```
 
