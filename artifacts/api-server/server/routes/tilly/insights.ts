@@ -222,7 +222,21 @@ async function computeMonthFlow(
   const income = await getMonthlyIncome(userId, householdId, now);
 
   const ADJUSTMENT_CATS = new Set(["transfers", "cashback", "credit_adjustment"]);
-  const FIXED_CATS = new Set(["loans", "taxes", "fees", "insurance"]);
+  // Fixed = recurring or already-hit-this-month outflows that DON'T
+  // scale with day-of-month. Subscriptions are explicitly here even
+  // though their rows usually carry varied category names — they
+  // recur on a known cadence, not at a per-day rate. Treating them
+  // as "variable" inflated the daily pace and made projections doom.
+  const FIXED_CATS = new Set([
+    "loans",
+    "taxes",
+    "fees",
+    "insurance",
+    "subscriptions",
+    "rent",
+    "mortgage",
+    "utilities",
+  ]);
 
   const [plaidRows, manualRows] = await Promise.all([
     db
@@ -321,9 +335,17 @@ async function computeMonthFlow(
   recurringBaseLoad = Math.round(recurringBaseLoad);
   committedRest = Math.round(committedRest);
 
-  const dailyPace = Math.round(spentToDate / d);
-  const projectedSpend = Math.round(dailyPace * daysInMonth);
-  const projectedClose = Math.round(income.amount - projectedSpend - committedRest);
+  // Honest projection — only VARIABLE outflow extrapolates with days.
+  // Fixed obligations (loans, taxes, subs, insurance, rent) are events
+  // that already happened this month or will hit on a known schedule;
+  // pretending they repeat at a per-day rate is exactly the math bug
+  // that produced "-$30k projected close" from a $4.9k one-time tax
+  // instalment. Variable scales; fixed-so-far stays as-is; committed-
+  // rest gets added separately for known upcoming charges.
+  const dailyPace = Math.round(variableSoFar / d);
+  const variableProjectedRest = Math.round(dailyPace * daysLeft);
+  const projectedSpend = spentToDate + variableProjectedRest + committedRest;
+  const projectedClose = Math.round(income.amount - projectedSpend);
   const surplus = Math.round(income.amount - spentToDate - committedRest);
 
   // One actionable thing. Priority: unused subs > biggest variable category

@@ -247,28 +247,41 @@ export function BTHome({ onNav }: Props) {
                 </Text>
 
                 <View style={{ marginTop: 18, gap: 8 }}>
+                  {/* fixedSoFar = loans + taxes + fees + insurance +
+                      subscriptions actually debited this month from
+                      Plaid. The subscriptions table powers
+                      recurringBaseLoad as a parallel signal (cadence
+                      detection from Plaid's recurring endpoint) but
+                      adding both double-counts the same subs charge.
+                      Show actual debits. */}
                   <DecompRow
                     t={t}
-                    label="recurring base"
-                    amount={forwardLook.recurringBaseLoad + forwardLook.fixedSoFar}
+                    label="recurring · already hit"
+                    amount={forwardLook.fixedSoFar}
                     note={
-                      forwardLook.recurringBaseLoad > 0 || forwardLook.fixedSoFar > 0
-                        ? "subs + fixed (rent, loans, taxes)"
-                        : "no recurring detected yet"
+                      forwardLook.fixedSoFar > 0
+                        ? "subs, loans, taxes, insurance"
+                        : "nothing fixed this month yet"
                     }
                   />
                   <DecompRow
                     t={t}
                     label="variable so far"
                     amount={forwardLook.variableSoFar}
-                    note={`~$${forwardLook.dailyPace}/day pace`}
+                    note={
+                      forwardLook.dailyPace > 0
+                        ? `~$${forwardLook.dailyPace}/day discretionary`
+                        : "nothing variable yet"
+                    }
                   />
-                  <DecompRow
-                    t={t}
-                    label="ahead this month"
-                    amount={monthly ? monthly.committedRest : 0}
-                    note="known upcoming charges"
-                  />
+                  {monthly && monthly.committedRest > 0 ? (
+                    <DecompRow
+                      t={t}
+                      label="ahead this month"
+                      amount={monthly.committedRest}
+                      note="known upcoming subs"
+                    />
+                  ) : null}
                 </View>
 
                 {forwardLook.leverageInsight ? (
