@@ -28,6 +28,8 @@ import { Tilly } from "../Tilly";
 import { BTCard, BTLabel, BTRule, BTSerif } from "../atoms";
 import { BTFonts } from "../theme";
 import { useTilly as useTillyChat } from "../hooks/useTilly";
+import { useToday } from "../hooks/useToday";
+import { useSpend } from "../hooks/useSpend";
 import { useTillyQuestions, useAnswerTillyQuestion } from "../hooks/useTillyQuestions";
 import { useUser } from "../hooks/useUser";
 import { MemoryInspector } from "../MemoryInspector";
@@ -250,6 +252,45 @@ export function BTGuardian() {
   const { t, tone } = useBT();
   const { user } = useUser();
   const tilly = useTillyChat();
+  // Pull the same data the home + spend screens render so we can pass
+  // it as screenContext on every chat send. Tilly's chat handler reads
+  // this and treats it as "what the user is looking at right now",
+  // closing the perception gap she used to apologize for ("I can't
+  // see your home screen"). Tiny snapshot — just the structural
+  // fields, not transaction arrays.
+  const today = useToday();
+  const spend = useSpend();
+  const buildScreenContext = (): Record<string, unknown> | null => {
+    const t_ = today.data && today.data.ready === true ? today.data : null;
+    const s_ = spend.data && spend.data.ready === true ? spend.data : null;
+    if (!t_ && !s_) return null;
+    return {
+      home: t_
+        ? {
+            monthly: t_.monthly ?? null,
+            forwardLook: t_.forwardLook ?? null,
+            heroNarrative: t_.heroNarrative ?? null,
+          }
+        : null,
+      spend: s_
+        ? {
+            range: "week",
+            spent: s_.spent,
+            headline: s_.headline,
+            barsTotal: (s_.bars ?? []).reduce(
+              (sum: number, b: { amt: number }) => sum + (b.amt || 0),
+              0,
+            ),
+            categoryNames: (s_.categories ?? [])
+              .slice(0, 8)
+              .map((c: { name: string }) => c.name),
+            fixedObligationNames: (s_.fixedObligations ?? [])
+              .slice(0, 8)
+              .map((c: { name: string }) => c.name),
+          }
+        : null,
+    };
+  };
   const [draft, setDraft] = useState("");
   const [memoryOpen, setMemoryOpen] = useState(false);
   // Task #23 — when the user taps an open Tilly question chip, we stash
@@ -308,7 +349,7 @@ export function BTGuardian() {
       setPendingQuestionId(null);
     }
     setDraft("");
-    tilly.send(trimmed);
+    tilly.send(trimmed, buildScreenContext());
   };
 
   // Map the strings we already render in the bubble's "Still wondering"

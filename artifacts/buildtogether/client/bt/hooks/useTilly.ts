@@ -47,9 +47,19 @@ export function useTilly() {
     },
   });
 
-  const send = useMutation({
-    mutationFn: (message: string) => btApi.sendChat(message),
-    onMutate: async (message) => {
+  const send = useMutation<
+    Awaited<ReturnType<typeof btApi.sendChat>>,
+    Error,
+    { message: string; screenContext?: Record<string, unknown> | null }
+  >({
+    // Each send carries an optional screenContext so Tilly has
+    // perception of what the user is looking at. Fixes the "I can't
+    // see your home screen" gap — Tilly now reads exactly what's
+    // rendered when she answers screen-specific questions, and can
+    // critique the snapshot if something's miscategorized.
+    mutationFn: ({ message, screenContext }) =>
+      btApi.sendChat(message, screenContext ?? null),
+    onMutate: async ({ message }) => {
       // Optimistic: append the user turn immediately for that "feels alive" moment.
       const optimistic: TillyMessage = {
         id: `local-${Date.now()}`,
@@ -228,7 +238,10 @@ export function useTilly() {
     messages: history.data?.messages ?? [],
     isLoading: history.isLoading,
     isThinking: send.isPending,
-    send: (message: string) => send.mutate(message),
+    send: (
+      message: string,
+      screenContext?: Record<string, unknown> | null,
+    ) => send.mutate({ message, screenContext: screenContext ?? null }),
     scout: (body: { query: string; location?: string | null; sourceMessageId?: string }) =>
       scout.mutate(body),
     isScouting: scout.isPending,

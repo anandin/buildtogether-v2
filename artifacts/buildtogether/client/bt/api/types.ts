@@ -88,8 +88,16 @@ export type TodayBrief =
         recurringBaseLoad: number;
         /** Discretionary spend MTD. */
         variableSoFar: number;
-        /** loans + taxes + fees + insurance MTD. */
+        /** loans + taxes + fees + insurance + subs MTD (sum of
+         * recurringSoFar + oneOffSoFar). Kept for back-compat. */
         fixedSoFar: number;
+        /** Subset of fixedSoFar that recurs every month — subs,
+         * mortgage, utilities, insurance. */
+        recurringSoFar?: number;
+        /** Subset of fixedSoFar that is NOT monthly — taxes, fees,
+         * occasional loan paydowns. Split out so the home doesn't
+         * label a tax instalment as "recurring". */
+        oneOffSoFar?: number;
         /** One actionable thing — paused-worthy sub or biggest variable
          * line. Null when nothing's worth flagging. */
         leverageInsight: {

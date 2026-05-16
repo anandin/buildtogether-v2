@@ -119,7 +119,10 @@ export const btApi = {
 
   // ── Tilly chat ───────────────────────────────────────────────────────────
   chatHistory: () => getJson<ChatHistory>("/api/tilly/chat/history"),
-  sendChat: (message: string) =>
+  sendChat: (
+    message: string,
+    screenContext?: Record<string, unknown> | null,
+  ) =>
     postJson<{
       reply: TillyMessage;
       createdReminder?: {
@@ -128,7 +131,7 @@ export const btApi = {
         kind: string;
         fireAt: string;
       } | null;
-    }>("/api/tilly/chat", { message }),
+    }>("/api/tilly/chat", { message, screenContext: screenContext ?? null }),
   chatScout: (body: { query: string; location?: string | null; sourceMessageId?: string }) =>
     postJson<{ jobId: string; messageId: string }>("/api/tilly/chat/scout", body),
   chatWait: (body: { query: string; location?: string | null; sourceMessageId?: string }) =>

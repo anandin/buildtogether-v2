@@ -106,7 +106,7 @@ const PhrasingSchema = z.object({
   heroNarrative: z
     .string()
     .describe(
-      "2-3 sentence Tilly-voice interpretation rendered at the TOP of the home card. Anchor on what you actually know about THIS user from forwardLook + observations — paycheck cadence, projected close, the one leverage line, an upcoming bill, the trend. Do NOT repeat the bodyLine. Be specific. Examples of the shape: 'Biweekly cadence, so your real monthly take-home is closer to $13,490. Against your $6,461 in fixed obligations, that's $7,029 of room before discretionary kicks in. Next paycheck May 28.' / 'You're 16 days in, pacing $130/day discretionary. The May 4 tax instalment was a one-off — strip it out and your trend is steady.' Use forwardLook + observations data verbatim where it helps; do NOT invent numbers. No emoji. Plain prose.",
+      "ONE SENTENCE (max two, only if absolutely necessary) Tilly-voice insight at the TOP of the home card. The card already shows the numbers. Your job is to add the ONE insight that helps the user act — the leverage point, the upcoming pressure, the pattern that explains a heavy number. Do NOT recite math the card already shows. Do NOT list everything you see. Pick the highest-leverage observation and name it. Examples (notice the brevity): 'May 18 CRA bill is the pressure point — next paycheck lands 10 days after.' / 'Heavier month, but $4,908 of it is a one-off tax instalment, not a pattern.' / 'Sub load crept up $34/mo since Jan — worth pruning.' Plain prose, no markdown, no emoji, no math repetition.",
     ),
 });
 

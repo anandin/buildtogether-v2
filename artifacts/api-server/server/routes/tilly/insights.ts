@@ -222,21 +222,25 @@ async function computeMonthFlow(
   const income = await getMonthlyIncome(userId, householdId, now);
 
   const ADJUSTMENT_CATS = new Set(["transfers", "cashback", "credit_adjustment"]);
-  // Fixed = recurring or already-hit-this-month outflows that DON'T
-  // scale with day-of-month. Subscriptions are explicitly here even
-  // though their rows usually carry varied category names — they
-  // recur on a known cadence, not at a per-day rate. Treating them
-  // as "variable" inflated the daily pace and made projections doom.
-  const FIXED_CATS = new Set([
-    "loans",
-    "taxes",
-    "fees",
-    "insurance",
+  // Within "fixed" (doesn't scale with day-of-month), two distinct
+  // shapes:
+  //   RECURRING = hits every month on a known cadence (mortgage,
+  //               subs, insurance, utilities). True recurring spend.
+  //   ONE_OFF   = real outflow, fixed in size, but NOT monthly. Tax
+  //               instalments, occasional loan paydowns, one-time
+  //               fees. Calling these "recurring" on the home was
+  //               the lie that prompted "taxes aren't recurring" —
+  //               splitting them out preserves honesty.
+  // Both excluded from variable daily-pace extrapolation.
+  const RECURRING_CATS = new Set([
     "subscriptions",
+    "insurance",
     "rent",
     "mortgage",
     "utilities",
   ]);
+  const ONE_OFF_CATS = new Set(["taxes", "fees", "loans"]);
+  const FIXED_CATS = new Set([...RECURRING_CATS, ...ONE_OFF_CATS]);
 
   const [plaidRows, manualRows] = await Promise.all([
     db
@@ -298,18 +302,22 @@ async function computeMonthFlow(
   }
 
   let variableSoFar = 0;
-  let fixedSoFar = 0;
+  let recurringSoFar = 0;
+  let oneOffSoFar = 0;
   const variableByCategory = new Map<string, number>();
   for (const r of allRows) {
     if (r.category === "income" || ADJUSTMENT_CATS.has(r.category)) continue;
-    if (FIXED_CATS.has(r.category)) {
-      fixedSoFar += r.amount;
+    if (RECURRING_CATS.has(r.category)) {
+      recurringSoFar += r.amount;
+    } else if (ONE_OFF_CATS.has(r.category)) {
+      oneOffSoFar += r.amount;
     } else {
       variableSoFar += r.amount;
       const k = r.category || "other";
       variableByCategory.set(k, (variableByCategory.get(k) ?? 0) + r.amount);
     }
   }
+  const fixedSoFar = recurringSoFar + oneOffSoFar;
   const spentToDate = Math.round(variableSoFar + fixedSoFar);
 
   const activeSubs = await db
@@ -435,6 +443,8 @@ async function computeMonthFlow(
     spentToDate,
     variableSoFar: Math.round(variableSoFar),
     fixedSoFar: Math.round(fixedSoFar),
+    recurringSoFar: Math.round(recurringSoFar),
+    oneOffSoFar: Math.round(oneOffSoFar),
     recurringBaseLoad,
     committedRest,
     surplus,
@@ -510,6 +520,8 @@ export function mountTillyInsightsRoutes(app: Express): void {
                 recurringBaseLoad: number;
                 variableSoFar: number;
                 fixedSoFar: number;
+                recurringSoFar: number;
+                oneOffSoFar: number;
                 leverageInsight:
                   | { kind: string; text: string; amount: number }
                   | null;
@@ -537,6 +549,8 @@ export function mountTillyInsightsRoutes(app: Express): void {
           recurringBaseLoad: flow.recurringBaseLoad,
           variableSoFar: flow.variableSoFar,
           fixedSoFar: flow.fixedSoFar,
+          recurringSoFar: flow.recurringSoFar,
+          oneOffSoFar: flow.oneOffSoFar,
           leverageInsight: flow.leverageInsight,
           incomeProjected: flow.incomeProjected,
           incomeProjection: flow.incomeProjection,
@@ -745,6 +759,8 @@ export function mountTillyInsightsRoutes(app: Express): void {
             recurringBaseLoad: flow.recurringBaseLoad,
             variableSoFar: flow.variableSoFar,
             fixedSoFar: flow.fixedSoFar,
+            recurringSoFar: flow.recurringSoFar,
+            oneOffSoFar: flow.oneOffSoFar,
             leverageInsight: flow.leverageInsight,
             incomeProjected: flow.incomeProjected,
             incomeProjection: flow.incomeProjection,

@@ -290,23 +290,28 @@ export function BTHome({ onNav }: Props) {
                 ) : null}
 
                 <View style={{ marginTop: 18, gap: 8 }}>
-                  {/* fixedSoFar = loans + taxes + fees + insurance +
-                      subscriptions actually debited this month from
-                      Plaid. The subscriptions table powers
-                      recurringBaseLoad as a parallel signal (cadence
-                      detection from Plaid's recurring endpoint) but
-                      adding both double-counts the same subs charge.
-                      Show actual debits. */}
-                  <DecompRow
-                    t={t}
-                    label="recurring · already hit"
-                    amount={forwardLook.fixedSoFar}
-                    note={
-                      forwardLook.fixedSoFar > 0
-                        ? "subs, loans, taxes, insurance"
-                        : "nothing fixed this month yet"
-                    }
-                  />
+                  {/* Three honest rows: true recurring (subs, mortgage,
+                      utilities, insurance) vs one-offs (tax instalment,
+                      occasional loan paydown) vs variable. Previously
+                      everything fixed got lumped under "recurring",
+                      which lied about CRA tax bills. Splitting them
+                      out is what made "taxes are recurring" disappear. */}
+                  {(forwardLook.recurringSoFar ?? 0) > 0 ? (
+                    <DecompRow
+                      t={t}
+                      label="recurring · already hit"
+                      amount={forwardLook.recurringSoFar ?? 0}
+                      note="mortgage, subs, insurance"
+                    />
+                  ) : null}
+                  {(forwardLook.oneOffSoFar ?? 0) > 0 ? (
+                    <DecompRow
+                      t={t}
+                      label="one-off this month"
+                      amount={forwardLook.oneOffSoFar ?? 0}
+                      note="taxes, fees, loans"
+                    />
+                  ) : null}
                   <DecompRow
                     t={t}
                     label="variable so far"

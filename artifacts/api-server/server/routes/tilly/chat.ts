@@ -438,6 +438,19 @@ export function mountTillyChatRoutes(app: Express): void {
     const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
     if (!message) return res.status(400).json({ error: "message required" });
 
+    // Screen-state perception — when the client attaches a snapshot of
+    // what's currently rendered (home forwardLook, current spend view,
+    // etc.), we inject it into extraSystem so Tilly can answer "why
+    // does the home say X" without being blind to her own surface.
+    // The architectural shift: Tilly is the agent behind the UI, and
+    // every chat turn should give her the perception of what the user
+    // is looking at, not just the chat thread. Keep the snapshot small
+    // (<2KB) so the LLM context doesn't bloat.
+    const screenContext =
+      req.body?.screenContext && typeof req.body.screenContext === "object"
+        ? (req.body.screenContext as Record<string, unknown>)
+        : null;
+
     // Cost guardrail — refuse early if the user has spent through their daily
     // token budget. Returns 429 with a Tilly-voiced message rather than an
     // opaque server error so the chat surface can render it inline.
@@ -718,6 +731,29 @@ export function mountTillyChatRoutes(app: Express): void {
           }
         } catch (err) {
           console.warn("[chat] open questions context lookup failed:", err);
+        }
+
+        // Screen perception — append what the user is currently looking
+        // at to the system context so Tilly can read her own UI. Without
+        // this she has to guess from chat alone and tells the user "I
+        // can't see your home screen right now" — which is the gap the
+        // user surfaced 2026-05-16. Truncated at 1800 chars to keep
+        // prompt small.
+        if (screenContext) {
+          const stripped: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(screenContext)) {
+            // Skip giant arrays — we want the structural snapshot,
+            // not every transaction.
+            if (Array.isArray(v) && v.length > 8) {
+              stripped[k] = `[${v.length} items truncated]`;
+            } else {
+              stripped[k] = v;
+            }
+          }
+          const snapshot = JSON.stringify(stripped, null, 2).slice(0, 1800);
+          sections.push(
+            `What the user is looking at RIGHT NOW (their screen state):\n${snapshot}\n\nUse this to answer screen-specific questions. If the user asks "why does my home say X" or "the spend page is showing Y", you have access to exactly what's rendered — don't tell them you can't see it. If you spot something miscategorized or misleading in this snapshot, name it and offer to fix it via a tool.`,
+          );
         }
 
         const extraSystem = sections.length ? sections.join("\n\n") : undefined;
