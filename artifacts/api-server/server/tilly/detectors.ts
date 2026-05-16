@@ -25,6 +25,7 @@ import {
   userPreferences,
 } from "../../shared/schema";
 import { localDateString, localDaysAgoIso } from "./user-tz";
+import { merchantSignature } from "./merchant-rules";
 
 const ADJUSTMENT_CATS = new Set(["transfers", "cashback", "credit_adjustment"]);
 
@@ -123,13 +124,11 @@ export async function detectIncomeClassificationGaps(
     }
   }
 
-  // Local copy of the merchantSignature helper logic so the detector
-  // stays self-contained. Same shape used by the dismissAsNotIncome tool.
-  const sigFor = (merch: string, name: string): string => {
-    const raw = (merch || name || "").trim().toLowerCase();
-    return raw.replace(/\s+/g, " ").slice(0, 80);
-  };
-
+  // Use the SAME merchantSignature helper the dismiss tool uses, so a
+  // dismissal pref keyed on sig X matches a detector row with sig X.
+  // The previous local sigFor() produced "preauthorized payment" while
+  // the tool's merchantSignature() produced "preauthorized" for the
+  // same row — so dismissals didn't filter. Caught in live verification.
   const byMerchant = new Map<
     string,
     { sig: string; count: number; sum: number; lastDate: string; cat: string }
@@ -139,7 +138,11 @@ export async function detectIncomeClassificationGaps(
     if (cat === "income") continue;
     const merch = (r.merchantName ?? r.name ?? "").trim().toLowerCase();
     if (!merch) continue;
-    const sig = sigFor(r.merchantName ?? "", r.name ?? "");
+    const sig = merchantSignature({
+      merchantName: r.merchantName ?? null,
+      name: r.name ?? "",
+      amount: r.amount,
+    });
     if (dismissedSigs.has(sig)) continue; // user already said no
     const e = byMerchant.get(merch) ?? { sig, count: 0, sum: 0, lastDate: r.date, cat };
     e.count += 1;
