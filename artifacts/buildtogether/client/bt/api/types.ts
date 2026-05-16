@@ -20,6 +20,13 @@ export type TodayBrief =
       breathing: number;
       afterRent: number;
       paycheckCopy: string;
+      /** Tilly-authored 2-3 sentence interpretation of today's money
+       * picture using everything she knows — cadence, projected close,
+       * leverage point, observations from the 11 detectors. Rendered
+       * as the top paragraph of the home hero so the user feels Tilly
+       * speaking, not a static template. Optional — falls back to
+       * template when LLM is unavailable. */
+      heroNarrative?: string;
       subscriptionTile?: {
         merchant: string;
         amount: number;

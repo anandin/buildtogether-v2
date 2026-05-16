@@ -500,17 +500,24 @@ export function mountTillyInsightsRoutes(app: Express): void {
           }
         | null = null;
       let forwardLook:
-        | {
-            daysIntoMonth: number;
-            daysInMonth: number;
-            dailyPace: number;
-            projectedSpend: number;
-            projectedClose: number;
-            recurringBaseLoad: number;
-            variableSoFar: number;
-            fixedSoFar: number;
-            leverageInsight: { kind: string; text: string; amount: number } | null;
-          }
+        | (Awaited<ReturnType<typeof computeMonthFlow>> extends infer F
+            ? {
+                daysIntoMonth: number;
+                daysInMonth: number;
+                dailyPace: number;
+                projectedSpend: number;
+                projectedClose: number;
+                recurringBaseLoad: number;
+                variableSoFar: number;
+                fixedSoFar: number;
+                leverageInsight:
+                  | { kind: string; text: string; amount: number }
+                  | null;
+                incomeProjected?: number;
+                incomeProjection?: F extends { incomeProjection: infer P } ? P : never;
+                observations?: F extends { observations: infer O } ? O : never;
+              }
+            : never)
         | null = null;
       try {
         const flow = await computeMonthFlow(userId, householdId, tzNow);
@@ -531,6 +538,9 @@ export function mountTillyInsightsRoutes(app: Express): void {
           variableSoFar: flow.variableSoFar,
           fixedSoFar: flow.fixedSoFar,
           leverageInsight: flow.leverageInsight,
+          incomeProjected: flow.incomeProjected,
+          incomeProjection: flow.incomeProjection,
+          observations: flow.observations,
         };
         // paycheckCopy is now forward-looking: pace + projection, not
         // the old "$X earned · $Y spent · $Z committed" doom string.
@@ -623,6 +633,27 @@ export function mountTillyInsightsRoutes(app: Express): void {
           dreamTile,
           recentMemorySnippets: snippets,
           pendingSummary,
+          // Pass everything computeMonthFlow learned so the LLM can
+          // author a heroNarrative anchored on the user's actual
+          // patterns (cadence, projection, leverage, observations)
+          // instead of a generic template.
+          forwardLook: forwardLook
+            ? {
+                daysIntoMonth: forwardLook.daysIntoMonth,
+                daysInMonth: forwardLook.daysInMonth,
+                dailyPace: forwardLook.dailyPace,
+                projectedClose: forwardLook.projectedClose,
+                variableSoFar: forwardLook.variableSoFar,
+                fixedSoFar: forwardLook.fixedSoFar,
+                incomeProjected: forwardLook.incomeProjected,
+                incomeProjection: forwardLook.incomeProjection,
+                leverageInsight: forwardLook.leverageInsight,
+                observations: forwardLook.observations as Array<{
+                  kind: string;
+                  [k: string]: unknown;
+                }> | undefined,
+              }
+            : null,
         });
       } catch (llmErr) {
         console.warn("/api/tilly/today llm fallback:", llmErr);

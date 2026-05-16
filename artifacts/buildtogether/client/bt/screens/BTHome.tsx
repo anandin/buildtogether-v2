@@ -212,6 +212,25 @@ export function BTHome({ onNav }: Props) {
           // underneath, and surfaces one specific actionable thing.
           <BTCard t={t} inverted padding={22} radius={18}>
             <BTStripes color={t.invertedFg} opacity={0.07} />
+            {/* Tilly-authored narrative at the top — replaces template-
+                feel with her voice. LLM-generated from forwardLook +
+                observations so the explanation reflects what she's
+                actually learned about this user. Falls back silently
+                when LLM unavailable; the structured card below
+                continues to convey the same information. */}
+            {today_?.heroNarrative ? (
+              <Text
+                style={{
+                  color: t.invertedFg,
+                  fontFamily: BTFonts.serif,
+                  fontSize: 15,
+                  lineHeight: 22,
+                  marginBottom: 18,
+                }}
+              >
+                {today_.heroNarrative}
+              </Text>
+            ) : null}
             {forwardLook ? (
               <>
                 <Text

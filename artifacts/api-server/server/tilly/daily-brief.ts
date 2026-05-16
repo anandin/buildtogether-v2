@@ -31,6 +31,30 @@ export type DailyBrief = {
     target: number;
   };
   tillyInvite: string;
+  /** Tilly-authored 2-3 sentence interpretation of today's money picture
+   * using everything she knows — cadence, pace, leverage point,
+   * upcoming bills, multi-month trend. Rendered as the top paragraph
+   * of the home hero so the user feels Tilly speaking, not a static
+   * template. Optional — falls back to template when LLM unavailable. */
+  heroNarrative?: string;
+};
+
+export type ForwardLookSnapshot = {
+  daysIntoMonth: number;
+  daysInMonth: number;
+  dailyPace: number;
+  projectedClose: number;
+  variableSoFar: number;
+  fixedSoFar: number;
+  incomeProjected?: number;
+  incomeProjection?: {
+    projectedRemaining: number;
+    cadence: string;
+    typicalAmount: number;
+    nextPaycheckDate: string | null;
+  };
+  leverageInsight?: { kind: string; text: string; amount: number } | null;
+  observations?: Array<{ kind: string; [k: string]: unknown }>;
 };
 
 export type DailyBriefInput = {
@@ -56,6 +80,11 @@ export type DailyBriefInput = {
     totalAmount: number;
     topCategories: Array<{ category: string; count: number; amount: number }>;
   } | null;
+  /** Everything computeMonthFlow learned this turn — cadence, projected
+   * close, decomposition, observations from the 11 detectors. The
+   * narrative is anchored on these so it stops sounding generic and
+   * actually reflects what's known about the user's patterns. */
+  forwardLook?: ForwardLookSnapshot | null;
 };
 
 const PhrasingSchema = z.object({
@@ -73,6 +102,11 @@ const PhrasingSchema = z.object({
     .string()
     .describe(
       "Italic invite at the bottom of Home. 1 short sentence ending the student wants to tap. e.g. 'Anything you want to think through?' / 'Tell me what's on your mind.' Tone-appropriate.",
+    ),
+  heroNarrative: z
+    .string()
+    .describe(
+      "2-3 sentence Tilly-voice interpretation rendered at the TOP of the home card. Anchor on what you actually know about THIS user from forwardLook + observations — paycheck cadence, projected close, the one leverage line, an upcoming bill, the trend. Do NOT repeat the bodyLine. Be specific. Examples of the shape: 'Biweekly cadence, so your real monthly take-home is closer to $13,490. Against your $6,461 in fixed obligations, that's $7,029 of room before discretionary kicks in. Next paycheck May 28.' / 'You're 16 days in, pacing $130/day discretionary. The May 4 tax instalment was a one-off — strip it out and your trend is steady.' Use forwardLook + observations data verbatim where it helps; do NOT invent numbers. No emoji. Plain prose.",
     ),
 });
 
@@ -106,6 +140,34 @@ ${input.pendingSummary.topCategories
   .join("\n")}`
     : "";
 
+  // ForwardLook context — the smart-Tilly observations + projection
+  // shape. Without this, the hero narrative defaults to generic
+  // "tight month" copy that ignores everything the detectors found.
+  // Pass as JSON; the LLM is instructed to use values verbatim.
+  const forwardLookContext = input.forwardLook
+    ? `\n\nWhat you've observed about THIS user (use verbatim, don't invent numbers):
+${JSON.stringify(
+        {
+          dayInMonth: `${input.forwardLook.daysIntoMonth} of ${input.forwardLook.daysInMonth}`,
+          dailyPace: input.forwardLook.dailyPace,
+          projectedClose: input.forwardLook.projectedClose,
+          variableSoFar: input.forwardLook.variableSoFar,
+          fixedSoFar: input.forwardLook.fixedSoFar,
+          incomeProjected: input.forwardLook.incomeProjected,
+          incomeCadence: input.forwardLook.incomeProjection?.cadence,
+          nextPaycheckDate: input.forwardLook.incomeProjection?.nextPaycheckDate,
+          typicalPaycheck: input.forwardLook.incomeProjection?.typicalAmount,
+          leverageInsight: input.forwardLook.leverageInsight?.text,
+          observations: (input.forwardLook.observations ?? []).map((o) => ({
+            kind: o.kind,
+            preview: JSON.stringify(o).slice(0, 220),
+          })),
+        },
+        null,
+        2,
+      )}`
+    : "";
+
   const userContent = `Compose the home-screen phrasing for ${input.name} right now.
 
 Time: ${input.now} (use "${dayLabel(input.now)}" as the day label context).
@@ -113,12 +175,13 @@ Tone: ${input.tone}.
 
 The student's numbers (already computed — DO NOT recompute, just reference accurately):
 - monthly surplus (income − spent − committed): $${input.numbers.breathing.toFixed(0)}
-- month math summary: "${input.numbers.paycheckCopy}"${memContext}${pendingContext}
+- month math summary: "${input.numbers.paycheckCopy}"${memContext}${pendingContext}${forwardLookContext}
 
-Return three fields:
+Return four fields:
 1. greeting — tone-appropriate, 1 line.
 2. bodyLine — the editorial sub-headline that surfaces the breathing-room number with italics around it (markdown asterisks).
-3. tillyInvite — italic prompt at the bottom of Home, inviting the student into chat. When pending queue context is provided above, prefer an invite that references something concrete in it ("Want to talk about your $4K in loan payments?" beats "Anything you want to think through?"). Keep it 1 sentence. Stay in tone.`;
+3. tillyInvite — italic prompt at the bottom of Home, inviting the student into chat. When pending queue context is provided above, prefer an invite that references something concrete in it ("Want to talk about your $4K in loan payments?" beats "Anything you want to think through?"). Keep it 1 sentence. Stay in tone.
+4. heroNarrative — 2-3 sentence Tilly-voice interpretation rendered at TOP of the home card. Anchor on the forwardLook + observations data above. Lead with what's most useful for THIS user right now (cadence/projection if biweekly, leverage if there's a clear cut, trend if multi-month_trend fired, etc.). Use real numbers verbatim. Plain prose, no markdown, no emoji.`;
 
   const systemPrompts = await buildSystemPrompts(input.tone);
   const llm = await getLLM();
@@ -140,5 +203,6 @@ Return three fields:
     subscriptionTile: input.subscriptionTile,
     dreamTile: input.dreamTile,
     tillyInvite: phrasing.tillyInvite,
+    heroNarrative: phrasing.heroNarrative,
   };
 }
