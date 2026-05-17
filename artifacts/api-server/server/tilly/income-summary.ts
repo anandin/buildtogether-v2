@@ -172,8 +172,15 @@ function observedSpanDays(datesIso: string[]): number {
 export async function getIncomeCadence(
   householdId: string,
   now: Date = new Date(),
+  tz: string = "America/Toronto",
 ): Promise<IncomeCadence> {
-  const sinceIso = localDaysAgoIso(now, "America/Toronto", 90);
+  // tz parameter defaults to Toronto (the beachhead) but should be
+  // overridden by callers who have the user's actual timezone — pull
+  // from getUserTimezone() at the call site. The 90-day cadence
+  // window is mostly tz-insensitive (gap-day medians don't shift
+  // meaningfully across timezones) but keeping it consistent matters
+  // for downstream call points that compare dates.
+  const sinceIso = localDaysAgoIso(now, tz, 90);
   const rows = await db
     .select({ date: plaidTransactions.date })
     .from(plaidTransactions)

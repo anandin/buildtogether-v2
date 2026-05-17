@@ -80,7 +80,11 @@ export function mountScoutRoutes(app: Express): void {
     requireAuth,
     async (req: Request, res: Response) => {
       if (!req.user) return res.status(401).json({ error: "auth required" });
-      const query = String(req.body?.query ?? "Levis 501 jeans Toronto");
+      // Debug-only fallback query. Tests basic Tavily connectivity; real
+      // user scout queries always come from chat with the user's actual
+      // search terms + their profile city. Keep neutral so this endpoint
+      // works the same for any operator hitting it.
+      const query = String(req.body?.query ?? "running shoes");
       const hasKey = !!process.env.TAVILY_API_KEY;
       const keyPrefix = (process.env.TAVILY_API_KEY ?? "").slice(0, 10);
       const r = await tavilySearch({ query, maxResults: 3 });
