@@ -340,30 +340,45 @@ export async function detectAnnualBillCalendar(
       ),
     );
 
-  const byMerchant = new Map<string, { dates: string[]; sum: number }>();
+  // Key the bucket map by merchantSignature so cadence overrides
+  // (written by setMerchantCadence under the same signature) actually
+  // resolve when we look them up. Previous bug: byMerchant keyed on
+  // full lowercased merchantName ("canada txd") while the override was
+  // stored under the shorter merchantSignature ("canada") — lookup
+  // missed and the detector kept surfacing the bill the user already
+  // told us to silence. Same signature-mismatch class as the income
+  // gap fix from earlier in the session.
+  const byMerchant = new Map<
+    string,
+    { sig: string; displayMerch: string; dates: string[]; sum: number }
+  >();
   for (const r of rows) {
-    const merch = (r.merchantName ?? r.name ?? "").trim().toLowerCase();
-    if (!merch) continue;
-    const e = byMerchant.get(merch) ?? { dates: [], sum: 0 };
+    const displayMerch = (r.merchantName ?? r.name ?? "").trim().toLowerCase();
+    if (!displayMerch) continue;
+    const sig = merchantSignature({
+      merchantName: r.merchantName ?? null,
+      name: r.name ?? "",
+      amount: r.amount,
+    });
+    const e = byMerchant.get(sig) ?? { sig, displayMerch, dates: [], sum: 0 };
     e.dates.push(r.date);
     e.sum += r.amount;
-    byMerchant.set(merch, e);
+    byMerchant.set(sig, e);
   }
 
   const bills: AnnualBill["bills"] = [];
-  for (const [merchant, v] of byMerchant.entries()) {
+  for (const [sig, v] of byMerchant.entries()) {
     if (v.dates.length < 1 || v.dates.length > 4) continue; // 1-4 hits per year is bill-shape
     const sortedDates = [...v.dates].sort();
     const lastDate = sortedDates[sortedDates.length - 1];
     const avgAmount = v.sum / v.dates.length;
     let cadence: "annual" | "quarterly" | "semiannual";
     let nextDate: string;
-    // User override beats inference — if they told Tilly "TD Visa
-    // Preauth Pymt is monthly, not semiannual", the override is in
-    // cadenceOverrides (keyed by merchant signature or lowercased
-    // sourceName). Override values can be "monthly" or "never" which
-    // mean "don't surface this as an upcoming annual bill" — skip.
-    const override = cadenceOverrides.get(merchant);
+    // User override beats inference. cadenceOverrides is keyed by
+    // merchantSignature (matching what setMerchantCadence wrote). Skip
+    // when override is monthly/biweekly/weekly/never — these mean
+    // "don't surface as an upcoming annual bill".
+    const override = cadenceOverrides.get(sig);
     if (override === "monthly" || override === "biweekly" || override === "weekly" || override === "never") {
       continue;
     }
@@ -400,7 +415,7 @@ export async function detectAnnualBillCalendar(
     })();
     if (daysUntil > 60 || daysUntil < -10) continue; // surface only the near horizon
     bills.push({
-      merchant,
+      merchant: v.displayMerch,
       typicalAmount: Math.round(avgAmount),
       cadence,
       expectedNextDate: nextDate,
