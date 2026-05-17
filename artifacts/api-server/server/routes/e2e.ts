@@ -17,7 +17,7 @@
  */
 import type { Express, Request, Response } from "express";
 import { randomBytes } from "crypto";
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import { sessions, users, plaidTransactions, expenses } from "../../shared/schema";
 import { inArray } from "drizzle-orm";
@@ -341,6 +341,100 @@ export function mountE2ERoutes(app: Express): void {
     } catch (err) {
       console.error("[e2e] cleanup-duplicates error:", err);
       res.status(500).json({ error: "cleanup_failed", message: (err as Error).message });
+    }
+  });
+
+  // Diagnostic: for a given household, dump the cadenceOverrides map +
+  // every >=$300 merchant's computed signature so we can see exactly
+  // which sig the detector is keying by + whether it matches an
+  // override. Built to debug "canada txd still shows up after monthly
+  // override" 2026-05-17.
+  app.get("/api/_e2e/cadence-debug", async (req: Request, res: Response) => {
+    const header = req.header("x-e2e-secret");
+    if (!header || header !== SECRET) {
+      return res.status(404).json({ error: "Not found" });
+    }
+    try {
+      let user;
+      if (PINNED_USER_ID) {
+        user = await db.query.users.findFirst({ where: eq(users.id, PINNED_USER_ID) });
+      } else if (PINNED_USER_EMAIL) {
+        user = await db.query.users.findFirst({ where: eq(users.email, PINNED_USER_EMAIL) });
+      } else {
+        const ranked = await db
+          .select({ userId: users.id, cnt: sql<number>`count(${plaidTransactions.id})::int` })
+          .from(users)
+          .leftJoin(plaidTransactions, eq(plaidTransactions.coupleId, users.coupleId))
+          .groupBy(users.id, users.createdAt)
+          .orderBy(desc(sql`count(${plaidTransactions.id})`), desc(users.createdAt))
+          .limit(1);
+        user = ranked[0] ? await db.query.users.findFirst({ where: eq(users.id, ranked[0].userId) }) : undefined;
+      }
+      if (!user?.coupleId) return res.status(404).json({ error: "no user" });
+
+      const { userPreferences: upTbl } = await import("../../shared/schema");
+      const { merchantSignature } = await import("../tilly/merchant-rules");
+
+      const overrideRows = await db
+        .select({ key: upTbl.key, value: upTbl.value })
+        .from(upTbl)
+        .where(and(eq(upTbl.userId, user.id), eq(upTbl.scope, "taxonomy")));
+      const cadenceOverrides: Record<string, string> = {};
+      for (const r of overrideRows) {
+        if (!r.key.startsWith("cadence_override.")) continue;
+        const v = r.value as { cadence?: string } | null;
+        if (v?.cadence) cadenceOverrides[r.key.slice("cadence_override.".length)] = v.cadence;
+      }
+
+      const rows = await db
+        .select({
+          amount: plaidTransactions.amount,
+          merchantName: plaidTransactions.merchantName,
+          name: plaidTransactions.name,
+          date: plaidTransactions.date,
+        })
+        .from(plaidTransactions)
+        .where(
+          and(
+            eq(plaidTransactions.coupleId, user.coupleId),
+            sql`${plaidTransactions.amount} >= 300`,
+          ),
+        );
+
+      const byMerchant = new Map<string, { sig: string; merch: string; dates: string[]; matchesOverride: string | null }>();
+      for (const r of rows) {
+        const merch = (r.merchantName ?? r.name ?? "").trim();
+        if (!merch) continue;
+        const sig = merchantSignature({
+          merchantName: r.merchantName ?? null,
+          name: r.name ?? "",
+          amount: r.amount,
+        });
+        const e =
+          byMerchant.get(sig) ?? {
+            sig,
+            merch: merch.toLowerCase(),
+            dates: [],
+            matchesOverride: cadenceOverrides[sig] ?? null,
+          };
+        e.dates.push(r.date);
+        byMerchant.set(sig, e);
+      }
+
+      res.json({
+        userId: user.id,
+        coupleId: user.coupleId,
+        cadenceOverrides,
+        merchants: [...byMerchant.values()].map((v) => ({
+          sig: v.sig,
+          displayMerch: v.merch,
+          hits: v.dates.length,
+          matchesOverride: v.matchesOverride,
+        })),
+      });
+    } catch (err) {
+      console.error("[e2e] cadence-debug error:", err);
+      res.status(500).json({ error: "debug failed", message: (err as Error).message });
     }
   });
 
