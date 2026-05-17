@@ -474,13 +474,32 @@ export function mountE2ERoutes(app: Express): void {
       }
       const { runAllDetectors } = await import("../tilly/detectors");
       const { getUserTimezone } = await import("../tilly/user-tz");
+      const { userPreferences: upTbl } = await import("../../shared/schema");
       const tz = await getUserTimezone(user.id);
+      // Read the user's cadence overrides so the snapshot mirrors what
+      // the LIVE today endpoint shows. Without this the snapshot
+      // misleads — bills the user already silenced (via
+      // setMerchantCadence) still surface here, giving a false signal
+      // that the detector is broken when actually the override-aware
+      // live path is correct. Built-in defense-in-depth after spending
+      // an hour chasing a fake bug 2026-05-17.
+      const overrideRows = await db
+        .select({ key: upTbl.key, value: upTbl.value })
+        .from(upTbl)
+        .where(and(eq(upTbl.userId, user.id), eq(upTbl.scope, "taxonomy")));
+      const cadenceOverrides = new Map<string, string>();
+      for (const r of overrideRows) {
+        if (!r.key.startsWith("cadence_override.")) continue;
+        const v = r.value as { cadence?: string } | null;
+        if (v?.cadence) cadenceOverrides.set(r.key.slice("cadence_override.".length), v.cadence);
+      }
       const observations = await runAllDetectors(
         user.id,
         user.coupleId,
         new Date(),
         tz,
         new Map(),
+        cadenceOverrides,
       );
       res.json({
         userId: user.id,
