@@ -15,7 +15,9 @@
 import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   Switch,
@@ -527,22 +529,31 @@ function RenameMerchantSheet({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
-      <Pressable onPress={onCancel} style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)" }} />
-      <View
-        style={{
-          position: "absolute",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          backgroundColor: t.bg,
-          borderTopLeftRadius: 22,
-          borderTopRightRadius: 22,
-          paddingTop: 14,
-          paddingBottom: 30,
-          paddingHorizontal: 22,
-          gap: 16,
-        }}
+      {/* KeyboardAvoidingView wraps the whole modal so the bottom sheet
+          slides up when the keyboard appears. Previous version was
+          position:absolute bottom:0 — keyboard covered the TextInput
+          and the user couldn't see what they were typing. Reported
+          2026-05-16. iOS uses padding behavior; Android handles it
+          natively via windowSoftInputMode. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1, justifyContent: "flex-end" }}
       >
+        <Pressable
+          onPress={onCancel}
+          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)" }}
+        />
+        <View
+          style={{
+            backgroundColor: t.bg,
+            borderTopLeftRadius: 22,
+            borderTopRightRadius: 22,
+            paddingTop: 14,
+            paddingBottom: 30,
+            paddingHorizontal: 22,
+            gap: 16,
+          }}
+        >
         <View style={{ alignItems: "center" }}>
           <View
             style={{
@@ -649,7 +660,8 @@ function RenameMerchantSheet({
             )}
           </Pressable>
         </View>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -718,23 +730,29 @@ function CategoryPicker({
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
-      <Pressable onPress={onCancel} style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)" }} />
-      <View
-        style={{
-          position: "absolute",
-          bottom: 0,
-          left: 0,
-          right: 0,
-          backgroundColor: t.bg,
-          borderTopLeftRadius: 22,
-          borderTopRightRadius: 22,
-          paddingTop: 14,
-          paddingBottom: 30,
-          paddingHorizontal: 22,
-          gap: 16,
-          maxHeight: "80%",
-        }}
+      {/* Same KeyboardAvoidingView pattern as the rename sheet — the
+          "Or type a new one" TextInput at the bottom was getting hidden
+          when the keyboard opened. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1, justifyContent: "flex-end" }}
       >
+        <Pressable
+          onPress={onCancel}
+          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.4)" }}
+        />
+        <View
+          style={{
+            backgroundColor: t.bg,
+            borderTopLeftRadius: 22,
+            borderTopRightRadius: 22,
+            paddingTop: 14,
+            paddingBottom: 30,
+            paddingHorizontal: 22,
+            gap: 16,
+            maxHeight: "85%",
+          }}
+        >
         <View style={{ alignItems: "center" }}>
           <View
             style={{
@@ -841,7 +859,8 @@ function CategoryPicker({
             Cancel
           </Text>
         </Pressable>
-      </View>
+        </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
