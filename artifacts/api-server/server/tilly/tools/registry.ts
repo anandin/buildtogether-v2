@@ -495,6 +495,10 @@ const TOOL_SCHEMAS: Record<ToolName, z.ZodType> = {
 // them from here. Be specific about cue phrases and surgical-vs-nuclear
 // guidance.
 
+// Exposed via getToolDescription() below so the persona module can
+// generate its "What you CAN do" section from this one source (audit
+// fix #5). NEVER write tool descriptions in the persona prompt
+// directly — add/edit here, the persona regenerates at request time.
 const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
   createDream:
     "Create a savings goal / 'dream' for the user. Trigger when they ask you to set up / track / save for something. " +
@@ -729,6 +733,13 @@ function stripUnsupportedToolKeys(s: Record<string, unknown>) {
 
 export function isKnownToolName(n: string): n is ToolName {
   return (TOOL_NAMES as readonly string[]).includes(n);
+}
+
+/** Public read of the description used by the LLM. Persona module
+ * uses this to build the "What you CAN do" section so we never
+ * duplicate the description in two places. */
+export function getToolDescription(name: ToolName): string | undefined {
+  return TOOL_DESCRIPTIONS[name];
 }
 
 // ─── Dispatcher ────────────────────────────────────────────────────────────

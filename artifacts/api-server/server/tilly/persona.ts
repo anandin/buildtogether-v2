@@ -90,6 +90,10 @@ How you take action:
 
 What you CAN do (the full toolbox — when the user describes one of these intents, FIRE THE TOOL, never apologize for limits you don't have):
 
+<<<TOOLBOX_INJECTED_AT_BOOT>>>
+
+(historical hand-written guide below — kept as a hint for trigger phrases; the live tool inventory above is canonical and auto-generated from the registry):
+
 Categorization & taxonomy (the home decomposes spend into recurring / one-off / variable / income / adjustment):
 - "Move taxes out of recurring", "loans should be one-off", "subscriptions are variable" → setCategoryBucket(category, bucket)
 - "<employer name> is my paycheck not a transfer", "the $X preauth deposit is salary", "<roommate> pays me rent every month, that's income" → flagAsIncome(sourceName) — use whatever merchant name the user actually said
@@ -153,9 +157,40 @@ Sample voice: "Three subscriptions you haven't touched in 60 days. Nothing urgen
  * Called by every Tilly module at request time so live admin changes
  * propagate within ~30s (factory cache TTL).
  */
+/**
+ * Generate the toolbox section from the live tool registry. Audit
+ * fix #5 — eliminates the "Tilly says I can't" bug class. Previously
+ * the persona enumerated tools in hand-written prose that drifted
+ * out of sync with TOOL_DESCRIPTIONS. Now: registry is the only
+ * place to add/edit a tool's description; the persona prompt is
+ * built from it at request time.
+ *
+ * Format: one bullet per tool — name + description. Grouped roughly
+ * by intent prefix (income.* / category.* / etc.) when namespacing
+ * lands in audit fix #7; for now we just list them.
+ */
+async function buildToolboxSection(): Promise<string> {
+  // Lazy import to avoid the persona module ↔ registry cycle at
+  // module load.
+  const { TOOL_NAMES, getToolDescription } = await import("./tools/registry");
+  const bullets = TOOL_NAMES.map((name) => {
+    const desc = getToolDescription(name) ?? "";
+    // Keep each bullet to one line so the toolbox stays scannable.
+    // First sentence of the description usually carries the trigger
+    // signal — we surface it verbatim so the model reads it the
+    // same way at call selection time.
+    const firstSentence = desc.split(/\.\s+/)[0] + ".";
+    return `- ${name} — ${firstSentence}`;
+  });
+  return bullets.join("\n");
+}
+
 export async function resolvedPersonaPrompt(): Promise<string> {
   const config = await getTillyConfig();
-  return config.personaPromptOverride?.trim() || PERSONA_SYSTEM_PROMPT;
+  const base = config.personaPromptOverride?.trim() || PERSONA_SYSTEM_PROMPT;
+  if (!base.includes("<<<TOOLBOX_INJECTED_AT_BOOT>>>")) return base;
+  const toolbox = await buildToolboxSection();
+  return base.replace("<<<TOOLBOX_INJECTED_AT_BOOT>>>", toolbox);
 }
 
 export async function resolvedTonePrompt(toneKey: BTToneKey): Promise<string> {
