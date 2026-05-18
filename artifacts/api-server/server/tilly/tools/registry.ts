@@ -32,7 +32,10 @@ import {
 } from "../../../shared/schema";
 import { enqueueScout } from "../scout/orchestrator";
 import { and, eq, sql, inArray } from "drizzle-orm";
-import { merchantSignature } from "../merchant-rules";
+import {
+  DEFAULT_FIXED_OBLIGATION_CATS,
+  merchantSignature,
+} from "../taxonomy";
 import type { LLMToolDef } from "../llm/types";
 
 export const TOOL_NAMES = [
@@ -1327,15 +1330,8 @@ async function runRenameMerchant(
   };
 }
 
-/** Default fixed-obligation categories — the ones that are EXCLUDED
- * from the headline spend total unless the user opts them in. Keep in
- * sync with FIXED_OBLIGATION_CATS in spend-pattern.ts. */
-const DEFAULT_FIXED_OBLIGATION_CATS = new Set([
-  "loans",
-  "taxes",
-  "transfers",
-  "fees",
-]);
+// DEFAULT_FIXED_OBLIGATION_CATS now lives in ../taxonomy.ts (audit fix
+// #1) — single source of truth. Imported below.
 
 async function runSetCategoryInclusion(
   args: z.infer<typeof setCategoryInclusionSchema>,

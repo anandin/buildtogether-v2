@@ -21,6 +21,11 @@ import {
   localDateString,
 } from "./user-tz";
 import { getMonthlyIncome } from "./income-summary";
+import {
+  DEFAULT_ADJUSTMENT_CATS,
+  DEFAULT_FIXED_OBLIGATION_CATS,
+  resolveFixedObligationSet,
+} from "./taxonomy";
 
 /**
  * Unified read across Plaid + manual sources. The pattern engine doesn't
@@ -259,56 +264,9 @@ export type SpendHorizon = {
  * chat tool. We resolve overrides per-call via resolveFixedObligationSet
  * below. Keep the constant in sync with the registry's
  * DEFAULT_FIXED_OBLIGATION_CATS. */
-const FIXED_OBLIGATION_CATS = new Set([
-  "loans",
-  "taxes",
-  "transfers",
-  "fees",
-  // Adjustments — see isAdjustment() in buildMonthOrYearPattern. They
-  // belong in the "money flow" bucket on Spend (so the user can see
-  // them) but get stripped from the Horizon panel + totalSpent math.
-  "cashback",
-  "credit_adjustment",
-]);
-
-/**
- * Returns the effective fixed-obligation set for this user, applying
- * `include_in_spend.<category>` overrides on top of the defaults.
- * - includeInSpend=true on a default-excluded cat (loans, taxes, etc.)
- *   removes it from the fixed set (now counts toward the headline).
- * - includeInSpend=false on a default-included cat (subscriptions,
- *   restaurants, etc.) adds it to the fixed set (now treated as
- *   money flow only).
- *
- * Reads userPreferences directly. Without a userId we just return the
- * defaults — non-user-scoped callers (cron, state-summary) shouldn't
- * apply per-user overrides.
- */
-async function resolveFixedObligationSet(userId: string | null): Promise<Set<string>> {
-  if (!userId) return new Set(FIXED_OBLIGATION_CATS);
-  const rows = await db
-    .select()
-    .from(userPreferences)
-    .where(
-      and(
-        eq(userPreferences.userId, userId),
-        eq(userPreferences.scope, "spend"),
-      ),
-    );
-  const overrides = new Map<string, boolean>();
-  for (const r of rows) {
-    if (!r.key.startsWith("include_in_spend.")) continue;
-    const cat = r.key.slice("include_in_spend.".length).toLowerCase();
-    const v = r.value as { includeInSpend?: unknown } | null;
-    if (typeof v?.includeInSpend === "boolean") overrides.set(cat, v.includeInSpend);
-  }
-  const set = new Set(FIXED_OBLIGATION_CATS);
-  for (const [cat, includeInSpend] of overrides) {
-    if (includeInSpend) set.delete(cat);     // user opted in → no longer fixed
-    else set.add(cat);                       // user opted out → now fixed
-  }
-  return set;
-}
+// Both FIXED_OBLIGATION_CATS + resolveFixedObligationSet now live in
+// taxonomy.ts as part of the audit refactor (single source of truth
+// for category buckets). Imported at the top of this file.
 
 const DAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
 const FULL_DAY_NAMES = [
@@ -1338,11 +1296,12 @@ async function computeTrailingAvgSavingsRate(
     // and CC payment-backs double-count purchases already in spend. The
     // trailing-avg-savings-rate fed the Horizon verdict, so this is why
     // months sometimes flipped UNDERWATER on weeks they shouldn't have.
-    const ADJUSTMENT_CATS = new Set(["transfers", "cashback", "credit_adjustment"]);
+    // Adjustment categories — reuse the canonical set from taxonomy.ts
+    // rather than duplicating the literal here.
     const spend = spendRows
       .filter((r) => {
         const c = (r.ourCategory ?? "").toLowerCase();
-        return c !== "income" && !ADJUSTMENT_CATS.has(c);
+        return c !== "income" && !DEFAULT_ADJUSTMENT_CATS.has(c);
       })
       .reduce((s, r) => s + Math.abs(r.amount), 0);
     if (income > 0) {
@@ -1412,14 +1371,13 @@ async function computeMonthlyHistory(
   // non-income row was summed as "spend", which made each month's bar
   // 2-3× the true burn (a $4k CC payment showed up as $4k spend on TOP
   // of the original purchases that built up that bill).
-  const ADJUSTMENT_CATS = new Set(["transfers", "cashback", "credit_adjustment"]);
   for (const r of rows) {
     const m = parseInt(r.date.slice(5, 7), 10) - 1;
     if (m < 0 || m > 11) continue;
     const cat = (r.ourCategory ?? "").toLowerCase();
     const abs = Math.abs(r.amount);
     if (cat === "income") incomeByMonth[m] += abs;
-    else if (ADJUSTMENT_CATS.has(cat)) continue;
+    else if (DEFAULT_ADJUSTMENT_CATS.has(cat)) continue;
     else spendByMonth[m] += abs;
   }
 

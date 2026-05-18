@@ -25,9 +25,12 @@ import {
   userPreferences,
 } from "../../shared/schema";
 import { localDateString, localDaysAgoIso } from "./user-tz";
-import { merchantSignature } from "./merchant-rules";
+import {
+  DEFAULT_ADJUSTMENT_CATS,
+  merchantSignature,
+} from "./taxonomy";
 
-const ADJUSTMENT_CATS = new Set(["transfers", "cashback", "credit_adjustment"]);
+// Adjustment category set comes from taxonomy.ts — see audit fix #1.
 
 // ────────────────────────────────────────────────────────────────────
 // Shared helpers
@@ -873,7 +876,7 @@ export async function detectMultiMonthTrend(
     for (const r of rows) {
       const cat = (r.ourCategory ?? "").toLowerCase();
       if (cat === "income") income += Math.abs(r.amount);
-      else if (ADJUSTMENT_CATS.has(cat)) continue;
+      else if (DEFAULT_ADJUSTMENT_CATS.has(cat)) continue;
       else spend += Math.abs(r.amount);
     }
     trailingNets.push({

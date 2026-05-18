@@ -221,46 +221,11 @@ async function computeMonthFlow(
 
   const income = await getMonthlyIncome(userId, householdId, now);
 
-  // Default taxonomy buckets — overridable per-category via
-  // user_preferences scope='taxonomy' key='bucket_override.<cat>'.
-  // The override is what the setCategoryBucket tool writes, so when
-  // the user says "move taxes to one-off" the next compute uses the
-  // new placement. Without overrides, the defaults below run.
-  const DEFAULT_RECURRING = new Set([
-    "subscriptions",
-    "insurance",
-    "rent",
-    "mortgage",
-    "utilities",
-  ]);
-  const DEFAULT_ONE_OFF = new Set(["taxes", "fees", "loans"]);
-  const DEFAULT_ADJUSTMENT = new Set(["transfers", "cashback", "credit_adjustment"]);
-
-  type Bucket = "recurring" | "one_off" | "variable" | "income" | "adjustment";
-  const overrideRows = await db
-    .select({ key: userPreferences.key, value: userPreferences.value })
-    .from(userPreferences)
-    .where(
-      and(
-        eq(userPreferences.userId, userId),
-        eq(userPreferences.scope, "taxonomy"),
-      ),
-    );
-  const overrides = new Map<string, Bucket>();
-  for (const r of overrideRows) {
-    if (!r.key.startsWith("bucket_override.")) continue;
-    const cat = r.key.slice("bucket_override.".length);
-    const v = r.value as { bucket?: Bucket } | null;
-    if (v?.bucket) overrides.set(cat, v.bucket);
-  }
-  const bucketFor = (cat: string): Bucket => {
-    if (overrides.has(cat)) return overrides.get(cat)!;
-    if (cat === "income") return "income";
-    if (DEFAULT_ADJUSTMENT.has(cat)) return "adjustment";
-    if (DEFAULT_RECURRING.has(cat)) return "recurring";
-    if (DEFAULT_ONE_OFF.has(cat)) return "one_off";
-    return "variable";
-  };
+  // Single source of truth: taxonomy.ts. All bucket logic + overrides
+  // load from one module. Eliminates the local-Set-of-strings drift
+  // class that caused 7 of 13 bugs in the past week.
+  const { bucketFor, loadUserOverrides } = await import("../../tilly/taxonomy");
+  const taxonomyOverrides = await loadUserOverrides(userId);
 
   const [plaidRows, manualRows] = await Promise.all([
     db
@@ -326,7 +291,7 @@ async function computeMonthFlow(
   let oneOffSoFar = 0;
   const variableByCategory = new Map<string, number>();
   for (const r of allRows) {
-    const b = bucketFor(r.category);
+    const b = bucketFor(r.category, taxonomyOverrides);
     if (b === "income" || b === "adjustment") continue;
     if (b === "recurring") {
       recurringSoFar += r.amount;
@@ -410,16 +375,10 @@ async function computeMonthFlow(
     }
   }
 
-  // Build a cadence override map so the annual_bill_upcoming detector
-  // honors user-set merchant cadences (e.g. "TD Visa Preauth is monthly,
-  // not semiannual"). Keyed by merchant signature.
-  const cadenceOverrides = new Map<string, string>();
-  for (const r of overrideRows) {
-    if (!r.key.startsWith("cadence_override.")) continue;
-    const sig = r.key.slice("cadence_override.".length);
-    const v = r.value as { cadence?: string } | null;
-    if (v?.cadence) cadenceOverrides.set(sig, v.cadence);
-  }
+  // Cadence overrides come from the same taxonomy bundle loaded once at
+  // the top — single round-trip for all per-user prefs. Detectors that
+  // need it (annual_bill_upcoming) read from taxonomyOverrides.cadenceOverrides.
+  const cadenceOverrides = taxonomyOverrides.cadenceOverrides;
 
   // Smart Tilly observations — runs the 11 detectors in parallel
   // (item 1, paycheck cadence, is already part of the income calc
