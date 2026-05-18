@@ -55,7 +55,14 @@ export type EventKind =
   | "obs_nudge_followup"
   | "obs_pattern_explanation"
   | "obs_projection_recorded"
-  | "obs_multi_month_trend";
+  | "obs_multi_month_trend"
+  // Validator pass (audit fix #4) — flagged a reply that claimed
+  // success on a no-op tool, fabricated a number, or otherwise
+  // diverged from the actual tool results. Payload carries the issue
+  // + previews of the user message + draft reply. Operator can
+  // inspect via /admin/memory to find patterns in what the persona /
+  // tools let slip.
+  | "validator_flagged";
 
 export type EventPayload = Record<string, unknown>;
 

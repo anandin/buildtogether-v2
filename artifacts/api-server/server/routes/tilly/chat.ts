@@ -842,6 +842,27 @@ export function mountTillyChatRoutes(app: Express): void {
               `[chat] HALLUCINATION: reply claims scout in flight but no findOptions/predictSalePrice fired. userId=${userId} userMsg="${message.slice(0, 120)}" reply="${out.text.slice(0, 200)}"`,
             );
           }
+          // Audit fix #4 — validator pass. Cheap critic call that
+          // checks (user msg, tool results, draft text) for false
+          // success claims, fabricated numbers, hallucinated entities.
+          // Fire-and-forget (don't await) so the reply isn't slowed
+          // down by ~1s of Haiku latency. The validator logs + emits
+          // observation events on flag; future iteration can move to
+          // regenerating the reply when not-ok.
+          (async () => {
+            try {
+              const { validateAndEmit } = await import("../../tilly/validator");
+              await validateAndEmit({
+                userMessage: message,
+                toolResults: toolResults as Array<{ kind: string; [k: string]: unknown }>,
+                draftReply: text,
+                userId,
+                householdId,
+              });
+            } catch (vErr) {
+              console.warn("[chat] validator failed:", vErr);
+            }
+          })().catch(() => {});
         } catch (err) {
           // If tool_use fails (model doesn't support it, transient
           // OpenRouter error, etc.), fall back to plain text reply.
