@@ -171,18 +171,33 @@ Sample voice: "Three subscriptions you haven't touched in 60 days. Nothing urgen
  */
 async function buildToolboxSection(): Promise<string> {
   // Lazy import to avoid the persona module ↔ registry cycle at
-  // module load.
-  const { TOOL_NAMES, getToolDescription } = await import("./tools/registry");
-  const bullets = TOOL_NAMES.map((name) => {
-    const desc = getToolDescription(name) ?? "";
-    // Keep each bullet to one line so the toolbox stays scannable.
-    // First sentence of the description usually carries the trigger
-    // signal — we surface it verbatim so the model reads it the
-    // same way at call selection time.
+  // module load. TOOL_GROUPS provides namespaced organization (audit
+  // fix #7) — model sees tools categorically (INCOME / CATEGORY /
+  // MERCHANT / SURFACE / DREAMS / SHOPPING) which helps it pick the
+  // right one at >15-tool count per Anthropic guidance.
+  const { TOOL_GROUPS, getToolDescription, getUngroupedTools } = await import(
+    "./tools/registry"
+  );
+  const bulletFor = (name: string): string => {
+    const desc = getToolDescription(name as never) ?? "";
     const firstSentence = desc.split(/\.\s+/)[0] + ".";
     return `- ${name} — ${firstSentence}`;
-  });
-  return bullets.join("\n");
+  };
+  const sections: string[] = [];
+  for (const group of TOOL_GROUPS) {
+    sections.push(group.label);
+    for (const t of group.tools) sections.push(bulletFor(t));
+    sections.push("");
+  }
+  // Catch any tool that hasn't been added to a group yet — adding a
+  // tool without updating TOOL_GROUPS would silently hide it from the
+  // persona toolbox otherwise.
+  const ungrouped = getUngroupedTools();
+  if (ungrouped.length > 0) {
+    sections.push("OTHER");
+    for (const t of ungrouped) sections.push(bulletFor(t));
+  }
+  return sections.join("\n").trimEnd();
 }
 
 export async function resolvedPersonaPrompt(): Promise<string> {

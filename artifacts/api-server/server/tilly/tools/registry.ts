@@ -742,6 +742,69 @@ export function getToolDescription(name: ToolName): string | undefined {
   return TOOL_DESCRIPTIONS[name];
 }
 
+/**
+ * Tool groups — namespacing for the persona's auto-generated toolbox
+ * section (audit fix #7). Per Anthropic's writing-tools-for-agents:
+ * "Namespacing (grouping related tools under common prefixes) can
+ * help delineate boundaries between lots of tools." With 22+ tools
+ * the model needs visual structure to pick correctly.
+ *
+ * We organize WITHOUT renaming the tools themselves — rename would
+ * break every existing chat history persisted with the old kinds,
+ * plus every mobile-side switch. The grouping only affects how the
+ * persona presents them to the LLM. Behavior + back-compat unchanged.
+ */
+export const TOOL_GROUPS: { label: string; tools: ToolName[] }[] = [
+  {
+    label: "INCOME — flag, dismiss, reclassify inflows",
+    tools: ["flagAsIncome", "dismissAsNotIncome", "markIncomeAsTransfer"],
+  },
+  {
+    label: "CATEGORY / TAXONOMY — shape what counts where on Spend + Home",
+    tools: [
+      "setCategoryBucket",
+      "setCategoryInclusion",
+      "hideCategoryFromSpend",
+      "unhideCategory",
+    ],
+  },
+  {
+    label: "MERCHANT — rename, recategorize, override cadence",
+    tools: [
+      "markPaymentToOwnCard",
+      "removePaymentToOwnCardAlias",
+      "renameMerchant",
+      "setMerchantCategory",
+      "setMerchantCadence",
+    ],
+  },
+  {
+    label: "SURFACE — pin/hide tiles, capture profile",
+    tools: [
+      "pinToHome",
+      "unpinFromHome",
+      "setOnboardingField",
+      "unsetOnboardingField",
+    ],
+  },
+  {
+    label: "DREAMS — savings goals",
+    tools: ["createDream", "deleteDream"],
+  },
+  {
+    label: "SHOPPING — watchlist + scout (LIVE WEB DATA)",
+    tools: ["addToWatchlist", "findOptions", "predictSalePrice"],
+  },
+];
+
+/** Returns every tool name that isn't covered by a group above —
+ * sanity check so we don't accidentally drop a tool from the
+ * persona display. Used by the persona builder. */
+export function getUngroupedTools(): ToolName[] {
+  const grouped = new Set<string>(TOOL_GROUPS.flatMap((g) => g.tools as readonly string[]));
+  return (TOOL_NAMES as readonly ToolName[]).filter((n) => !grouped.has(n));
+}
+
 // ─── Dispatcher ────────────────────────────────────────────────────────────
 
 /**
