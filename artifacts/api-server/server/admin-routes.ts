@@ -31,9 +31,17 @@ function authenticateAdmin(req: AdminRequest, res: Response, next: NextFunction)
 }
 
 export function registerAdminRoutes(app: Express) {
-  app.get("/admin", (req, res) => {
-    res.sendFile(path.resolve(apiServerDir, "server", "templates", "admin-dashboard.html"));
-  });
+  // NOTE 2026-05-18: the GET /admin handler that used to live here
+  // served the legacy admin-dashboard.html (a single-page admin UI
+  // from 2018 with its own ADMIN_EMAIL + bcrypt login flow). It was
+  // shadowing the newer routes/admin-page.ts which serves admin.html
+  // — the multi-tab shell (Memory, Tilly, People, Plaid, Cost, Skills)
+  // every recent feature has plugged into. User reported "I can't see
+  // anything" on admin pages 2026-05-18 — they were looking at the
+  // old dashboard and wondering where the new tabs were.
+  // The legacy admin-dashboard.html still exists in templates/ for
+  // archaeology but is no longer routable. If we ever need to revive
+  // it, mount under a different path like /admin/legacy.
 
   // Login uses credentials configured via environment variables
   // (ADMIN_EMAIL, ADMIN_PASSWORD_HASH, SESSION_SECRET). See admin-config.ts.
