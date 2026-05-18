@@ -596,192 +596,64 @@ export function mountTillyChatRoutes(app: Express): void {
             content: r.content,
           }));
 
-        const [retrievedMemories, state, dossierRow, tillyCfg] = await Promise.all([
+        // Audit fix #8 — extraSystem assembly delegated to per-concern
+        // builders in server/tilly/contextBuilders/. Each builder is
+        // null-tolerant and unit-testable in isolation. chat.ts is now
+        // the orchestrator that owns ORDER (dossier first, state
+        // second, etc.) and the retrieval-log call; builders pull data
+        // + format. The 200-line inline pile this replaces lived here
+        // for 6 months and was the single hardest part of chat.ts to
+        // reason about.
+        const [retrievedMemories, tillyCfg] = await Promise.all([
           hybridRetrieve(userId, message),
-          buildFinancialStateSummary(householdId, userId),
-          getLatestDossier(userId),
           getTillyConfig(),
         ]);
-        const memSnippets = retrievedMemories.map(
-          (m) => `[${m.kind}, ${m.dateLabel}] ${m.body}`,
-        );
-        const sections: string[] = [];
-        // S3 dossier — what Tilly believes about this student. Comes
-        // FIRST so the persona has the user model before situational
-        // context. Validated through the Zod schema before formatting
-        // so a corrupt jsonb row can't poison the prompt.
-        if (dossierRow) {
-          const parsed = DossierContentSchema.safeParse(dossierRow.content);
-          if (parsed.success) {
-            sections.push(formatDossierForPrompt(parsed.data));
-          }
-        }
-        if (state.hasData) {
-          sections.push(
-            `Their current state — use this when they ask about money:\n${state.text}\n\nDO NOT say you can't see their balance or that you need them to connect; the data above is your access. If a specific thing isn't listed (e.g. credit utilization), say you don't see THAT specific thing yet.`,
-          );
-        }
-        if (memSnippets.length) {
-          sections.push(
-            `What you remember about them (in your voice, from RAG):\n${memSnippets.map((s) => `- ${s}`).join("\n")}`,
-          );
-        }
+        const memSnippets = retrievedMemories.map((m) => ({
+          kind: m.kind,
+          dateLabel: m.dateLabel,
+          body: m.body,
+        }));
 
-        // Cash-flow timing block — the timeline of money in + out so
-        // Tilly references upcoming paychecks and recurring bills BEFORE
-        // answering "can I afford X" rather than only looking at the
-        // headline. Non-fatal: if the query fails we just skip the
-        // block; the reply still goes out.
-        try {
-          const cashFlow = await buildCashFlowSummary(userId, householdId);
-          if (cashFlow.hasData) {
-            sections.push(cashFlow.text);
-          }
-        } catch (cfErr) {
-          console.warn("[chat] cash-flow summary lookup failed:", cfErr);
-        }
+        const cb = await import("../../tilly/contextBuilders");
+        const [
+          dossier,
+          financialState,
+          cashFlow,
+          recentAnalysis,
+          openQuestions,
+          skillsResult,
+        ] = await Promise.all([
+          cb.buildDossierSection(userId),
+          cb.buildFinancialStateSection(householdId, userId),
+          cb.buildCashFlowSection(userId, householdId),
+          cb.buildRecentAnalysisSection(householdId),
+          cb.buildOpenQuestionsSection(householdId),
+          cb.buildSkillsSection(message),
+        ]);
+        const memSection = cb.buildMemorySnippetsSection(memSnippets);
+        const screen = cb.buildScreenContextSection(screenContext);
 
-        // Task #24 follow-up context: if this household ran an analysis
-        // in the last 24h, inject its structured payload (rows + top
-        // anomalies + memory line) into extraSystem so a follow-up like
-        // "what was that Doordash thing?" can drill in without
-        // re-computing. The analysis card itself stays the source of
-        // truth for the user; this block just lets Tilly *reference*
-        // those numbers in the next chat turn.
-        try {
-          const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-          const recentAnalysis = await db
-            .select()
-            .from(guardianConversations)
-            .where(
-              and(
-                eq(guardianConversations.coupleId, householdId),
-                eq(guardianConversations.intent, "analysis"),
-                gte(guardianConversations.createdAt, cutoff),
-              ),
-            )
-            .orderBy(desc(guardianConversations.createdAt))
-            .limit(1);
-          const ar = recentAnalysis[0];
-          const meta =
-            ar && ar.metadata && typeof ar.metadata === "object"
-              ? (ar.metadata as {
-                  title?: string;
-                  rows?: { label: string; amt: number; sign: "+" | "-" | "=" }[];
-                  note?: string;
-                  anomalies?: { merchant: string; total: number; reason: "spike" | "new"; baseline?: number }[];
-                  memoryLine?: string | null;
-                })
-              : null;
-          // Disambiguate: only the on-demand money-flow analysis card
-          // should prime chat follow-ups; other cards using
-          // intent="analysis" (e.g. affordability checks) carry a
-          // different title and would produce confusing context.
-          const isMoneyFlow =
-            meta && typeof meta.title === "string" && /money flow/i.test(meta.title);
-          if (isMoneyFlow && meta && Array.isArray(meta.rows) && meta.rows.length) {
-            const ageMin = Math.round((Date.now() - ar!.createdAt.getTime()) / 60000);
-            const rowLines = meta.rows
-              .map((r) => `  ${r.label}: ${r.sign === "-" ? "-" : ""}$${Math.abs(r.amt).toFixed(2)}`)
-              .join("\n");
-            const anomLines = (meta.anomalies ?? [])
-              .map((a) =>
-                `  • ${a.merchant} $${a.total.toFixed(2)} ${
-                  a.reason === "new" ? "(new this month)" : `(usually ~$${(a.baseline ?? 0).toFixed(2)}/mo)`
-                }`,
-              )
-              .join("\n");
-            sections.push(
-              `Recent analysis you ran for them (${ageMin} min ago) — reference this if they ask a follow-up, don't re-derive:\n` +
-                `${meta.title ?? "Money flow"}\n${rowLines}` +
-                (anomLines ? `\nWorth a second look:\n${anomLines}` : "") +
-                (meta.note ? `\nYour note: ${meta.note}` : "") +
-                (meta.memoryLine ? `\n${meta.memoryLine}` : ""),
-            );
-          }
-        } catch (err) {
-          // Non-fatal: missing recent-analysis context just means the
-          // chat reply won't reference the card. Log and move on.
-          console.warn("[chat] recent-analysis context lookup failed:", err);
-        }
-
-        // Task #23: surface up to 3 open sync-time questions in chat
-        // context so Tilly can naturally reference them ("oh, by the way,
-        // I noticed Frank Bistro keeps coming up — is that a regular
-        // spot?") instead of asking out of nowhere.
-        try {
-          const { tillyQuestions } = await import("../../../shared/schema");
-          const openQs = await db
-            .select()
-            .from(tillyQuestions)
-            .where(
-              and(
-                eq(tillyQuestions.householdId, householdId),
-                eq(tillyQuestions.status, "open"),
-              ),
-            )
-            .orderBy(desc(tillyQuestions.createdAt))
-            .limit(3);
-          if (openQs.length) {
-            sections.push(
-              `Open questions you've already queued for them (don't re-ask all of them, but you can naturally reference one if it fits):\n${openQs
-                .map((q) => `- [${q.kind}] ${q.body}`)
-                .join("\n")}`,
-            );
-          }
-        } catch (err) {
-          console.warn("[chat] open questions context lookup failed:", err);
-        }
-
-        // Self-learned skill retrieval. Embeds the user's message and
-        // finds the top-3 active skills (Hermes/Voyager-style skill
-        // library) that match by cosine similarity. Each matched skill's
-        // instructions get injected into extraSystem so Tilly applies
-        // them naturally. Empty array (and empty injection) when no
-        // skill clears the threshold — chat works normally with no
-        // skills loaded. Failures swallowed: an embed timeout shouldn't
-        // block the reply.
-        try {
-          const { retrieveSkillsForMessage, formatSkillsForPrompt } = await import(
-            "../../tilly/skills"
-          );
-          const matched = await retrieveSkillsForMessage(message, {
-            topK: 3,
-            minSimilarity: 0.35,
-          });
-          if (matched.length > 0) {
-            sections.push(formatSkillsForPrompt(matched));
-            console.log(
-              `[chat] injected ${matched.length} skills: ${matched.map((m) => m.name).join(", ")}`,
-            );
-          }
-        } catch (skillErr) {
-          console.warn("[chat] skill retrieval failed:", skillErr);
-        }
-
-        // Screen perception — append what the user is currently looking
-        // at to the system context so Tilly can read her own UI. Without
-        // this she has to guess from chat alone and tells the user "I
-        // can't see your home screen right now" — which is the gap the
-        // user surfaced 2026-05-16. Truncated at 1800 chars to keep
-        // prompt small.
-        if (screenContext) {
-          const stripped: Record<string, unknown> = {};
-          for (const [k, v] of Object.entries(screenContext)) {
-            // Skip giant arrays — we want the structural snapshot,
-            // not every transaction.
-            if (Array.isArray(v) && v.length > 8) {
-              stripped[k] = `[${v.length} items truncated]`;
-            } else {
-              stripped[k] = v;
-            }
-          }
-          const snapshot = JSON.stringify(stripped, null, 2).slice(0, 1800);
-          sections.push(
-            `What the user is looking at RIGHT NOW (their screen state):\n${snapshot}\n\nUse this to answer screen-specific questions. If the user asks "why does my home say X" or "the spend page is showing Y", you have access to exactly what's rendered — don't tell them you can't see it. If you spot something miscategorized or misleading in this snapshot, name it and offer to fix it via a tool.`,
+        if (skillsResult.matchedNames.length > 0) {
+          console.log(
+            `[chat] injected ${skillsResult.matchedNames.length} skills: ${skillsResult.matchedNames.join(", ")}`,
           );
         }
 
+        // Order matters: dossier (who Tilly thinks user is) → state
+        // (where they are right now) → memory (what's been said) →
+        // cashflow (timing) → recent analysis (24h follow-up) → open
+        // questions (queued) → skills (Hermes-style retrieval) →
+        // screen (what they're literally looking at).
+        const sections = [
+          dossier,
+          financialState,
+          memSection,
+          cashFlow,
+          recentAnalysis,
+          openQuestions,
+          skillsResult.section,
+          screen,
+        ].filter((s): s is string => s !== null);
         const extraSystem = sections.length ? sections.join("\n\n") : undefined;
 
         // Log the retrieval that fed this turn — admin transparency surface
