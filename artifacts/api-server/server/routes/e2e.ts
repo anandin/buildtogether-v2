@@ -438,6 +438,32 @@ export function mountE2ERoutes(app: Express): void {
     }
   });
 
+  // Skill retrieval debug — directly hit retrieveSkillsForMessage so
+  // we can see what similarity scores a given message produces against
+  // the live skill library. Useful for tuning the threshold.
+  app.post("/api/_e2e/skill-retrieve-debug", async (req: Request, res: Response) => {
+    const header = req.header("x-e2e-secret");
+    if (!header || header !== SECRET) return res.status(404).json({ error: "Not found" });
+    try {
+      const message = String(req.body?.message ?? "").trim();
+      if (!message) return res.status(400).json({ error: "message required" });
+      const { retrieveSkillsForMessage } = await import("../tilly/skills");
+      // Lower the threshold so we can see ALL scores, not just matches.
+      const matches = await retrieveSkillsForMessage(message, { topK: 10, minSimilarity: 0 });
+      res.json({
+        message,
+        matchCount: matches.length,
+        matches: matches.map((m) => ({
+          name: m.name,
+          similarity: m.similarity,
+          description: m.description,
+        })),
+      });
+    } catch (err) {
+      res.status(500).json({ error: "debug failed", message: (err as Error).message });
+    }
+  });
+
   // Bulk-seed skills from an admin-provided payload. Used by the
   // backfill script to populate tilly_skills with the skills we
   // induced manually from this week's actual user trajectories.
