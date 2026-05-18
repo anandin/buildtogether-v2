@@ -744,6 +744,36 @@ export function getToolDescription(name: ToolName): string | undefined {
 
 // ─── Dispatcher ────────────────────────────────────────────────────────────
 
+/**
+ * Typed dispatch helper — new tools added after audit fix #6 SHOULD
+ * use this pattern instead of inline `parsed.data as z.infer<typeof X>`
+ * at the case statement. The cast still happens, but inside this
+ * helper at one site — typed in, typed out. Reduces the chance that
+ * a future case statement passes the wrong-shaped object to a handler.
+ *
+ *   case "newTool":
+ *     return dispatchTyped(newToolSchema, args, (a) => runNewTool(a, ctx));
+ *
+ * The existing 19 cases still use the inline-cast pattern; migrating
+ * them is mechanical and tracked as future work. The runtime behavior
+ * is identical — zod has already validated args at the parse() boundary.
+ */
+async function dispatchTyped<T extends z.ZodTypeAny>(
+  schema: T,
+  args: unknown,
+  handler: (parsed: z.infer<T>) => Promise<ToolResult | null>,
+): Promise<ToolResult | null> {
+  const parsed = schema.safeParse(args);
+  if (!parsed.success) {
+    console.warn("[tools] dispatchTyped validation failed:", parsed.error.flatten());
+    return null;
+  }
+  return handler(parsed.data);
+}
+// Tag _dispatchTyped as exported-for-future-use so the linter doesn't
+// flag it as dead code while we incrementally migrate cases over.
+export { dispatchTyped as _dispatchTyped };
+
 export async function executeTool(
   name: ToolName,
   args: unknown,

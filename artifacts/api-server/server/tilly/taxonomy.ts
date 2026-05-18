@@ -27,6 +27,7 @@
  * continuity.
  */
 import { and, eq } from "drizzle-orm";
+import { z } from "zod";
 
 import { db } from "../db";
 import { userPreferences } from "../../shared/schema";
@@ -144,15 +145,22 @@ export async function loadUserOverrides(
           eq(userPreferences.scope, "taxonomy"),
         ),
       );
+    // Runtime-validate the user_preferences value shapes. Per audit
+    // fix #6 — bad JSON in user_preferences shouldn't crash the home
+    // or silently set the bucket to garbage. Validation here = the
+    // boundary; downstream consumers can trust the typed bundle.
+    const BucketSchema = z.enum(["recurring", "one_off", "variable", "income", "adjustment"]);
+    const BucketValueSchema = z.object({ bucket: BucketSchema }).passthrough();
+    const CadenceValueSchema = z.object({ cadence: z.string() }).passthrough();
     for (const r of rows) {
       if (r.key.startsWith("bucket_override.")) {
         const cat = r.key.slice("bucket_override.".length);
-        const v = r.value as { bucket?: Bucket } | null;
-        if (v?.bucket) out.bucketOverrides.set(cat, v.bucket);
+        const parsed = BucketValueSchema.safeParse(r.value);
+        if (parsed.success) out.bucketOverrides.set(cat, parsed.data.bucket);
       } else if (r.key.startsWith("cadence_override.")) {
         const sig = r.key.slice("cadence_override.".length);
-        const v = r.value as { cadence?: string } | null;
-        if (v?.cadence) out.cadenceOverrides.set(sig, v.cadence);
+        const parsed = CadenceValueSchema.safeParse(r.value);
+        if (parsed.success) out.cadenceOverrides.set(sig, parsed.data.cadence);
       } else if (r.key.startsWith("dismissed_as_income.")) {
         const sig = r.key.slice("dismissed_as_income.".length);
         out.dismissedIncomeSigs.add(sig);
