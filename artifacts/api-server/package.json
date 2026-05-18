@@ -8,6 +8,8 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "scripts:reclassify-pending": "tsx scripts/reclassify-pending.ts",
     "scripts:invalidate-non-prod": "tsx scripts/invalidate-non-prod-items.ts"
   },
@@ -39,6 +41,7 @@
     "zod-validation-error": "^3.5.4"
   },
   "devDependencies": {
+    "@rollup/rollup-win32-x64-msvc": "^4.60.4",
     "@types/bcryptjs": "^2.4.6",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
@@ -52,6 +55,7 @@
     "esbuild-plugin-pino": "^2.3.3",
     "pino-pretty": "^13",
     "thread-stream": "3.1.0",
-    "tsx": "^4.20.6"
+    "tsx": "^4.20.6",
+    "vitest": "^4.1.6"
   }
 }

@@ -1,0 +1,31 @@
+name: Unit tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Per the architecture audit (docs/TILLY_ARCHITECTURE_AUDIT.md):
+# the eval/test harness is the highest-leverage missing piece. This
+# workflow runs the Vitest suite on every push so regressions (sig
+# mismatches, tool-registry drift, taxonomy bucket changes) surface
+# in CI rather than via user reports in prod.
+
+jobs:
+  vitest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Run vitest suite
+        run: pnpm -F @workspace/api-server test
