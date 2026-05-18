@@ -438,6 +438,29 @@ export function mountE2ERoutes(app: Express): void {
     }
   });
 
+  // Inspect raw skills table for diagnostic — returns embedding length
+  // per row so we can see whether embeddings actually persisted.
+  app.get("/api/_e2e/skill-rows", async (req: Request, res: Response) => {
+    const header = req.header("x-e2e-secret");
+    if (!header || header !== SECRET) return res.status(404).json({ error: "Not found" });
+    try {
+      const { tillySkills } = await import("../../shared/schema");
+      const rows = await db.select().from(tillySkills);
+      res.json({
+        count: rows.length,
+        rows: rows.map((r) => ({
+          name: r.name,
+          status: r.status,
+          embeddingLength: r.triggerEmbedding?.length ?? 0,
+          embeddingFirst3: r.triggerEmbedding?.slice(0, 3) ?? null,
+          triggerPhraseCount: r.triggerPhrases?.length ?? 0,
+        })),
+      });
+    } catch (err) {
+      res.status(500).json({ error: "inspect failed", message: (err as Error).message });
+    }
+  });
+
   // Skill retrieval debug — directly hit retrieveSkillsForMessage so
   // we can see what similarity scores a given message produces against
   // the live skill library. Useful for tuning the threshold.
