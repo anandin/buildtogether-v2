@@ -470,17 +470,30 @@ export function mountE2ERoutes(app: Express): void {
     try {
       const message = String(req.body?.message ?? "").trim();
       if (!message) return res.status(400).json({ error: "message required" });
-      const { retrieveSkillsForMessage } = await import("../tilly/skills");
-      // Lower the threshold so we can see ALL scores, not just matches.
-      const matches = await retrieveSkillsForMessage(message, { topK: 10, minSimilarity: 0 });
+      const { embed } = await import("../tilly/embeddings");
+      const queryEmbedding = await embed(message, { route: "skill-retrieve-debug" });
+      const { tillySkills } = await import("../../shared/schema");
+      const skills = await db.select().from(tillySkills).where(eq(tillySkills.status, "active"));
+
+      // Compute cosine for every active skill directly so we can see
+      // what scores actually are — bypasses the threshold filter.
+      function cosine(a: number[], b: number[]): number {
+        if (a.length !== b.length || a.length === 0) return 0;
+        let dot = 0, na = 0, nb = 0;
+        for (let i = 0; i < a.length; i++) { dot += a[i]*b[i]; na += a[i]*a[i]; nb += b[i]*b[i]; }
+        return dot / (Math.sqrt(na) * Math.sqrt(nb) || 1);
+      }
+      const scores = skills.map((s) => ({
+        name: s.name,
+        sim: queryEmbedding && s.triggerEmbedding ? cosine(queryEmbedding, s.triggerEmbedding) : null,
+      })).sort((a, b) => (b.sim ?? 0) - (a.sim ?? 0));
+
       res.json({
         message,
-        matchCount: matches.length,
-        matches: matches.map((m) => ({
-          name: m.name,
-          similarity: m.similarity,
-          description: m.description,
-        })),
+        embedSucceeded: queryEmbedding !== null,
+        queryEmbeddingLength: queryEmbedding?.length ?? 0,
+        activeSkillCount: skills.length,
+        scores,
       });
     } catch (err) {
       res.status(500).json({ error: "debug failed", message: (err as Error).message });
