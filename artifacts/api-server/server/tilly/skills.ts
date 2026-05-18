@@ -32,7 +32,7 @@
  *  - MIND-Skill 2026 — induction + deduction loss for skill quality
  *  - Claude Agent SDK Skills (staged loading)
  */
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "../db";
@@ -104,12 +104,22 @@ export async function retrieveSkillsForMessage(
 
   if (scored.length === 0) return [];
 
-  // Bump usage counters in one batch update so the curator has signal.
+  // Bump usage counters in one batch. Use drizzle's typed inArray
+  // instead of sql`= ANY(${ids})` — the latter quietly fails to
+  // parameterize JS arrays as postgres arrays in some driver paths,
+  // which was silently throwing and swallowing every retrieval that
+  // had matches. Caught 2026-05-17 via skill-retrieve-debug.
+  // Wrap in try/catch so a counter-update failure can't silence the
+  // actual matches the caller needs.
   const ids = scored.map((r) => r.skill.id);
-  await db
-    .update(tillySkills)
-    .set({ usedCount: sql`${tillySkills.usedCount} + 1`, lastUsedAt: new Date() })
-    .where(sql`${tillySkills.id} = ANY(${ids})`);
+  try {
+    await db
+      .update(tillySkills)
+      .set({ usedCount: sql`${tillySkills.usedCount} + 1`, lastUsedAt: new Date() })
+      .where(inArray(tillySkills.id, ids));
+  } catch (err) {
+    console.warn("[skills] usage counter bump failed:", err);
+  }
 
   return scored.map((r) => ({
     id: r.skill.id,
