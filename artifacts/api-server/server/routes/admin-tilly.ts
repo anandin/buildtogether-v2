@@ -64,6 +64,26 @@ function pickAllowed(body: Record<string, unknown>): Record<string, unknown> {
 }
 
 export function mountAdminTillyRoutes(app: Express): void {
+  // Per-process detector failure counters (audit fix #3). Surfaced
+  // here so silent detector throws stop hiding. Resets on cold start;
+  // when we have real observability infra these move to Sentry.
+  app.get(
+    "/api/admin/tilly/detector-health",
+    requireAuth,
+    requireAdmin,
+    async (_req: Request, res: Response) => {
+      const { getDetectorFailureCounters } = await import("../tilly/detectors");
+      const failures = getDetectorFailureCounters();
+      const totalFailures = Object.values(failures).reduce((s, v) => s + v, 0);
+      res.json({
+        totalFailuresThisProcess: totalFailures,
+        perDetector: failures,
+        note:
+          "Counters reset on cold-start. A non-zero count means a detector threw — check Vercel logs for the stack.",
+      });
+    },
+  );
+
   // Quick "am I admin?" check for the page bootstrap.
   app.get(
     "/api/admin/tilly/whoami",

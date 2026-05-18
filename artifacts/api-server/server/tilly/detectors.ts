@@ -933,6 +933,27 @@ export type Observation =
   | ProjectionAccuracy
   | MultiMonthTrend;
 
+/**
+ * Per-detector failure counters. Surfaced on /api/admin/tilly so any
+ * detector silently throwing becomes visible without grepping logs.
+ * Reset by process restart — fine for our scale (Vercel cold-starts
+ * give us natural windows). When we have real observability infra
+ * this moves to Sentry / Datadog counters.
+ */
+const detectorFailureCounters = new Map<string, number>();
+
+export function getDetectorFailureCounters(): Record<string, number> {
+  return Object.fromEntries(detectorFailureCounters.entries());
+}
+
+/** Detector name + the function that returns Observation | null.
+ * Naming each entry explicitly means the failure log + counter knows
+ * which detector broke, instead of "one of 11 things failed". */
+type DetectorEntry = {
+  name: string;
+  run: () => Promise<Observation | null>;
+};
+
 export async function runAllDetectors(
   userId: string,
   householdId: string,
@@ -941,22 +962,44 @@ export async function runAllDetectors(
   variableByCategory: Map<string, number>,
   cadenceOverrides: Map<string, string> = new Map(),
 ): Promise<Observation[]> {
-  const results = await Promise.allSettled([
-    detectIncomeClassificationGaps(householdId, now, tz, userId),
-    detectSeasonality(householdId, now, tz),
-    detectSubscriptionCreep(householdId, now, tz),
-    detectAnnualBillCalendar(householdId, now, tz, cadenceOverrides),
-    detectRecurringObligations(householdId, now, tz),
-    detectTripsAndEvents(householdId, now, tz),
-    detectReclassificationLearned(userId),
-    detectNudgeFollowups(userId, now),
-    detectPatternExplanation(userId, householdId, now, tz, variableByCategory),
-    detectProjectionAccuracy(householdId),
-    detectMultiMonthTrend(householdId, now, tz),
-  ]);
+  const entries: DetectorEntry[] = [
+    { name: "income_classification_gap", run: () => detectIncomeClassificationGaps(householdId, now, tz, userId) },
+    { name: "seasonality", run: () => detectSeasonality(householdId, now, tz) },
+    { name: "subscription_creep", run: () => detectSubscriptionCreep(householdId, now, tz) },
+    { name: "annual_bill_upcoming", run: () => detectAnnualBillCalendar(householdId, now, tz, cadenceOverrides) },
+    { name: "recurring_obligation", run: () => detectRecurringObligations(householdId, now, tz) },
+    { name: "trip_detected", run: () => detectTripsAndEvents(householdId, now, tz) },
+    { name: "reclassification_learned", run: () => detectReclassificationLearned(userId) },
+    { name: "nudge_followup", run: () => detectNudgeFollowups(userId, now) },
+    { name: "pattern_explanation", run: () => detectPatternExplanation(userId, householdId, now, tz, variableByCategory) },
+    { name: "projection_accuracy", run: () => detectProjectionAccuracy(householdId) },
+    { name: "multi_month_trend", run: () => detectMultiMonthTrend(householdId, now, tz) },
+  ];
+
+  const results = await Promise.allSettled(entries.map((e) => e.run()));
+
   const out: Observation[] = [];
-  for (const r of results) {
-    if (r.status === "fulfilled" && r.value) out.push(r.value);
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    const detectorName = entries[i].name;
+    if (r.status === "fulfilled") {
+      if (r.value) out.push(r.value);
+    } else {
+      // Audit fix #3 — no more silent swallow. Failure gets logged with
+      // detector name + error, counter bumps, on next /admin/tilly read
+      // the operator sees what's broken. Without this, a detector that
+      // throws (DB outage, missing column, bad data) just drops its
+      // observation and looks like "no pattern fired today" — which is
+      // indistinguishable from a healthy quiet day. Caught 0 real
+      // failures during the session but the silent-class is the
+      // problem; this makes future failures visible.
+      const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+      console.error(`[detector] ${detectorName} FAILED: ${reason}`);
+      detectorFailureCounters.set(
+        detectorName,
+        (detectorFailureCounters.get(detectorName) ?? 0) + 1,
+      );
+    }
   }
   return out;
 }
