@@ -136,12 +136,16 @@ export function mountAdminSkillsRoutes(app: Express): void {
     },
   );
 
-  // Server-rendered admin page (auth-gated). All client DOM is built
-  // via document.createElement + textContent — no innerHTML on
+  // Server-rendered admin page — PUBLIC HTML, same pattern as /admin
+  // itself. The HTML contains no sensitive data; auth happens on the
+  // /api/admin/skills/* calls inside the page. Previously this route
+  // required requireAuth which 401'd browser GETs because browsers
+  // don't send Authorization on document loads. All client DOM is
+  // built via document.createElement + textContent — no innerHTML on
   // untrusted-ish fields (LLM-generated skill names/descriptions are
   // technically attacker-influenceable if the induction LLM ingests
-  // user data). Same pattern + safety bar as /admin/memory.
-  app.get("/admin/skills", requireAuth, requireAdmin, async (_req: Request, res: Response) => {
+  // user data).
+  app.get("/admin/skills", (_req: Request, res: Response) => {
     res.setHeader("content-type", "text/html; charset=utf-8");
     res.send(SKILLS_PAGE_HTML);
   });
@@ -192,6 +196,23 @@ const SKILLS_PAGE_HTML = `<!doctype html>
 <div id="list">Loading…</div>
 
 <script>
+// Auth — matches the admin shell's localStorage pattern (see
+// /admin admin.html line 256). If no token is present we redirect
+// to /admin so the user can sign in there; once they have, they
+// can deeplink back here. Every API call below sends Bearer header.
+const TOKEN_KEY = "build_together_auth_token";
+function authHeaders() {
+  const t = localStorage.getItem(TOKEN_KEY);
+  return t ? { Authorization: "Bearer " + t } : {};
+}
+function bailToAdmin() {
+  // Add ?next=/admin/skills so the admin shell can redirect back
+  // after login. Currently the shell doesn't act on this but adding
+  // it here lets us wire it later without page-side changes.
+  window.location.href = "/admin?next=" + encodeURIComponent("/admin/skills");
+}
+if (!localStorage.getItem(TOKEN_KEY)) bailToAdmin();
+
 // All DOM construction via createElement + textContent. No innerHTML
 // for skill fields — LLM-induced names/descriptions could be
 // attacker-influenced via crafted user messages.
@@ -271,7 +292,8 @@ function skillCard(s) {
 }
 
 async function load() {
-  const r = await fetch('/api/admin/skills');
+  const r = await fetch('/api/admin/skills', { headers: authHeaders() });
+  if (r.status === 401 || r.status === 403) { bailToAdmin(); return; }
   const d = await r.json();
   const stats = document.getElementById('stats');
   stats.replaceChildren(
@@ -289,20 +311,32 @@ async function load() {
 }
 async function action(id, kind) {
   if (kind === 'archive' && !confirm('Archive this skill? It will stop being injected into chats.')) return;
-  await fetch('/api/admin/skills/' + encodeURIComponent(id) + '/' + kind, { method: 'POST' });
+  const r = await fetch('/api/admin/skills/' + encodeURIComponent(id) + '/' + kind, {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (r.status === 401 || r.status === 403) { bailToAdmin(); return; }
   await load();
 }
 async function induceNow(btn) {
   btn.disabled = true; btn.textContent = 'Inducing...';
   try {
-    const r = await fetch('/api/admin/skills/induce-now', { method: 'POST' });
+    const r = await fetch('/api/admin/skills/induce-now', {
+      method: 'POST',
+      headers: authHeaders(),
+    });
+    if (r.status === 401 || r.status === 403) { bailToAdmin(); return; }
     const d = await r.json();
     alert('Scanned ' + d.trajectoriesScanned + ' trajectories; proposed ' + d.skillsProposed + ' new skills (' + d.errors + ' errors).');
     await load();
   } finally { btn.disabled = false; btn.textContent = 'Induce skills from last 7 days'; }
 }
 async function curateNow() {
-  const r = await fetch('/api/admin/skills/curate-now', { method: 'POST' });
+  const r = await fetch('/api/admin/skills/curate-now', {
+    method: 'POST',
+    headers: authHeaders(),
+  });
+  if (r.status === 401 || r.status === 403) { bailToAdmin(); return; }
   const d = await r.json();
   alert('Curator: promoted ' + d.promoted + ', archived ' + d.archived + ', unchanged ' + d.unchanged + '.');
   await load();

@@ -32,6 +32,13 @@ export function mountAdminPage(app: Express): void {
   app.get("/admin/tilly", (_req: Request, res: Response) => {
     res.redirect(301, "/admin#tilly");
   });
+  // Skills page is now a tab in the shell (same as memory/tilly).
+  // Standalone /admin/skills still works (see routes/admin-skills.ts)
+  // but the recommended path is the tab — single sign-in, consistent
+  // UI. Redirect bookmarks to the tab for back-compat.
+  app.get("/admin/skills-page", (_req: Request, res: Response) => {
+    res.redirect(301, "/admin#skills");
+  });
 
   app.get("/admin", (_req: Request, res: Response) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
