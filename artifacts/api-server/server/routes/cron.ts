@@ -471,6 +471,44 @@ export function mountCronRoutes(app: Express): void {
     },
   );
 
+  // Self-learning skill induction — scans the last 7 days of successful
+  // tool trajectories and extracts reusable skills (Hermes/Voyager
+  // pattern). Proposed skills land in tilly_skills with status='proposed'
+  // for admin review at /admin/skills. Run weekly Sunday 4am UTC.
+  app.post(
+    "/api/cron/induce-skills",
+    requireCron,
+    async (_req: Request, res: Response) => {
+      try {
+        const { induceSkillsFromTrajectories } = await import("../tilly/skills");
+        const out = await induceSkillsFromTrajectories();
+        res.json({ ok: true, ...out });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("/api/cron/induce-skills error:", msg);
+        res.status(500).json({ error: "induction failed", debug: msg });
+      }
+    },
+  );
+
+  // Skill curator — promotes proposed skills with positive usage,
+  // archives underperforming active skills. Hermes cadence: 7 days.
+  app.post(
+    "/api/cron/curate-skills",
+    requireCron,
+    async (_req: Request, res: Response) => {
+      try {
+        const { curateSkills } = await import("../tilly/skills");
+        const out = await curateSkills();
+        res.json({ ok: true, ...out });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("/api/cron/curate-skills error:", msg);
+        res.status(500).json({ error: "curation failed", debug: msg });
+      }
+    },
+  );
+
   // Smart Tilly #11 — at the start of each month, settle the prior
   // month: compute actual close from the now-final ledger and stamp
   // settled_at on the matching projection_history row. The detector

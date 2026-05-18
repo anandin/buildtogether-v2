@@ -33,6 +33,14 @@
     {
       "path": "/api/cron/record-projection-history",
       "schedule": "33 5 * * *"
+    },
+    {
+      "path": "/api/cron/induce-skills",
+      "schedule": "47 4 * * 0"
+    },
+    {
+      "path": "/api/cron/curate-skills",
+      "schedule": "11 5 * * 0"
     }
   ]
 }

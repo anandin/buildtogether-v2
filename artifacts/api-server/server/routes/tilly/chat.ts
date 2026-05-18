@@ -733,6 +733,32 @@ export function mountTillyChatRoutes(app: Express): void {
           console.warn("[chat] open questions context lookup failed:", err);
         }
 
+        // Self-learned skill retrieval. Embeds the user's message and
+        // finds the top-3 active skills (Hermes/Voyager-style skill
+        // library) that match by cosine similarity. Each matched skill's
+        // instructions get injected into extraSystem so Tilly applies
+        // them naturally. Empty array (and empty injection) when no
+        // skill clears the threshold — chat works normally with no
+        // skills loaded. Failures swallowed: an embed timeout shouldn't
+        // block the reply.
+        try {
+          const { retrieveSkillsForMessage, formatSkillsForPrompt } = await import(
+            "../../tilly/skills"
+          );
+          const matched = await retrieveSkillsForMessage(message, {
+            topK: 3,
+            minSimilarity: 0.35,
+          });
+          if (matched.length > 0) {
+            sections.push(formatSkillsForPrompt(matched));
+            console.log(
+              `[chat] injected ${matched.length} skills: ${matched.map((m) => m.name).join(", ")}`,
+            );
+          }
+        } catch (skillErr) {
+          console.warn("[chat] skill retrieval failed:", skillErr);
+        }
+
         // Screen perception — append what the user is currently looking
         // at to the system context so Tilly can read her own UI. Without
         // this she has to guess from chat alone and tells the user "I

@@ -25,6 +25,7 @@ import { mountHouseholdRoutes } from "./household";
 import { mountAdminTillyRoutes } from "./admin-tilly";
 import { mountAdminPage } from "./admin-page";
 import { mountAdminMemoryRoutes } from "./admin-memory";
+import { mountAdminSkillsRoutes } from "./admin-skills";
 import { mountAdminCostRoutes } from "./admin-cost";
 import { mountAdminUsersRoutes } from "./admin-users";
 import { mountAdminPlaidRoutes } from "./admin-plaid";
@@ -53,6 +54,7 @@ export function registerTillyRoutes(app: Express): void {
   mountProtectionsRoutes(app);
   mountAdminTillyRoutes(app);
   mountAdminMemoryRoutes(app);
+  mountAdminSkillsRoutes(app);
   mountAdminCostRoutes(app);
   mountAdminUsersRoutes(app);
   mountAdminPlaidRoutes(app);

@@ -1075,6 +1075,80 @@ export const tillyReminders = pgTable("tilly_reminders", {
 export type TillyReminder = typeof tillyReminders.$inferSelect;
 
 /**
+ * Self-learned skill library (Hermes/Voyager pattern, 2026).
+ *
+ * Tilly observes successful trajectories — a user message followed by
+ * a tool sequence that produced a positive outcome — and induces a
+ * reusable skill from the pattern. The skill is generalizable:
+ * "user dismissed CC wash transactions" → applies to ANY user with
+ * similar misclassified inflows, not just the one who first asked.
+ *
+ * Skills are retrieved at chat time via embedding similarity on the
+ * user's message → top-K skills' instructions get injected into the
+ * system prompt for that turn. Closes the loop from observation to
+ * generalization to reuse.
+ *
+ * Lifecycle:
+ *   proposed → (admin promotes OR usage threshold + success_rate>0.5)
+ *            → active
+ *            → (success_rate drops below 0.3 over ≥5 uses) → archived
+ *
+ * Per Anthropic's Agent SDK terminology: skills = "what agents know"
+ * (vs tools = "what agents can do"). Each skill is a small,
+ * domain-specific instruction block with trigger phrases that the
+ * retriever matches against incoming chat messages.
+ */
+export const tillySkills = pgTable("tilly_skills", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  /** Short kebab-case identifier — "cc-payment-wash-dismiss". */
+  name: text("name").notNull().unique(),
+  /** One-sentence what-this-does for the admin UI. */
+  description: text("description").notNull(),
+  /** Markdown instructions the LLM reads at retrieval time. Should
+   * include: when to apply, what tool sequence to fire, what to say
+   * back to the user. ≤2000 chars to keep context budget small. */
+  instructions: text("instructions").notNull(),
+  /** Plain-language triggers for fuzzy matching ("these are CC
+   * payments", "stop flagging that as income"). Also embedded into
+   * triggerEmbedding for vector retrieval. */
+  triggerPhrases: jsonb("trigger_phrases").$type<string[]>().notNull().default([]),
+  /** Embedding of (description + trigger phrases joined). Used at
+   * chat time to find skills relevant to the user's message. Same
+   * 1536-dim shape as tilly_memory.embedding for consistency. */
+  triggerEmbedding: real("trigger_embedding").array(),
+  /** Optional structured precondition — when ALL of these key/value
+   * pairs are true in the user's context, the skill applies. Example:
+   * {hasIncomeGapCandidates: true}. Empty object = always applicable
+   * when triggers match. */
+  appliesWhen: jsonb("applies_when").$type<Record<string, unknown>>().notNull().default({}),
+  /** Which tilly_events rows this skill was induced from. Lets the
+   * admin trace "where did this skill come from?" — the source
+   * conversation, the tool sequence, the user feedback. */
+  sourceEventIds: jsonb("source_event_ids").$type<string[]>().notNull().default([]),
+  /** 0-1 score reflecting the induction model's confidence that this
+   * skill generalizes. Initially set by the induction LLM; updated
+   * by usage outcomes over time. */
+  confidence: real("confidence").notNull().default(0.5),
+  /** proposed | active | archived. Skills only fire when active.
+   * Admin can promote from /admin/skills. */
+  status: text("status").notNull().default("proposed"),
+  /** Counters for the curator. success = skill fired + user
+   * accepted the resulting action (didn't undo, didn't complain in
+   * the next 24h). fail = skill fired but the user pushed back or
+   * undid. */
+  usedCount: integer("used_count").notNull().default(0),
+  successCount: integer("success_count").notNull().default(0),
+  failCount: integer("fail_count").notNull().default(0),
+  /** ISO of the last time this skill was retrieved + injected. Lets
+   * the curator prune stale skills. */
+  lastUsedAt: timestamp("last_used_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export type TillySkill = typeof tillySkills.$inferSelect;
+
+/**
  * Tilly event log — append-only truth tape that everything else (typed
  * memories, dossier, bandit) is derived from. Every meaningful user/agent
  * action lands here so we can rebuild upper-tier memory if we change the

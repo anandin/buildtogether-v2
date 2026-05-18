@@ -393,6 +393,28 @@ const CRITICAL_STATEMENTS: string[] = [
   )`,
   `CREATE INDEX IF NOT EXISTS "plaid_transactions_couple_status_signature_idx"
      ON "plaid_transactions" ("couple_id", "status", "signature")`,
+  // Tilly self-learned skill library (Hermes/Voyager pattern, 2026).
+  // Stores the skills the induction worker has extracted from successful
+  // tool trajectories. Retrieved at chat time via embedding similarity.
+  `CREATE TABLE IF NOT EXISTS "tilly_skills" (
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "name" text NOT NULL UNIQUE,
+    "description" text NOT NULL,
+    "instructions" text NOT NULL,
+    "trigger_phrases" jsonb NOT NULL DEFAULT '[]'::jsonb,
+    "trigger_embedding" real[],
+    "applies_when" jsonb NOT NULL DEFAULT '{}'::jsonb,
+    "source_event_ids" jsonb NOT NULL DEFAULT '[]'::jsonb,
+    "confidence" real NOT NULL DEFAULT 0.5,
+    "status" text NOT NULL DEFAULT 'proposed',
+    "used_count" integer NOT NULL DEFAULT 0,
+    "success_count" integer NOT NULL DEFAULT 0,
+    "fail_count" integer NOT NULL DEFAULT 0,
+    "last_used_at" timestamp,
+    "created_at" timestamp NOT NULL DEFAULT now(),
+    "updated_at" timestamp NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS "tilly_skills_status_used_idx" ON "tilly_skills" ("status", "last_used_at" DESC NULLS LAST)`,
   // Projection history — records computeMonthFlow's projected_close at
   // (a) the time the projection was made and (b) the actual close once
   // the month rolls over. The detector reads this to surface "Tilly's

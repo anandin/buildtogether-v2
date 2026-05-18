@@ -438,6 +438,29 @@ export function mountE2ERoutes(app: Express): void {
     }
   });
 
+  // Bulk-seed skills from an admin-provided payload. Used by the
+  // backfill script to populate tilly_skills with the skills we
+  // induced manually from this week's actual user trajectories.
+  // Gated by E2E_SECRET (same as other diagnostic routes).
+  app.post("/api/_e2e/seed-skills", async (req: Request, res: Response) => {
+    const header = req.header("x-e2e-secret");
+    if (!header || header !== SECRET) {
+      return res.status(404).json({ error: "Not found" });
+    }
+    try {
+      const seedsRaw = req.body?.seeds;
+      if (!Array.isArray(seedsRaw)) {
+        return res.status(400).json({ error: "seeds array required" });
+      }
+      const { seedSkills } = await import("../tilly/skills");
+      const out = await seedSkills(seedsRaw);
+      res.json({ ok: true, ...out });
+    } catch (err) {
+      console.error("[e2e] seed-skills error:", err);
+      res.status(500).json({ error: "seed failed", message: (err as Error).message });
+    }
+  });
+
   // Smart Tilly verification endpoint — runs every detector against the
   // resolved user (same as issue-session) and returns the full set of
   // observations + supporting context. Lets the report assembly script
