@@ -1445,20 +1445,52 @@ function BTSpendBody() {
               canGoNext={canGoNext}
             />
             <View style={{ gap: 8 }}>
-              {italicSpan ? (
-                <BTSerif size={30} color={t.ink} weight="500">
-                  ${spent.toLocaleString()} spent.{" "}
-                  <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
-                    {italicSpan}
-                  </Text>{" "}
-                  are still your soft spot.
-                </BTSerif>
-              ) : (
-                <BTSerif size={30} color={t.ink} weight="500">
-                  ${spent.toLocaleString()} spent{" "}
-                  {offset === 0 ? "this week." : "that week."}
-                </BTSerif>
-              )}
+              {/* Lead with today's actual state when viewing the current
+                  week — yesterday's transactions often post overnight, so
+                  a bare "$57 spent" headline read as "you spent $57 right
+                  now" when nothing had actually been bought today. The
+                  split makes the temporal context explicit: today is its
+                  own number, the week is its own number. The soft-spot
+                  clause is appended as a quieter pattern note, not the
+                  lead. */}
+              {(() => {
+                const todayAmt = safeBars.find((b) => b.today)?.amt ?? 0;
+                const isCurrent = offset === 0;
+                // Fresh Sunday-rollover edge case: current week with no
+                // spend at all. Showing "Nothing today. $0 this week."
+                // double-anchors on zero in a way that reads broken;
+                // collapse to a single quiet line.
+                if (isCurrent && spent === 0 && todayAmt === 0) {
+                  return (
+                    <BTSerif size={30} color={t.ink} weight="500">
+                      Nothing yet this week.
+                    </BTSerif>
+                  );
+                }
+                const todayClause = isCurrent
+                  ? todayAmt === 0
+                    ? "Nothing today"
+                    : `$${todayAmt.toLocaleString()} today`
+                  : null;
+                const weekClause = isCurrent
+                  ? `$${spent.toLocaleString()} this week`
+                  : `$${spent.toLocaleString()} that week`;
+                return (
+                  <BTSerif size={30} color={t.ink} weight="500">
+                    {todayClause ? `${todayClause}. ` : ""}
+                    {weekClause}.
+                    {italicSpan ? (
+                      <>
+                        {" "}
+                        <Text style={{ color: t.accent, fontFamily: BTFonts.serifItalic }}>
+                          {italicSpan}
+                        </Text>{" "}
+                        {isCurrent ? "take the most." : "took the most."}
+                      </>
+                    ) : null}
+                  </BTSerif>
+                );
+              })()}
             </View>
 
             <BTCard t={t} padding={20}>
