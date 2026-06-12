@@ -59,6 +59,12 @@ export type ForwardLookSnapshot = {
   };
   leverageInsight?: { kind: string; text: string; amount: number } | null;
   observations?: Array<{ kind: string; [k: string]: unknown }>;
+  /** Settled projection accuracy — "within $X on average over N months". */
+  trackRecord?: {
+    months: number;
+    avgAbsErrorDollars: number;
+    lastMonth: { month: string; predicted: number; actual: number } | null;
+  } | null;
 };
 
 export type DailyBriefInput = {
@@ -163,6 +169,9 @@ ${JSON.stringify(
           nextPaycheckDate: input.forwardLook.incomeProjection?.nextPaycheckDate,
           typicalPaycheck: input.forwardLook.incomeProjection?.typicalAmount,
           leverageInsight: input.forwardLook.leverageInsight?.text,
+          projectionTrackRecord: input.forwardLook.trackRecord
+            ? `past projections landed within $${input.forwardLook.trackRecord.avgAbsErrorDollars} on average over ${input.forwardLook.trackRecord.months} settled month(s) — cite this when the user might doubt a forward number`
+            : undefined,
           observations: (input.forwardLook.observations ?? []).map((o) => ({
             kind: o.kind,
             preview: JSON.stringify(o).slice(0, 220),
@@ -191,13 +200,52 @@ Return four fields:
   const systemPrompts = await buildSystemPrompts(input.tone);
   const llm = await getLLM();
 
-  const phrasing = await llm.structuredOutput<z.infer<typeof PhrasingSchema>>({
+  // Fabrication guard — the $173k hero bug taught us the narrative layer
+  // is exactly where wrong numbers reach the user, and the chat validator
+  // doesn't cover this surface. Every dollar figure in the phrasing must
+  // exist in (or be a simple combination of) the data we handed the LLM.
+  // One retry with a sterner instruction; a second failure drops the
+  // narrative and falls back to the deterministic bodyLine.
+  const allowed = harvestAllowedNumbers(input);
+  let phrasing = await llm.structuredOutput<z.infer<typeof PhrasingSchema>>({
     systemPrompts,
     messages: [{ role: "user", content: userContent }],
     schema: PhrasingSchema,
     schemaName: "home_phrasing",
     meta: { userId: input.userId, route: "brief" },
   });
+  if (!briefNumbersValid(phrasing, allowed)) {
+    console.warn(
+      `[daily-brief] phrasing used a $ figure not present in the data (user ${input.userId}) — retrying once`,
+    );
+    try {
+      phrasing = await llm.structuredOutput<z.infer<typeof PhrasingSchema>>({
+        systemPrompts,
+        messages: [
+          {
+            role: "user",
+            content:
+              userContent +
+              `\n\nIMPORTANT: your previous attempt referenced dollar figures that do not exist in the data above. Use ONLY the exact numbers provided — never compute, extrapolate, or invent a figure.`,
+          },
+        ],
+        schema: PhrasingSchema,
+        schemaName: "home_phrasing",
+        meta: { userId: input.userId, route: "brief-retry" },
+      });
+    } catch {
+      // fall through to the degrade path below
+    }
+    if (!briefNumbersValid(phrasing, allowed)) {
+      console.warn(`[daily-brief] retry still fabricated — degrading to template (user ${input.userId})`);
+      phrasing = {
+        greeting: phrasing.greeting ?? `Hey ${input.name}.`,
+        bodyLine: `*$${Math.round(input.numbers.breathing).toLocaleString()}* of breathing room this month.`,
+        tillyInvite: "Anything you want to think through?",
+        heroNarrative: "",
+      };
+    }
+  }
 
   return {
     greeting: phrasing.greeting,
@@ -208,6 +256,82 @@ Return four fields:
     subscriptionTile: input.subscriptionTile,
     dreamTile: input.dreamTile,
     tillyInvite: phrasing.tillyInvite,
-    heroNarrative: phrasing.heroNarrative,
+    heroNarrative: phrasing.heroNarrative || undefined,
   };
+}
+
+// ── Fabrication guard helpers (pure, unit-tested) ───────────────────
+
+/** Every $-prefixed figure in a string, rounded to whole dollars. */
+export function dollarFiguresIn(text: string): number[] {
+  return [...text.matchAll(/\$([\d,]+(?:\.\d{1,2})?)/g)].map((m) =>
+    Math.round(parseFloat(m[1].replace(/,/g, ""))),
+  );
+}
+
+/** Recursively harvest every numeric value in the brief input, plus
+ * floor/round/ceil and pairwise sums/differences of the headline
+ * numbers — "$X spent + $Y committed" style phrasing is legitimate. */
+export function harvestAllowedNumbers(input: DailyBriefInput): Set<number> {
+  const found: number[] = [];
+  const walk = (v: unknown): void => {
+    if (typeof v === "number" && isFinite(v)) {
+      found.push(Math.abs(v));
+    } else if (typeof v === "string") {
+      for (const n of dollarFiguresIn(v)) found.push(n);
+    } else if (Array.isArray(v)) {
+      v.forEach(walk);
+    } else if (v && typeof v === "object") {
+      Object.values(v as Record<string, unknown>).forEach(walk);
+    }
+  };
+  walk(input.numbers);
+  walk(input.forwardLook ?? {});
+  walk(input.subscriptionTile ?? {});
+  walk(input.dreamTile ?? {});
+  walk(input.pendingSummary ?? {});
+  walk(input.recentMemorySnippets);
+
+  const allowed = new Set<number>();
+  const add = (n: number) => {
+    if (!isFinite(n)) return;
+    allowed.add(Math.floor(n));
+    allowed.add(Math.round(n));
+    allowed.add(Math.ceil(n));
+  };
+  for (const n of found) add(n);
+  // Pairwise combinations of the headline numbers only (full pairwise
+  // over every harvested value would let almost anything through).
+  const fl = input.forwardLook;
+  const headline = [
+    input.numbers.breathing,
+    fl?.projectedClose,
+    fl?.incomeProjected,
+    fl?.variableSoFar,
+    fl?.fixedSoFar,
+    fl?.incomeProjection?.typicalAmount,
+  ].filter((n): n is number => typeof n === "number" && isFinite(n));
+  for (let i = 0; i < headline.length; i++) {
+    for (let j = 0; j < headline.length; j++) {
+      if (i === j) continue;
+      add(Math.abs(headline[i] + headline[j]));
+      add(Math.abs(headline[i] - headline[j]));
+    }
+  }
+  return allowed;
+}
+
+/** True when every dollar figure in the phrasing exists in the allowed
+ * set. Small figures (< $10) are ignored — "$5 coffee" style colour is
+ * not the fabrication class that burned us. */
+export function briefNumbersValid(
+  phrasing: { bodyLine?: string; heroNarrative?: string; tillyInvite?: string },
+  allowed: Set<number>,
+): boolean {
+  const figures = [
+    ...dollarFiguresIn(phrasing.bodyLine ?? ""),
+    ...dollarFiguresIn(phrasing.heroNarrative ?? ""),
+    ...dollarFiguresIn(phrasing.tillyInvite ?? ""),
+  ];
+  return figures.every((n) => n < 10 || allowed.has(n));
 }

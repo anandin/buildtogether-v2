@@ -413,6 +413,27 @@ export function mountCronRoutes(app: Express): void {
     },
   );
 
+  // Engagement loop — hourly. Four outbound surfaces, each internally
+  // gated by local time + idempotency: morning brief (8am, delta-gated),
+  // weekly review (Sun 6pm), category cap alerts (80%/100%), mid-cycle
+  // pace correction (noon, ≥7 days into a pay cycle), plus the Monday
+  // watchlist price scout. See tilly/engagement-cron.ts.
+  app.post(
+    "/api/cron/engagement-loop",
+    requireCron,
+    async (_req: Request, res: Response) => {
+      try {
+        const { runEngagementLoopAll } = await import("../tilly/engagement-cron");
+        const r = await runEngagementLoopAll();
+        res.json({ ok: true, ...r });
+      } catch (err) {
+        console.error("/api/cron/engagement-loop error:", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error: "engagement-loop cron failed", debug: msg });
+      }
+    },
+  );
+
   // S2 — nightly memory distiller. Reads last-24h of tilly_events for
   // every active user and produces typed L2 memories in tilly_memory_v2.
   // Schedules nightly at 03:00 UTC (~10pm Eastern, 7pm Pacific) — after

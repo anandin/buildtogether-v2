@@ -16,11 +16,12 @@
  * so month boundaries align with the user's lived "May 1 - May 31",
  * not the UTC clock that Vercel runs in.
  */
-import { and, desc, eq, gte, ne } from "drizzle-orm";
+import { and, desc, eq, gte, like, ne } from "drizzle-orm";
 import { db } from "../db";
 import {
   plaidTransactions,
   tillyMoneySnapshot,
+  userPreferences,
 } from "../../shared/schema";
 import {
   getUserTimezone,
@@ -85,27 +86,63 @@ export function medianIncomeAmount(rows: IncomeRowLite[]): number {
   return sorted[Math.floor((sorted.length - 1) / 2)];
 }
 
+/** Stable identity for an income anomaly — used as the preference key
+ * when the user confirms a quarantined deposit is real income. */
+export function incomeAnomalyKey(row: IncomeRowLite): string {
+  return `${row.date}|${Math.abs(row.amount).toFixed(2)}`;
+}
+
+/** Load the set of anomaly keys this user has confirmed as real income
+ * (written by the confirmDepositAsIncome chat tool). */
+export async function loadConfirmedIncomeKeys(
+  userId: string | null,
+): Promise<Set<string>> {
+  if (!userId) return new Set();
+  const rows = await db
+    .select({ key: userPreferences.key })
+    .from(userPreferences)
+    .where(
+      and(
+        eq(userPreferences.userId, userId),
+        eq(userPreferences.scope, "plaid"),
+        like(userPreferences.key, "income_anomaly_confirmed.%"),
+      ),
+    );
+  return new Set(rows.map((r) => r.key.slice("income_anomaly_confirmed.".length)));
+}
+
 /** Split income rows into paycheck-shaped (`typical`) vs `anomalous`
  * (> 3× median AND ≥ $1000). Anomalous rows are almost always
  * misclassified TRANSFER_IN credits — inter-account moves, big
  * e-transfers — that must not feed cadence/projection math until the
  * user confirms them. Needs ≥ 2 rows to judge; with 0-1 rows everything
- * is typical (no baseline to compare against). */
+ * is typical (no baseline to compare against).
+ *
+ * `confirmedKeys` (from loadConfirmedIncomeKeys) routes user-confirmed
+ * anomalies to `confirmedOneOff`: real income that counts toward month
+ * totals but must NEVER feed cadence or typical-paycheck math — a $70k
+ * bonus is income, not a payday pattern. */
 export function splitAnomalousIncome<T extends IncomeRowLite>(
   rows: T[],
-): { typical: T[]; anomalous: T[]; medianAmount: number } {
+  confirmedKeys: Set<string> = new Set(),
+): { typical: T[]; anomalous: T[]; confirmedOneOff: T[]; medianAmount: number } {
   const medianAmount = medianIncomeAmount(rows);
   if (rows.length < 2 || medianAmount <= 0) {
-    return { typical: rows, anomalous: [], medianAmount };
+    return { typical: rows, anomalous: [], confirmedOneOff: [], medianAmount };
   }
   const typical: T[] = [];
   const anomalous: T[] = [];
+  const confirmedOneOff: T[] = [];
   for (const r of rows) {
     const a = Math.abs(r.amount);
-    if (a > 3 * medianAmount && a >= 1000) anomalous.push(r);
-    else typical.push(r);
+    if (a > 3 * medianAmount && a >= 1000) {
+      if (confirmedKeys.has(incomeAnomalyKey(r))) confirmedOneOff.push(r);
+      else anomalous.push(r);
+    } else {
+      typical.push(r);
+    }
   }
-  return { typical, anomalous, medianAmount };
+  return { typical, anomalous, confirmedOneOff, medianAmount };
 }
 
 /** All income rows for the trailing window, deduped, excluding rows
@@ -160,14 +197,22 @@ export async function getMonthlyIncome(
   // One trailing-90d read powers both the current-month sum and the
   // anomaly baseline. The 90d window gives the median enough real
   // paychecks that a giant misclassified credit this month stands out.
-  const windowRows = await readIncomeRows(
-    householdId,
-    localDaysAgoIso(now, tz, 90),
+  const [windowRows, confirmedKeys] = await Promise.all([
+    readIncomeRows(householdId, localDaysAgoIso(now, tz, 90)),
+    loadConfirmedIncomeKeys(userId),
+  ]);
+  const { typical, anomalous, confirmedOneOff } = splitAnomalousIncome(
+    windowRows,
+    confirmedKeys,
   );
-  const { typical, anomalous } = splitAnomalousIncome(windowRows);
 
-  // 1. Current local month — sum |amount| over paycheck-shaped rows.
+  // 1. Current local month — paycheck-shaped rows PLUS any one-off the
+  // user explicitly confirmed as income (bonus, vacation payout). The
+  // confirmed rows count toward the month, never toward cadence.
   const monthRows = typical.filter(
+    (r) => r.date >= monthStart && r.date <= todayIso,
+  );
+  const monthConfirmed = confirmedOneOff.filter(
     (r) => r.date >= monthStart && r.date <= todayIso,
   );
   const monthAnomalies = anomalous.filter(
@@ -181,12 +226,17 @@ export async function getMonthlyIncome(
   const excludedNote = monthAnomalies.length
     ? ` Not counting ${monthAnomalies.length} large deposit${monthAnomalies.length === 1 ? "" : "s"} ($${Math.round(monthAnomalies.reduce((s, r) => s + Math.abs(r.amount), 0)).toLocaleString()}) that ${monthAnomalies.length === 1 ? "doesn't" : "don't"} look like a paycheck — confirm if real income.`
     : "";
-  const monthSum = monthRows.reduce((s, r) => s + Math.abs(r.amount), 0);
+  const confirmedNote = monthConfirmed.length
+    ? ` Includes ${monthConfirmed.length} confirmed one-off deposit${monthConfirmed.length === 1 ? "" : "s"} ($${Math.round(monthConfirmed.reduce((s, r) => s + Math.abs(r.amount), 0)).toLocaleString()}).`
+    : "";
+  const monthSum =
+    monthRows.reduce((s, r) => s + Math.abs(r.amount), 0) +
+    monthConfirmed.reduce((s, r) => s + Math.abs(r.amount), 0);
   if (monthSum > 0) {
     return {
       amount: Math.round(monthSum * 100) / 100,
       source: "plaid",
-      note: `From ${monthRows.length} paycheck${monthRows.length === 1 ? "" : "s"} this month.${excludedNote}`,
+      note: `From ${monthRows.length} paycheck${monthRows.length === 1 ? "" : "s"} this month.${confirmedNote}${excludedNote}`,
       ...(excluded.length ? { excluded } : {}),
     };
   }

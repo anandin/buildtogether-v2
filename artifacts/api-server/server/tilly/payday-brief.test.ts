@@ -4,6 +4,7 @@ import {
   addDaysIso,
   cadenceStepDays,
   computePaydayAllocation,
+  scorecardLine,
   templatePushBody,
 } from "./payday-brief";
 
@@ -107,6 +108,25 @@ describe("cadenceStepDays", () => {
     expect(cadenceStepDays("monthly")).toBe(30);
     expect(cadenceStepDays("irregular")).toBeNull();
     expect(cadenceStepDays("unknown")).toBeNull();
+  });
+});
+
+describe("scorecardLine — last cycle accountability", () => {
+  it("reads ahead-of-plan", () => {
+    expect(scorecardLine({ predictedFree: 2300, actualFree: 2510, delta: 210 })).toContain(
+      "$210 ahead of plan",
+    );
+  });
+  it("reads past-plan honestly", () => {
+    expect(scorecardLine({ predictedFree: 2300, actualFree: 1900, delta: -400 })).toContain(
+      "$400 past plan",
+    );
+  });
+  it("calls small deltas on-plan instead of nitpicking", () => {
+    expect(scorecardLine({ predictedFree: 2300, actualFree: 2310, delta: 10 })).toContain("on plan");
+  });
+  it("is empty with no prior cycle", () => {
+    expect(scorecardLine(null)).toBe("");
   });
 });
 

@@ -4958,9 +4958,19 @@ Return just the message text.`;
         .where(eq(plaidItems.plaidItemId, item_id))
         .limit(1);
       if (!item) return;
-      syncPlaidItem(item.id).catch((err) =>
-        console.error("Plaid webhook sync failed:", err?.message || err),
-      );
+      // Await (response already sent): Vercel only reliably keeps the
+      // function alive for awaited work — see scout/orchestrator.ts for
+      // the stranded-promise lesson. After the sync, give the Payday
+      // Pulse a shot: a paycheck that just posted should greet the user
+      // in minutes, not at the next hourly cron tick. The pulse is
+      // idempotent + daytime-gated, so this is always safe to call.
+      await syncPlaidItem(item.id);
+      try {
+        const { runPaydayPulseForHousehold } = await import("./tilly/payday-brief");
+        await runPaydayPulseForHousehold(item.coupleId);
+      } catch (pulseErr: any) {
+        console.warn("Webhook payday-pulse check failed:", pulseErr?.message || pulseErr);
+      }
     } catch (err: any) {
       console.error("Plaid webhook handler error:", err?.message || err);
     }

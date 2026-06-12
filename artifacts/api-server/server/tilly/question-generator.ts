@@ -55,7 +55,7 @@ async function pickHouseholdUserId(householdId: string): Promise<string | null> 
 }
 
 export type GeneratedQuestion = {
-  kind: "unknown_merchant" | "category_spike" | "outsized_tx";
+  kind: "unknown_merchant" | "category_spike" | "outsized_tx" | "large_deposit";
   body: string;
   payload: Record<string, unknown>;
 };
@@ -120,6 +120,37 @@ export async function generateQuestionsForHousehold(householdId: string): Promis
   }
 
   const candidates: GeneratedQuestion[] = [];
+
+  // ── 0. large_deposit — income anomaly confirmation ────────────────────
+  // The income guard quarantines large non-paycheck-shaped deposits from
+  // every projection until confirmed. Surface ONE question per pending
+  // anomaly so the user can resolve it in a tap instead of discovering a
+  // conservative income number and wondering why. Highest priority —
+  // it's the user's own money sitting outside the math.
+  try {
+    const {
+      readIncomeRows,
+      splitAnomalousIncome,
+      loadConfirmedIncomeKeys,
+      incomeAnomalyKey,
+    } = await import("./income-summary");
+    const [incomeRows, confirmedKeys] = await Promise.all([
+      readIncomeRows(householdId, isoDaysAgo(90)),
+      loadConfirmedIncomeKeys(userId),
+    ]);
+    const { anomalous } = splitAnomalousIncome(incomeRows, confirmedKeys);
+    for (const r of anomalous) {
+      const key = incomeAnomalyKey(r);
+      const merch = (r.merchantName ?? r.name ?? "a deposit").trim();
+      candidates.push({
+        kind: "large_deposit",
+        body: `I'm not counting the $${Math.round(Math.abs(r.amount)).toLocaleString()} ${merch} deposit (${r.date}) as income until you confirm — is it real income (bonus, payout), or a transfer between your own accounts?`,
+        payload: { signature: key, date: r.date, amount: Math.abs(r.amount), merchant: merch },
+      });
+    }
+  } catch (err) {
+    console.warn("[questions] large_deposit classifier failed:", err);
+  }
 
   // ── 1. unknown_merchant ────────────────────────────────────────────────
   const since30 = isoDaysAgo(30);

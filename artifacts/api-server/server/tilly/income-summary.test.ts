@@ -127,4 +127,30 @@ describe("splitAnomalousIncome — quarantine non-paycheck credits", () => {
     expect(typical.map((r) => Math.abs(r.amount))).toEqual([2000]);
     expect(anomalous.map((r) => Math.abs(r.amount))).toEqual([86748]);
   });
+
+  it("routes a CONFIRMED anomaly to confirmedOneOff — counted, never cadence", () => {
+    const rows = [
+      { amount: -1734.96, date: "2026-05-01" },
+      { amount: -1734.96, date: "2026-05-15" },
+      { amount: -70396.7, date: "2026-05-28", merchantName: "CSA GROUP TESTI PAY" },
+    ];
+    const confirmed = new Set(["2026-05-28|70396.70"]);
+    const { typical, anomalous, confirmedOneOff } = splitAnomalousIncome(rows, confirmed);
+    expect(anomalous).toHaveLength(0);
+    expect(confirmedOneOff.map((r) => Math.abs(r.amount))).toEqual([70396.7]);
+    expect(typical).toHaveLength(2); // paychecks untouched
+  });
+
+  it("an unconfirmed anomaly stays quarantined even when others are confirmed", () => {
+    const rows = [
+      { amount: -1700, date: "2026-05-01" },
+      { amount: -1700, date: "2026-05-15" },
+      { amount: -70396.7, date: "2026-05-28" },
+      { amount: -25000, date: "2026-06-03" },
+    ];
+    const confirmed = new Set(["2026-05-28|70396.70"]);
+    const { anomalous, confirmedOneOff } = splitAnomalousIncome(rows, confirmed);
+    expect(confirmedOneOff).toHaveLength(1);
+    expect(anomalous.map((r) => Math.abs(r.amount))).toEqual([25000]);
+  });
 });

@@ -265,6 +265,35 @@ function summariseResultForModel(r: ToolResult): Record<string, unknown> {
             ? "no candidates matched — either no current income-classification-gap suggestions, or sourceName didn't match any."
             : undefined,
       };
+    case "deposit_confirmed_income":
+      return {
+        ok: r.confirmedCount > 0,
+        kind: r.kind,
+        sourceName: r.sourceName,
+        date: r.date,
+        amount: r.amount,
+        confirmedCount: r.confirmedCount,
+        note:
+          r.confirmedCount === 0
+            ? "no quarantined deposit matched — there may be none pending, or the name/date/amount didn't match. Ask the user which deposit they mean."
+            : "now counted in this month's income; still excluded from paycheck cadence (one-off, not a pattern).",
+      };
+    case "category_cap_set":
+      return {
+        ok: true,
+        kind: r.kind,
+        category: r.category,
+        monthlyCap: r.monthlyCap,
+        spentSoFar: r.spentSoFar,
+        note: `month-to-date spend in ${r.category} is $${r.spentSoFar} — tell the user where they stand against the new cap.`,
+      };
+    case "category_cap_removed":
+      return {
+        ok: r.removed,
+        kind: r.kind,
+        category: r.category,
+        note: r.removed ? undefined : "no cap existed for that category.",
+      };
     case "merchant_renamed":
       return {
         ok: r.renamedCount > 0,

@@ -88,6 +88,49 @@ export async function recordProjectionForAll(): Promise<{
   return { scanned: rows.length, recorded, errors };
 }
 
+export type ProjectionTrackRecord = {
+  /** Settled months with both a prediction and an actual. */
+  months: number;
+  avgAbsErrorDollars: number;
+  lastMonth: { month: string; predicted: number; actual: number } | null;
+};
+
+/**
+ * The trust surface — "my projections have landed within $X on average
+ * over N months". Reads settled rows (both predicted_close and
+ * actual_close present; predicted 0 rows are settle-only stubs and are
+ * skipped). Returns null when there's no settled history yet.
+ */
+export async function getProjectionTrackRecord(
+  householdId: string,
+): Promise<ProjectionTrackRecord | null> {
+  const result = await db.execute(sql`
+    SELECT month, predicted_close, actual_close
+    FROM projection_history
+    WHERE household_id = ${householdId}
+      AND settled_at IS NOT NULL
+      AND actual_close IS NOT NULL
+      AND predicted_close != 0
+    ORDER BY month DESC
+    LIMIT 6
+  `);
+  const rows =
+    (result as unknown as { rows?: Array<{ month: string; predicted_close: number; actual_close: number }> }).rows
+    ?? (result as unknown as Array<{ month: string; predicted_close: number; actual_close: number }>);
+  if (!rows || rows.length === 0) return null;
+  const errors = rows.map((r) => Math.abs(Number(r.predicted_close) - Number(r.actual_close)));
+  const last = rows[0];
+  return {
+    months: rows.length,
+    avgAbsErrorDollars: Math.round(errors.reduce((s, e) => s + e, 0) / errors.length),
+    lastMonth: {
+      month: last.month,
+      predicted: Math.round(Number(last.predicted_close)),
+      actual: Math.round(Number(last.actual_close)),
+    },
+  };
+}
+
 export async function settleProjectionsForAll(): Promise<{
   scanned: number;
   settled: number;

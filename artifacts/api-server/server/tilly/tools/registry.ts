@@ -118,6 +118,16 @@ export const TOOL_NAMES = [
   // transfers) but then falsely claimed success. The right answer is
   // to mark them as DISMISSED so the detector stops surfacing them.
   "dismissAsNotIncome",
+  // Sprint 2 (2026-06-12): the income anomaly guard quarantines large
+  // non-paycheck-shaped deposits. When the user confirms one IS real
+  // income (a bonus, vacation payout), this counts it toward month
+  // totals while keeping it out of cadence/typical-paycheck math.
+  "confirmDepositAsIncome",
+  // Sprint 4 (2026-06-12): category spending caps with 80%/100% push
+  // alerts — the first tool where Tilly holds a line instead of
+  // describing one.
+  "setCategoryCap",
+  "removeCategoryCap",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -287,6 +297,27 @@ export type ToolResult =
        * multiple recurring inflows). */
       dismissedCount: number;
       reason: string | null;
+    }
+  | {
+      kind: "deposit_confirmed_income";
+      date: string;
+      amount: number;
+      sourceName: string;
+      /** How many quarantined deposits matched + got confirmed. */
+      confirmedCount: number;
+    }
+  | {
+      kind: "category_cap_set";
+      category: string;
+      monthlyCap: number;
+      /** Month-to-date spend in that category at the moment the cap was
+       * set, so Tilly can immediately say "you're already at $X of it". */
+      spentSoFar: number;
+    }
+  | {
+      kind: "category_cap_removed";
+      category: string;
+      removed: boolean;
     };
 
 // ─── Tool context (passed to every handler) ────────────────────────────────
@@ -464,6 +495,22 @@ const markIncomeAsTransferSchema = z.object({
   reason: z.string().optional(),
 });
 
+const confirmDepositAsIncomeSchema = z.object({
+  sourceName: z.string().min(1),
+  /** YYYY-MM-DD when the user named the date ("the May 28 deposit"). */
+  date: z.string().optional(),
+  amount: z.number().positive().optional(),
+});
+
+const setCategoryCapSchema = z.object({
+  category: z.string().min(1),
+  monthlyCap: z.number().positive(),
+});
+
+const removeCategoryCapSchema = z.object({
+  category: z.string().min(1),
+});
+
 const TOOL_SCHEMAS: Record<ToolName, z.ZodType> = {
   createDream: createDreamSchema,
   markPaymentToOwnCard: markPaymentToOwnCardSchema,
@@ -486,6 +533,9 @@ const TOOL_SCHEMAS: Record<ToolName, z.ZodType> = {
   flagAsIncome: flagAsIncomeSchema,
   setMerchantCadence: setMerchantCadenceSchema,
   dismissAsNotIncome: dismissAsNotIncomeSchema,
+  confirmDepositAsIncome: confirmDepositAsIncomeSchema,
+  setCategoryCap: setCategoryCapSchema,
+  removeCategoryCap: removeCategoryCapSchema,
 };
 
 // ─── Tool descriptions for the LLM ──────────────────────────────────────
@@ -670,6 +720,31 @@ const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
     "detector reads to suppress future suggestions. DO NOT use this for " +
     "fixing categorization — use flagAsIncome (real income) or " +
     "markIncomeAsTransfer (income → wash) for those.",
+  confirmDepositAsIncome:
+    "CONFIRM A QUARANTINED DEPOSIT IS REAL INCOME. The income guard " +
+    "excludes large deposits that don't look like paychecks (> 3× the " +
+    "median paycheck) from income totals and projections, and surfaces " +
+    "them as 'not counting the $X deposit — confirm if real income'. " +
+    "When the user says YES it's real — 'that $70k is my bonus', 'the " +
+    "May 28 CSA deposit is a vacation payout, count it' — fire this. " +
+    "sourceName: how they described it. date/amount when given. The " +
+    "deposit then counts toward THIS month's income but never toward " +
+    "paycheck cadence or projections (it's one-off, not a pattern). If " +
+    "the user says it's NOT income (a transfer between their accounts), " +
+    "use markIncomeAsTransfer instead.",
+  setCategoryCap:
+    "SET A MONTHLY SPENDING CAP on a category. Trigger when the user " +
+    "draws a line: 'cap eating out at $400 a month', 'keep my shopping " +
+    "under $200', 'don't let me spend more than $80 on coffee'. " +
+    "category: the spend category (lowercase). monthlyCap: dollars. " +
+    "Tilly checks hourly and pushes a heads-up at 80% and at 100% of " +
+    "the cap, naming the biggest contributors. Confirm back with their " +
+    "current month-to-date spend in that category so they know where " +
+    "they stand right now.",
+  removeCategoryCap:
+    "REMOVE A SPENDING CAP. Trigger on 'remove the coffee cap', 'stop " +
+    "capping eating out', 'no more limit on shopping'. category: the " +
+    "capped category to clear.",
 };
 
 /**
@@ -757,7 +832,16 @@ export function getToolDescription(name: ToolName): string | undefined {
 export const TOOL_GROUPS: { label: string; tools: ToolName[] }[] = [
   {
     label: "INCOME — flag, dismiss, reclassify inflows",
-    tools: ["flagAsIncome", "dismissAsNotIncome", "markIncomeAsTransfer"],
+    tools: [
+      "flagAsIncome",
+      "dismissAsNotIncome",
+      "markIncomeAsTransfer",
+      "confirmDepositAsIncome",
+    ],
+  },
+  {
+    label: "GUARDRAILS — spending caps with 80%/100% alerts",
+    tools: ["setCategoryCap", "removeCategoryCap"],
   },
   {
     label: "CATEGORY / TAXONOMY — shape what counts where on Spend + Home",
@@ -943,7 +1027,188 @@ export async function executeTool(
         parsed.data as z.infer<typeof dismissAsNotIncomeSchema>,
         ctx,
       );
+    case "confirmDepositAsIncome":
+      return await runConfirmDepositAsIncome(
+        parsed.data as z.infer<typeof confirmDepositAsIncomeSchema>,
+        ctx,
+      );
+    case "setCategoryCap":
+      return await runSetCategoryCap(
+        parsed.data as z.infer<typeof setCategoryCapSchema>,
+        ctx,
+      );
+    case "removeCategoryCap":
+      return await runRemoveCategoryCap(
+        parsed.data as z.infer<typeof removeCategoryCapSchema>,
+        ctx,
+      );
   }
+}
+
+/**
+ * Confirm a quarantined large deposit as real one-off income. Writes
+ * `income_anomaly_confirmed.<date>|<amount>` (scope='plaid') which
+ * income-summary's splitAnomalousIncome reads: the row then counts in
+ * month totals but stays out of cadence/typical-paycheck math.
+ */
+async function runConfirmDepositAsIncome(
+  args: z.infer<typeof confirmDepositAsIncomeSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  const {
+    readIncomeRows,
+    splitAnomalousIncome,
+    incomeAnomalyKey,
+    loadConfirmedIncomeKeys,
+  } = await import("../income-summary");
+  const sinceIso = new Date(Date.now() - 90 * 24 * 3600 * 1000)
+    .toISOString()
+    .slice(0, 10);
+  const [rows, confirmedKeys] = await Promise.all([
+    readIncomeRows(ctx.householdId, sinceIso),
+    loadConfirmedIncomeKeys(ctx.userId),
+  ]);
+  const { anomalous } = splitAnomalousIncome(rows, confirmedKeys);
+
+  const keywords = args.sourceName
+    .toLowerCase()
+    .split(/[\s\-_]+/)
+    .map((w) => w.replace(/[^a-z0-9]/g, ""))
+    .filter((w) => w.length >= 3 && !["the", "and", "from", "deposit", "income", "bonus"].includes(w));
+
+  const matches = anomalous.filter((r) => {
+    if (args.date && r.date === args.date) return true;
+    if (args.amount && Math.abs(Math.abs(r.amount) - args.amount) <= 1) return true;
+    if (keywords.length === 0) return false;
+    const haystack = `${r.merchantName ?? ""} ${r.name ?? ""}`.toLowerCase();
+    return keywords.every((kw) => haystack.includes(kw));
+  });
+  // Single quarantined deposit + no specific match criteria met →
+  // assume they mean that one. ("yes that's my bonus" carries no
+  // merchant name.)
+  const finalMatches =
+    matches.length > 0 ? matches : anomalous.length === 1 ? anomalous : [];
+
+  for (const r of finalMatches) {
+    const key = `income_anomaly_confirmed.${incomeAnomalyKey(r)}`;
+    await db
+      .insert(userPreferences)
+      .values({
+        userId: ctx.userId,
+        scope: "plaid",
+        key,
+        value: {
+          merchant: r.merchantName ?? r.name ?? null,
+          amount: Math.abs(r.amount),
+          date: r.date,
+          confirmedAt: new Date().toISOString(),
+        },
+      })
+      .onConflictDoUpdate({
+        target: [userPreferences.userId, userPreferences.scope, userPreferences.key],
+        set: { updatedAt: new Date() },
+      });
+  }
+
+  const first = finalMatches[0];
+  return {
+    kind: "deposit_confirmed_income",
+    date: first?.date ?? args.date ?? "",
+    amount: first ? Math.round(Math.abs(first.amount)) : args.amount ?? 0,
+    sourceName: first ? ((first.merchantName ?? first.name) || args.sourceName) : args.sourceName,
+    confirmedCount: finalMatches.length,
+  };
+}
+
+/** Month-to-date spend for one category (accepted Plaid + manual). */
+async function categorySpentThisMonth(
+  householdId: string,
+  category: string,
+): Promise<number> {
+  const now = new Date();
+  const monthStart = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}-01`;
+  const [plaidRows, manualRows] = await Promise.all([
+    db
+      .select({ amount: plaidTransactions.amount })
+      .from(plaidTransactions)
+      .where(
+        and(
+          eq(plaidTransactions.coupleId, householdId),
+          eq(plaidTransactions.status, "accepted"),
+          sql`LOWER(${plaidTransactions.ourCategory}) = ${category}`,
+          sql`${plaidTransactions.date} >= ${monthStart}`,
+          sql`${plaidTransactions.amount} > 0`,
+        ),
+      ),
+    db
+      .select({ amount: expenses.amount, source: expenses.source })
+      .from(expenses)
+      .where(
+        and(
+          eq(expenses.coupleId, householdId),
+          sql`LOWER(${expenses.category}) = ${category}`,
+          sql`${expenses.date} >= ${monthStart}`,
+          sql`${expenses.amount} > 0`,
+        ),
+      ),
+  ]);
+  let total = plaidRows.reduce((s, r) => s + r.amount, 0);
+  for (const r of manualRows) {
+    if (r.source === "plaid") continue;
+    total += r.amount;
+  }
+  return Math.round(total);
+}
+
+async function runSetCategoryCap(
+  args: z.infer<typeof setCategoryCapSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  const category = args.category.trim().toLowerCase();
+  await db
+    .insert(userPreferences)
+    .values({
+      userId: ctx.userId,
+      scope: "caps",
+      key: `cap.${category}`,
+      value: { monthlyCap: args.monthlyCap, setAt: new Date().toISOString() },
+    })
+    .onConflictDoUpdate({
+      target: [userPreferences.userId, userPreferences.scope, userPreferences.key],
+      set: {
+        value: { monthlyCap: args.monthlyCap, setAt: new Date().toISOString() },
+        updatedAt: new Date(),
+      },
+    });
+  const spentSoFar = await categorySpentThisMonth(ctx.householdId, category);
+  return {
+    kind: "category_cap_set",
+    category,
+    monthlyCap: args.monthlyCap,
+    spentSoFar,
+  };
+}
+
+async function runRemoveCategoryCap(
+  args: z.infer<typeof removeCategoryCapSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  const category = args.category.trim().toLowerCase();
+  const deleted = await db
+    .delete(userPreferences)
+    .where(
+      and(
+        eq(userPreferences.userId, ctx.userId),
+        eq(userPreferences.scope, "caps"),
+        eq(userPreferences.key, `cap.${category}`),
+      ),
+    )
+    .returning({ key: userPreferences.key });
+  return {
+    kind: "category_cap_removed",
+    category,
+    removed: deleted.length > 0,
+  };
 }
 
 /**

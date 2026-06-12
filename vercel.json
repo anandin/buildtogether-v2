@@ -23,6 +23,10 @@
       "schedule": "47 * * * *"
     },
     {
+      "path": "/api/cron/engagement-loop",
+      "schedule": "7 * * * *"
+    },
+    {
       "path": "/api/cron/plaid-sync-all",
       "schedule": "17 */4 * * *"
     },

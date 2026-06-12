@@ -162,14 +162,30 @@ const PulsePhrasingSchema = z.object({
     ),
 });
 
+export type CycleScorecard = {
+  predictedFree: number;
+  actualFree: number;
+  delta: number;
+} | null;
+
+export function scorecardLine(s: CycleScorecard): string {
+  if (!s) return "";
+  if (Math.abs(s.delta) < 25) return " Last cycle landed right on plan.";
+  return s.delta > 0
+    ? ` Last cycle you closed $${Math.abs(s.delta).toLocaleString()} ahead of plan.`
+    : ` Last cycle ran $${Math.abs(s.delta).toLocaleString()} past plan.`;
+}
+
 async function phrasePulse(
   a: PaydayAllocation,
   tone: BTToneKey,
+  scorecard: CycleScorecard = null,
 ): Promise<{ pushBody: string; cardBody: string }> {
   const fallback = {
     pushBody: templatePushBody(a),
     cardBody:
       templatePushBody(a) +
+      scorecardLine(scorecard) +
       (a.dreamSuggestion
         ? ` Want me to move $${a.dreamSuggestion.amount} toward ${a.dreamSuggestion.name}?`
         : ""),
@@ -193,6 +209,15 @@ async function phrasePulse(
               expectedVariableAtUsualPace: a.expectedVariable,
               trulyFree: a.trulyFree,
               dreamSweepSuggestion: a.dreamSuggestion,
+              lastCycleScorecard: scorecard
+                ? {
+                    predictedFree: scorecard.predictedFree,
+                    actualFree: scorecard.actualFree,
+                    delta: scorecard.delta,
+                    framing:
+                      "mention in ONE clause — ahead of plan / past plan / on plan",
+                  }
+                : null,
             },
             null,
             2,
@@ -215,6 +240,9 @@ async function phrasePulse(
       Math.abs(a.trulyFree),
       a.dreamSuggestion?.amount ?? -1,
       ...a.billsDue.map((b) => b.amount),
+      ...(scorecard
+        ? [Math.abs(scorecard.delta), Math.abs(scorecard.actualFree), Math.abs(scorecard.predictedFree)]
+        : []),
     ]) {
       // Accept floor/round/ceil so "$6,744" and "$6,745" both pass for
       // a $6,744.58 paycheck — the guard is for fabrication, not for
@@ -234,7 +262,10 @@ async function phrasePulse(
       console.warn("[payday-pulse] LLM phrasing contained a number not in the allocation — using template");
       return fallback;
     }
-    return phrasing;
+    return {
+      pushBody: phrasing.pushBody ?? fallback.pushBody,
+      cardBody: phrasing.cardBody ?? fallback.cardBody,
+    };
   } catch (err) {
     console.warn("[payday-pulse] LLM phrasing failed, using template:", err);
     return fallback;
@@ -298,6 +329,224 @@ async function trailingVariablePace(
   return variable / 28;
 }
 
+/** Total non-income, non-adjustment outflow between two local dates
+ * (inclusive) — what the previous cycle actually consumed. */
+async function totalOutflowBetween(
+  userId: string,
+  householdId: string,
+  fromIso: string,
+  toIso: string,
+): Promise<number> {
+  const overrides = await loadUserOverrides(userId);
+  const rows = await db
+    .select({ amount: plaidTransactions.amount, category: plaidTransactions.ourCategory })
+    .from(plaidTransactions)
+    .where(
+      and(
+        eq(plaidTransactions.coupleId, householdId),
+        eq(plaidTransactions.status, "accepted"),
+        gte(plaidTransactions.date, fromIso),
+        sql`${plaidTransactions.date} <= ${toIso}`,
+        sql`${plaidTransactions.amount} > 0`,
+      ),
+    );
+  let total = 0;
+  for (const r of rows) {
+    const b = bucketFor((r.category ?? "").toLowerCase(), overrides);
+    if (b === "income" || b === "adjustment") continue;
+    total += r.amount;
+  }
+  return total;
+}
+
+/** Run the Payday Pulse for ONE household. Exported so the Plaid
+ * webhook can fire it minutes after a deposit posts, instead of
+ * waiting for the next hourly cron tick. */
+export async function runPaydayPulseForHousehold(
+  householdId: string,
+  now: Date = new Date(),
+): Promise<{ paydayDetected: boolean; briefSent: boolean; pushed: boolean }> {
+  const none = { paydayDetected: false, briefSent: false, pushed: false };
+  const userId = await resolveOwner(householdId);
+  if (!userId) return none;
+  const tz = await getUserTimezone(userId);
+
+  // Daytime gate — a payday detected by the 3am sync should greet
+  // the user at breakfast, not wake them.
+  const localHour = parseInt(
+    new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hour12: false }).format(now),
+    10,
+  );
+  if (localHour < 8 || localHour >= 21) return none;
+
+  // Payday detection over the cadence-clean income set. Yesterday
+  // counts too: Plaid often posts the deposit a few hours late, and
+  // the brief is still relevant the morning after.
+  const todayIso = localDateString(now, tz);
+  const yesterdayIso = addDaysIso(todayIso, -1);
+  const windowRows = await readIncomeRows(householdId, localDaysAgoIso(now, tz, 90));
+  const { typical } = splitAnomalousIncome(dedupeIncomeRows(windowRows));
+  // Paydays are paycheck-sized rows, not $0.50 interest credits —
+  // require ≥ 25% of the largest typical row.
+  const maxTypical = Math.max(...typical.map((r) => Math.abs(r.amount)), 0);
+  const landed = typical
+    .filter((r) => (r.date === todayIso || r.date === yesterdayIso) && Math.abs(r.amount) >= maxTypical * 0.25)
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  if (!landed) return none;
+
+  // Idempotency: one pulse per (user, paydayDate).
+  const already = await db
+    .select({ id: tillyNudges.id })
+    .from(tillyNudges)
+    .where(
+      and(
+        eq(tillyNudges.userId, userId),
+        sql`${tillyNudges.context} ->> 'source' = 'payday_pulse'`,
+        sql`${tillyNudges.context} ->> 'paydayDate' = ${landed.date}`,
+      ),
+    )
+    .limit(1);
+  if (already.length > 0) return { paydayDetected: true, briefSent: false, pushed: false };
+
+  // Cycle ledger inputs.
+  const cadence = inferCadence(typical.map((r) => r.date));
+  const step = cadenceStepDays(cadence);
+  const cycleEndIso = step ? addDaysIso(landed.date, step) : addDaysIso(landed.date, 14);
+  const subs = await db
+    .select()
+    .from(subscriptions)
+    .where(and(eq(subscriptions.householdId, householdId), eq(subscriptions.status, "active")));
+  const billsDue: CycleBill[] = subs
+    .filter((s) => {
+      const next = s.nextChargeAt?.slice(0, 10) ?? null;
+      return next && next > landed.date && next <= cycleEndIso;
+    })
+    .map((s) => ({ merchant: s.merchant, amount: s.amount, date: s.nextChargeAt!.slice(0, 10) }))
+    .sort((a, b) => b.amount - a.amount);
+
+  const dailyPace = await trailingVariablePace(userId, householdId, now, tz);
+  const dreamRow = await db
+    .select()
+    .from(goals)
+    .where(eq(goals.coupleId, householdId))
+    .orderBy(desc(goals.createdAt))
+    .limit(1);
+  const dream = dreamRow[0]
+    ? {
+        id: dreamRow[0].id,
+        name: dreamRow[0].name,
+        targetAmount: dreamRow[0].targetAmount,
+        savedAmount: dreamRow[0].savedAmount,
+      }
+    : null;
+
+  const allocation = computePaydayAllocation({
+    paycheckAmount: Math.abs(landed.amount),
+    paydayDate: landed.date,
+    cadence,
+    billsDue,
+    dailyPace,
+    dream,
+  });
+
+  // Cycle scorecard — hold the PREVIOUS pulse's forecast accountable.
+  // "Last cycle you closed $X ahead of plan" is the streak mechanic
+  // without the gamification cringe: it's just the truth, kept.
+  let scorecard: { predictedFree: number; actualFree: number; delta: number } | null = null;
+  try {
+    const prevRows = await db
+      .select({ context: tillyNudges.context })
+      .from(tillyNudges)
+      .where(
+        and(
+          eq(tillyNudges.userId, userId),
+          sql`${tillyNudges.context} ->> 'source' = 'payday_pulse'`,
+          sql`${tillyNudges.context} ->> 'paydayDate' < ${landed.date}`,
+        ),
+      )
+      .orderBy(desc(tillyNudges.sentAt))
+      .limit(1);
+    const prevCtx = prevRows[0]?.context as
+      | { paydayDate?: string; allocation?: { paycheckAmount?: number; trulyFree?: number } }
+      | undefined;
+    if (prevCtx?.paydayDate && typeof prevCtx.allocation?.trulyFree === "number") {
+      const prevPaycheck = prevCtx.allocation.paycheckAmount ?? 0;
+      const outflow = await totalOutflowBetween(
+        userId,
+        householdId,
+        prevCtx.paydayDate,
+        addDaysIso(landed.date, -1),
+      );
+      const actualFree = Math.round(prevPaycheck - outflow);
+      scorecard = {
+        predictedFree: Math.round(prevCtx.allocation.trulyFree),
+        actualFree,
+        delta: actualFree - Math.round(prevCtx.allocation.trulyFree),
+      };
+    }
+  } catch (err) {
+    console.warn("[payday-pulse] scorecard failed (non-fatal):", err);
+  }
+
+  const [userRow, tonePref] = await Promise.all([
+    db
+      .select({ expoPushToken: users.expoPushToken })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1),
+    db.query.tillyTonePref.findFirst({ where: eq(tillyTonePref.userId, userId) }),
+  ]);
+  const phrasing = await phrasePulse(
+    allocation,
+    (tonePref?.tone as BTToneKey | undefined) ?? "sibling",
+    scorecard,
+  );
+
+  // In-app surface: observation memory → Home's learned card + chat
+  // retrieval both see it without any client change.
+  const [memRow] = await db
+    .insert(tillyMemory)
+    .values({
+      userId,
+      householdId,
+      kind: "observation",
+      body: phrasing.cardBody,
+      source: "inferred",
+      dateLabel: "Payday",
+      isMostRecent: true,
+    })
+    .returning();
+
+  await recordNudgeSent({
+    userId,
+    householdId,
+    frame: "mental_accounting",
+    channel: "push",
+    body: phrasing.pushBody,
+    context: {
+      source: "payday_pulse",
+      paydayDate: landed.date,
+      allocation: allocation as unknown as Record<string, unknown>,
+      scorecard,
+    },
+    sourceTable: "tilly_memory",
+    sourceId: memRow.id,
+  });
+
+  let pushed = false;
+  const token = userRow[0]?.expoPushToken;
+  if (token) {
+    const ticket = await sendExpoPush({
+      to: token,
+      title: "Payday",
+      body: phrasing.pushBody,
+      data: { route: "home", kind: "payday_pulse", paydayDate: landed.date },
+    });
+    pushed = ticket?.status === "ok";
+  }
+  return { paydayDetected: true, briefSent: true, pushed };
+}
+
 export async function runPaydayPulseAll(now: Date = new Date()): Promise<{
   households: number;
   paydaysDetected: number;
@@ -308,150 +557,15 @@ export async function runPaydayPulseAll(now: Date = new Date()): Promise<{
   let paydaysDetected = 0;
   let briefsSent = 0;
   let pushed = 0;
-
   for (const h of allHouseholds) {
     try {
-      const userId = await resolveOwner(h.id);
-      if (!userId) continue;
-      const tz = await getUserTimezone(userId);
-
-      // Daytime gate — a payday detected by the 3am sync should greet
-      // the user at breakfast, not wake them.
-      const localHour = parseInt(
-        new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hour12: false }).format(now),
-        10,
-      );
-      if (localHour < 8 || localHour >= 21) continue;
-
-      // Payday detection over the cadence-clean income set. Yesterday
-      // counts too: Plaid often posts the deposit a few hours late, and
-      // the brief is still relevant the morning after.
-      const todayIso = localDateString(now, tz);
-      const yesterdayIso = addDaysIso(todayIso, -1);
-      const windowRows = await readIncomeRows(h.id, localDaysAgoIso(now, tz, 90));
-      const { typical } = splitAnomalousIncome(dedupeIncomeRows(windowRows));
-      // Paydays are paycheck-sized rows, not $0.50 interest credits —
-      // require ≥ 25% of the largest typical row.
-      const maxTypical = Math.max(...typical.map((r) => Math.abs(r.amount)), 0);
-      const landed = typical
-        .filter((r) => (r.date === todayIso || r.date === yesterdayIso) && Math.abs(r.amount) >= maxTypical * 0.25)
-        .sort((a, b) => b.date.localeCompare(a.date))[0];
-      if (!landed) continue;
-      paydaysDetected++;
-
-      // Idempotency: one pulse per (user, paydayDate).
-      const already = await db
-        .select({ id: tillyNudges.id })
-        .from(tillyNudges)
-        .where(
-          and(
-            eq(tillyNudges.userId, userId),
-            sql`${tillyNudges.context} ->> 'source' = 'payday_pulse'`,
-            sql`${tillyNudges.context} ->> 'paydayDate' = ${landed.date}`,
-          ),
-        )
-        .limit(1);
-      if (already.length > 0) continue;
-
-      // Cycle ledger inputs.
-      const cadence = inferCadence(typical.map((r) => r.date));
-      const step = cadenceStepDays(cadence);
-      const cycleEndIso = step ? addDaysIso(landed.date, step) : addDaysIso(landed.date, 14);
-      const subs = await db
-        .select()
-        .from(subscriptions)
-        .where(and(eq(subscriptions.householdId, h.id), eq(subscriptions.status, "active")));
-      const billsDue: CycleBill[] = subs
-        .filter((s) => {
-          const next = s.nextChargeAt?.slice(0, 10) ?? null;
-          return next && next > landed.date && next <= cycleEndIso;
-        })
-        .map((s) => ({ merchant: s.merchant, amount: s.amount, date: s.nextChargeAt!.slice(0, 10) }))
-        .sort((a, b) => b.amount - a.amount);
-
-      const dailyPace = await trailingVariablePace(userId, h.id, now, tz);
-      const dreamRow = await db
-        .select()
-        .from(goals)
-        .where(eq(goals.coupleId, h.id))
-        .orderBy(desc(goals.createdAt))
-        .limit(1);
-      const dream = dreamRow[0]
-        ? {
-            id: dreamRow[0].id,
-            name: dreamRow[0].name,
-            targetAmount: dreamRow[0].targetAmount,
-            savedAmount: dreamRow[0].savedAmount,
-          }
-        : null;
-
-      const allocation = computePaydayAllocation({
-        paycheckAmount: Math.abs(landed.amount),
-        paydayDate: landed.date,
-        cadence,
-        billsDue,
-        dailyPace,
-        dream,
-      });
-
-      const [userRow, tonePref] = await Promise.all([
-        db
-          .select({ expoPushToken: users.expoPushToken })
-          .from(users)
-          .where(eq(users.id, userId))
-          .limit(1),
-        db.query.tillyTonePref.findFirst({ where: eq(tillyTonePref.userId, userId) }),
-      ]);
-      const phrasing = await phrasePulse(
-        allocation,
-        (tonePref?.tone as BTToneKey | undefined) ?? "sibling",
-      );
-
-      // In-app surface: observation memory → Home's learned card + chat
-      // retrieval both see it without any client change.
-      const [memRow] = await db
-        .insert(tillyMemory)
-        .values({
-          userId,
-          householdId: h.id,
-          kind: "observation",
-          body: phrasing.cardBody,
-          source: "inferred",
-          dateLabel: "Payday",
-          isMostRecent: true,
-        })
-        .returning();
-
-      await recordNudgeSent({
-        userId,
-        householdId: h.id,
-        frame: "mental_accounting",
-        channel: "push",
-        body: phrasing.pushBody,
-        context: {
-          source: "payday_pulse",
-          paydayDate: landed.date,
-          allocation: allocation as unknown as Record<string, unknown>,
-        },
-        sourceTable: "tilly_memory",
-        sourceId: memRow.id,
-      });
-      briefsSent++;
-
-      const token = userRow[0]?.expoPushToken;
-      if (token) {
-        const ticket = await sendExpoPush({
-          to: token,
-          title: "Payday",
-          body: phrasing.pushBody,
-          data: { route: "home", kind: "payday_pulse", paydayDate: landed.date },
-        });
-        if (ticket?.status === "ok") pushed++;
-      }
+      const r = await runPaydayPulseForHousehold(h.id, now);
+      if (r.paydayDetected) paydaysDetected++;
+      if (r.briefSent) briefsSent++;
+      if (r.pushed) pushed++;
     } catch (err) {
       console.warn("[payday-pulse] household failed:", h.id, err);
     }
   }
-
   return { households: allHouseholds.length, paydaysDetected, briefsSent, pushed };
 }

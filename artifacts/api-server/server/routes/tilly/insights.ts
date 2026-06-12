@@ -430,8 +430,20 @@ async function computeMonthFlow(
     console.warn("[smart-tilly] detector batch failed:", err);
   }
 
+  // Trust surface — how accurate past month-end projections were. Lets
+  // the hero/chat say "my projections have been within $X for N months"
+  // instead of asking for blind faith in forward numbers.
+  let trackRecord: Awaited<ReturnType<typeof import("../../tilly/projection-history").getProjectionTrackRecord>> = null;
+  try {
+    const { getProjectionTrackRecord } = await import("../../tilly/projection-history");
+    trackRecord = await getProjectionTrackRecord(householdId);
+  } catch (err) {
+    console.warn("[month-flow] track record read failed:", err);
+  }
+
   return {
     income,
+    trackRecord,
     monthStart,
     today,
     monthEndIso,
@@ -527,6 +539,7 @@ export function mountTillyInsightsRoutes(app: Express): void {
                 incomeNote?: string;
                 incomeProjection?: F extends { incomeProjection: infer P } ? P : never;
                 observations?: F extends { observations: infer O } ? O : never;
+                trackRecord?: F extends { trackRecord: infer T } ? T : never;
               }
             : never)
         | null = null;
@@ -558,6 +571,7 @@ export function mountTillyInsightsRoutes(app: Express): void {
           incomeNote: flow.income.note,
           incomeProjection: flow.incomeProjection,
           observations: flow.observations,
+          trackRecord: flow.trackRecord,
         };
         // paycheckCopy is now forward-looking: pace + projection, not
         // the old "$X earned · $Y spent · $Z committed" doom string.
