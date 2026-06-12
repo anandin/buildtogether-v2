@@ -112,7 +112,7 @@ export function splitAnomalousIncome<T extends IncomeRowLite>(
  * Plaid removed (`status='ignored'`). We deliberately do NOT require
  * status='accepted' — paychecks can sit in pending_review when
  * auto-accept doesn't fire, and dropping them would zero out income. */
-async function readIncomeRows(
+export async function readIncomeRows(
   householdId: string,
   sinceIso: string,
 ): Promise<IncomeRowLite[]> {
@@ -248,7 +248,7 @@ export async function getMonthlyIncome(
  * cadence. Tolerant: 12-16 day gaps round to biweekly, 25-35 to
  * monthly. Anything else stays irregular.
  */
-function inferCadence(datesIso: string[]): IncomeCadence {
+export function inferCadence(datesIso: string[]): IncomeCadence {
   if (datesIso.length < 2) return "unknown";
   const sorted = [...datesIso].sort();
   const gaps: number[] = [];

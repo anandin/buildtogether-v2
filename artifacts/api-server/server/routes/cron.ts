@@ -391,6 +391,28 @@ export function mountCronRoutes(app: Express): void {
     },
   );
 
+  // Payday Pulse — hourly. Detects a paycheck that landed today (or
+  // yesterday, for late Plaid posts) on the cadence-clean income set,
+  // computes the cycle allocation (bills due before the next paycheck +
+  // expected variable burn → "truly yours"), and sends ONE push with
+  // the split inline. Idempotent per (user, paydayDate); daytime-gated
+  // 8am-9pm local. Runs at :47 so the :17 plaid-sync-all lands first.
+  app.post(
+    "/api/cron/payday-pulse",
+    requireCron,
+    async (_req: Request, res: Response) => {
+      try {
+        const { runPaydayPulseAll } = await import("../tilly/payday-brief");
+        const r = await runPaydayPulseAll();
+        res.json({ ok: true, ...r });
+      } catch (err) {
+        console.error("/api/cron/payday-pulse error:", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        res.status(500).json({ error: "payday-pulse cron failed", debug: msg });
+      }
+    },
+  );
+
   // S2 — nightly memory distiller. Reads last-24h of tilly_events for
   // every active user and produces typed L2 memories in tilly_memory_v2.
   // Schedules nightly at 03:00 UTC (~10pm Eastern, 7pm Pacific) — after
