@@ -47,6 +47,10 @@ export type ForwardLookSnapshot = {
   variableSoFar: number;
   fixedSoFar: number;
   incomeProjected?: number;
+  /** e.g. "From 2 paychecks this month. Not counting 1 large deposit
+   * ($86,748) that doesn't look like a paycheck — confirm if real
+   * income." Lets the narrative explain a conservative income number. */
+  incomeNote?: string;
   incomeProjection?: {
     projectedRemaining: number;
     cadence: string;
@@ -154,6 +158,7 @@ ${JSON.stringify(
           variableSoFar: input.forwardLook.variableSoFar,
           fixedSoFar: input.forwardLook.fixedSoFar,
           incomeProjected: input.forwardLook.incomeProjected,
+          incomeNote: input.forwardLook.incomeNote,
           incomeCadence: input.forwardLook.incomeProjection?.cadence,
           nextPaycheckDate: input.forwardLook.incomeProjection?.nextPaycheckDate,
           typicalPaycheck: input.forwardLook.incomeProjection?.typicalAmount,

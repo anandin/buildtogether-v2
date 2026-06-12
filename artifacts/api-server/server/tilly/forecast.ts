@@ -25,7 +25,7 @@
  *
  * Per-user TZ throughout. `today` is the local YYYY-MM-DD, not UTC.
  */
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, ne, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   plaidTransactions,
@@ -33,6 +33,11 @@ import {
   expenses,
 } from "../../shared/schema";
 import { getUserTimezone, localDateString, localDaysAgoIso } from "./user-tz";
+import {
+  dedupeIncomeRows,
+  medianIncomeAmount,
+  splitAnomalousIncome,
+} from "./income-summary";
 
 export type ForecastDay = {
   /** YYYY-MM-DD in user TZ. */
@@ -111,19 +116,29 @@ export async function forecastNextNDays(
   // dates into the forecast window. Surfaces "next paycheck in 11
   // days" on Today so the user can plan around it. Falls back silently
   // when there's not enough data to infer cadence (<2 paychecks).
-  const incomeRows = await db
+  // Same income-read hygiene as income-summary.ts: drop Plaid-removed
+  // ghosts, collapse re-posted deposits, and exclude credits that don't
+  // look like paychecks — otherwise one misclassified transfer becomes
+  // a five-figure "+$X paycheck" day card.
+  const incomeRowsRaw = await db
     .select({
       amount: plaidTransactions.amount,
       date: plaidTransactions.date,
+      merchantName: plaidTransactions.merchantName,
+      name: plaidTransactions.name,
     })
     .from(plaidTransactions)
     .where(
       and(
         eq(plaidTransactions.coupleId, householdId),
         eq(plaidTransactions.ourCategory, "income"),
+        ne(plaidTransactions.status, "ignored"),
         gte(plaidTransactions.date, localDaysAgoIso(now, tz, 90)),
       ),
     );
+  const { typical: incomeRows } = splitAnomalousIncome(
+    dedupeIncomeRows(incomeRowsRaw),
+  );
   const paydaysByDate = new Map<string, { amount: number }>();
   if (incomeRows.length >= 2) {
     const sortedIncome = [...incomeRows].sort((a, b) => a.date.localeCompare(b.date));
@@ -138,7 +153,10 @@ export async function forecastNextNDays(
     // Only project if cadence is reasonably regular (weekly to monthly).
     if (medianGap >= 5 && medianGap <= 35) {
       const lastPay = sortedIncome[sortedIncome.length - 1];
-      const lastPayAmt = Math.abs(lastPay.amount);
+      // Median paycheck, not the last one — the last row can be an
+      // off-cycle bonus/adjustment and would mislabel every projected
+      // payday with that amount.
+      const lastPayAmt = medianIncomeAmount(sortedIncome);
       // Walk forward in `medianGap` steps from the last paycheck and
       // record any date that falls inside the forecast window.
       const lastDate = new Date(lastPay.date + "T12:00:00Z");

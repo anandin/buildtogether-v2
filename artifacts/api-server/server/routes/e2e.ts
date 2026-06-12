@@ -438,6 +438,108 @@ export function mountE2ERoutes(app: Express): void {
     }
   });
 
+  // Income-path diagnostic — shows the raw income rows the projection
+  // math reads, what the dedupe/anomaly defenses keep vs quarantine,
+  // and the final getMonthlyIncome / projectRemainingIncomeForMonth
+  // outputs. Built to verify the "$173,496 before month-end" hero fix
+  // against live data: the response names the exact pollutant rows.
+  app.get("/api/_e2e/income-debug", async (req: Request, res: Response) => {
+    const header = req.header("x-e2e-secret");
+    if (!header || header !== SECRET) {
+      return res.status(404).json({ error: "Not found" });
+    }
+    try {
+      let user;
+      if (PINNED_USER_ID) {
+        user = await db.query.users.findFirst({ where: eq(users.id, PINNED_USER_ID) });
+      } else if (PINNED_USER_EMAIL) {
+        user = await db.query.users.findFirst({ where: eq(users.email, PINNED_USER_EMAIL) });
+      } else {
+        const ranked = await db
+          .select({ userId: users.id, cnt: sql<number>`count(${plaidTransactions.id})::int` })
+          .from(users)
+          .leftJoin(plaidTransactions, eq(plaidTransactions.coupleId, users.coupleId))
+          .groupBy(users.id, users.createdAt)
+          .orderBy(desc(sql`count(${plaidTransactions.id})`), desc(users.createdAt))
+          .limit(1);
+        user = ranked[0] ? await db.query.users.findFirst({ where: eq(users.id, ranked[0].userId) }) : undefined;
+      }
+      if (!user?.coupleId) return res.status(404).json({ error: "no user" });
+
+      const {
+        getMonthlyIncome,
+        projectRemainingIncomeForMonth,
+        dedupeIncomeRows,
+        splitAnomalousIncome,
+      } = await import("../tilly/income-summary");
+      const { getUserTimezone, localDaysAgoIso } = await import("../tilly/user-tz");
+      const tz = await getUserTimezone(user.id);
+      const now = new Date();
+      const sinceIso = localDaysAgoIso(now, tz, 90);
+
+      // Raw, unfiltered — every row the OLD math used to read.
+      const rawRows = await db
+        .select({
+          amount: plaidTransactions.amount,
+          date: plaidTransactions.date,
+          merchantName: plaidTransactions.merchantName,
+          name: plaidTransactions.name,
+          status: plaidTransactions.status,
+          pending: plaidTransactions.pending,
+        })
+        .from(plaidTransactions)
+        .where(
+          and(
+            eq(plaidTransactions.coupleId, user.coupleId),
+            eq(plaidTransactions.ourCategory, "income"),
+            sql`${plaidTransactions.date} >= ${sinceIso}`,
+          ),
+        );
+
+      const nonIgnored = rawRows.filter((r) => r.status !== "ignored");
+      const deduped = dedupeIncomeRows(nonIgnored);
+      const { typical, anomalous, medianAmount } = splitAnomalousIncome(deduped);
+
+      const [monthlyIncome, projection] = await Promise.all([
+        getMonthlyIncome(user.id, user.coupleId, now),
+        projectRemainingIncomeForMonth(user.coupleId, now, tz),
+      ]);
+
+      res.json({
+        userId: user.id,
+        coupleId: user.coupleId,
+        tz,
+        windowSince: sinceIso,
+        counts: {
+          raw90d: rawRows.length,
+          ignoredGhosts: rawRows.length - nonIgnored.length,
+          dedupeCollapsed: nonIgnored.length - deduped.length,
+          typical: typical.length,
+          anomalousQuarantined: anomalous.length,
+        },
+        medianPaycheck: medianAmount,
+        quarantinedRows: anomalous.map((r) => ({
+          date: r.date,
+          amount: r.amount,
+          merchant: r.merchantName ?? r.name,
+        })),
+        typicalRows: typical.map((r) => ({
+          date: r.date,
+          amount: r.amount,
+          merchant: r.merchantName ?? r.name,
+        })),
+        ignoredRows: rawRows
+          .filter((r) => r.status === "ignored")
+          .map((r) => ({ date: r.date, amount: r.amount, merchant: r.merchantName ?? r.name })),
+        monthlyIncome,
+        projection,
+      });
+    } catch (err) {
+      console.error("[e2e] income-debug error:", err);
+      res.status(500).json({ error: "income-debug failed", message: (err as Error).message });
+    }
+  });
+
   // Inspect raw skills table for diagnostic — returns embedding length
   // per row so we can see whether embeddings actually persisted.
   app.get("/api/_e2e/skill-rows", async (req: Request, res: Response) => {

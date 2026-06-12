@@ -524,6 +524,7 @@ export function mountTillyInsightsRoutes(app: Express): void {
                   | { kind: string; text: string; amount: number }
                   | null;
                 incomeProjected?: number;
+                incomeNote?: string;
                 incomeProjection?: F extends { incomeProjection: infer P } ? P : never;
                 observations?: F extends { observations: infer O } ? O : never;
               }
@@ -551,6 +552,10 @@ export function mountTillyInsightsRoutes(app: Express): void {
           oneOffSoFar: flow.oneOffSoFar,
           leverageInsight: flow.leverageInsight,
           incomeProjected: flow.incomeProjected,
+          // Carries the "not counting N large deposits — confirm if real
+          // income" exclusion warning so the hero narrative explains the
+          // conservative number instead of silently bragging a wrong one.
+          incomeNote: flow.income.note,
           incomeProjection: flow.incomeProjection,
           observations: flow.observations,
         };
