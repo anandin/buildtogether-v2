@@ -66,10 +66,19 @@ export function registerTillyRoutes(app: Express): void {
   mountExpensesRoutes(app);
   mountInvitesRoutes(app);
   mountWatchlistRoutes(app);
-  // E2E session-issuer — mounts only when E2E_SECRET + E2E_USER_ID are
-  // set. Self-gates via header secret check. Lets the smoke suite mint
-  // its own Bearer token instead of relying on a stale captured cookie.
-  mountE2ERoutes(app);
+  // E2E session-issuer + debug endpoints. These mint real Bearer tokens
+  // for a pinned user and expose financial-data debug dumps — a backdoor
+  // that must NEVER exist on the production deployment (SOC 2 CC6.1). It
+  // is gated to non-production environments by VERCEL_ENV (so it still
+  // works on preview deploys for the smoke suite) AND self-gates on the
+  // E2E_SECRET header. On Vercel, VERCEL_ENV is "production" only for the
+  // production deployment; "preview"/"development"/undefined elsewhere.
+  if (process.env.VERCEL_ENV !== "production") {
+    mountE2ERoutes(app);
+    console.log("[routes] e2e routes mounted (VERCEL_ENV != production)");
+  } else {
+    console.log("[routes] e2e routes SKIPPED (production)");
+  }
   // Demo routes (POST /api/demo/seed, /api/demo/clear, /api/demo/connect-plaid-sandbox)
   // are auth-gated but let any user wipe + re-seed their own data. Useful for
   // QA / staging, dangerous in production. Mount only in non-prod environments.

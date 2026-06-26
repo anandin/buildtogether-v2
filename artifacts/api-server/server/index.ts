@@ -5,6 +5,7 @@ import { registerAdminRoutes } from "./admin-routes";
 import { loadAdminConfig } from "./admin-config";
 import { registerTillyRoutes } from "./routes/index";
 import { requestId } from "./middleware/requestId";
+import { securityHeaders } from "./middleware/securityHeaders";
 import { pool } from "./db";
 import { applyBootMigrations } from "./migrate-boot";
 import { validateRequiredEnv, getFeatureFlags } from "./env-validation";
@@ -54,10 +55,15 @@ function setupCors(app: express.Application) {
 
     const origin = req.header("origin");
 
-    // Allow localhost origins for Expo web development (any port)
+    // Allow localhost origins for Expo web development (any port) — but
+    // NEVER in production, where a localhost wildcard + credentials would
+    // let a page on a developer's machine make authenticated calls to the
+    // prod API. Gated on VERCEL_ENV (prod deploys only).
+    const isProd = process.env.VERCEL_ENV === "production";
     const isLocalhost =
-      origin?.startsWith("http://localhost:") ||
-      origin?.startsWith("http://127.0.0.1:");
+      !isProd &&
+      (origin?.startsWith("http://localhost:") ||
+        origin?.startsWith("http://127.0.0.1:"));
 
     if (origin && (origins.has(origin) || isLocalhost)) {
       res.header("Access-Control-Allow-Origin", origin);
@@ -287,15 +293,25 @@ function setupErrorHandler(app: express.Application) {
     };
 
     const status = error.status || error.statusCode || 500;
-    const message = error.message || "Internal Server Error";
 
+    // Full detail server-side only.
     console.error("Internal Server Error:", err);
 
     if (res.headersSent) {
       return next(err);
     }
 
-    return res.status(status).json({ message });
+    // Never leak internal error text (stack traces, SQL/driver messages,
+    // table names) to clients on 5xx. Deliberate 4xx messages set by
+    // handlers are returned directly by those handlers and don't reach
+    // here; anything that bubbles to this catch-all with a client-error
+    // status may carry a safe validation message, so we pass those
+    // through but scrub 5xx to a generic string + request id for support.
+    const reqId = (res.getHeader("x-request-id") as string) || undefined;
+    if (status >= 500) {
+      return res.status(status).json({ error: "Internal server error", requestId: reqId });
+    }
+    return res.status(status).json({ error: error.message || "Request failed", requestId: reqId });
   });
 }
 
@@ -321,6 +337,7 @@ export async function getApp(): Promise<express.Application> {
     );
 
     setupCors(app);
+    app.use(securityHeaders); // HSTS, CSP, frame/nosniff on every response
     setupBodyParsing(app);
     app.use(requestId); // attach request id + structured logger early
     setupRequestLogging(app);

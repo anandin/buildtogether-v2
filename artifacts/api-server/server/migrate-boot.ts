@@ -523,6 +523,24 @@ const CRITICAL_STATEMENTS: string[] = [
   // their webhook URL pushed to Plaid via itemWebhookUpdate so the
   // backfill is idempotent across boots.
   `ALTER TABLE "plaid_items" ADD COLUMN IF NOT EXISTS "webhook_registered_at" timestamp`,
+
+  // Security audit log (SOC 2 CC7.2) — append-only record of
+  // auth/privileged/data-deletion events. Written by security/audit.ts.
+  `CREATE TABLE IF NOT EXISTS "audit_log" (
+     "id" bigserial PRIMARY KEY,
+     "action" text NOT NULL,
+     "actor_type" text NOT NULL,
+     "actor_id" varchar,
+     "target_type" text,
+     "target_id" varchar,
+     "status" text NOT NULL DEFAULT 'success',
+     "ip" text,
+     "user_agent" text,
+     "metadata" jsonb,
+     "created_at" timestamp NOT NULL DEFAULT now()
+   )`,
+  `CREATE INDEX IF NOT EXISTS "audit_log_action_created_idx" ON "audit_log" ("action", "created_at" DESC)`,
+  `CREATE INDEX IF NOT EXISTS "audit_log_actor_created_idx" ON "audit_log" ("actor_id", "created_at" DESC)`,
 ];
 
 export async function applyBootMigrations(): Promise<{
@@ -568,6 +586,41 @@ export async function applyBootMigrations(): Promise<{
       `[migrate-boot] applied ${applied}, failed ${failed}` +
         (errors.length ? `\n  ${errors.join("\n  ")}` : ""),
     );
+
+    // Data migration (not pure SQL): encrypt any Plaid access_token still
+    // stored as legacy plaintext. Idempotent — encrypted rows carry the
+    // `enc:v1:` prefix and are skipped. Best-effort; a failure here must
+    // not block boot (reads stay backward-compatible via decryptSecret).
+    try {
+      const { isEncrypted, encryptSecret, encryptionConfigured } = await import(
+        "./security/crypto-fields"
+      );
+      if (encryptionConfigured()) {
+        const { rows } = await pool.query<{ id: string; access_token: string }>(
+          `SELECT "id", "access_token" FROM "plaid_items"`,
+        );
+        let migrated = 0;
+        for (const r of rows) {
+          if (isEncrypted(r.access_token)) continue;
+          const enc = encryptSecret(r.access_token);
+          await pool.query(
+            `UPDATE "plaid_items" SET "access_token" = $1 WHERE "id" = $2`,
+            [enc, r.id],
+          );
+          migrated++;
+        }
+        if (migrated > 0) {
+          console.log(`[migrate-boot] encrypted ${migrated} legacy Plaid access token(s)`);
+        }
+      } else {
+        console.warn(
+          "[migrate-boot] APP_ENCRYPTION_KEY not set — skipping Plaid token encryption migration",
+        );
+      }
+    } catch (err) {
+      console.error("[migrate-boot] token encryption migration failed (non-fatal):", (err as Error)?.message);
+    }
+
     _applied = true;
   })();
 

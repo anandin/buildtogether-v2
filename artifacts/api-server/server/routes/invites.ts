@@ -135,6 +135,11 @@ export function mountInvitesRoutes(app: Express): void {
         .where(and(eq(partnerInvites.inviteCode, token), eq(partnerInvites.status, "pending")))
         .limit(1);
       if (!invite) return res.status(404).json({ error: "invite_not_found" });
+      // Reject expired invites — the row carries expiresAt but the accept
+      // path never checked it, so a leaked/stale link stayed valid forever.
+      if (invite.expiresAt && new Date(invite.expiresAt as any) < new Date()) {
+        return res.status(410).json({ error: "invite_expired" });
+      }
       // Mark accepted; the actual `members` row insert happens after the
       // invitee finishes auth. For now we just flip status.
       await db

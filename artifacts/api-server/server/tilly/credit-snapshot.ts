@@ -14,6 +14,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db";
 import { plaidItems } from "../../shared/schema";
+import { decryptSecret } from "../security/crypto-fields";
 import { getPlaidClient, isPlaidConfigured } from "../plaid";
 
 export type CreditLever = {
@@ -68,7 +69,7 @@ export async function buildCreditSnapshot(
   for (const item of items) {
     try {
       const resp = await plaid.liabilitiesGet({
-        access_token: item.accessToken,
+        access_token: decryptSecret(item.accessToken),
       });
       const credit = resp.data.liabilities?.credit ?? [];
       for (const card of credit) {

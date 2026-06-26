@@ -2,13 +2,13 @@ import type { Express } from "express";
 import { createServer, type Server } from "node:http";
 import OpenAI from "openai";
 import bcrypt from "bcryptjs";
-import { eq, and, desc, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, inArray, ne, sql } from "drizzle-orm";
 import { requireAuth, requireCoupleAccess } from "./middleware/auth";
 import { requirePasskeyVerified, PASSKEY_FRESHNESS_MS } from "./routes/passkey";
 import { requireCron } from "./routes/cron";
 import { userCredentials } from "../shared/schema";
 import { guardianLimiter, authLimiter } from "./middleware/rateLimit";
-import { db } from "./db";
+import { db, pool } from "./db";
 import {
   couples,
   expenses,
@@ -57,6 +57,9 @@ import {
 import { generateQuestionsForHousehold } from "./tilly/question-generator";
 import { classifyTransaction, HIGH_CONFIDENCE_THRESHOLD } from "./tilly/category-classifier";
 import { verifyPlaidWebhook } from "./plaid-webhook-verify";
+import { encryptSecret, decryptSecret } from "./security/crypto-fields";
+import { redact } from "./security/redact";
+import { auditFromReq } from "./security/audit";
 
 const DEFAULT_CATEGORY_BUDGETS = [
   { category: "groceries", monthlyLimit: 600, budgetType: "recurring" },
@@ -248,7 +251,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     while (hasMore) {
       const resp: any = await plaid.transactionsSync({
-        access_token: item.accessToken,
+        access_token: decryptSecret(item.accessToken),
         cursor,
       });
       const data = resp.data;
@@ -611,7 +614,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         for (const item of items) {
           try {
             await plaid.itemWebhookUpdate({
-              access_token: item.accessToken,
+              access_token: decryptSecret(item.accessToken),
               webhook: webhookUrl,
             });
             await db
@@ -689,7 +692,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create session
       const token = generateSessionToken();
-      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+      const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000); // 14 days (reduced from 30 for SOC 2)
 
       await db.insert(sessions).values({
         userId: user.id,
@@ -756,7 +759,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create session
       const token = generateSessionToken();
-      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
       await db.insert(sessions).values({
         userId: newUser.id,
@@ -795,11 +798,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       if (!user || !user.passwordHash) {
+        auditFromReq(req, {
+          action: "auth.login.failure",
+          actorType: "anonymous",
+          status: "failure",
+          metadata: { email: String(email).toLowerCase(), reason: "no_user" },
+        });
         return res.status(401).json({ error: "Invalid email or password" });
       }
 
       const isValidPassword = await bcrypt.compare(password, user.passwordHash);
       if (!isValidPassword) {
+        auditFromReq(req, {
+          action: "auth.login.failure",
+          actorType: "user",
+          actorId: user.id,
+          status: "failure",
+          metadata: { reason: "bad_password" },
+        });
         return res.status(401).json({ error: "Invalid email or password" });
       }
 
@@ -810,12 +826,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create session
       const token = generateSessionToken();
-      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
       await db.insert(sessions).values({
         userId: user.id,
         token,
         expiresAt,
+      });
+
+      auditFromReq(req, {
+        action: "auth.login.success",
+        actorType: "user",
+        actorId: user.id,
       });
 
       res.json({
@@ -830,8 +852,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         expiresAt: expiresAt.toISOString(),
       });
     } catch (error: any) {
-      console.error("Login error:", error);
-      res.status(500).json({ error: error.message || "Login failed" });
+      console.error("Login error:", redact(error));
+      res.status(500).json({ error: "Login failed. Please try again." });
     }
   });
 
@@ -888,7 +910,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create session
       const token = generateSessionToken();
-      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
 
       await db.insert(sessions).values({
         userId: user.id,
@@ -1010,45 +1032,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ error: "User not found" });
       }
 
-      // Delete all user sessions
-      await db.delete(sessions).where(eq(sessions.userId, user.id));
+      // Always purge the user's own records (sessions, credentials, push
+      // tokens, prefs, dossiers, retrieval log).
+      const { purgeHouseholdData, purgeUserData } = await import("./security/data-deletion");
+      let purgedRows = await purgeUserData(pool, user.id);
 
-      // If user is partner1, we need to handle the couple data
-      // For now, we'll delete the user but leave couple data for partner2
-      // If partner2, just unlink from couple
+      // Household data: only wipe it when this user is the LAST member.
+      // (The original code compared users.id to itself, so it always
+      // treated the user as sole member AND never deleted Plaid tokens,
+      // transactions, or Tilly memory — a right-to-erasure failure.)
+      let householdPurged = false;
       if (user.coupleId) {
-        const couple = await db.query.couples.findFirst({
-          where: eq(couples.id, user.coupleId),
-        });
-
-        if (couple) {
-          // Check if there's another user linked to this couple
-          const otherUsers = await db.select().from(users)
-            .where(and(
-              eq(users.coupleId, user.coupleId),
-              eq(users.id, user.id)
-            ));
-
-          // If this user is the only one, delete all couple data
-          if (otherUsers.length <= 1) {
-            // Delete couple-related data
-            await db.delete(expenses).where(eq(expenses.coupleId, user.coupleId));
-            await db.delete(goals).where(eq(goals.coupleId, user.coupleId));
-            await db.delete(categoryBudgets).where(eq(categoryBudgets.coupleId, user.coupleId));
-            await db.delete(customCategories).where(eq(customCategories.coupleId, user.coupleId));
-            await db.delete(settlements).where(eq(settlements.coupleId, user.coupleId));
-            await db.delete(partnerInvites).where(eq(partnerInvites.coupleId, user.coupleId));
-            await db.delete(couples).where(eq(couples.id, user.coupleId));
-          }
+        const remaining = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.coupleId, user.coupleId), ne(users.id, user.id)));
+        if (remaining.length === 0) {
+          purgedRows += await purgeHouseholdData(pool, user.coupleId);
+          await db.delete(couples).where(eq(couples.id, user.coupleId)).catch(() => {});
+          householdPurged = true;
         }
       }
 
-      // Delete the user
+      // Delete the user row last.
       await db.delete(users).where(eq(users.id, user.id));
+
+      auditFromReq(req, {
+        action: "account.delete",
+        actorType: "user",
+        actorId: user.id,
+        targetType: "user",
+        targetId: user.id,
+        metadata: { householdPurged, purgedRows, coupleId: user.coupleId ?? null },
+      });
 
       res.json({ success: true, message: "Account deleted successfully" });
     } catch (error: any) {
-      console.error("Delete account error:", error);
+      console.error("Delete account error:", redact(error));
       res.status(500).json({ error: "Failed to delete account" });
     }
   });
@@ -5012,7 +5032,7 @@ Return just the message text.`;
 
       res.json({ linkToken: response.data.link_token, expiration: response.data.expiration });
     } catch (error: any) {
-      console.error("Plaid link-token error:", error?.response?.data || error);
+      console.error("Plaid link-token error:", redact(error?.response?.data || error));
       res.status(500).json({ error: error.message || "Failed to create link token" });
     }
   });
@@ -5035,7 +5055,7 @@ Return just the message text.`;
         coupleId: req.user.coupleId,
         userId: req.user.id,
         plaidItemId: exchange.data.item_id,
-        accessToken: exchange.data.access_token,
+        accessToken: encryptSecret(exchange.data.access_token),
         institutionId: institution?.institution_id || null,
         institutionName: institution?.name || null,
         status: "active",
@@ -5050,10 +5070,24 @@ Return just the message text.`;
       // Kick off initial sync (non-blocking so we can respond fast)
       syncPlaidItem(item.id).catch(err => console.error("Initial Plaid sync failed:", err));
 
+      auditFromReq(req, {
+        action: "plaid.link",
+        actorType: "user",
+        actorId: req.user?.id ?? null,
+        targetType: "plaid_item",
+        targetId: item.id,
+        metadata: { institutionName: item.institutionName },
+      });
       res.json({ item: { id: item.id, institutionName: item.institutionName } });
     } catch (error: any) {
-      console.error("Plaid exchange error:", error?.response?.data || error);
-      res.status(500).json({ error: error.message || "Failed to exchange token" });
+      console.error("Plaid exchange error:", redact(error?.response?.data || error));
+      auditFromReq(req, {
+        action: "plaid.exchange.failure",
+        actorType: "user",
+        actorId: req.user?.id ?? null,
+        status: "failure",
+      });
+      res.status(500).json({ error: "Failed to connect bank. Please try again." });
     }
   });
 
@@ -5094,7 +5128,7 @@ Return just the message text.`;
 
       const plaid = getPlaidClient();
       if (plaid) {
-        await plaid.itemRemove({ access_token: item.accessToken }).catch((err: any) => {
+        await plaid.itemRemove({ access_token: decryptSecret(item.accessToken) }).catch((err: any) => {
           console.error("Plaid itemRemove failed (continuing):", err?.response?.data || err);
         });
       }
@@ -5133,7 +5167,7 @@ Return just the message text.`;
       for (const item of items) {
         try {
           const resp: any = await plaid.transactionsGet({
-            access_token: item.accessToken,
+            access_token: decryptSecret(item.accessToken),
             start_date: startDate,
             end_date: endDate,
             options: { include_personal_finance_category: true } as any,

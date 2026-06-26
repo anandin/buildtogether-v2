@@ -113,10 +113,40 @@ export function validateRequiredEnv(): void {
     }
   }
 
+  // Production-only security requirements. APP_ENCRYPTION_KEY protects
+  // Plaid access tokens at rest; CRON_SECRET protects the billable cron
+  // endpoints. Both are catastrophic to omit in prod, so fail boot.
+  const isProd =
+    process.env.VERCEL_ENV === "production" || process.env.NODE_ENV === "production";
+  const securityMissing: string[] = [];
+  if (isProd) {
+    const key = process.env.APP_ENCRYPTION_KEY?.trim();
+    if (!key) {
+      securityMissing.push(
+        "  - APP_ENCRYPTION_KEY: 32-byte key (base64 or 64 hex chars) used to encrypt Plaid access tokens at rest. Generate with: openssl rand -base64 32",
+      );
+    } else {
+      const bytes = /^[0-9a-fA-F]{64}$/.test(key)
+        ? 32
+        : Buffer.from(key, "base64").length;
+      if (bytes !== 32) {
+        securityMissing.push(
+          `  - APP_ENCRYPTION_KEY: must decode to 32 bytes (got ${bytes}). Generate with: openssl rand -base64 32`,
+        );
+      }
+    }
+    if (!process.env.CRON_SECRET) {
+      securityMissing.push(
+        "  - CRON_SECRET: required in production to authenticate Vercel Cron requests",
+      );
+    }
+  }
+
   if (
     missing.length === 0 &&
     halfConfigured.length === 0 &&
-    productionPlaidMissing.length === 0
+    productionPlaidMissing.length === 0 &&
+    securityMissing.length === 0
   )
     return;
 
@@ -135,6 +165,10 @@ export function validateRequiredEnv(): void {
       "Plaid is set to PLAID_ENV=production but is missing required production wiring:",
     );
     lines.push(...productionPlaidMissing);
+  }
+  if (securityMissing.length > 0) {
+    lines.push("", "Missing required production security configuration:");
+    lines.push(...securityMissing);
   }
   lines.push(
     "",

@@ -15,6 +15,7 @@
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "../db";
 import { plaidItems, plaidTransactions, subscriptions } from "../../shared/schema";
+import { decryptSecret } from "../security/crypto-fields";
 import { getPlaidClient, isPlaidConfigured } from "../plaid";
 
 export type ScanResult = {
@@ -86,7 +87,7 @@ export async function scanSubscriptions(householdId: string): Promise<ScanResult
   for (const item of items) {
     try {
       const resp = await plaid.transactionsRecurringGet({
-        access_token: item.accessToken,
+        access_token: decryptSecret(item.accessToken),
       });
       const outflows = resp.data.outflow_streams ?? [];
       for (const stream of outflows) {

@@ -8,6 +8,8 @@ import jwt from "jsonwebtoken";
 import path from "path";
 import { loadAdminConfig } from "./admin-config";
 import { apiServerDir } from "./paths";
+import { auditFromReq } from "./security/audit";
+import { redact } from "./security/redact";
 
 interface AdminRequest extends Request {
   adminUser?: { id: string; email: string };
@@ -59,15 +61,26 @@ export function registerAdminRoutes(app: Express) {
       const passwordOk = await bcrypt.compare(password, passwordHash);
       const emailOk = email === adminEmail;
       if (!emailOk || !passwordOk) {
+        auditFromReq(req, {
+          action: "admin.login.failure",
+          actorType: "anonymous",
+          status: "failure",
+          metadata: { email: String(email).slice(0, 120) },
+        });
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
       const token = jwt.sign({ id: "admin", email: adminEmail }, sessionSecret, { expiresIn: "7d" });
 
+      auditFromReq(req, {
+        action: "admin.login.success",
+        actorType: "admin",
+        actorId: "admin",
+      });
       res.json({ token, admin: { id: "admin", email: adminEmail, name: "Admin" } });
     } catch (error: any) {
-      console.error("Admin login error:", error);
-      res.status(500).json({ error: error.message });
+      console.error("Admin login error:", redact(error));
+      res.status(500).json({ error: "Login failed" });
     }
   });
 

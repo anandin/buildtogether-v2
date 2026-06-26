@@ -808,7 +808,11 @@ export const plaidItems = pgTable("plaid_items", {
   coupleId: varchar("couple_id").notNull(),
   userId: varchar("user_id").notNull(), // the partner who connected it
   plaidItemId: text("plaid_item_id").notNull().unique(),
-  accessToken: text("access_token").notNull(), // encrypted at rest via DB; never exposed to client
+  // Plaid access token — the master key to the user's bank. Stored
+  // ENCRYPTED at the application layer (AES-256-GCM, security/crypto-fields.ts):
+  // the column holds an `enc:v1:…` envelope, decrypted only when handed to
+  // Plaid. Never exposed to the client.
+  accessToken: text("access_token").notNull(),
   institutionId: text("institution_id"),
   institutionName: text("institution_name"),
   cursor: text("cursor"), // incremental sync cursor from /transactions/sync
