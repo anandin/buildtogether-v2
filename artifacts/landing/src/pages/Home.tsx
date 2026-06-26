@@ -262,7 +262,8 @@ export default function Home() {
         </section>
 
         {/* ───────────── BEHAVIORAL SCIENCE (drenched) ───────────── */}
-        <section className="relative overflow-hidden bg-primary text-primary-foreground">
+        {/* Deeper than --primary so cream body copy clears 4.5:1. */}
+        <section className="relative overflow-hidden bg-[#6B43C9] text-primary-foreground">
           <div
             aria-hidden
             className="pointer-events-none absolute -right-40 -top-40 h-[44rem] w-[44rem] rounded-full bg-white/10 blur-3xl"
@@ -273,7 +274,7 @@ export default function Home() {
                 <h2 className="font-serif text-[clamp(2.25rem,5vw,3.5rem)] leading-[1.08]">
                   Behavioral science, not willpower.
                 </h2>
-                <p className="mt-5 text-lg leading-relaxed text-primary-foreground/85">
+                <p className="mt-5 text-lg leading-relaxed text-primary-foreground/90">
                   Willpower runs out when you're tired, stressed, or three days into finals. So Tilly
                   doesn't rely on it. She uses what actually works to make the right move the easy
                   one.
@@ -288,7 +289,7 @@ export default function Home() {
                   ].map(([title, body], i) => (
                     <div key={title} className="reveal" style={{ animationDelay: `${i * 80}ms` }}>
                       <dt className="font-serif text-xl text-primary-foreground">{title}</dt>
-                      <dd className="mt-2 leading-relaxed text-primary-foreground/80">{body}</dd>
+                      <dd className="mt-2 leading-relaxed text-primary-foreground/90">{body}</dd>
                     </div>
                   ))}
                 </dl>

@@ -161,32 +161,33 @@
   }
 }
 
-/* Scroll-driven reveal — pure CSS, no JS, SSR-safe. Base state is fully
-   visible; the entrance only applies where scroll-timeline is supported
-   AND motion is welcome, so crawlers, no-JS, and reduced-motion users
-   always see content. Never gates visibility on JS. */
+/* Scroll-driven reveal — pure CSS, no JS, SSR-safe. CRITICAL: the
+   keyframes animate TRANSFORM ONLY, never opacity. Content is therefore
+   always visible (opacity 1) regardless of scroll position, JS, crawlers,
+   or reduced motion — a section can never ship blank. The motion is a
+   gentle slide-up as each block enters the viewport. */
 @media (prefers-reduced-motion: no-preference) {
   @supports (animation-timeline: view()) {
     .reveal {
       animation: reveal-rise linear both;
       animation-timeline: view();
-      animation-range: entry 2% cover 18%;
+      animation-range: entry 0% cover 22%;
     }
     .reveal-soft {
-      animation: reveal-fade linear both;
+      animation: reveal-rise-soft linear both;
       animation-timeline: view();
-      animation-range: entry 0% cover 14%;
+      animation-range: entry 0% cover 18%;
     }
   }
 }
 
 @keyframes reveal-rise {
-  from { opacity: 0; transform: translateY(26px); }
-  to { opacity: 1; transform: none; }
+  from { transform: translateY(28px); }
+  to { transform: none; }
 }
-@keyframes reveal-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+@keyframes reveal-rise-soft {
+  from { transform: translateY(14px); }
+  to { transform: none; }
 }
 
 /* Quiet, continuous ambient motion for the hero portrait + glow. Fully
