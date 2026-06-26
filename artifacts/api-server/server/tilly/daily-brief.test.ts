@@ -89,4 +89,25 @@ describe("harvestAllowedNumbers + briefNumbersValid", () => {
     const allowed = harvestAllowedNumbers(baseInput);
     expect(briefNumbersValid({ bodyLine: "skip the $6 latte", heroNarrative: "", tillyInvite: "" }, allowed)).toBe(true);
   });
+
+  it("allows a legitimate mid-size figure we didn't harvest (category total)", () => {
+    const allowed = harvestAllowedNumbers(baseInput);
+    // $542 shopping total is real but not in the harvested set; it's well
+    // within 1.5x the largest real number (~$13k) so it must NOT degrade
+    // the narrative. This is the false-positive that blanked the hero.
+    expect(
+      briefNumbersValid(
+        { bodyLine: "Shopping is your biggest line at $542.", heroNarrative: "", tillyInvite: "" },
+        allowed,
+      ),
+    ).toBe(true);
+  });
+
+  it("still rejects an implausibly large figure above the ceiling", () => {
+    const allowed = harvestAllowedNumbers(baseInput);
+    // 1.5x of ~$13,344 is ~$20k; $173,496 clears it → rejected.
+    expect(
+      briefNumbersValid({ bodyLine: "$173,496 incoming", heroNarrative: "", tillyInvite: "" }, allowed),
+    ).toBe(false);
+  });
 });

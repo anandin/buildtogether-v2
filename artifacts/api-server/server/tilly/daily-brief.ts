@@ -321,9 +321,23 @@ export function harvestAllowedNumbers(input: DailyBriefInput): Set<number> {
   return allowed;
 }
 
-/** True when every dollar figure in the phrasing exists in the allowed
- * set. Small figures (< $10) are ignored — "$5 coffee" style colour is
- * not the fabrication class that burned us. */
+/** True when the phrasing has no IMPLAUSIBLE dollar figure.
+ *
+ * The original guard rejected any figure not in the harvested allowed
+ * set — too strict. The brief LLM legitimately sees numbers we don't
+ * harvest into `allowed` (a single category total, a specific upcoming
+ * bill inside an observation), so demanding an exact match degraded
+ * perfectly good narratives (the whole hero went blank on June's real
+ * numbers). And the systematic error that caused the $173k hero is now
+ * fixed upstream in the income path — the guard is defense-in-depth, not
+ * the primary fix.
+ *
+ * So we only catch the CATASTROPHIC class: a figure wildly larger than
+ * anything real (the "$173,496 when nothing tops ~$14k" signature). A
+ * figure passes if it's tiny (< $10 colour), exactly matches a real
+ * number, OR sits within 1.5× of the largest legitimate number. Only a
+ * figure that clears that ceiling AND isn't explained gets the narrative
+ * rejected. */
 export function briefNumbersValid(
   phrasing: { bodyLine?: string; heroNarrative?: string; tillyInvite?: string },
   allowed: Set<number>,
@@ -333,5 +347,9 @@ export function briefNumbersValid(
     ...dollarFiguresIn(phrasing.heroNarrative ?? ""),
     ...dollarFiguresIn(phrasing.tillyInvite ?? ""),
   ];
-  return figures.every((n) => n < 10 || allowed.has(n));
+  if (figures.length === 0) return true;
+  let maxAllowed = 0;
+  for (const n of allowed) if (n > maxAllowed) maxAllowed = n;
+  const ceiling = Math.max(maxAllowed * 1.5, 100);
+  return figures.every((n) => n < 10 || allowed.has(n) || n <= ceiling);
 }
