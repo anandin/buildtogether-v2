@@ -1,16 +1,21 @@
 /**
  * Cron endpoints — invoked by Vercel Cron (vercel.json).
  *
- *   POST /api/cron/auto-save     — Friday 9am UTC: processes weekly dream
- *                                   auto-saves for all households
- *   POST /api/cron/protections   — Daily noon UTC: refreshes the
- *                                   protections feed (Phase 4 wires this)
- *   POST /api/cron/notify        — Daily noon UTC: pushes act-today to
- *                                   users respecting quiet hours (Phase 5)
+ *   /api/cron/auto-save     — Friday 9am UTC: weekly dream auto-saves
+ *   /api/cron/protections   — Daily: refreshes the protections feed
+ *   /api/cron/notify        — Daily: pushes act-today (quiet hours)
  *
- * Auth: Vercel Cron sends `Authorization: Bearer <CRON_SECRET>`. We
- * validate that header before doing any work. Set CRON_SECRET in
- * Vercel env vars.
+ * HTTP METHOD — IMPORTANT: Vercel Cron Jobs invoke the path with a
+ * **GET** request. These routes are therefore registered with `app.all`
+ * so the scheduled GET reaches the handler (POST is also accepted for
+ * manual/ops triggers). They were previously `app.post` only, which
+ * meant every scheduled invocation hit a non-existent route and silently
+ * 404'd — no cron ran for the life of the project; webhooks masked it
+ * because Plaid sync had its own path. (Root-caused 2026-06-26.)
+ *
+ * Auth: Vercel Cron sends `Authorization: Bearer <CRON_SECRET>` (added
+ * automatically when CRON_SECRET env is set). We validate that header
+ * before doing any work.
  */
 import type { Express, Request, Response, NextFunction } from "express";
 import { eq, and, gt, sql } from "drizzle-orm";
@@ -70,7 +75,7 @@ export function mountCronRoutes(app: Express): void {
    * drain a queue quickly enough; if it ever exceeds 50/min we have
    * other problems.
    */
-  app.post(
+  app.all(
     "/api/cron/fire-reminders",
     requireCron,
     async (_req: Request, res: Response) => {
@@ -157,7 +162,7 @@ export function mountCronRoutes(app: Express): void {
    * back to the user, not to summarise it. The notification opens the
    * app to Today where the ShouldIBuyTile is already mounted.
    */
-  app.post(
+  app.all(
     "/api/cron/morning-watchlist",
     requireCron,
     async (_req: Request, res: Response) => {
@@ -274,7 +279,7 @@ export function mountCronRoutes(app: Express): void {
    * in the last 6 days. The cron fires weekly; if it runs twice in the
    * same week (manual + scheduled), the dream still only gets one bump.
    */
-  app.post(
+  app.all(
     "/api/cron/auto-save",
     requireCron,
     async (_req: Request, res: Response) => {
@@ -338,7 +343,7 @@ export function mountCronRoutes(app: Express): void {
 
   // Sweeps the protections engine over every household. Vercel Cron hits
   // this hourly; the dedupe window inside the engine keeps it idempotent.
-  app.post(
+  app.all(
     "/api/cron/protections",
     requireCron,
     async (_req: Request, res: Response) => {
@@ -356,7 +361,7 @@ export function mountCronRoutes(app: Express): void {
   // Fan-out cron — finds protections with severity 'act_today' that
   // haven't been pushed yet, sends a push to every active token, marks
   // them as 'pushed'. Quiet hours respected.
-  app.post(
+  app.all(
     "/api/cron/notify",
     requireCron,
     async (_req: Request, res: Response) => {
@@ -376,7 +381,7 @@ export function mountCronRoutes(app: Express): void {
   // surface them. Currently a thin wrapper around buildWeeklyPattern;
   // future versions will identify multi-week recurrence beyond the
   // current sigma test.
-  app.post(
+  app.all(
     "/api/cron/patterns",
     requireCron,
     async (_req: Request, res: Response) => {
@@ -397,7 +402,7 @@ export function mountCronRoutes(app: Express): void {
   // expected variable burn → "truly yours"), and sends ONE push with
   // the split inline. Idempotent per (user, paydayDate); daytime-gated
   // 8am-9pm local. Runs at :47 so the :17 plaid-sync-all lands first.
-  app.post(
+  app.all(
     "/api/cron/payday-pulse",
     requireCron,
     async (_req: Request, res: Response) => {
@@ -418,7 +423,7 @@ export function mountCronRoutes(app: Express): void {
   // weekly review (Sun 6pm), category cap alerts (80%/100%), mid-cycle
   // pace correction (noon, ≥7 days into a pay cycle), plus the Monday
   // watchlist price scout. See tilly/engagement-cron.ts.
-  app.post(
+  app.all(
     "/api/cron/engagement-loop",
     requireCron,
     async (_req: Request, res: Response) => {
@@ -438,7 +443,7 @@ export function mountCronRoutes(app: Express): void {
   // every active user and produces typed L2 memories in tilly_memory_v2.
   // Schedules nightly at 03:00 UTC (~10pm Eastern, 7pm Pacific) — after
   // the day's chat traffic but before any morning push nudges.
-  app.post(
+  app.all(
     "/api/cron/distill-memories",
     requireCron,
     async (_req: Request, res: Response) => {
@@ -456,7 +461,7 @@ export function mountCronRoutes(app: Express): void {
 
   // S3 — nightly dossier rewriter. Runs after the distiller (at 03:30
   // UTC) so it sees today's freshly-distilled typed memories.
-  app.post(
+  app.all(
     "/api/cron/rewrite-dossiers",
     requireCron,
     async (_req: Request, res: Response) => {
@@ -478,7 +483,7 @@ export function mountCronRoutes(app: Express): void {
   // archives commitment / value kinds. Runs daily at 04:00 UTC via the
   // in-process scheduler; this endpoint exists for manual / external
   // triggering and parity with the other memory crons.
-  app.post(
+  app.all(
     "/api/cron/archive-memories",
     requireCron,
     async (_req: Request, res: Response) => {
@@ -496,7 +501,7 @@ export function mountCronRoutes(app: Express): void {
   // Smart Tilly #11 — record predicted close + accept variants for the
   // current month every day, so by month-end we have a snapshot of the
   // last projection. Idempotent upsert keyed on (household, month).
-  app.post(
+  app.all(
     "/api/cron/record-projection-history",
     requireCron,
     async (_req: Request, res: Response) => {
@@ -518,7 +523,7 @@ export function mountCronRoutes(app: Express): void {
   // tool trajectories and extracts reusable skills (Hermes/Voyager
   // pattern). Proposed skills land in tilly_skills with status='proposed'
   // for admin review at /admin/skills. Run weekly Sunday 4am UTC.
-  app.post(
+  app.all(
     "/api/cron/induce-skills",
     requireCron,
     async (_req: Request, res: Response) => {
@@ -536,7 +541,7 @@ export function mountCronRoutes(app: Express): void {
 
   // Skill curator — promotes proposed skills with positive usage,
   // archives underperforming active skills. Hermes cadence: 7 days.
-  app.post(
+  app.all(
     "/api/cron/curate-skills",
     requireCron,
     async (_req: Request, res: Response) => {
@@ -556,7 +561,7 @@ export function mountCronRoutes(app: Express): void {
   // month: compute actual close from the now-final ledger and stamp
   // settled_at on the matching projection_history row. The detector
   // reads (predicted - actual) to surface accuracy.
-  app.post(
+  app.all(
     "/api/cron/settle-projection-history",
     requireCron,
     async (_req: Request, res: Response) => {

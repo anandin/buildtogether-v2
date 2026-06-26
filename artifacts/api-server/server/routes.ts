@@ -512,7 +512,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   //
   // Both endpoints are protected by requireCron (Bearer CRON_SECRET).
 
-  app.post(
+  // app.all (not app.post): Vercel Cron invokes with GET. See the method
+  // note in routes/cron.ts — POST-only routes silently 404'd on every
+  // scheduled tick. POST still accepted for manual triggers.
+  app.all(
     "/api/cron/plaid-sync-all",
     requireCron,
     async (_req, res) => {
@@ -578,7 +581,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   );
 
-  app.post(
+  app.all(
     "/api/cron/plaid-webhook-backfill",
     requireCron,
     async (_req, res) => {
