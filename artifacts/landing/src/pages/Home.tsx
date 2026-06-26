@@ -31,6 +31,10 @@ export default function Home() {
       a: "Yes. The free tier covers everything a student actually needs — bank connections, the chat, and goal tracking. Premium adds custom themes, deeper memory, and household sharing, but your basic financial safety is never behind a paywall.",
     },
     {
+      q: "Is it safe to connect my bank?",
+      a: "Yes. Connections run through Plaid — the same service behind Venmo, Robinhood, and Chime — so we never see or store your bank password. Tilly's access is read-only: she can see transactions to help you, but can't move a cent. Everything's encrypted, never sold, and you can disconnect or delete it all anytime.",
+    },
+    {
       q: "Can I connect my student bank account?",
       a: "Almost certainly. We use Plaid, which supports over 12,000 institutions in the US and Canada — local credit unions, student accounts, and the big banks alike.",
     },
@@ -65,7 +69,7 @@ export default function Home() {
             <div className="max-w-2xl flex-1 animate-in fade-in slide-in-from-bottom-6 duration-700">
               <span className="inline-flex items-center gap-2 rounded-full bg-foreground/5 px-4 py-1.5 text-sm font-medium text-foreground/70 ring-1 ring-foreground/10">
                 <Sparkles className="h-4 w-4 text-primary" />
-                A different kind of money app
+                A money app that gets your twenties
               </span>
 
               <h1 className="mt-7 font-serif text-[clamp(2.75rem,7vw,4.75rem)] leading-[1.04] text-foreground">
@@ -74,8 +78,8 @@ export default function Home() {
               </h1>
 
               <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
-                Tilly watches your money and quietly helps you save for the things you actually
-                want. She'll tell you when you can spend, when to hold off, and when something
+                The trip, the apartment, the year off — Tilly quietly moves your money toward what
+                you actually want, and tells you when to spend, when to wait, and when the thing
                 you've been eyeing is about to get cheaper.
               </p>
 
@@ -90,7 +94,7 @@ export default function Home() {
                   </a>
                 </Button>
                 <p className="text-sm text-muted-foreground">
-                  Two minutes to set up. Read-only bank sync.
+                  Two minutes. Bank-level encryption · read-only · never sold.
                 </p>
               </div>
             </div>
@@ -115,6 +119,26 @@ export default function Home() {
                 </p>
               </div>
             </div>
+          </div>
+        </section>
+
+        {/* ───────────── CREDIBILITY BAND (trust, surfaced early) ───────────── */}
+        <section className="border-y border-border/60 bg-card/50">
+          <div className="mx-auto flex max-w-5xl flex-col items-center gap-3 px-6 py-6 text-center sm:px-12">
+            <p className="text-sm text-muted-foreground sm:text-base">
+              Bank connections secured by{" "}
+              <span className="font-semibold text-foreground">Plaid</span> — the same technology
+              behind Venmo, Robinhood &amp; Chime.
+            </p>
+            <ul className="flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-sm text-foreground/55">
+              <li>12,000+ banks</li>
+              <li aria-hidden>·</li>
+              <li>Read-only access</li>
+              <li aria-hidden>·</li>
+              <li>Bank-level encryption</li>
+              <li aria-hidden>·</li>
+              <li>Your data is never sold</li>
+            </ul>
           </div>
         </section>
 
@@ -282,10 +306,10 @@ export default function Home() {
 
                 <dl className="mt-10 grid gap-x-10 gap-y-8 sm:grid-cols-2">
                   {[
-                    ["Fresh starts", "Mondays and the 1st are proven reset points. Tilly turns them into momentum."],
-                    ["Loss aversion, reframed", "Saving isn't losing money today — it's protecting the future you already chose."],
-                    ["A beat of friction", "A tiny pause before big buys, so it's the thing you want, not just the thing that's easy."],
-                    ["Commitment devices", "Lock in your plan while you're motivated, so your tired self never has to decide."],
+                    ["Fresh starts", "“It's the 1st — clean slate. Lock in $40 toward Tokyo before the month gets loud?”"],
+                    ["Loss aversion, flipped", "“This isn't $30 gone. It's $30 of Barcelona, protected.”"],
+                    ["A beat of friction", "“Quick gut-check before you tap buy — still want it tomorrow, or just tonight?”"],
+                    ["Commitment devices", "“You said future-you comes first. Want me to tuck this away so tired-you can't touch it?”"],
                   ].map(([title, body], i) => (
                     <div key={title} className="reveal" style={{ animationDelay: `${i * 80}ms` }}>
                       <dt className="font-serif text-xl text-primary-foreground">{title}</dt>
@@ -380,6 +404,36 @@ export default function Home() {
           </div>
         </section>
 
+        {/*
+          ───────────── SOCIAL PROOF — enable once you have REAL quotes ─────────────
+          Do NOT ship invented testimonials on a financial site (it's an FTC
+          problem and it reads as fake). When you have 2-3 genuine quotes,
+          replace the placeholders below with real {name, line, context} and
+          delete the surrounding comment markers to render this section.
+
+        <section className="bg-card">
+          <div className="mx-auto max-w-6xl px-6 py-24 sm:px-12">
+            <h2 className="text-center font-serif text-[clamp(1.875rem,4vw,2.75rem)] text-foreground">
+              What early users say
+            </h2>
+            <div className="mt-12 grid gap-6 md:grid-cols-3">
+              {[
+                { line: "REAL QUOTE HERE.", name: "First name", context: "School / city" },
+                { line: "REAL QUOTE HERE.", name: "First name", context: "School / city" },
+                { line: "REAL QUOTE HERE.", name: "First name", context: "School / city" },
+              ].map((t, i) => (
+                <figure key={i} className="rounded-2xl bg-background p-6 ring-1 ring-border/60">
+                  <blockquote className="text-foreground">“{t.line}”</blockquote>
+                  <figcaption className="mt-4 text-sm text-muted-foreground">
+                    <span className="font-medium text-foreground">{t.name}</span> · {t.context}
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+          </div>
+        </section>
+        */}
+
         {/* ───────────── FAQ ───────────── */}
         <section className="mx-auto max-w-3xl px-6 py-24 sm:px-12">
           <h2 className="reveal text-center font-serif text-[clamp(1.875rem,4vw,2.75rem)] text-foreground">
@@ -422,7 +476,7 @@ export default function Home() {
                 className="h-16 rounded-full bg-background px-10 text-lg text-foreground hover:bg-background/90"
               >
                 <a href={appUrl} onClick={handleDownloadClick} rel="noopener">
-                  Meet your Tilly <ArrowUpRight className="ml-2 h-5 w-5" />
+                  Start free <ArrowUpRight className="ml-2 h-5 w-5" />
                 </a>
               </Button>
             </div>
