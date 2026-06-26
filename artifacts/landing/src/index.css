@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&family=Outfit:wght@100..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Hanken+Grotesk:ital,wght@0,300..800;1,400..600&family=Hedvig+Letters+Serif:opsz@12..24&display=swap');
 @import "tailwindcss";
 @import "tw-animate-css";
 @plugin "@tailwindcss/typography";
@@ -87,7 +87,9 @@
   --secondary-foreground: 351 33% 12%;
 
   --muted: 8 38% 88%;
-  --muted-foreground: 351 33% 40%;
+  /* Darkened from 40% → 33% so body copy clears 4.5:1 on the warm grounds.
+     Light-gray "for elegance" is the #1 reason AI pages read as hard to read. */
+  --muted-foreground: 351 30% 33%;
 
   --border: 8 38% 85%;
   --input: 8 38% 85%;
@@ -96,10 +98,10 @@
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 100%;
 
-  --app-font-sans: 'Outfit', sans-serif;
-  --app-font-serif: 'Fraunces', serif;
-  --app-font-mono: monospace;
-  --radius: 1rem; 
+  --app-font-sans: 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --app-font-serif: 'Hedvig Letters Serif', ui-serif, Georgia, serif;
+  --app-font-mono: ui-monospace, monospace;
+  --radius: 1rem;
 }
 
 .dark {
@@ -146,6 +148,54 @@
   }
 
   h1, h2, h3, h4, h5, h6 {
-    @apply font-serif tracking-tight;
+    @apply font-serif;
+    /* Hedvig is a delicate display serif — a hair of negative tracking,
+       never below the -0.04em floor where letters touch. Balance keeps
+       hero lines even. */
+    letter-spacing: -0.018em;
+    text-wrap: balance;
   }
+
+  p {
+    text-wrap: pretty;
+  }
+}
+
+/* Scroll-driven reveal — pure CSS, no JS, SSR-safe. Base state is fully
+   visible; the entrance only applies where scroll-timeline is supported
+   AND motion is welcome, so crawlers, no-JS, and reduced-motion users
+   always see content. Never gates visibility on JS. */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .reveal {
+      animation: reveal-rise linear both;
+      animation-timeline: view();
+      animation-range: entry 2% cover 18%;
+    }
+    .reveal-soft {
+      animation: reveal-fade linear both;
+      animation-timeline: view();
+      animation-range: entry 0% cover 14%;
+    }
+  }
+}
+
+@keyframes reveal-rise {
+  from { opacity: 0; transform: translateY(26px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes reveal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Quiet, continuous ambient motion for the hero portrait + glow. Fully
+   suppressed under reduced-motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .float-slow { animation: float-slow 7s ease-in-out infinite; }
+  .float-slower { animation: float-slow 11s ease-in-out infinite; }
+}
+@keyframes float-slow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-14px); }
 }

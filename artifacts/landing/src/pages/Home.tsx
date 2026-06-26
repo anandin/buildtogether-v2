@@ -1,7 +1,21 @@
 import { Navigation } from "@/components/Navigation";
 import { Footer } from "@/components/Footer";
 import { Button } from "@/components/ui/button";
-import { ArrowRight, Sparkles, Brain, Lock, Users, Calendar, Target, MoveUpRight, ArrowUpRight, Plus } from "lucide-react";
+import { Link } from "wouter";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Sparkles,
+  Plus,
+  Quote,
+  CalendarClock,
+  MapPin,
+  Heart,
+  Sprout,
+  Lock,
+  Users,
+  ShieldCheck,
+} from "lucide-react";
 import tillyStudy from "@/assets/tilly-study.png";
 import tillyRamen from "@/assets/tilly-ramen.png";
 import tillyGrad from "@/assets/tilly-grad.png";
@@ -14,276 +28,404 @@ export default function Home() {
   const faqs = [
     {
       q: "Is it really free?",
-      a: "Tilly has a generous free tier that covers everything a student needs—bank connections, the chat, and goal tracking. We have a premium version for people who want custom themes, advanced AI memory, and household sharing, but we'll never lock your basic financial safety behind a paywall.",
+      a: "Yes. The free tier covers everything a student actually needs — bank connections, the chat, and goal tracking. Premium adds custom themes, deeper memory, and household sharing, but your basic financial safety is never behind a paywall.",
     },
     {
-      q: "Can I connect my specific student bank account?",
-      a: "Yes. We use Plaid, which supports over 12,000 financial institutions in the US, including local credit unions, student accounts, and major banks.",
+      q: "Can I connect my student bank account?",
+      a: "Almost certainly. We use Plaid, which supports over 12,000 institutions in the US and Canada — local credit unions, student accounts, and the big banks alike.",
     },
     {
-      q: "What if I have an irregular income?",
-      a: "That's exactly why Tilly exists. Traditional budgets fail when you're living off part-time jobs, occasional parental help, or semester stipends. Tilly adapts to your actual cash flow, not an imaginary steady paycheck.",
+      q: "What if my income is irregular?",
+      a: "That's the whole reason Tilly exists. Budgets break the moment you're living off part-time shifts, the occasional $200 from a parent, or a semester stipend. Tilly works from your real cash flow, not an imaginary steady paycheck.",
     },
     {
       q: "Does Tilly judge my spending?",
-      a: "Never. Tilly doesn't scold you about lattes. She just helps you see the trade-offs. If buying a coffee every day makes you happy, Tilly will help you make room for it while still working toward your big goals.",
+      a: "Never. Tilly doesn't have opinions about your lattes. She shows you the trade-off — what a purchase moves, and by how long — and lets you decide. Your call, every time.",
     },
   ];
 
   return (
-    <div className="min-h-screen bg-background selection:bg-primary/20 selection:text-primary">
+    <div className="min-h-screen bg-background text-foreground antialiased">
       <Navigation />
-      
+
       <main>
-        {/* HERO */}
-        <section className="pt-40 pb-20 px-6 sm:px-12 max-w-7xl mx-auto flex flex-col lg:flex-row items-center justify-between gap-16">
-          <div className="flex-1 space-y-8 max-w-2xl animate-in fade-in slide-in-from-bottom-8 duration-1000">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-sm font-medium">
-              <Sparkles className="w-4 h-4" />
-              <span>A different kind of money app</span>
+        {/* ───────────── HERO ───────────── */}
+        <section className="relative overflow-hidden">
+          {/* warm ambient wash */}
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -top-40 -right-32 h-[42rem] w-[42rem] rounded-full bg-primary/15 blur-3xl float-slower"
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute top-40 -left-40 h-[34rem] w-[34rem] rounded-full bg-accent/15 blur-3xl float-slow"
+          />
+
+          <div className="relative mx-auto flex max-w-7xl flex-col items-center gap-16 px-6 pb-24 pt-36 sm:px-12 lg:flex-row lg:items-center lg:justify-between lg:pt-44">
+            <div className="max-w-2xl flex-1 animate-in fade-in slide-in-from-bottom-6 duration-700">
+              <span className="inline-flex items-center gap-2 rounded-full bg-foreground/5 px-4 py-1.5 text-sm font-medium text-foreground/70 ring-1 ring-foreground/10">
+                <Sparkles className="h-4 w-4 text-primary" />
+                A different kind of money app
+              </span>
+
+              <h1 className="mt-7 font-serif text-[clamp(2.75rem,7vw,4.75rem)] leading-[1.04] text-foreground">
+                Like a sibling who's{" "}
+                <span className="text-primary">really good with money.</span>
+              </h1>
+
+              <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground sm:text-xl">
+                Tilly watches your money and quietly helps you save for the things you actually
+                want. She'll tell you when you can spend, when to hold off, and when something
+                you've been eyeing is about to get cheaper.
+              </p>
+
+              <div className="mt-9 flex flex-col items-start gap-4 sm:flex-row sm:items-center">
+                <Button
+                  asChild
+                  size="lg"
+                  className="h-14 rounded-full bg-foreground px-8 text-lg text-background hover:bg-foreground/90"
+                >
+                  <a href={appUrl} onClick={handleDownloadClick} rel="noopener">
+                    Start free <ArrowRight className="ml-2 h-5 w-5" />
+                  </a>
+                </Button>
+                <p className="text-sm text-muted-foreground">
+                  Two minutes to set up. Read-only bank sync.
+                </p>
+              </div>
             </div>
-            
-            <h1 className="text-5xl sm:text-7xl font-serif text-foreground leading-[1.1]">
-              Like a sibling who's <span className="text-primary italic">really good with money.</span>
-            </h1>
-            
-            <p className="text-xl sm:text-2xl text-muted-foreground leading-relaxed">
-              Tilly keeps an eye on your money and quietly helps you save for your dreams. She'll tell you when you can spend, when to hold off, and when something you want is about to get cheaper.
-            </p>
-            
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 pt-4">
-              <Button asChild size="lg" className="rounded-full px-8 text-lg h-14 bg-foreground text-background hover:bg-foreground/90">
-                <a href={appUrl} onClick={handleDownloadClick} rel="noopener">
-                  Start free <ArrowRight className="ml-2 w-5 h-5" />
-                </a>
-              </Button>
-              <p className="text-sm text-muted-foreground">Takes 2 minutes. Secure, read-only bank sync.</p>
-            </div>
-          </div>
-          
-          <div className="flex-1 w-full max-w-lg relative animate-in fade-in slide-in-from-right-8 duration-1000 delay-300">
-            <div className="absolute inset-0 bg-gradient-to-br from-primary/20 to-accent/20 rounded-full blur-3xl opacity-50" />
-            <img src={tillyStudy} alt="Tilly the owl studying under a warm lamp" className="w-full h-auto relative z-10 drop-shadow-2xl" />
-            
-            {/* Floating UI element */}
-            <div className="absolute -bottom-6 -left-6 sm:bottom-10 sm:-left-12 bg-card p-4 rounded-2xl shadow-xl border border-border/50 max-w-[240px] z-20 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-700">
-              <p className="text-sm font-medium text-foreground">"If we skip the latte today, Tokyo is fully funded by June 12th."</p>
+
+            {/* Portrait + floating proof */}
+            <div className="relative w-full max-w-md flex-1 animate-in fade-in slide-in-from-right-6 duration-1000">
+              <div
+                aria-hidden
+                className="absolute inset-6 rounded-full bg-gradient-to-br from-primary/25 to-accent/25 blur-2xl"
+              />
+              <img
+                src={tillyStudy}
+                alt="Tilly, a warm owl, studying her finances under a lamp"
+                className="relative z-10 mx-auto w-full drop-shadow-2xl float-slow"
+                width={520}
+                height={520}
+              />
+              <div className="absolute -bottom-2 -left-2 z-20 max-w-[15rem] rounded-2xl bg-card p-4 shadow-xl ring-1 ring-card-border sm:bottom-8 sm:-left-10 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-500">
+                <Quote className="h-4 w-4 text-accent" />
+                <p className="mt-1.5 text-sm font-medium leading-snug text-foreground">
+                  "Skip the latte today and Tokyo is fully funded by June 12th."
+                </p>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* PARADIGM SHIFT */}
-        <section id="how-it-works" className="py-24 px-6 sm:px-12 bg-card">
-          <div className="max-w-4xl mx-auto text-center space-y-8">
-            <h2 className="text-4xl sm:text-5xl font-serif text-foreground">
-              A budget tells you no. <br/>
-              Tilly remembers what you said yes to.
+        {/* ───────────── PARADIGM (editorial, no card boxes) ───────────── */}
+        <section id="how-it-works" className="bg-card text-card-foreground">
+          <div className="mx-auto max-w-7xl px-6 py-24 sm:px-12 sm:py-32">
+            <div className="max-w-3xl reveal">
+              <h2 className="font-serif text-[clamp(2.25rem,5vw,3.5rem)] leading-[1.08] text-foreground">
+                A budget tells you no.
+                <br />
+                <span className="text-primary">Tilly remembers what you said yes to.</span>
+              </h2>
+              <p className="mt-6 max-w-2xl text-lg leading-relaxed text-muted-foreground">
+                Other apps optimize a budget for an imaginary, perfectly-disciplined person. Tilly
+                optimizes for the future <em>you</em> actually want — the graduation trip, the
+                deposit on an apartment with a kitchen window, the tattoo, the year off.
+              </p>
+            </div>
+
+            <div className="mt-16 grid grid-cols-1 gap-x-12 gap-y-12 md:grid-cols-3">
+              {[
+                {
+                  icon: Heart,
+                  title: "Protects your dreams",
+                  body: "Her whole job is keeping your goals alive while real life happens. Your dreams aren't line items — they're the destination.",
+                },
+                {
+                  icon: Sprout,
+                  title: "Understands trade-offs",
+                  body: "Instead of shouting that you're over budget, she shows the math gently: “This dinner moves Tokyo from June to July.”",
+                },
+                {
+                  icon: CalendarClock,
+                  title: "Travels with you",
+                  body: "She checks in when life shifts — a new semester, an internship, a breakup — and quietly adjusts the plan. No nagging.",
+                },
+              ].map((f, i) => (
+                <div
+                  key={f.title}
+                  className="reveal border-t border-foreground/10 pt-6"
+                  style={{ animationDelay: `${i * 90}ms` }}
+                >
+                  <f.icon className="h-7 w-7 text-primary" strokeWidth={1.75} />
+                  <h3 className="mt-4 font-serif text-2xl text-foreground">{f.title}</h3>
+                  <p className="mt-3 leading-relaxed text-muted-foreground">{f.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ───────────── MEMORY (image left) ───────────── */}
+        <section className="mx-auto max-w-7xl px-6 py-24 sm:px-12 sm:py-28">
+          <div className="flex flex-col items-center gap-14 md:flex-row md:gap-20">
+            <div className="relative w-full flex-1 reveal-soft">
+              <div
+                aria-hidden
+                className="absolute -inset-3 -z-10 rotate-3 rounded-[2rem] bg-secondary"
+              />
+              <img
+                src={tillyRamen}
+                alt="Tilly sharing a bowl of ramen on a sacred Friday night"
+                className="w-full rounded-2xl shadow-lg ring-1 ring-border/60"
+                loading="lazy"
+              />
+            </div>
+            <div className="flex-1 reveal">
+              <h2 className="font-serif text-[clamp(2rem,4.5vw,3.25rem)] leading-[1.1] text-foreground">
+                She learns you, not just your transactions.
+              </h2>
+              <p className="mt-5 text-lg leading-relaxed text-muted-foreground">
+                The more you talk, the more Tilly sounds like you. She remembers what matters — your
+                roommate Jordan, the Friday ramen night that is absolutely sacred, the parent who
+                chips in $200 sometimes. A memory of your life, not just a ledger.
+              </p>
+
+              <div className="mt-8 space-y-4">
+                <div className="rounded-2xl bg-card p-5 ring-1 ring-card-border">
+                  <p className="font-medium text-foreground">Context-aware from day one</p>
+                  <p className="mt-1 text-muted-foreground">
+                    A grad student in Boston on a $2,400 stipend gets completely different guidance
+                    than a freelancer in Austin.
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-card p-5 ring-1 ring-card-border">
+                  <p className="font-medium text-foreground">Notices the subtle patterns</p>
+                  <p className="mt-1 italic text-muted-foreground">
+                    "You always overspend the week after a midterm. Want me to hold a $50 buffer for
+                    next time?"
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ───────────── SCOUT (image right, tinted ground) ───────────── */}
+        <section className="bg-accent/8">
+          <div className="mx-auto max-w-7xl px-6 py-24 sm:px-12 sm:py-28">
+            <div className="flex flex-col-reverse items-center gap-14 md:flex-row md:gap-20">
+              <div className="flex-1 reveal">
+                <h2 className="font-serif text-[clamp(2rem,4.5vw,3.25rem)] leading-[1.1] text-foreground">
+                  “Are you sure? It goes on sale next week.”
+                </h2>
+                <p className="mt-5 text-lg leading-relaxed text-muted-foreground">
+                  Before a real purchase, Tilly quietly checks two things: is this about to hit a
+                  known sale window like Black Friday or Boxing Week, and is someone nearby already
+                  selling the same thing secondhand? You hear about it before you click buy — not
+                  after.
+                </p>
+
+                <div className="mt-8 grid gap-4 sm:grid-cols-2">
+                  <div className="rounded-2xl bg-background p-5 ring-1 ring-border/70">
+                    <CalendarClock className="h-6 w-6 text-primary" strokeWidth={1.75} />
+                    <p className="mt-3 font-medium text-foreground">Knows the sale calendar</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      "Hold off until Nov 28 — Levi's has run 40% off every Black Friday for four
+                      years."
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-background p-5 ring-1 ring-border/70">
+                    <MapPin className="h-6 w-6 text-accent" strokeWidth={1.75} />
+                    <p className="mt-3 font-medium text-foreground">Finds it cheaper, locally</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      "Three of these are listed on Marketplace within 5km. Want the closest one?"
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="relative w-full flex-1 reveal-soft">
+                <div
+                  aria-hidden
+                  className="absolute -inset-3 -z-10 -rotate-3 rounded-[2rem] bg-primary/15"
+                />
+                <img
+                  src={tillyStudy}
+                  alt="Tilly comparing prices before a purchase"
+                  className="w-full rounded-2xl shadow-lg ring-1 ring-border/60"
+                  loading="lazy"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ───────────── BEHAVIORAL SCIENCE (drenched) ───────────── */}
+        <section className="relative overflow-hidden bg-primary text-primary-foreground">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute -right-40 -top-40 h-[44rem] w-[44rem] rounded-full bg-white/10 blur-3xl"
+          />
+          <div className="relative mx-auto max-w-7xl px-6 py-24 sm:px-12 sm:py-32">
+            <div className="flex flex-col items-center gap-16 lg:flex-row lg:items-start lg:justify-between">
+              <div className="max-w-xl flex-1 reveal">
+                <h2 className="font-serif text-[clamp(2.25rem,5vw,3.5rem)] leading-[1.08]">
+                  Behavioral science, not willpower.
+                </h2>
+                <p className="mt-5 text-lg leading-relaxed text-primary-foreground/85">
+                  Willpower runs out when you're tired, stressed, or three days into finals. So Tilly
+                  doesn't rely on it. She uses what actually works to make the right move the easy
+                  one.
+                </p>
+
+                <dl className="mt-10 grid gap-x-10 gap-y-8 sm:grid-cols-2">
+                  {[
+                    ["Fresh starts", "Mondays and the 1st are proven reset points. Tilly turns them into momentum."],
+                    ["Loss aversion, reframed", "Saving isn't losing money today — it's protecting the future you already chose."],
+                    ["A beat of friction", "A tiny pause before big buys, so it's the thing you want, not just the thing that's easy."],
+                    ["Commitment devices", "Lock in your plan while you're motivated, so your tired self never has to decide."],
+                  ].map(([title, body], i) => (
+                    <div key={title} className="reveal" style={{ animationDelay: `${i * 80}ms` }}>
+                      <dt className="font-serif text-xl text-primary-foreground">{title}</dt>
+                      <dd className="mt-2 leading-relaxed text-primary-foreground/80">{body}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+
+              <div className="w-full max-w-xs flex-shrink-0 reveal-soft lg:pt-6">
+                <img
+                  src={tillyGrad}
+                  alt="Tilly in a graduation cap, dreams funded"
+                  className="mx-auto w-full rounded-full shadow-2xl ring-8 ring-white/15 float-slow"
+                  loading="lazy"
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ───────────── UNIQUELY YOURS (deep ground) ───────────── */}
+        <section className="bg-foreground text-background">
+          <div className="mx-auto max-w-3xl px-6 py-24 text-center sm:px-12 sm:py-28">
+            <h2 className="reveal font-serif text-[clamp(2rem,4.5vw,3.25rem)] leading-[1.1] text-background">
+              After a month, it's not software. It's <span className="text-primary">your</span> Tilly.
             </h2>
-            <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              Other apps optimize a budget for an imaginary perfect person. Tilly optimizes for the future you actually want—the graduation trip, the deposit for an apartment with a kitchen window, the tattoo, the year off.
+            <p className="reveal mx-auto mt-5 max-w-xl text-lg leading-relaxed text-background/75">
+              Choose your theme, dial her tone from gentle to blunt, and let her learn the rhythm of
+              your life. The longer you're together, the more she sounds like you.
             </p>
-          </div>
-          
-          <div className="mt-20 max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="bg-background p-8 rounded-3xl border border-border">
-              <Target className="w-10 h-10 text-primary mb-6" />
-              <h3 className="text-xl font-serif mb-3">Protects your dreams</h3>
-              <p className="text-muted-foreground leading-relaxed">
-                Tilly's whole job is to keep your goals alive while real life happens. Your dreams aren't line items; they are the destination.
-              </p>
-            </div>
-            <div className="bg-background p-8 rounded-3xl border border-border relative overflow-hidden">
-              <Brain className="w-10 h-10 text-accent mb-6" />
-              <h3 className="text-xl font-serif mb-3">Understands trade-offs</h3>
-              <p className="text-muted-foreground leading-relaxed">
-                Instead of shouting that you're over budget, Tilly gently shows you the math: "This dinner moves Tokyo from June to July."
-              </p>
-            </div>
-            <div className="bg-background p-8 rounded-3xl border border-border">
-              <Calendar className="w-10 h-10 text-primary mb-6" />
-              <h3 className="text-xl font-serif mb-3">A journey companion</h3>
-              <p className="text-muted-foreground leading-relaxed">
-                Tilly checks in when life shifts—a new semester, an internship, a breakup—and quietly adjusts the plan. No nagging.
-              </p>
+
+            <div className="reveal mt-10 flex flex-wrap justify-center gap-3">
+              {[
+                ["Bloom", "#F6E8E6"],
+                ["Dusk", "#1A1A24"],
+                ["Citrus", "#FEF3C7"],
+                ["Neon", "#E0E7FF"],
+              ].map(([name, hex]) => (
+                <span
+                  key={name}
+                  className="inline-flex items-center gap-2.5 rounded-full bg-background/10 px-5 py-2.5 text-sm font-medium text-background ring-1 ring-background/15"
+                >
+                  <span
+                    className="h-4 w-4 rounded-full ring-1 ring-background/30"
+                    style={{ backgroundColor: hex }}
+                  />
+                  {name}
+                </span>
+              ))}
             </div>
           </div>
         </section>
 
-        {/* FEATURE: MEMORY & AI */}
-        <section className="py-24 px-6 sm:px-12 max-w-7xl mx-auto flex flex-col md:flex-row items-center gap-16">
-          <div className="flex-1 relative">
-             <div className="absolute -inset-4 bg-secondary rounded-3xl -z-10 rotate-3" />
-             <img src={tillyRamen} alt="Tilly with ramen" className="w-full rounded-2xl shadow-lg border border-border/50" />
-          </div>
-          <div className="flex-1 space-y-6">
-            <h2 className="text-4xl font-serif text-foreground">She learns you, not just your transactions.</h2>
-            <p className="text-lg text-muted-foreground">
-              The more you use it, the more Tilly sounds like you. She remembers what matters—your roommate Jordan, the Friday ramen night that is absolutely sacred, the parent who chips in $200 sometimes. She builds a memory of your life, not just a ledger.
-            </p>
-            <ul className="space-y-4 mt-8">
-              <li className="flex items-start gap-3">
-                <div className="mt-1 w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                  <div className="w-2 h-2 rounded-full bg-primary" />
-                </div>
-                <p className="text-foreground font-medium">Context-aware from day one <span className="block text-muted-foreground font-normal mt-1">A grad student in Boston with a $2,400 stipend gets completely different guidance than a freelancer in Austin.</span></p>
-              </li>
-              <li className="flex items-start gap-3">
-                <div className="mt-1 w-6 h-6 rounded-full bg-accent/20 flex items-center justify-center shrink-0">
-                  <div className="w-2 h-2 rounded-full bg-accent" />
-                </div>
-                <p className="text-foreground font-medium">Notices the subtle patterns <span className="block text-muted-foreground font-normal mt-1">"You always overspend the week after a midterm. Want me to hold a $50 buffer for next time?"</span></p>
-              </li>
-            </ul>
-          </div>
-        </section>
-
-        {/* FEATURE: SCOUT (wait-for-sale / cheaper alternatives) */}
-        <section className="py-24 px-6 sm:px-12 max-w-7xl mx-auto flex flex-col md:flex-row-reverse items-center gap-16">
-          <div className="flex-1 relative">
-            <div className="absolute -inset-4 bg-accent/30 rounded-3xl -z-10 -rotate-3" />
-            <img src={tillyStudy} alt="Tilly checking prices" className="w-full rounded-2xl shadow-lg border border-border/50" />
-          </div>
-          <div className="flex-1 space-y-6">
-            <h2 className="text-4xl font-serif text-foreground">Are you sure? It goes on sale next week.</h2>
-            <p className="text-lg text-muted-foreground">
-              Before a real purchase, Tilly quietly checks two things: is this item about to hit a known sale window like Black Friday or Boxing Week, and is someone nearby already selling the same thing on Facebook Marketplace, Kijiji, or a refurb site? You hear about it before you click buy, not after.
-            </p>
-            <ul className="space-y-4 mt-8">
-              <li className="flex items-start gap-3">
-                <div className="mt-1 w-6 h-6 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                  <div className="w-2 h-2 rounded-full bg-primary" />
-                </div>
-                <p className="text-foreground font-medium">Knows the sale calendar <span className="block text-muted-foreground font-normal mt-1">"Hold off until Nov 28 — Levi's has run 40% off every Black Friday for four years."</span></p>
-              </li>
-              <li className="flex items-start gap-3">
-                <div className="mt-1 w-6 h-6 rounded-full bg-accent/20 flex items-center justify-center shrink-0">
-                  <div className="w-2 h-2 rounded-full bg-accent" />
-                </div>
-                <p className="text-foreground font-medium">Finds it cheaper, locally <span className="block text-muted-foreground font-normal mt-1">"Three of these are listed on Facebook Marketplace within 5km. Want the closest one?"</span></p>
-              </li>
-            </ul>
-          </div>
-        </section>
-
-        {/* BEHAVIORAL SCIENCE */}
-        <section className="py-24 px-6 sm:px-12 bg-primary text-primary-foreground relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-[800px] h-[800px] bg-white/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/3 pointer-events-none" />
-          
-          <div className="max-w-6xl mx-auto flex flex-col-reverse md:flex-row items-center gap-16 relative z-10">
-            <div className="flex-1 space-y-6">
-              <h2 className="text-4xl font-serif">Behavioral science, not willpower.</h2>
-              <p className="text-lg text-primary-foreground/80 leading-relaxed">
-                Willpower runs out when you're tired, stressed, or studying for finals. Tilly uses behavioral science to make doing the right thing effortless.
-              </p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-8">
-                <div className="bg-black/10 p-5 rounded-2xl">
-                  <h4 className="font-serif text-lg mb-2">Fresh Starts</h4>
-                  <p className="text-sm text-primary-foreground/70">Mondays and the 1st of the month are psychologically proven times to reset. Tilly celebrates them.</p>
-                </div>
-                <div className="bg-black/10 p-5 rounded-2xl">
-                  <h4 className="font-serif text-lg mb-2">Loss Aversion Reframed</h4>
-                  <p className="text-sm text-primary-foreground/70">Saving isn't losing money today; it's fiercely protecting your future self.</p>
-                </div>
-                <div className="bg-black/10 p-5 rounded-2xl">
-                  <h4 className="font-serif text-lg mb-2">Opt-in Friction</h4>
-                  <p className="text-sm text-primary-foreground/70">Tiny pauses before big purchases to ensure it's what you truly want, not just what's easy.</p>
-                </div>
-                <div className="bg-black/10 p-5 rounded-2xl">
-                  <h4 className="font-serif text-lg mb-2">Commitment Devices</h4>
-                  <p className="text-sm text-primary-foreground/70">Lock in your intentions when you're feeling motivated, so your tired self doesn't have to choose.</p>
-                </div>
+        {/* ───────────── TRUST STRIP (links to /security) ───────────── */}
+        <section className="border-b border-border bg-background">
+          <div className="mx-auto max-w-6xl px-6 py-16 sm:px-12">
+            <div className="grid gap-10 md:grid-cols-3">
+              <div className="reveal">
+                <Lock className="h-7 w-7 text-foreground/70" strokeWidth={1.75} />
+                <h3 className="mt-4 font-sans text-lg font-semibold text-foreground">
+                  Read-only by design
+                </h3>
+                <p className="mt-1.5 text-muted-foreground">
+                  Connected through Plaid. Tilly can see your transactions to help — she can never
+                  move your money.
+                </p>
               </div>
-            </div>
-            
-            <div className="flex-1 flex justify-center">
-              <img src={tillyGrad} alt="Tilly on graduation cap" className="w-full max-w-sm rounded-full shadow-2xl ring-8 ring-white/10" />
-            </div>
-          </div>
-        </section>
-
-        {/* UNIQUELY YOURS */}
-        <section className="py-24 px-6 sm:px-12 bg-card text-card-foreground text-center">
-          <div className="max-w-3xl mx-auto space-y-8">
-            <h2 className="text-4xl font-serif">Becomes uniquely yours.</h2>
-            <p className="text-lg text-muted-foreground">
-              After a month, it's not generic software. It's your Tilly. Choose your theme, adjust her tone (from gentle to blunt), and let her get to know the rhythm of your life.
-            </p>
-            
-            <div className="flex flex-wrap justify-center gap-4 mt-8">
-              <div className="px-6 py-3 rounded-full bg-background border border-border flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full bg-[#F6E8E6] border border-border" /> Bloom
+              <div className="reveal" style={{ animationDelay: "90ms" }}>
+                <Users className="h-7 w-7 text-foreground/70" strokeWidth={1.75} />
+                <h3 className="mt-4 font-sans text-lg font-semibold text-foreground">
+                  Share without the weirdness
+                </h3>
+                <p className="mt-1.5 text-muted-foreground">
+                  Split bills with a roommate or partner — no passive-aggressive Venmo requests
+                  required.
+                </p>
               </div>
-              <div className="px-6 py-3 rounded-full bg-background border border-border flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full bg-[#1A1A24] border border-border" /> Dusk
-              </div>
-              <div className="px-6 py-3 rounded-full bg-background border border-border flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full bg-[#FEF3C7] border border-border" /> Citrus
-              </div>
-              <div className="px-6 py-3 rounded-full bg-background border border-border flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full bg-[#E0E7FF] border border-border" /> Neon
+              <div className="reveal" style={{ animationDelay: "180ms" }}>
+                <ShieldCheck className="h-7 w-7 text-foreground/70" strokeWidth={1.75} />
+                <h3 className="mt-4 font-sans text-lg font-semibold text-foreground">
+                  Your data stays yours
+                </h3>
+                <p className="mt-1.5 text-muted-foreground">
+                  Encrypted, never sold, and yours to delete anytime.{" "}
+                  <Link href="/security" className="font-medium text-primary hover:underline">
+                    See how we protect it →
+                  </Link>
+                </p>
               </div>
             </div>
           </div>
         </section>
 
-        {/* SECURITY & TRUST */}
-        <section className="py-20 px-6 sm:px-12 border-y border-border bg-background">
-          <div className="max-w-5xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 text-center sm:text-left">
-            <div className="space-y-3">
-              <Lock className="w-8 h-8 text-muted-foreground mx-auto sm:mx-0" />
-              <h4 className="font-medium text-foreground">Read-only connection</h4>
-              <p className="text-sm text-muted-foreground">Powered by Plaid. Tilly can see your transactions to help you, but can never move your money.</p>
-            </div>
-            <div className="space-y-3">
-              <Users className="w-8 h-8 text-muted-foreground mx-auto sm:mx-0" />
-              <h4 className="font-medium text-foreground">Family & partner sharing</h4>
-              <p className="text-sm text-muted-foreground">Split bills with your roommate or partner without the weirdness or passive-aggressive Venmos.</p>
-            </div>
-            <div className="space-y-3">
-              <div className="w-8 h-8 flex items-center justify-center text-muted-foreground mx-auto sm:mx-0 font-serif text-2xl italic">&</div>
-              <h4 className="font-medium text-foreground">Your data is yours</h4>
-              <p className="text-sm text-muted-foreground">We never sell your data to credit card companies or advertisers. Ever. That's a promise.</p>
-            </div>
-          </div>
-        </section>
-
-        {/* FAQ */}
-        <section className="py-24 px-6 sm:px-12 max-w-3xl mx-auto">
-          <div className="text-center space-y-4 mb-12">
-            <h2 className="text-3xl font-serif">Curious?</h2>
-            <p className="text-muted-foreground">The most common questions we get from students.</p>
-          </div>
-          
-          <div className="w-full divide-y divide-border border-y border-border">
+        {/* ───────────── FAQ ───────────── */}
+        <section className="mx-auto max-w-3xl px-6 py-24 sm:px-12">
+          <h2 className="reveal text-center font-serif text-[clamp(1.875rem,4vw,2.75rem)] text-foreground">
+            Questions students actually ask
+          </h2>
+          <div className="reveal mt-12 divide-y divide-border border-y border-border">
             {faqs.map(({ q, a }) => (
               <details key={q} className="group py-5">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-6 text-left font-serif text-lg">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-6 font-serif text-lg text-foreground marker:hidden">
                   {q}
                   <Plus className="h-5 w-5 shrink-0 text-muted-foreground transition-transform duration-300 group-open:rotate-45" />
                 </summary>
-                <p className="mt-3 text-muted-foreground leading-relaxed">{a}</p>
+                <p className="mt-3 leading-relaxed text-muted-foreground">{a}</p>
               </details>
             ))}
           </div>
         </section>
 
-        {/* BOTTOM CTA */}
-        <section className="py-32 px-6 sm:px-12 bg-foreground text-background text-center relative overflow-hidden">
-           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-primary/30 via-foreground to-foreground opacity-50" />
-           <div className="max-w-2xl mx-auto relative z-10 space-y-8">
-             <div className="flex justify-center mb-6">
-                <img src={tillyReceipt} alt="Tilly" className="w-32 h-32 rounded-full border-4 border-background/10 bg-background/5" />
-             </div>
-             <h2 className="text-5xl font-serif">Tilly does the worrying so you don't have to.</h2>
-             <p className="text-xl text-muted">Ready to protect your dreams?</p>
-             <div className="pt-4">
-               <Button asChild size="lg" className="rounded-full px-10 text-lg h-16 bg-background text-foreground hover:bg-background/90">
-                 <a href={appUrl} onClick={handleDownloadClick} rel="noopener">
-                   Meet your Tilly <ArrowUpRight className="ml-2 w-5 h-5" />
-                 </a>
-               </Button>
-             </div>
-           </div>
+        {/* ───────────── CLOSING CTA (drenched deep) ───────────── */}
+        <section className="relative overflow-hidden bg-foreground text-background">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute left-1/2 top-0 h-[34rem] w-[34rem] -translate-x-1/2 -translate-y-1/3 rounded-full bg-primary/30 blur-3xl"
+          />
+          <div className="relative mx-auto max-w-2xl px-6 py-28 text-center sm:px-12 sm:py-36">
+            <img
+              src={tillyReceipt}
+              alt="Tilly, ready to help"
+              className="mx-auto mb-8 h-28 w-28 rounded-full ring-4 ring-background/10 float-slow"
+              loading="lazy"
+            />
+            <h2 className="font-serif text-[clamp(2.25rem,5.5vw,4rem)] leading-[1.05] text-background">
+              Tilly does the worrying, so you don't have to.
+            </h2>
+            <p className="mt-5 text-xl text-background/75">Ready to protect your dreams?</p>
+            <div className="mt-9">
+              <Button
+                asChild
+                size="lg"
+                className="h-16 rounded-full bg-background px-10 text-lg text-foreground hover:bg-background/90"
+              >
+                <a href={appUrl} onClick={handleDownloadClick} rel="noopener">
+                  Meet your Tilly <ArrowUpRight className="ml-2 h-5 w-5" />
+                </a>
+              </Button>
+            </div>
+          </div>
         </section>
       </main>
 
