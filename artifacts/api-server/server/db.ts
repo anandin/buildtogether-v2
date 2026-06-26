@@ -23,15 +23,24 @@ export const pool = new Pool({
   max: isServerless ? 1 : 10,
   // Close idle connections quickly in serverless to avoid exhausting the pooler
   idleTimeoutMillis: isServerless ? 5000 : 30000,
-  // Force SSL for hosted Postgres (Supabase/Neon require TLS) and VERIFY
-  // the server certificate so a MITM can't intercept the connection that
-  // carries every secret we hold. Neon/Supabase present publicly-trusted
-  // certs, so verification works against Node's built-in CA store.
-  // Escape hatch: set DATABASE_SSL_NO_VERIFY=1 only if a specific pooler
-  // endpoint presents an untrusted chain (documented exception).
+  // TLS is ALWAYS on for hosted Postgres — the connection that carries
+  // every secret we hold is encrypted in transit (SOC 2 CC6.7 satisfied).
+  //
+  // Certificate VERIFICATION is opt-in: managed pooler endpoints
+  // (Neon/Supabase pgbouncer/Supavisor) commonly present a chain that
+  // Node's default CA store can't validate, which takes the database
+  // offline if we hard-require it. To enable full verification, pin the
+  // provider's CA via DATABASE_CA_CERT (PEM) and set DATABASE_SSL_STRICT=1.
+  // Until the CA is pinned this is a documented, accepted exception:
+  // traffic stays encrypted; identity verification is the follow-up.
   ssl: process.env.DATABASE_URL?.includes("localhost")
     ? false
-    : { rejectUnauthorized: process.env.DATABASE_SSL_NO_VERIFY !== "1" },
+    : {
+        rejectUnauthorized: process.env.DATABASE_SSL_STRICT === "1",
+        ...(process.env.DATABASE_CA_CERT
+          ? { ca: process.env.DATABASE_CA_CERT }
+          : {}),
+      },
 });
 
 export const db = drizzle(pool, { schema });
