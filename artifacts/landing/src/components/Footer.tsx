@@ -25,8 +25,9 @@ export function Footer() {
         </div>
         
         <div className="space-y-4">
-          <h4 className="font-serif text-lg text-card">Legal</h4>
+          <h4 className="font-serif text-lg text-card">Legal &amp; Trust</h4>
           <ul className="space-y-3">
+            <li><Link href="/security" className="text-muted hover:text-card transition-colors">Security</Link></li>
             <li><a href="#" className="text-muted hover:text-card transition-colors">Privacy Policy</a></li>
             <li><a href="#" className="text-muted hover:text-card transition-colors">Terms of Service</a></li>
           </ul>

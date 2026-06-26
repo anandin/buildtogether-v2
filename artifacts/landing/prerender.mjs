@@ -6,7 +6,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const publicDir = resolve(here, "dist/public");
 const serverEntry = resolve(here, "dist/server/entry-server.js");
 
-const ROUTES = ["/"];
+const ROUTES = ["/", "/security"];
 const BASE_PATH = process.env.BASE_PATH ?? "/landing/";
 const baseNoSlash = BASE_PATH.replace(/\/$/, "");
 
