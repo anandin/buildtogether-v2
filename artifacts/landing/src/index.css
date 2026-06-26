@@ -60,40 +60,48 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  /* Primary purple: #7A4FE0 */
-  --primary: 258 69% 59%;
-  --primary-foreground: 14 50% 96%;
+  /* ── Warm-dusk palette (impeccable: Committed / Full-palette) ──
+     Strategy: the ground is a confident APRICOT — a real warm color, not
+     the cream/near-white that reads as the 2026 AI default. Ink is deep
+     aubergine. Violet leads, warm coral is the true secondary, and the
+     page builds a drenched color rhythm (apricot → cream → violet →
+     aubergine) rather than cream-with-accents. */
 
-  /* Warm orange accent: #E0664A */
-  --accent: 11 71% 58%;
-  --accent-foreground: 14 50% 96%;
+  /* Violet — dominant brand color (~60% of colored elements). #6A3CE0 */
+  --primary: 263 73% 56%;
+  --primary-foreground: 30 60% 97%;
 
-  /* Soft pink ground: #F6E8E6 */
-  --background: 8 38% 93%;
-  
-  /* Deep ink: #2A1518 */
-  --foreground: 351 33% 12%;
+  /* Warm coral — the secondary, carries the warmth (~30%). #F0653F */
+  --accent: 13 85% 60%;
+  --accent-foreground: 28 60% 97%;
 
-  /* Cream surface: #FBF1EE */
-  --card: 14 50% 96%;
-  --card-foreground: 351 33% 12%;
-  --card-border: 8 38% 90%;
+  /* Apricot ground — clearly a color (chroma high enough to read peach,
+     not warm-tinted white). #F7DDC8-ish */
+  --background: 27 62% 88%;
 
-  --popover: 14 50% 96%;
-  --popover-foreground: 351 33% 12%;
-  --popover-border: 8 38% 90%;
+  /* Deep aubergine ink. #25131F */
+  --foreground: 324 36% 13%;
 
-  --secondary: 8 38% 85%;
-  --secondary-foreground: 351 33% 12%;
+  /* Warm cream surface — relief / contrast against the apricot ground. */
+  --card: 30 70% 97%;
+  --card-foreground: 324 36% 13%;
+  --card-border: 27 50% 90%;
 
-  --muted: 8 38% 88%;
-  /* Darkened from 40% → 33% so body copy clears 4.5:1 on the warm grounds.
-     Light-gray "for elegance" is the #1 reason AI pages read as hard to read. */
-  --muted-foreground: 351 30% 33%;
+  --popover: 30 70% 97%;
+  --popover-foreground: 324 36% 13%;
+  --popover-border: 27 50% 90%;
 
-  --border: 8 38% 85%;
-  --input: 8 38% 85%;
-  --ring: 258 69% 59%;
+  --secondary: 25 55% 84%;
+  --secondary-foreground: 324 36% 13%;
+
+  --muted: 26 52% 85%;
+  /* Deep aubergine-plum — clears 4.5:1 on the apricot ground; never a
+     light gray "for elegance". */
+  --muted-foreground: 326 26% 31%;
+
+  --border: 26 45% 83%;
+  --input: 26 45% 83%;
+  --ring: 263 73% 56%;
 
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 100%;

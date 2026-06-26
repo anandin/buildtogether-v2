@@ -54,11 +54,11 @@ export default function Home() {
           {/* warm ambient wash */}
           <div
             aria-hidden
-            className="pointer-events-none absolute -top-40 -right-32 h-[42rem] w-[42rem] rounded-full bg-primary/15 blur-3xl float-slower"
+            className="pointer-events-none absolute -top-40 -right-32 h-[42rem] w-[42rem] rounded-full bg-primary/20 blur-3xl float-slower"
           />
           <div
             aria-hidden
-            className="pointer-events-none absolute top-40 -left-40 h-[34rem] w-[34rem] rounded-full bg-accent/15 blur-3xl float-slow"
+            className="pointer-events-none absolute top-40 -left-40 h-[34rem] w-[34rem] rounded-full bg-accent/25 blur-3xl float-slow"
           />
 
           <div className="relative mx-auto flex max-w-7xl flex-col items-center gap-16 px-6 pb-24 pt-36 sm:px-12 lg:flex-row lg:items-center lg:justify-between lg:pt-44">
@@ -211,8 +211,8 @@ export default function Home() {
           </div>
         </section>
 
-        {/* ───────────── SCOUT (image right, tinted ground) ───────────── */}
-        <section className="bg-accent/8">
+        {/* ───────────── SCOUT (image right, warm coral band) ───────────── */}
+        <section className="bg-accent/12">
           <div className="mx-auto max-w-7xl px-6 py-24 sm:px-12 sm:py-28">
             <div className="flex flex-col-reverse items-center gap-14 md:flex-row md:gap-20">
               <div className="flex-1 reveal">
@@ -263,7 +263,7 @@ export default function Home() {
 
         {/* ───────────── BEHAVIORAL SCIENCE (drenched) ───────────── */}
         {/* Deeper than --primary so cream body copy clears 4.5:1. */}
-        <section className="relative overflow-hidden bg-[#6B43C9] text-primary-foreground">
+        <section className="relative overflow-hidden bg-[hsl(263_60%_48%)] text-primary-foreground">
           <div
             aria-hidden
             className="pointer-events-none absolute -right-40 -top-40 h-[44rem] w-[44rem] rounded-full bg-white/10 blur-3xl"
