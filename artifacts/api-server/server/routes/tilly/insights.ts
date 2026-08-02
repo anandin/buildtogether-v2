@@ -29,6 +29,11 @@ import {
 import { gte } from "drizzle-orm";
 import { executeTool, type ToolName, TOOL_NAMES } from "../../tilly/tools/registry";
 import { buildDailyBrief } from "../../tilly/daily-brief";
+import {
+  applyIncomeDecision,
+  buildIncomeReview,
+  type IncomeDecision,
+} from "../../tilly/income-review";
 import { isValidTone, DEFAULT_TONE, type BTToneKey } from "../../tilly/tone";
 import { buildWeeklyPattern } from "../../tilly/spend-pattern";
 import { buildCreditSnapshot } from "../../tilly/credit-snapshot";
@@ -652,9 +657,31 @@ export function mountTillyInsightsRoutes(app: Express): void {
       // upstream error) we degrade to a deterministic greeting+invite so the
       // user always sees a coherent home, never a 500. The screen treats
       // ready:true with afterRent=0 as the connect-bank empty state already.
+      // Income confidence — gates every surplus/room claim on this
+      // screen. Non-fatal: a failed read must not take Home down, but it
+      // degrades CLOSED (treat as unverified) rather than open, because
+      // a false abundance claim is the expensive failure.
+      let incomeReview: Awaited<ReturnType<typeof buildIncomeReview>> | null = null;
+      try {
+        incomeReview = await buildIncomeReview(userId, householdId, new Date());
+      } catch (revErr) {
+        console.warn("/api/tilly/today income review failed:", revErr);
+      }
+      const incomeConfidence = incomeReview?.confidence ?? {
+        level: "low" as const,
+        countedMonthly: 0,
+        unreviewedMonthly: 0,
+        quarantinedMonthly: 0,
+        unreviewedShare: 0,
+        quarantinedShare: 0,
+        reasons: ["Income couldn't be verified just now."],
+        blocksSurplusClaims: true,
+      };
+
       let brief: Awaited<ReturnType<typeof buildDailyBrief>>;
       try {
         brief = await buildDailyBrief({
+          incomeConfidence,
           userId,
           householdId,
           name,
@@ -729,6 +756,11 @@ export function mountTillyInsightsRoutes(app: Express): void {
         // state from leaking when surplus happens to be \$0 (no
         // detected income yet, but banks ARE wired).
         bankConnected: plaidConnected,
+        // Income confidence + anything the user still has to decide.
+        // The client renders the review card when `clean` is false, and
+        // must not render surplus-shaped copy of its own while
+        // `confidence.blocksSurplusClaims` is true.
+        incomeReview,
       });
     } catch (err) {
       console.error("/api/tilly/today error:", err);
@@ -737,6 +769,86 @@ export function mountTillyInsightsRoutes(app: Express): void {
       res.json({ phase: 2, ready: false, reason: "transient" });
     }
   });
+
+  // ── Income review ──────────────────────────────────────────────────
+  // Phase 0 of the commitment-layer PRD. The gap detector has always
+  // known which deposits look like unclaimed income; until now the only
+  // way to act on it was to happen to say the right thing in chat, so
+  // the live account sat misclassified for months and every surplus
+  // number downstream was wrong. These two endpoints make the same
+  // decisions one tap instead of one conversation.
+
+  app.get(
+    "/api/tilly/income-review",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const householdId = req.user.coupleId;
+      if (!householdId) return res.status(400).json({ error: "no household" });
+      try {
+        res.json(await buildIncomeReview(req.user.id, householdId, new Date()));
+      } catch (err) {
+        console.error("/api/tilly/income-review error:", err);
+        res.status(500).json({ error: "income review failed" });
+      }
+    },
+  );
+
+  // POST /api/tilly/income-review/decide — one-tap confirm / dismiss.
+  // Routes through the same chat tools Tilly uses so the two paths can't
+  // drift; only the LLM's tool-choice step is skipped.
+  app.post(
+    "/api/tilly/income-review/decide",
+    requireAuth,
+    async (req: Request, res: Response) => {
+      if (!req.user) return res.status(401).json({ error: "auth required" });
+      const householdId = req.user.coupleId;
+      if (!householdId) return res.status(400).json({ error: "no household" });
+
+      const { action, sourceName, date, amount } = (req.body ?? {}) as {
+        action?: string;
+        sourceName?: string;
+        date?: string;
+        amount?: number;
+      };
+      const allowed = [
+        "confirm_income",
+        "not_income",
+        "confirm_deposit",
+        "deposit_is_transfer",
+      ] as const;
+      if (!action || !(allowed as readonly string[]).includes(action)) {
+        return res.status(400).json({ error: `action must be one of ${allowed.join(", ")}` });
+      }
+      if (typeof sourceName !== "string" || sourceName.trim().length === 0) {
+        return res.status(400).json({ error: "sourceName required" });
+      }
+
+      const decision = {
+        action,
+        sourceName: sourceName.trim(),
+        ...(typeof date === "string" ? { date } : {}),
+        ...(typeof amount === "number" ? { amount } : {}),
+      } as IncomeDecision;
+
+      try {
+        const { ok, result } = await applyIncomeDecision(decision, {
+          userId: req.user.id,
+          householdId,
+        });
+        if (!ok) {
+          return res.status(422).json({ error: "couldn't apply that decision", result });
+        }
+        // Return the recomputed review so the client re-renders from
+        // server truth rather than guessing what changed.
+        const review = await buildIncomeReview(req.user.id, householdId, new Date());
+        res.json({ ok: true, result, review });
+      } catch (err) {
+        console.error("/api/tilly/income-review/decide error:", err);
+        res.status(500).json({ error: "decision failed" });
+      }
+    },
+  );
 
   // GET /api/tilly/monthly-summary — Tilly's basic-finance-app answer:
   // this month you earned $X, spent $Y, and have $Z still committed

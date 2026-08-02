@@ -125,7 +125,55 @@ export type TodayBrief =
          * Empty array when no detectors fired. */
         observations?: Array<{ kind: string; [k: string]: unknown }>;
       } | null;
+      /** Confidence in the income denominator, plus anything the user
+       * still has to decide about it. When
+       * `confidence.blocksSurplusClaims` is true the screen must NOT
+       * render surplus / room / affordability copy of its own — the
+       * number behind it is unverified in both directions. Render the
+       * review card instead. Optional so older API responses parse. */
+      incomeReview?: IncomeReview | null;
     };
+
+/** Phase 0, commitment-layer PRD. Two error directions: inflow that
+ * should be income but is bucketed elsewhere (`candidates`), and large
+ * deposits held out of the total pending confirmation
+ * (`quarantinedDeposits`). Both make every downstream surplus number
+ * wrong, so both are surfaced for one-tap resolution. */
+export type IncomeReview = {
+  confidence: {
+    level: "high" | "medium" | "low";
+    countedMonthly: number;
+    unreviewedMonthly: number;
+    quarantinedMonthly: number;
+    unreviewedShare: number;
+    quarantinedShare: number;
+    /** Most severe first. Safe to display. */
+    reasons: string[];
+    blocksSurplusClaims: boolean;
+  };
+  source: "plaid" | "plaid-estimate" | "self-report" | "none";
+  candidates: Array<{
+    merchant: string;
+    currentCategory: string;
+    occurrences: number;
+    avgAmount: number;
+    estMonthly: number;
+    lastSeenDate: string;
+  }>;
+  quarantinedDeposits: Array<{
+    merchant: string | null;
+    amount: number;
+    date: string;
+  }>;
+  /** True when there is nothing for the user to decide. */
+  clean: boolean;
+};
+
+export type IncomeDecisionAction =
+  | "confirm_income"
+  | "not_income"
+  | "confirm_deposit"
+  | "deposit_is_transfer";
 
 export type TillyQuestion = {
   id: string;
