@@ -44,6 +44,7 @@ import { sendExpoPush } from "./expo-push";
 import { recordNudgeSent } from "./nudge-log";
 import { addDaysIso } from "./payday-brief";
 import { buildWeeklyPattern } from "./spend-pattern";
+import { composeWeeklyReview } from "./weekly-review";
 import { watchlistItems } from "../../shared/schema";
 import { enqueueScout } from "./scout/orchestrator";
 
@@ -311,6 +312,12 @@ async function morningBriefFor(ctx: HouseholdCtx, now: Date): Promise<boolean> {
 
 // ── 2. Weekly review (Sunday 6pm local) ──────────────────────────────
 
+// Rewritten 2026-08-10 around the offer-or-silence doctrine after the
+// live push buried a $2,638 week-over-week WIN under "You spent $773…
+// $773 spent. Thursdays are still your soft spot." — a report with a
+// duplicated total and a judgment, asking for nothing. The composer
+// (weekly-review.ts) owns all copy; this function only assembles inputs
+// and honors silence. See docs/PRD_COMMITMENT_LAYER.md §3.
 async function weeklyReviewFor(ctx: HouseholdCtx, now: Date): Promise<boolean> {
   if (ctx.localDow !== 0 || ctx.localHour !== 18) return false;
   const weekKey = ctx.todayIso; // Sundays are unique per week
@@ -324,80 +331,68 @@ async function weeklyReviewFor(ctx: HouseholdCtx, now: Date): Promise<boolean> {
     variableSpendBetween(ctx.userId, ctx.householdId, priorStart, priorEnd),
   ]);
 
-  const lines: string[] = [];
-  const delta = Math.round(thisWeek.total - priorWeek.total);
-  lines.push(
-    `You spent $${Math.round(thisWeek.total).toLocaleString()} on day-to-day this week — ${
-      Math.abs(delta) < 20
-        ? "about the same as last week"
-        : delta > 0
-          ? `$${Math.abs(delta).toLocaleString()} more than last week`
-          : `$${Math.abs(delta).toLocaleString()} less than last week`
-    }.`,
-  );
-
-  // Soft spot, if the pattern engine sees one.
-  try {
-    const pattern = await buildWeeklyPattern(ctx.householdId);
-    if (pattern?.italicSpan) lines.push(pattern.headline);
-  } catch {
-    /* advisory only */
-  }
-
-  // Dream pace vs target date.
+  // Claim target: the goal with the most left to fund. A win week's
+  // offer points here; without one, a win week is silent.
   const goalRows = await db
     .select()
     .from(goals)
     .where(eq(goals.coupleId, ctx.householdId))
     .limit(5);
-  for (const g of goalRows) {
-    if (!g.targetDate) continue;
-    const remaining = Math.max(0, g.targetAmount - g.savedAmount);
-    if (remaining <= 0) continue;
-    const daysLeft = Math.round(
-      (new Date(g.targetDate + "T12:00:00Z").getTime() -
-        new Date(ctx.todayIso + "T12:00:00Z").getTime()) /
-        86_400_000,
-    );
-    if (daysLeft <= 0) continue;
-    const neededPerWeek = Math.round(remaining / Math.max(1, daysLeft / 7));
-    const recent = await db
-      .select({ amount: goalContributions.amount })
-      .from(goalContributions)
-      .where(
-        and(
-          eq(goalContributions.goalId, g.id),
-          sql`${goalContributions.createdAt} >= NOW() - INTERVAL '28 days'`,
-        ),
-      );
-    const actualPerWeek = Math.round(recent.reduce((s, r) => s + r.amount, 0) / 4);
-    if (neededPerWeek > actualPerWeek * 1.25) {
-      lines.push(
-        `${g.name} needs $${neededPerWeek}/wk to land by ${g.targetDate} — you're averaging $${actualPerWeek}/wk.`,
-      );
+  const funded = goalRows
+    .map((g) => ({
+      goalId: g.id,
+      name: g.name,
+      remainingToTarget: Math.max(0, g.targetAmount - g.savedAmount),
+    }))
+    .filter((g) => g.remainingToTarget > 0)
+    .sort((a, b) => b.remainingToTarget - a.remainingToTarget);
+
+  // Strongest habitual category×day cell — surfaced only as a forward
+  // pre-commitment offer, never as a verdict on the closed week.
+  let softSpot: { day: string; category: string } | null = null;
+  try {
+    const pattern = await buildWeeklyPattern(ctx.householdId, ctx.userId);
+    if (pattern?.italicSpan) {
+      const softCat = pattern.categories.find((c) => c.softSpot);
+      softSpot = { day: pattern.italicSpan, category: softCat?.name ?? "day-to-day spending" };
     }
-    break; // one goal line max — review, not lecture
+  } catch {
+    /* advisory only */
   }
 
-  // One open question.
-  const q = await db
-    .select({ body: tillyQuestions.body })
-    .from(tillyQuestions)
-    .where(and(eq(tillyQuestions.householdId, ctx.householdId), eq(tillyQuestions.status, "open")))
-    .orderBy(desc(tillyQuestions.createdAt))
-    .limit(1);
-  if (q[0]?.body) lines.push(`Still open: ${q[0].body}`);
+  // Claim offers are affordability-adjacent — gated on the income
+  // denominator like every other surplus claim. Degrades CLOSED.
+  let incomeBlocked = true;
+  try {
+    const { buildIncomeReview } = await import("./income-review");
+    const review = await buildIncomeReview(ctx.userId, ctx.householdId, now);
+    incomeBlocked = review.confidence.blocksSurplusClaims;
+  } catch (err) {
+    console.warn("[weekly-review] income review failed, degrading closed:", err);
+  }
 
-  const cardBody = lines.join(" ");
+  const push = composeWeeklyReview({
+    thisWeekTotal: thisWeek.total,
+    priorWeekTotal: priorWeek.total,
+    claimTarget: funded[0] ?? null,
+    softSpot,
+    incomeBlocked,
+  });
+
+  // Silence is success: nothing decidable this week, so no interruption
+  // — and no alreadySent record, since nothing was sent.
+  if (!push) return false;
+
   await pushWithRecord({
     ctx,
     source: "weekly_review",
     dedupeKey: weekKey,
-    frame: "sdt_competence",
-    title: "Your week, reviewed",
-    body: lines[0] + (lines[1] ? ` ${lines[1]}` : ""),
-    cardBody,
+    frame: push.frame,
+    title: push.title,
+    body: push.body,
+    cardBody: push.cardBody ?? push.body,
     dateLabel: "Weekly review",
+    extraContext: push.claimSuggestion ? { claimSuggestion: push.claimSuggestion } : undefined,
   });
   return true;
 }
