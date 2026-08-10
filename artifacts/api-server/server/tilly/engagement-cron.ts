@@ -44,7 +44,8 @@ import { sendExpoPush } from "./expo-push";
 import { recordNudgeSent } from "./nudge-log";
 import { addDaysIso } from "./payday-brief";
 import { buildWeeklyPattern } from "./spend-pattern";
-import { composeWeeklyReview } from "./weekly-review";
+import { composeWeeklyReview, isMaterialDelta } from "./weekly-review";
+import { narrateWeek } from "./week-narrator";
 import { watchlistItems } from "../../shared/schema";
 import { enqueueScout } from "./scout/orchestrator";
 
@@ -371,6 +372,44 @@ async function weeklyReviewFor(ctx: HouseholdCtx, now: Date): Promise<boolean> {
     console.warn("[weekly-review] income review failed, degrading closed:", err);
   }
 
+  // Primary path: read the week as a life record. When the merchants
+  // tell a recognizable story ("a kids-and-outings week"), the push
+  // affirms the life-spend and names the checkable leakage that rode
+  // along — spend = life + leakage. Only material weeks earn the LLM
+  // call; an ordinary week stays silent either way.
+  const delta = Math.round(thisWeek.total - priorWeek.total);
+  let narration: Awaited<ReturnType<typeof narrateWeek>> = null;
+  if (isMaterialDelta(delta, priorWeek.total)) {
+    narration = await narrateWeek({
+      userId: ctx.userId,
+      householdId: ctx.householdId,
+      weekStartIso: weekStart,
+      weekEndIso: ctx.todayIso,
+      thisWeekTotal: thisWeek.total,
+      priorWeekTotal: priorWeek.total,
+      incomeBlocked,
+    });
+  }
+
+  if (narration) {
+    await pushWithRecord({
+      ctx,
+      source: "weekly_review",
+      dedupeKey: weekKey,
+      // Affirming that the money went where their life is = autonomy
+      // support; lets the bandit learn whether story-framing converts.
+      frame: "sdt_autonomy",
+      title: narration.storyLabel || "Your week",
+      body: narration.narrative,
+      cardBody: narration.narrative,
+      dateLabel: "Weekly review",
+      extraContext: { storyLabel: narration.storyLabel, leakage: narration.leakage },
+    });
+    return true;
+  }
+
+  // Fallback: the deterministic composer — claim offer / pre-commit
+  // offer / income question, or silence.
   const push = composeWeeklyReview({
     thisWeekTotal: thisWeek.total,
     priorWeekTotal: priorWeek.total,
