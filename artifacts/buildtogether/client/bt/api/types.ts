@@ -481,7 +481,62 @@ export type Dream = {
   due: string;
   gradient: [string, string];
   nudge: string;
+  /** Honesty split (PRD F3). `earmarked` = set aside in the app's
+   * ledger, nothing left the bank; `moved` = the user says it moved.
+   * Copy must never say "saved" about an earmark. Optional so older
+   * API responses keep parsing. */
+  earmarked?: number;
+  moved?: number;
+  /** Standing per-payday sweep the user consented to, if any. */
+  commitment?: SweepCommitment | null;
 };
+
+export type SweepCommitment = {
+  id: string;
+  kind?: string;
+  goalId?: string | null;
+  amount: number;
+  cadence?: string;
+  status: "active" | "paused" | "ended" | string;
+  consentedAt?: string;
+};
+
+export type AllocationOption =
+  | {
+      kind: "goal";
+      goalId: string;
+      name: string;
+      amount: number;
+      remainingToTarget: number;
+      paydaysToTarget: number;
+      paydaysSooner: number;
+      currentPerPayday: number;
+    }
+  | { kind: "liquid"; amount: 0 };
+
+/** GET /api/tilly/payday-allocation — the live choice for this cycle. */
+export type PaydayAllocationResponse =
+  | { active: false; reason: string }
+  | {
+      active: true;
+      paydayDate: string;
+      cycleEndIso: string;
+      /** When true the server has already emptied `options` — render
+       * the income review instead of an allocation. */
+      incomeBlocked: boolean;
+      allocation: {
+        paycheckAmount: number;
+        paydayDate: string;
+        nextPaydayDate: string | null;
+        cycleDays: number;
+        billsDue: Array<{ merchant: string; amount: number; date: string }>;
+        billsTotal: number;
+        expectedVariable: number;
+        trulyFree: number;
+        options: AllocationOption[];
+      };
+      commitments: SweepCommitment[];
+    };
 export type DreamsList =
   | StubEnvelope
   | { ready: true; dreams: Dream[]; yearSaved: number; perDay: number };

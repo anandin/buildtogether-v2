@@ -13,6 +13,12 @@ import { requireAuth } from "../middleware/auth";
 import { db } from "../db";
 import { goals, goalContributions } from "../../shared/schema";
 import { emitEventAsync } from "../tilly/event-emitter";
+import {
+  contributionSplitByGoal,
+  createSweepCommitment,
+  listActiveCommitments,
+  updateCommitment,
+} from "../tilly/commitments";
 
 type WireDream = {
   id: string;
@@ -25,13 +31,21 @@ type WireDream = {
   due: string;
   gradient: [string, string];
   nudge: string;
+  /** Honesty split (F3): set aside in the app's ledger vs. actually moved. */
+  earmarked: number;
+  moved: number;
+  /** Standing per-payday sweep, if the user has consented to one. */
+  commitment: { id: string; amount: number; status: string } | null;
 };
 
 const DEFAULT_GLYPH = "✺";
 const DEFAULT_GRADIENT: [string, string] = ["#E94B3C", "#F59E0B"];
 const DEFAULT_NUDGE = "I'll move what we agreed each week. You don't have to remember.";
 
-function rowToWire(row: typeof goals.$inferSelect): WireDream {
+function rowToWire(
+  row: typeof goals.$inferSelect,
+  extra: { earmarked?: number; moved?: number; commitment?: WireDream["commitment"] } = {},
+): WireDream {
   const gradient = (
     Array.isArray(row.gradient) && row.gradient.length === 2
       ? (row.gradient as [string, string])
@@ -48,7 +62,25 @@ function rowToWire(row: typeof goals.$inferSelect): WireDream {
     due: row.dueLabel || row.targetDate || "Year-round",
     gradient,
     nudge: row.nudge || DEFAULT_NUDGE,
+    earmarked: extra.earmarked ?? 0,
+    moved: extra.moved ?? 0,
+    commitment: extra.commitment ?? null,
   };
+}
+
+/** List-shape enrichment: split + commitment per goal. */
+async function enrich(rows: Array<typeof goals.$inferSelect>, householdId: string): Promise<WireDream[]> {
+  const [split, active] = await Promise.all([
+    contributionSplitByGoal(rows.map((r) => r.id)),
+    listActiveCommitments(householdId),
+  ]);
+  return rows.map((r) => {
+    const c = active.find((x) => x.kind === "sweep" && x.targetGoalId === r.id);
+    return rowToWire(r, {
+      ...split.get(r.id),
+      commitment: c ? { id: c.id, amount: c.amount, status: c.status } : null,
+    });
+  });
 }
 
 export function mountDreamsRoutes(app: Express): void {
@@ -66,7 +98,7 @@ export function mountDreamsRoutes(app: Express): void {
         .from(goals)
         .where(eq(goals.coupleId, householdId));
 
-      const dreams = rows.map(rowToWire);
+      const dreams = await enrich(rows, householdId);
 
       // Year-saved = sum of contributions in the trailing 365 days.
       // Uses a quick aggregate so the Dreams hero number is real, not stub.
@@ -203,11 +235,15 @@ export function mountDreamsRoutes(app: Express): void {
           .where(and(eq(goals.id, id), eq(goals.coupleId, householdId)));
         if (!g) return null;
 
+        // A manual contribution is the user asserting the money moved —
+        // it's their statement, not the app's ledger. Auto sweeps write
+        // 'earmarked' (see tilly/commitments.ts).
         await tx.insert(goalContributions).values({
           goalId: id,
           amount,
           date: new Date().toISOString().slice(0, 10),
           contributor: req.user!.id,
+          kind: "moved",
         });
 
         const [updated] = await tx
@@ -252,13 +288,33 @@ export function mountDreamsRoutes(app: Express): void {
     }
 
     try {
-      const [updated] = await db
-        .update(goals)
-        .set({ weeklyAuto: weekly })
+      // Source of truth is now a per-payday commitment (PRD F2). The
+      // legacy "weekly" number becomes the per-payday amount; weeklyAuto
+      // is mirrored inside createSweepCommitment for older clients.
+      const [g] = await db
+        .select()
+        .from(goals)
         .where(and(eq(goals.id, id), eq(goals.coupleId, householdId)))
-        .returning();
-      if (!updated) return res.status(404).json({ error: "dream not found" });
-      res.json({ dream: rowToWire(updated) });
+        .limit(1);
+      if (!g) return res.status(404).json({ error: "dream not found" });
+      const existing = (await listActiveCommitments(householdId)).find(
+        (c) => c.kind === "sweep" && c.targetGoalId === id,
+      );
+      if (weekly < 25) {
+        if (existing) await updateCommitment(householdId, existing.id, { status: "ended", endedReason: "set_to_zero" });
+        await db.update(goals).set({ weeklyAuto: 0 }).where(eq(goals.id, id));
+      } else {
+        await createSweepCommitment({
+          householdId,
+          userId: req.user.id,
+          goalId: id,
+          amount: Math.round(weekly),
+          consentFrame: "dreams_auto_save",
+        });
+      }
+      const [updated] = await db.select().from(goals).where(eq(goals.id, id)).limit(1);
+      const [wire] = await enrich([updated], householdId);
+      res.json({ dream: wire });
     } catch (err) {
       console.error("/api/dreams/:id/auto-save error:", err);
       res.status(500).json({ error: "auto-save failed" });

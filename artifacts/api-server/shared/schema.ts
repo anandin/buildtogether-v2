@@ -220,8 +220,49 @@ export const goalContributions = pgTable("goal_contributions", {
   amount: real("amount").notNull(),
   date: text("date").notNull(),
   contributor: text("contributor").notNull(),
+  /**
+   * Honesty split (PRD F3). 'earmarked' = the app set the money aside in
+   * its own ledger; nothing left the bank account. 'moved' = the user
+   * asserts the money actually moved (manual contribution today; a real
+   * transfer once a rail exists). UI copy must never say "saved" for an
+   * earmark — that was the pre-existing bug this column closes.
+   */
+  kind: text("kind").notNull().default("earmarked"),
+  /** Set when a standing commitment produced this row. */
+  commitmentId: varchar("commitment_id"),
+  /** The paycheque that triggered a sweep — idempotency key with commitmentId. */
+  paydayDate: text("payday_date"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+/**
+ * Sweep commitments — the outcome layer (PRD F2). (The legacy `commitments`
+ * table is V1 nudge pre-commitments — a different concept, left untouched.) A standing instruction the
+ * user consented to ONCE at a calm moment; executed automatically on
+ * every detected paycheque. Supersedes goals.weeklyAuto as the source
+ * of truth (the column is kept mirrored for older clients).
+ */
+export const sweepCommitments = pgTable("sweep_commitments", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  householdId: varchar("household_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  kind: text("kind").notNull().default("sweep"), // sweep | cap (cap: Phase 3)
+  targetGoalId: varchar("target_goal_id").references(() => goals.id, { onDelete: "cascade" }),
+  amount: real("amount").notNull(), // per cycle
+  cadence: text("cadence").notNull().default("per_paycheck"),
+  status: text("status").notNull().default("active"), // active | paused | ended
+  /** Never let a sweep push the cycle's truly-free below this. */
+  floorAmount: real("floor_amount"),
+  /** { rate, ceiling, baselinePaycheck, consentedAt } — Phase 3. */
+  escalation: jsonb("escalation"),
+  /** Which framing produced the consent — the DV for the framing test. */
+  consentFrame: text("consent_frame"),
+  consentedAt: timestamp("consented_at").defaultNow().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  endedAt: timestamp("ended_at"),
+  endedReason: text("ended_reason"),
+});
+export type SweepCommitment = typeof sweepCommitments.$inferSelect;
 
 export const categoryBudgets = pgTable("category_budgets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

@@ -46,6 +46,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Text } from "react-native";
 import { ShouldIBuyTile } from "../ShouldIBuyTile";
 import { IncomeReviewCard } from "../IncomeReviewCard";
+import { PaydayAllocationCard } from "../PaydayAllocationCard";
 import { useTilly } from "../hooks/useTilly";
 
 type Props = { onNav?: (route: BTRoute) => void };
@@ -429,6 +430,13 @@ export function BTHome({ onNav }: Props) {
         {!isFirstLoad ? (
           <IncomeReviewCard review={today_?.incomeReview} />
         ) : null}
+
+        {/* Payday allocation — the live choice (PRD §5). Same slot family
+            as the income check because it's the same conversation: once
+            the denominator is trusted, here's what's free and where it
+            could point. Self-hides when income is unverified, when no
+            paycheque landed this cycle, or once a commitment stands. */}
+        {!isFirstLoad ? <PaydayAllocationCard /> : null}
 
         {/* Sprint A — habit hook. Lives above the week strip, just
             below the hero/breathing-room card, because this is the

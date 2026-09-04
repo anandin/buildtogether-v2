@@ -541,6 +541,32 @@ const CRITICAL_STATEMENTS: string[] = [
    )`,
   `CREATE INDEX IF NOT EXISTS "audit_log_action_created_idx" ON "audit_log" ("action", "created_at" DESC)`,
   `CREATE INDEX IF NOT EXISTS "audit_log_actor_created_idx" ON "audit_log" ("actor_id", "created_at" DESC)`,
+  // Commitment layer (docs/PRD_COMMITMENT_LAYER.md, Phase 2).
+  `ALTER TABLE "goal_contributions" ADD COLUMN IF NOT EXISTS "kind" text NOT NULL DEFAULT 'earmarked'`,
+  `ALTER TABLE "goal_contributions" ADD COLUMN IF NOT EXISTS "commitment_id" varchar`,
+  `ALTER TABLE "goal_contributions" ADD COLUMN IF NOT EXISTS "payday_date" text`,
+  // Manual contributions are the user asserting money moved; only the
+  // ledger-only auto rows were ever "earmarked". Idempotent re-run.
+  `UPDATE "goal_contributions" SET "kind" = 'moved' WHERE "contributor" <> 'auto' AND "kind" = 'earmarked' AND "commitment_id" IS NULL`,
+  `CREATE TABLE IF NOT EXISTS "sweep_commitments" (
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "household_id" varchar NOT NULL,
+    "user_id" varchar NOT NULL,
+    "kind" text NOT NULL DEFAULT 'sweep',
+    "target_goal_id" varchar REFERENCES "goals"("id") ON DELETE CASCADE,
+    "amount" real NOT NULL,
+    "cadence" text NOT NULL DEFAULT 'per_paycheck',
+    "status" text NOT NULL DEFAULT 'active',
+    "floor_amount" real,
+    "escalation" jsonb,
+    "consent_frame" text,
+    "consented_at" timestamp DEFAULT now() NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "ended_at" timestamp,
+    "ended_reason" text
+  )`,
+  `CREATE INDEX IF NOT EXISTS "sweep_commitments_household_status_idx" ON "sweep_commitments" ("household_id", "status")`,
+  `CREATE INDEX IF NOT EXISTS "goal_contributions_commitment_payday_idx" ON "goal_contributions" ("commitment_id", "payday_date")`,
 ];
 
 export async function applyBootMigrations(): Promise<{

@@ -29,6 +29,8 @@ import type {
   TillyQuestion,
   IncomeReview,
   IncomeDecisionAction,
+  PaydayAllocationResponse,
+  SweepCommitment,
 } from "./types";
 import type { BTToneKey } from "../tones";
 
@@ -174,6 +176,15 @@ export const btApi = {
 
   // ── Dreams ──────────────────────────────────────────────────────────────
   dreams: () => getJson<DreamsList>("/api/dreams"),
+  // Commitment layer (PRD F1/F2) — the payday choice and what it creates.
+  paydayAllocation: () => getJson<PaydayAllocationResponse>("/api/tilly/payday-allocation"),
+  commitments: () => getJson<{ commitments: SweepCommitment[] }>("/api/tilly/commitments"),
+  createCommitment: (body: { goalId: string; amount: number; consentFrame?: string }) =>
+    postJson<{ commitment: SweepCommitment }>("/api/tilly/commitments", body),
+  updateCommitment: async (id: string, body: { status?: "active" | "paused" | "ended"; amount?: number }) => {
+    const res = await apiRequest("PATCH", `/api/tilly/commitments/${id}`, body);
+    return (await res.json()) as { commitment: SweepCommitment };
+  },
   createDream: (body: {
     name: string;
     target: number;

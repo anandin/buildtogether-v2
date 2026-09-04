@@ -1,6 +1,6 @@
 # PRD: Tilly — The Commitment Layer
 
-**Status:** Draft v1 — engineering handoff
+**Status:** v1.1 — Phase 0 and Phase 2 v0 shipped; revised after the first live push review (see §2a)
 **Replaces:** "The Abundance Experience" (shelf/jars/companion PRD)
 **Derived from:** *Abundance, Automation, and the Failure of Personal Finance Software*
 **Owner:** Anand
@@ -41,6 +41,48 @@ and no hands. That is the gap this PRD closes.
 
 ---
 
+## 2a. Revision notes (v1.1) — what building it taught
+
+Written after Phase 0, the weekly-push rewrite, and Phase 2 v0 landed.
+Three corrections to v1, each one a place where the document was less
+ambitious than the product needs to be.
+
+**1. Tone is not understanding.** v1 specified the emotional layer as a
+constraint (no deficit framing, no judgment) plus a setback protocol. The
+first live push exposed the gap: a *good* week — $2,638 lighter than the
+week before — delivered as "You spent $773… Thursdays are still your soft
+spot." Fixing the mechanics (offer-or-silence) still produced arithmetic.
+What the product actually needs is **recognition**: reading the ledger as
+a life. "A kids-and-outings week — those memories were worth it. Two
+things worth a look: Crave charged twice on the 4th, likely refundable."
+That is now a principle (P8) and a feature (F8), and it is the layer no
+bank and no Mint-era app can copy.
+
+**2. The gaps are surfaces and meaning, not plumbing.** Every tool Phase 0
+proposed (`flagAsIncome`, `setMerchantCadence`, taxonomy overrides) had
+already shipped in May. The income stayed wrong for three months because
+the only way to reach the fix was to say the right thing in chat. Lesson
+carried forward: before specifying a capability, check whether it exists
+and is merely unreachable.
+
+**3. No new screens.** v1 specced a `BTPayday` screen. That is bolt-on
+thinking. Home already has the payday moment — the pulse push, the payday
+day-card in the week strip. The allocation choice now renders *there*,
+in the same card slot as the income check, and hides itself when it has
+nothing to say. F1 revised accordingly.
+
+**Still true from v1, now verified:** nothing moved money until Phase 2;
+`auto-save` was crediting `savedAmount` with no transfer, and the Dreams
+screen said "saved" about it. That cron is retired and every earmark is
+labelled as one.
+
+**Newly discovered constraint:** Plaid liabilities are not ingested. The
+"Visa balance" option in §5's mock-up cannot be offered honestly and is
+not offered. Listed as an open item; a fabricated liability option would
+be exactly the invented abundance P2 forbids.
+
+---
+
 ## 3. Principles
 
 **P1 — Abundance is a claim about facts, not a coat of paint.**
@@ -72,6 +114,15 @@ commitment is one tap. Cancelling is deliberately slightly more effortful.
 
 **P7 — Never claim money moved when it did not.** See §6, F3.
 
+**P8 — Read the ledger as a life. Spend = life + leakage.** A heavy week
+is almost never uniformly heavy: it is meaningful spending (kids, a trip,
+hosting) with friction riding along (fees, duplicates, the convenience
+premium). Tilly's job is to *separate them* — affirm the life-spend
+without a "but", and itemize the leakage with specifics the user can
+check. Never critique the life. Only critique the friction. The LLM
+phrases leakage; it may not discover it — deterministic finders are the
+only source of "avoid these" content, so every claim is checkable.
+
 ---
 
 ## 4. Outcome variables
@@ -83,8 +134,12 @@ commitment is one tap. Cancelling is deliberately slightly more effortful.
 3. **Automated saving rate** — committed $/month ÷ detected income.
 4. **Financial anxiety** — in-app micro-survey at day 0 / 30 / 90.
 
+5. **Story accuracy** — when the narrator fires, a one-tap "that's right /
+   not quite" on the in-app card. Recognition is the differentiator; a
+   wrong story stings more than no story, so this is tracked from day one.
+
 **Guardrail (anti-metric)**
-5. **Discretionary spend must not rise.** If anxiety falls and discretionary spend rises,
+6. **Discretionary spend must not rise.** If anxiety falls and discretionary spend rises,
    the product is producing a *pleasant harm* and ships no further. This is the direction
    test, promoted from an experiment to a permanent guardrail.
 
@@ -120,7 +175,7 @@ first-class option — the choice must be genuine for the autonomy effect to exi
 
 ## 6. Feature specs
 
-### F0 — Income confirmation (blocking, Phase 0)
+### F0 — Income confirmation (blocking, Phase 0) — **shipped**
 
 Surface detected income candidates for one-tap confirmation during onboarding and whenever
 the `income_classification_gap` detector fires.
@@ -137,9 +192,13 @@ the `income_classification_gap` detector fires.
 This is not a bugfix — it is the feature that makes the denominator user-verified, which
 is what P2 requires.
 
-### F1 — Payday allocation screen
+### F1 — Payday allocation (in Home, not a new screen) — **shipped v0**
 
-New screen `BTPayday`, pushed on paycheck-detected push tap; also reachable from BTHome.
+`PaydayAllocationCard` renders in BTHome directly under the income check
+whenever a paycheque landed within the current cycle, income is verified,
+and no commitment stands. One tap creates a standing sweep; the card then
+flips to its standing state (amount → goal, pause/resume) and the Dreams
+footer reads "+$250 every payday". `GET /api/tilly/payday-allocation`.
 
 - Data source: `computePaydayAllocation()` in `server/tilly/payday-brief.ts` —
   **already returns `trulyFree`, `billsDue`, `billsTotal`, `expectedVariable`, and a
@@ -153,7 +212,9 @@ New screen `BTPayday`, pushed on paycheck-detected push tap; also reachable from
   a choice rather than a mood.
 - Copy runs through the §7 tone rubric. No option is pre-selected.
 
-### F2 — Commitments (new table)
+### F2 — Commitments (new table) — **shipped as `sweep_commitments`**
+
+(A legacy V1 `commitments` table — nudge pre-commitments — already existed; left untouched.)
 
 ```
 commitments
@@ -173,7 +234,7 @@ commitments
 Supersedes `goals.weeklyAuto` as the source of truth. Keep the column, backfill it, mark
 deprecated.
 
-### F3 — Sweep execution (honest v0)
+### F3 — Sweep execution (honest v0) — **shipped**
 
 Replace the Friday-weekly `/api/cron/auto-save` with a **payday-triggered** sweep hung off
 `runPaydayPulseForHousehold()` in `server/tilly/payday-brief.ts`, which already detects the
@@ -248,13 +309,43 @@ shipped. Route the autonomy hypothesis through it rather than building a shelf.
 surface, ever. It is the exact node where "feel abundant, go spend" becomes profitable and
 the product's incentives invert. Subscription only.
 
+### F8 — Week narrator (recognition layer) — **shipped**
+
+`server/tilly/week-narrator.ts`. On a material week, Tilly reads the
+merchant-level rows plus what she already knows (dossier, life context,
+memories) and writes the push as a life record, per P8.
+
+- **Deterministic leakage finders** are the only source of "worth a
+  look" content: fee rows, same-merchant ≥3× convenience patterns, and
+  same-day duplicate charges (listed first — refundable beats coachable).
+- **Story confidence** `unclear` is an instructed, rewarded answer. A
+  guessed story ("fun week!" over a vet bill) is worse than none; it
+  falls back to the offer/silence composer.
+- **Post-generation validation:** no judgment vocabulary (overspent,
+  splurged, too much, still, soft spot), no "You spent" opener, no
+  surplus claim while income is unverified, and every dollar figure must
+  exist in the data handed to the model.
+
+The weekly push therefore has three tiers, in order: **story** (the week
+is legible as life) → **offer** (only arithmetic worth acting on) →
+**silence** (neither). Next: the same narrator on the payday brief — a
+pay cycle is a better story unit than a week.
+
+### F9 — Weekly push composer (offer or silence) — **shipped**
+
+`server/tilly/weekly-review.ts`. Every push is an offer or it is silence;
+a report is never worth an interruption. Win week → claim offer (gated on
+income confidence). Heavy week → forward pre-commitment offer only; the
+closed week is never quoted back. Flat week → nothing. "X are still your
+soft spot" removed at every generator.
+
 ---
 
 ## 7. Implementation roadmap
 
 Sizing assumes one engineer. Phase 1 runs in parallel with Phase 0 and gates Phase 2.
 
-### Phase 0 — Truth (blocking, ~1 week)
+### Phase 0 — Truth (blocking, ~1 week) — **done except 0.3 (needs prod DB)**
 
 | # | Item | Files |
 |---|---|---|
@@ -278,7 +369,7 @@ ships (P2).
 **Exit:** go / no-go on Phase 2. If permission framing does not beat neutral on consent,
 the emotional-layer premise is weak and the product collapses to bare automation.
 
-### Phase 2 — Commitment engine v0 (~3–4 weeks)
+### Phase 2 — Commitment engine v0 (~3–4 weeks) — **done except 2.6 (chat tools)**
 
 | # | Item | Depends on |
 |---|---|---|
@@ -350,6 +441,7 @@ Tests 5 and 1′ cost almost nothing and gate everything else.
 | 2 | **Business model** — subscription only | **Decided.** Any interchange or affiliate revenue inverts the incentives; the scout surface is where it would happen. |
 | 3 | **Contraindication** — permission-framed prompts are plausibly harmful for compulsive spending patterns | Open. Either a detection path plus an alternate mode exists, or the decision not to serve that population is made deliberately. Do not ship broadly without one. |
 | 4 | **Security review** — encryption at rest, token handling, breach response | Largely addressed (`f072b86` SOC 2 hardening, `docs/security/`). Needs confirmation, not re-scoping. In a trust product a breach is an ending, not a setback. |
+| 6 | **Liabilities ingestion** — Plaid liabilities are not pulled, so the paid-off option and any "Visa balance" fork cannot be offered honestly. Needed before the allocation card can show a debt option. | Open. |
 | 5 | **Household semantics** — commitments in a two-person household | Open. The app is household-native (`households`, `splits`, `invites`, `trusted_viewer`). Whose paycheck triggers the sweep, and does the other member see it? The previous PRD deleted this by putting households out of scope; that removed the product's spine. |
 
 ---
@@ -382,4 +474,6 @@ Verified in `artifacts/api-server/`. The reason this PRD is mostly wiring, not b
 | Biometric confirm infrastructure | passkey routes + `PasskeySecurityScreen` |
 | Push, quiet hours, dedupe | `expo-push.ts`, `engagement-cron.ts`, `notify-cron.ts` |
 
-**Not present anywhere: a code path that moves money.** That is the product.
+**Still not present: a code path that moves money.** Sweeps now execute on
+paycheque detection and write honest `earmarked` rows; the rail (Phase 4)
+turns the same commitment into a `moved` row with no copy change.
