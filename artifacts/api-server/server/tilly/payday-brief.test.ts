@@ -229,3 +229,46 @@ describe("sweepsLine — what happened, in the app's own honest verb", () => {
     expect(sweepsLine([], [{ reason: "already_done" }])).toBe("");
   });
 });
+
+describe("computePaydayAllocation — liability forks (open item 6)", () => {
+  it("offers a paydown fork with a real balance and a clear-by date", () => {
+    const a = computePaydayAllocation({
+      paycheckAmount: 6745,
+      paydayDate: "2026-08-06",
+      cadence: "biweekly",
+      billsDue: [],
+      dailyPace: 100, // trulyFree = 6745 − 1400 = 5345 → 10% = $525
+      dream: null,
+      goals: [],
+      liabilities: [{ accountId: "acc1", name: "TD Visa", balance: 4302 }],
+    });
+    const visa = a.options.find((o) => o.kind === "liability");
+    if (!visa || visa.kind !== "liability") throw new Error("missing liability option");
+    expect(visa.amount).toBe(525);
+    expect(visa.paydaysToClear).toBe(Math.ceil(4302 / 525)); // 9
+    expect(visa.clearBy).toBe(addDaysIso("2026-08-06", 14 * 9));
+    expect(a.options[a.options.length - 1].kind).toBe("liquid");
+  });
+
+  it("skips a zero balance — nothing to pay down is not a fork", () => {
+    const a = computePaydayAllocation({
+      paycheckAmount: 6745, paydayDate: "2026-08-06", cadence: "biweekly", billsDue: [], dailyPace: 100, dream: null,
+      goals: [], liabilities: [{ accountId: "acc1", name: "Paid card", balance: 0 }],
+    });
+    expect(a.options).toEqual([]);
+  });
+});
+
+describe("sweepsLine — escalation notice", () => {
+  it("names the rule acting, the old and new amount, and the undo", () => {
+    const line = sweepsLine(
+      [{ goalName: "Japan trip", amount: 350 }],
+      [],
+      [{ goalName: "Japan trip", from: 250, to: 350, paycheckDelta: 400 }],
+    );
+    expect(line).toMatch(/up \$400/);
+    expect(line).toMatch(/now \$350 \(was \$250\)/);
+    expect(line).toMatch(/undoes it/);
+    expect(line).toMatch(/Set aside \$350 for Japan trip, as agreed\.$/);
+  });
+});

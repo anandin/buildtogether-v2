@@ -254,7 +254,9 @@ checking. That is a P7 violation and, worse, it is a false abundance claim (P2).
 Earmarking still tests the variable that matters — consent — so this is not a stub, it is
 the measurable v0.
 
-### F4 — Escalation on income events
+### F4 — Escalation on income events — **shipped v0**
+
+(Consent is a pre-ticked, untick-able line on the allocation card. The raise applies on the next detected paycheque with a notice in the pulse and a one-tap "Stop raising it" on Home. No 48h pre-notice yet — paydays are detected after they land, so the notice is same-day.)
 
 Save More Tomorrow, mapped onto detected paychecks.
 
@@ -382,7 +384,7 @@ the emotional-layer premise is weak and the product collapses to bare automation
 
 **Exit:** a user can consent to a per-paycheck sweep in one tap and see it execute.
 
-### Phase 3 — Escalation + setback (~2 weeks)
+### Phase 3 — Escalation + setback (~2 weeks) — **3.1, 3.3 (payday copy) done; 3.2 pre-notice, 3.4 reduce flow, 3.5 CI rubric open**
 
 | # | Item |
 |---|---|
@@ -441,7 +443,7 @@ Tests 5 and 1′ cost almost nothing and gate everything else.
 | 2 | **Business model** — subscription only | **Decided.** Any interchange or affiliate revenue inverts the incentives; the scout surface is where it would happen. |
 | 3 | **Contraindication** — permission-framed prompts are plausibly harmful for compulsive spending patterns | Open. Either a detection path plus an alternate mode exists, or the decision not to serve that population is made deliberately. Do not ship broadly without one. |
 | 4 | **Security review** — encryption at rest, token handling, breach response | Largely addressed (`f072b86` SOC 2 hardening, `docs/security/`). Needs confirmation, not re-scoping. In a trust product a breach is an ending, not a setback. |
-| 6 | **Liabilities ingestion** — Plaid liabilities are not pulled, so the paid-off option and any "Visa balance" fork cannot be offered honestly. Needed before the allocation card can show a debt option. | Open. |
+| 6 | **Liabilities** — credit balances now read live from Plaid `liabilitiesGet` (same call the credit snapshot uses). A paydown fork creates a debt Dream (`goals.liability_ref`) whose target tracks the balance, so the earmark ledger and honesty split apply unchanged. | **Resolved v0.** Loans (non-card) still not offered. |
 | 5 | **Household semantics** — commitments in a two-person household | Open. The app is household-native (`households`, `splits`, `invites`, `trusted_viewer`). Whose paycheck triggers the sweep, and does the other member see it? The previous PRD deleted this by putting households out of scope; that removed the product's spine. |
 
 ---

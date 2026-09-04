@@ -179,9 +179,17 @@ export const btApi = {
   // Commitment layer (PRD F1/F2) — the payday choice and what it creates.
   paydayAllocation: () => getJson<PaydayAllocationResponse>("/api/tilly/payday-allocation"),
   commitments: () => getJson<{ commitments: SweepCommitment[] }>("/api/tilly/commitments"),
-  createCommitment: (body: { goalId: string; amount: number; consentFrame?: string }) =>
-    postJson<{ commitment: SweepCommitment }>("/api/tilly/commitments", body),
-  updateCommitment: async (id: string, body: { status?: "active" | "paused" | "ended"; amount?: number }) => {
+  createCommitment: (body: {
+    goalId?: string;
+    liability?: { accountId: string; name: string; balance: number };
+    amount: number;
+    consentFrame?: string;
+    escalate?: boolean;
+  }) => postJson<{ commitment: SweepCommitment }>("/api/tilly/commitments", body),
+  updateCommitment: async (
+    id: string,
+    body: { status?: "active" | "paused" | "ended"; amount?: number; escalation?: null },
+  ) => {
     const res = await apiRequest("PATCH", `/api/tilly/commitments/${id}`, body);
     return (await res.json()) as { commitment: SweepCommitment };
   },

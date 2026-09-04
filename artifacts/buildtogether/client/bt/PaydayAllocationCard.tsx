@@ -56,6 +56,9 @@ export function PaydayAllocationCard() {
   const qc = useQueryClient();
   const q = usePaydayAllocation();
   const [chosenLiquid, setChosenLiquid] = useState(false);
+  // Save More Tomorrow default: consenting to the sweep also consents to
+  // the rule, visibly and untick-able. Opt-out by design (PRD F4/P6).
+  const [escalate, setEscalate] = useState(true);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["/api/tilly/payday-allocation"] });
@@ -63,13 +66,16 @@ export function PaydayAllocationCard() {
     qc.invalidateQueries({ queryKey: ["/api/tilly/today"] });
   };
   const create = useMutation({
-    mutationFn: (vars: { goalId: string; amount: number }) =>
-      btApi.createCommitment({ ...vars, consentFrame: "payday_allocation" }),
+    mutationFn: (vars: {
+      goalId?: string;
+      liability?: { accountId: string; name: string; balance: number };
+      amount: number;
+    }) => btApi.createCommitment({ ...vars, consentFrame: "payday_allocation", escalate }),
     onSuccess: invalidate,
   });
   const update = useMutation({
-    mutationFn: (vars: { id: string; status: "active" | "paused" | "ended" }) =>
-      btApi.updateCommitment(vars.id, { status: vars.status }),
+    mutationFn: (vars: { id: string; status?: "active" | "paused" | "ended"; amount?: number; escalation?: null }) =>
+      btApi.updateCommitment(vars.id, vars),
     onSuccess: invalidate,
   });
 
@@ -79,6 +85,10 @@ export function PaydayAllocationCard() {
   const { allocation, commitments } = data;
   const active = commitments.filter((c) => c.status === "active" || c.status === "paused");
   const goalOptions = allocation.options.filter((o): o is Extract<AllocationOption, { kind: "goal" }> => o.kind === "goal");
+  const debtOptions = allocation.options.filter(
+    (o): o is Extract<AllocationOption, { kind: "liability" }> => o.kind === "liability",
+  );
+  const hasForks = goalOptions.length > 0 || debtOptions.length > 0;
 
   // Standing state: the user has already pointed money somewhere.
   if (active.length > 0) {
@@ -91,9 +101,10 @@ export function PaydayAllocationCard() {
           <StandingRow
             key={c.id}
             c={c}
-            name={goalOptions.find((o) => o.goalId === c.goalId)?.name ?? "your dream"}
+            name={c.goalName ?? goalOptions.find((o) => o.goalId === c.goalId)?.name ?? "your dream"}
             busy={update.isPending}
             onToggle={() => update.mutate({ id: c.id, status: c.status === "paused" ? "active" : "paused" })}
+            onStopRaising={c.escalation ? () => update.mutate({ id: c.id, escalation: null }) : undefined}
           />
         ))}
         <Text style={{ color: t.inkMute, fontFamily: BTFonts.sans, fontSize: 11, lineHeight: 16 }}>
@@ -103,7 +114,7 @@ export function PaydayAllocationCard() {
     );
   }
 
-  if (goalOptions.length === 0 || chosenLiquid) return null;
+  if (!hasForks || chosenLiquid) return null;
 
   const spokenFor = allocation.billsTotal + allocation.expectedVariable;
   const through = allocation.nextPaydayDate ? shortDate(allocation.nextPaydayDate) : `${allocation.cycleDays} days`;
@@ -139,6 +150,25 @@ export function PaydayAllocationCard() {
             onPress={() => create.mutate({ goalId: o.goalId, amount: o.amount })}
           />
         ))}
+        {debtOptions.map((o) => (
+          <OptionRow
+            key={o.accountId}
+            title={`Pay down ${o.name}`}
+            amountLabel={`+${money(o.amount)} / payday`}
+            consequence={
+              o.clearBy
+                ? `${money(o.balance)} balance · clear by ${shortDate(o.clearBy)}`
+                : `${money(o.balance)} balance · clear in ${o.paydaysToClear} paydays`
+            }
+            busy={create.isPending}
+            onPress={() =>
+              create.mutate({
+                liability: { accountId: o.accountId, name: o.name, balance: o.balance },
+                amount: o.amount,
+              })
+            }
+          />
+        ))}
         <OptionRow
           title="Leave it liquid"
           consequence="nothing changes — that's a fine answer"
@@ -147,6 +177,28 @@ export function PaydayAllocationCard() {
           quiet
         />
       </View>
+
+      <Pressable
+        onPress={() => setEscalate((v) => !v)}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: escalate }}
+        accessibilityLabel="Raise it by a quarter of any pay raise"
+        style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+      >
+        <View
+          style={{
+            width: 16,
+            height: 16,
+            borderRadius: 4,
+            borderWidth: 1.5,
+            borderColor: t.inkMute,
+            backgroundColor: escalate ? t.ink : "transparent",
+          }}
+        />
+        <Text style={{ color: t.inkMute, fontFamily: BTFonts.sans, fontSize: 11, lineHeight: 16, flex: 1 }}>
+          …and when your paycheque grows, raise it by a quarter of the raise. Take-home never goes down. Untick if not.
+        </Text>
+      </Pressable>
 
       <Text style={{ color: t.inkMute, fontFamily: BTFonts.sans, fontSize: 11, lineHeight: 16 }}>
         Whatever you pick, I'll set it aside every payday until you tell me otherwise. Pausing is one tap.
@@ -214,11 +266,13 @@ function StandingRow({
   name,
   busy,
   onToggle,
+  onStopRaising,
 }: {
   c: SweepCommitment;
   name: string;
   busy?: boolean;
   onToggle: () => void;
+  onStopRaising?: () => void;
 }) {
   const { t } = useBT();
   const paused = c.status === "paused";
@@ -230,7 +284,15 @@ function StandingRow({
         </Text>
         <Text style={{ color: t.inkMute, fontFamily: BTFonts.sans, fontSize: 11 }}>
           {paused ? "paused — picks back up when you say" : "set aside each paycheque"}
+          {c.escalation && !paused ? " · grows with your paycheque" : ""}
         </Text>
+        {onStopRaising ? (
+          <Pressable onPress={onStopRaising} disabled={busy} accessibilityRole="button" accessibilityLabel="Stop raising it">
+            <Text style={{ color: t.accent, fontFamily: BTFonts.sans, fontSize: 11, fontWeight: "600", marginTop: 2 }}>
+              Stop raising it
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
       <Pressable
         onPress={onToggle}

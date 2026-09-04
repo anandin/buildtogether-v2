@@ -15,13 +15,18 @@ import { db } from "../db";
 import { goals, subscriptions } from "../../shared/schema";
 import {
   createSweepCommitment,
+  findOrCreateDebtGoal,
   listActiveCommitments,
   updateCommitment,
+  ESCALATION_DEFAULT_RATE,
+  type EscalationRule,
 } from "../tilly/commitments";
+import { listCreditLiabilities } from "../tilly/credit-snapshot";
 import { buildIncomeReview } from "../tilly/income-review";
 import {
   dedupeIncomeRows,
   inferCadence,
+  medianIncomeAmount,
   readIncomeRows,
   splitAnomalousIncome,
 } from "../tilly/income-summary";
@@ -86,11 +91,16 @@ export function mountCommitmentRoutes(app: Express): void {
       const { trailingVariablePace } = await import("../tilly/payday-brief");
       const dailyPace = await trailingVariablePace(userId, householdId, now, tz);
 
-      const [goalRows, active] = await Promise.all([
+      const [goalRows, active, liabilities] = await Promise.all([
         db.select().from(goals).where(eq(goals.coupleId, householdId)).orderBy(desc(goals.createdAt)).limit(20),
         listActiveCommitments(householdId),
+        listCreditLiabilities(householdId).catch((err) => {
+          console.warn("/api/tilly/payday-allocation liabilities unavailable:", err);
+          return [];
+        }),
       ]);
       const sweeps = active.filter((c) => c.kind === "sweep");
+      const debtGoalFor = (accountId: string) => goalRows.find((g) => g.liabilityRef === accountId);
       const allocation = computePaydayAllocation({
         paycheckAmount: Math.abs(landed.amount),
         paydayDate: landed.date,
@@ -107,6 +117,13 @@ export function mountCommitmentRoutes(app: Express): void {
           savedAmount: g.savedAmount,
           currentPerPayday: sweeps.find((c) => c.targetGoalId === g.id && c.status === "active")?.amount ?? 0,
         })),
+        liabilities: liabilities.map((l) => ({
+          accountId: l.accountId,
+          name: l.name,
+          balance: l.balance,
+          currentPerPayday:
+            sweeps.find((c) => c.targetGoalId === debtGoalFor(l.accountId)?.id && c.status === "active")?.amount ?? 0,
+        })),
       });
 
       res.json({
@@ -115,7 +132,8 @@ export function mountCommitmentRoutes(app: Express): void {
         cycleEndIso,
         incomeBlocked,
         allocation: incomeBlocked ? { ...allocation, options: [], dreamSuggestion: null } : allocation,
-        commitments: sweeps.map(wireCommitment),
+        commitments: sweeps.map((c) => wireCommitment(c, goalRows.find((g) => g.id === c.targetGoalId)?.name)),
+        trailingMedianPaycheck: Math.round(medianIncomeAmount(typical)),
       });
     } catch (err) {
       console.error("/api/tilly/payday-allocation error:", err);
@@ -128,7 +146,7 @@ export function mountCommitmentRoutes(app: Express): void {
     const householdId = req.user.coupleId;
     if (!householdId) return res.status(400).json({ error: "no household" });
     try {
-      res.json({ commitments: (await listActiveCommitments(householdId)).map(wireCommitment) });
+      res.json({ commitments: (await listActiveCommitments(householdId)).map((c) => wireCommitment(c)) });
     } catch (err) {
       console.error("/api/tilly/commitments GET error:", err);
       res.status(500).json({ error: "list failed" });
@@ -141,26 +159,60 @@ export function mountCommitmentRoutes(app: Express): void {
     if (!req.user) return res.status(401).json({ error: "auth required" });
     const householdId = req.user.coupleId;
     if (!householdId) return res.status(400).json({ error: "no household" });
-    const { goalId, amount, consentFrame } = (req.body ?? {}) as {
+    const { goalId, liability, amount, consentFrame, escalate } = (req.body ?? {}) as {
       goalId?: string;
+      /** Alternative target: a credit balance. Creates/reuses a debt Dream. */
+      liability?: { accountId: string; name: string; balance: number };
       amount?: number;
       consentFrame?: string;
+      /** Consent, given once, to raise the sweep by a share of future pay raises. */
+      escalate?: boolean;
     };
-    if (typeof goalId !== "string" || !goalId) return res.status(400).json({ error: "goalId required" });
     if (typeof amount !== "number" || !Number.isFinite(amount) || amount < 25) {
       return res.status(400).json({ error: "amount must be at least $25 per payday" });
     }
+    if ((typeof goalId !== "string" || !goalId) && !liability?.accountId) {
+      return res.status(400).json({ error: "goalId or liability required" });
+    }
     try {
-      const [g] = await db.select({ id: goals.id }).from(goals).where(and(eq(goals.id, goalId), eq(goals.coupleId, householdId))).limit(1);
-      if (!g) return res.status(404).json({ error: "goal not found" });
+      let targetGoalId = goalId ?? "";
+      let targetName: string | undefined;
+      if (liability?.accountId) {
+        const g = await findOrCreateDebtGoal({
+          householdId,
+          accountId: String(liability.accountId),
+          name: String(liability.name ?? "Credit card").slice(0, 60),
+          balance: Number(liability.balance) || 0,
+        });
+        targetGoalId = g.id;
+        targetName = g.name;
+      } else {
+        const [g] = await db.select({ id: goals.id, name: goals.name }).from(goals).where(and(eq(goals.id, targetGoalId), eq(goals.coupleId, householdId))).limit(1);
+        if (!g) return res.status(404).json({ error: "goal not found" });
+        targetName = g.name;
+      }
+
+      // Escalation baseline = today's median paycheque. Consent to the
+      // RULE happens here, once; it then applies on its own (F4).
+      let escalation: EscalationRule | null = null;
+      if (escalate) {
+        const rows = await readIncomeRows(householdId, localDaysAgoIso(new Date(), await getUserTimezone(req.user.id), 90));
+        const { typical } = splitAnomalousIncome(dedupeIncomeRows(rows));
+        const baseline = Math.round(medianIncomeAmount(typical));
+        if (baseline > 0) {
+          escalation = { rate: ESCALATION_DEFAULT_RATE, ceiling: null, baselinePaycheck: baseline, consentedAt: new Date().toISOString() };
+        }
+      }
+
       const row = await createSweepCommitment({
         householdId,
         userId: req.user.id,
-        goalId,
+        goalId: targetGoalId,
         amount: Math.round(amount),
         consentFrame: typeof consentFrame === "string" ? consentFrame.slice(0, 40) : null,
+        escalation,
       });
-      res.json({ commitment: wireCommitment(row) });
+      res.json({ commitment: wireCommitment(row, targetName) });
     } catch (err) {
       console.error("/api/tilly/commitments POST error:", err);
       res.status(500).json({ error: "create failed" });
@@ -172,8 +224,11 @@ export function mountCommitmentRoutes(app: Express): void {
     if (!req.user) return res.status(401).json({ error: "auth required" });
     const householdId = req.user.coupleId;
     if (!householdId) return res.status(400).json({ error: "no household" });
-    const { status, amount } = (req.body ?? {}) as { status?: string; amount?: number };
+    const { status, amount, escalation } = (req.body ?? {}) as { status?: string; amount?: number; escalation?: null | false };
     const patch: Parameters<typeof updateCommitment>[2] = {};
+    // Only switching the rule OFF is exposed here; turning it on is a
+    // consent and goes through POST with the baseline recorded.
+    if (escalation === null || escalation === false) patch.escalation = null;
     if (status !== undefined) {
       if (status !== "active" && status !== "paused" && status !== "ended") {
         return res.status(400).json({ error: "status must be active | paused | ended" });
@@ -197,22 +252,31 @@ export function mountCommitmentRoutes(app: Express): void {
   });
 }
 
-function wireCommitment(c: {
-  id: string;
-  kind: string;
-  targetGoalId: string | null;
-  amount: number;
-  cadence: string;
-  status: string;
-  consentedAt: Date;
-}) {
+function wireCommitment(
+  c: {
+    id: string;
+    kind: string;
+    targetGoalId: string | null;
+    amount: number;
+    cadence: string;
+    status: string;
+    consentedAt: Date;
+    escalation?: unknown;
+  },
+  goalName?: string,
+) {
+  const rule = (c.escalation ?? null) as EscalationRule | null;
   return {
     id: c.id,
     kind: c.kind,
     goalId: c.targetGoalId,
+    goalName: goalName ?? null,
     amount: c.amount,
     cadence: c.cadence,
     status: c.status,
     consentedAt: c.consentedAt.toISOString(),
+    escalation: rule
+      ? { rate: rule.rate, ceiling: rule.ceiling, lastAppliedPaycheck: rule.lastAppliedPaycheck ?? null }
+      : null,
   };
 }

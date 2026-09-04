@@ -495,10 +495,13 @@ export type SweepCommitment = {
   id: string;
   kind?: string;
   goalId?: string | null;
+  goalName?: string | null;
   amount: number;
   cadence?: string;
   status: "active" | "paused" | "ended" | string;
   consentedAt?: string;
+  /** The escalation rule the user consented to, if any (PRD F4). */
+  escalation?: { rate: number; ceiling: number | null; lastAppliedPaycheck: number | null } | null;
 };
 
 export type AllocationOption =
@@ -510,6 +513,16 @@ export type AllocationOption =
       remainingToTarget: number;
       paydaysToTarget: number;
       paydaysSooner: number;
+      currentPerPayday: number;
+    }
+  | {
+      kind: "liability";
+      accountId: string;
+      name: string;
+      balance: number;
+      amount: number;
+      paydaysToClear: number;
+      clearBy: string | null;
       currentPerPayday: number;
     }
   | { kind: "liquid"; amount: 0 };
@@ -536,6 +549,7 @@ export type PaydayAllocationResponse =
         options: AllocationOption[];
       };
       commitments: SweepCommitment[];
+      trailingMedianPaycheck?: number;
     };
 export type DreamsList =
   | StubEnvelope

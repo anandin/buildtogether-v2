@@ -73,6 +73,47 @@ export function planSweeps(input: SweepPlanInput): SweepPlan {
   return plan;
 }
 
+// ─── Escalation (PRD F4 — Save More Tomorrow on detected paycheques) ──
+// The user consents ONCE to the rule; after that it applies on its own,
+// with a notice and a one-tap undo. Take-home never falls: the raise is
+// a fraction of an INCREASE, never of the paycheque itself.
+
+export type EscalationRule = {
+  /** Share of each pay raise that goes to the sweep. Default 0.25. */
+  rate: number;
+  /** Hard cap on the per-payday amount; null = none. */
+  ceiling: number | null;
+  /** Median paycheque when the rule was consented to. */
+  baselinePaycheck: number;
+  consentedAt: string;
+  /** Median paycheque at the last applied raise — raises are measured
+   * from here so a single raise isn't applied twice. */
+  lastAppliedPaycheck?: number;
+};
+
+export const ESCALATION_DEFAULT_RATE = 0.25;
+/** A paycheque must move at least this much before it counts as a raise. */
+export const ESCALATION_MIN_DELTA = 50;
+export const ESCALATION_STEP = 25;
+
+export function planEscalation(input: {
+  rule: EscalationRule | null | undefined;
+  currentAmount: number;
+  trailingMedianPaycheck: number;
+}): { newAmount: number; raise: number; paycheckDelta: number } | null {
+  const rule = input.rule;
+  if (!rule || rule.rate <= 0) return null;
+  const from = Math.max(rule.baselinePaycheck, rule.lastAppliedPaycheck ?? 0);
+  const delta = input.trailingMedianPaycheck - from;
+  if (delta < ESCALATION_MIN_DELTA) return null;
+  const rate = Math.min(rule.rate, 1);
+  const raise = Math.floor((delta * rate) / ESCALATION_STEP) * ESCALATION_STEP;
+  if (raise < ESCALATION_STEP) return null;
+  const capped = rule.ceiling != null ? Math.min(input.currentAmount + raise, rule.ceiling) : input.currentAmount + raise;
+  if (capped <= input.currentAmount) return null;
+  return { newAmount: capped, raise: capped - input.currentAmount, paycheckDelta: Math.round(delta) };
+}
+
 /** "done in 12 paydays" — the consequence delta that makes an option a
  * choice rather than a mood. */
 export function paydaysToTarget(remaining: number, perPayday: number): number | null {
@@ -98,6 +139,8 @@ export async function createSweepCommitment(input: {
   amount: number;
   consentFrame?: string | null;
   floorAmount?: number | null;
+  /** Consent to the escalation rule, given once here. */
+  escalation?: EscalationRule | null;
 }): Promise<SweepCommitment> {
   // One active sweep per goal — a second consent for the same goal
   // replaces the amount rather than stacking a duplicate.
@@ -116,7 +159,12 @@ export async function createSweepCommitment(input: {
   if (existing[0]) {
     const [updated] = await db
       .update(sweepCommitments)
-      .set({ amount: input.amount, status: "active", consentFrame: input.consentFrame ?? existing[0].consentFrame })
+      .set({
+        amount: input.amount,
+        status: "active",
+        consentFrame: input.consentFrame ?? existing[0].consentFrame,
+        ...(input.escalation !== undefined ? { escalation: input.escalation } : {}),
+      })
       .where(eq(sweepCommitments.id, existing[0].id))
       .returning();
     await mirrorWeeklyAuto(input.goalId, input.amount);
@@ -134,6 +182,7 @@ export async function createSweepCommitment(input: {
       status: "active",
       floorAmount: input.floorAmount ?? null,
       consentFrame: input.consentFrame ?? null,
+      escalation: input.escalation ?? null,
     })
     .returning();
   await mirrorWeeklyAuto(input.goalId, input.amount);
@@ -143,10 +192,17 @@ export async function createSweepCommitment(input: {
 export async function updateCommitment(
   householdId: string,
   id: string,
-  patch: { status?: "active" | "paused" | "ended"; amount?: number; endedReason?: string },
+  patch: {
+    status?: "active" | "paused" | "ended";
+    amount?: number;
+    endedReason?: string;
+    /** null = switch the escalation rule off. */
+    escalation?: EscalationRule | null;
+  },
 ): Promise<SweepCommitment | null> {
   const set: Partial<typeof sweepCommitments.$inferInsert> = {};
   if (patch.amount !== undefined) set.amount = patch.amount;
+  if (patch.escalation !== undefined) set.escalation = patch.escalation;
   if (patch.status) {
     set.status = patch.status;
     if (patch.status === "ended") {
@@ -175,21 +231,57 @@ async function mirrorWeeklyAuto(goalId: string, perPayday: number): Promise<void
  * (commitment, paydayDate). Returns what ran and what was skipped so
  * the payday copy can say "set aside $250 for Japan, as agreed".
  */
+export type SweepExecution = {
+  executed: Array<{ goalId: string; goalName: string; amount: number }>;
+  skipped: SweepPlan["skipped"];
+  /** Raises applied this payday under a consented escalation rule. */
+  escalated: Array<{ commitmentId: string; goalName: string; from: number; to: number; paycheckDelta: number }>;
+};
+
 export async function executeSweepsForPayday(input: {
   householdId: string;
   paydayDate: string;
   trulyFree: number;
-}): Promise<{ executed: Array<{ goalId: string; goalName: string; amount: number }>; skipped: SweepPlan["skipped"] }> {
+  /** Median of the cadence-clean paycheques — drives escalation. */
+  trailingMedianPaycheck?: number;
+}): Promise<SweepExecution> {
   const active = (await listActiveCommitments(input.householdId)).filter(
     (c) => c.status === "active" && c.kind === "sweep",
   );
-  if (active.length === 0) return { executed: [], skipped: [] };
+  if (active.length === 0) return { executed: [], skipped: [], escalated: [] };
 
   const goalIds = active.map((c) => c.targetGoalId).filter((g): g is string => !!g);
   const goalRows = goalIds.length
     ? await db.select().from(goals).where(inArray(goals.id, goalIds))
     : [];
   const remainingByGoal = new Map(goalRows.map((g) => [g.id, Math.max(0, g.targetAmount - g.savedAmount)]));
+
+  // Escalation first, so this payday's sweep already reflects the raise.
+  // Applied at most once per paycheque level (lastAppliedPaycheck).
+  const escalated: SweepExecution["escalated"] = [];
+  if (typeof input.trailingMedianPaycheck === "number" && input.trailingMedianPaycheck > 0) {
+    for (const c of active) {
+      const rule = (c.escalation ?? null) as EscalationRule | null;
+      const plan = planEscalation({ rule, currentAmount: c.amount, trailingMedianPaycheck: input.trailingMedianPaycheck });
+      if (!plan || !rule) continue;
+      const nextRule: EscalationRule = { ...rule, lastAppliedPaycheck: input.trailingMedianPaycheck };
+      await db
+        .update(sweepCommitments)
+        .set({ amount: plan.newAmount, escalation: nextRule })
+        .where(eq(sweepCommitments.id, c.id));
+      c.amount = plan.newAmount;
+      c.escalation = nextRule;
+      if (c.targetGoalId) await mirrorWeeklyAuto(c.targetGoalId, plan.newAmount);
+      const g = goalRows.find((r) => r.id === c.targetGoalId);
+      escalated.push({
+        commitmentId: c.id,
+        goalName: g?.name ?? "your dream",
+        from: plan.newAmount - plan.raise,
+        to: plan.newAmount,
+        paycheckDelta: plan.paycheckDelta,
+      });
+    }
+  }
 
   const done = await db
     .select({ commitmentId: goalContributions.commitmentId })
@@ -235,7 +327,7 @@ export async function executeSweepsForPayday(input: {
     });
     executed.push({ goalId: e.goalId, goalName: g.name, amount: e.amount });
   }
-  return { executed, skipped: plan.skipped };
+  return { executed, skipped: plan.skipped, escalated };
 }
 
 /** earmarked vs moved totals per goal — the honesty split for Dreams. */
@@ -260,4 +352,51 @@ export async function contributionSplitByGoal(
     out.set(r.goalId, cur);
   }
   return out;
+}
+
+// ─── Debt paydown as a Dream ─────────────────────────────────────────
+// The original PRD's "paid-off jar" is just a goal whose target is the
+// balance. Reusing goals means the earmark ledger, the honesty split and
+// the Dreams screen all work with no new surfaces. liabilityRef dedupes.
+
+export async function findOrCreateDebtGoal(input: {
+  householdId: string;
+  accountId: string;
+  name: string;
+  balance: number;
+}): Promise<typeof goals.$inferSelect> {
+  const [existing] = await db
+    .select()
+    .from(goals)
+    .where(and(eq(goals.coupleId, input.householdId), eq(goals.liabilityRef, input.accountId)))
+    .limit(1);
+  if (existing) {
+    // Keep the target honest as the balance moves.
+    if (Math.round(existing.targetAmount) !== Math.round(input.balance)) {
+      const [updated] = await db
+        .update(goals)
+        .set({ targetAmount: Math.round(input.balance) })
+        .where(eq(goals.id, existing.id))
+        .returning();
+      return updated;
+    }
+    return existing;
+  }
+  const [row] = await db
+    .insert(goals)
+    .values({
+      coupleId: input.householdId,
+      name: `Pay down ${input.name}`,
+      targetAmount: Math.round(input.balance),
+      savedAmount: 0,
+      emoji: "◇",
+      color: "#6B7280",
+      glyph: "◇",
+      loc: "debt",
+      dueLabel: "Until it's gone",
+      nudge: "Set aside each payday, paid when you pay the card — I'll keep the two honest.",
+      liabilityRef: input.accountId,
+    })
+    .returning();
+  return row;
 }

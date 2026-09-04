@@ -211,6 +211,9 @@ export const goals = pgTable("goals", {
   weeklyAuto: real("weekly_auto"), // amount Tilly moves each Friday (0 = manual)
   nudge: text("nudge"), // contextual Tilly line, e.g. "Skip two takeouts and Barcelona arrives Feb 18"
   dueLabel: text("due_label"), // "Mar 5" / "Year-round" — display-friendly target
+  /** Set when this goal IS a debt paydown — the Plaid account id it
+   * tracks. The "paid-off jar" is a Dream whose target is the balance. */
+  liabilityRef: text("liability_ref"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

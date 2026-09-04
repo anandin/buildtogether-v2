@@ -565,6 +565,7 @@ const CRITICAL_STATEMENTS: string[] = [
     "ended_at" timestamp,
     "ended_reason" text
   )`,
+  `ALTER TABLE "goals" ADD COLUMN IF NOT EXISTS "liability_ref" text`,
   `CREATE INDEX IF NOT EXISTS "sweep_commitments_household_status_idx" ON "sweep_commitments" ("household_id", "status")`,
   `CREATE INDEX IF NOT EXISTS "goal_contributions_commitment_payday_idx" ON "goal_contributions" ("commitment_id", "payday_date")`,
 ];

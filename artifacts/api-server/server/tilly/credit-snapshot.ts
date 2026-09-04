@@ -149,3 +149,49 @@ export async function buildCreditSnapshot(
     payNow,
   };
 }
+
+// ─── Liabilities for the allocation choice (PRD F1, open item 6) ─────
+// Same liabilitiesGet call the snapshot uses, exposed as a plain list so
+// the payday allocation can offer "point it at the Visa" with a real
+// balance behind it. Live call — the snapshot endpoint already accepts
+// that cost; callers wrap in try/catch and treat failure as "no options".
+
+export type CreditLiability = {
+  accountId: string;
+  name: string;
+  /** Current balance when Plaid has it; statement balance otherwise. */
+  balance: number;
+  limit: number | null;
+  minimumPayment: number | null;
+  aprPercent: number | null;
+};
+
+export async function listCreditLiabilities(householdId: string): Promise<CreditLiability[]> {
+  if (!isPlaidConfigured()) return [];
+  const items = await db.select().from(plaidItems).where(eq(plaidItems.coupleId, householdId));
+  const plaid = getPlaidClient();
+  if (!plaid || items.length === 0) return [];
+  const out: CreditLiability[] = [];
+  for (const item of items) {
+    try {
+      const resp = await plaid.liabilitiesGet({ access_token: decryptSecret(item.accessToken) });
+      for (const card of resp.data.liabilities?.credit ?? []) {
+        const acct = resp.data.accounts.find((a) => a.account_id === card.account_id);
+        const balance = acct?.balances?.current ?? card.last_statement_balance ?? 0;
+        if (!balance || balance <= 0) continue;
+        const apr = (card.aprs ?? []).find((a) => a.apr_type === "purchase_apr") ?? (card.aprs ?? [])[0];
+        out.push({
+          accountId: card.account_id ?? acct?.account_id ?? `${item.id}:${out.length}`,
+          name: acct?.official_name || acct?.name || "Credit card",
+          balance: Math.round(balance),
+          limit: acct?.balances?.limit ?? null,
+          minimumPayment: card.minimum_payment_amount ?? null,
+          aprPercent: apr?.apr_percentage ?? null,
+        });
+      }
+    } catch (err) {
+      console.warn(`[liabilities] liabilitiesGet failed for item ${item.id}:`, err);
+    }
+  }
+  return out.sort((a, b) => b.balance - a.balance);
+}
