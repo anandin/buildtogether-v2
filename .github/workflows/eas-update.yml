@@ -46,40 +46,56 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # One job per GitHub environment the token might live in. A job can
+  # only bind to one environment, and the token is only visible inside
+  # the environment that holds it — so we try the likely names and let
+  # whichever finds it publish. If both do, both publish the same bundle;
+  # harmless. Repository-level secrets are visible to every job.
   publish:
+    strategy:
+      fail-fast: false
+      matrix:
+        gh_env: [prod, production]
     runs-on: ubuntu-latest
-    # Bound to the "prod" deployment environment so an environment-scoped
-    # EXPO_TOKEN is visible here. Repository-level secrets are visible
-    # regardless; if the environment doesn't exist GitHub creates it.
-    environment: prod
+    environment: ${{ matrix.gh_env }}
     timeout-minutes: 15
+    env:
+      # Accept the common misnamings too — the value is the same secret.
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN || secrets.EXPO_ACCESS_TOKEN || secrets.EAS_TOKEN || secrets.EXPOTOKEN }}
     steps:
+      - name: Report what this job can see (names only, never values)
+        env:
+          VARS_JSON: ${{ toJSON(vars) }}
+        run: |
+          echo "GitHub environment bound: ${{ matrix.gh_env }}"
+          echo "EXPO_TOKEN resolved: $([ -n "$EXPO_TOKEN" ] && echo yes\ \(${#EXPO_TOKEN} chars\) || echo NO)"
+          echo "Checked secret names: EXPO_TOKEN, EXPO_ACCESS_TOKEN, EAS_TOKEN, EXPOTOKEN"
+          echo "Repository/environment VARIABLES visible (not secrets): $(echo "$VARS_JSON" | tr -d '\n' | head -c 400)"
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::warning title=No token in environment '${{ matrix.gh_env }}'::Nothing named EXPO_TOKEN / EXPO_ACCESS_TOKEN / EAS_TOKEN / EXPOTOKEN is visible here. If you added it under Settings → Secrets and variables → Actions, make sure it is on the SECRETS tab (not Variables) and at Repository level. If it is on an Environment, its name must be 'prod' or 'production'."
+          fi
       - uses: actions/checkout@v4
+        if: env.EXPO_TOKEN != ''
       - uses: pnpm/action-setup@v4
+        if: env.EXPO_TOKEN != ''
         with:
           version: 10
       - uses: actions/setup-node@v4
+        if: env.EXPO_TOKEN != ''
         with:
           node-version: 22
           cache: pnpm
       - uses: expo/expo-github-action@v8
+        if: env.EXPO_TOKEN != ''
         with:
           eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+          token: ${{ env.EXPO_TOKEN }}
       - run: pnpm install --frozen-lockfile
-      - name: Check EXPO_TOKEN is present
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          if [ -z "$EXPO_TOKEN" ]; then
-            echo "::error title=EXPO_TOKEN not found::This job reads secrets from the repository (Settings → Secrets and variables → Actions → Repository secrets) and from the GitHub environment named 'prod' (Settings → Environments). Neither has EXPO_TOKEN. Vercel environment variables are NOT visible here. Add it as a Repository secret named exactly EXPO_TOKEN, then re-run this workflow."
-            exit 1
-          fi
-          echo "EXPO_TOKEN present (${#EXPO_TOKEN} chars)"
+        if: env.EXPO_TOKEN != ''
       - name: Publish update
+        if: env.EXPO_TOKEN != ''
         working-directory: artifacts/buildtogether
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EAS_BRANCH: ${{ github.event.inputs.eas_branch || 'production' }}
           MSG: ${{ github.event.inputs.message }}
         run: |
@@ -87,3 +103,8 @@ jobs:
             --branch "$EAS_BRANCH" \
             --message "${MSG:-${GITHUB_REF_NAME}@${GITHUB_SHA::7}}" \
             --non-interactive
+      - name: Fail if no job could publish
+        if: env.EXPO_TOKEN == ''
+        run: |
+          echo "::error title=EXPO_TOKEN not found in '${{ matrix.gh_env }}'::See the report step above for what was checked."
+          exit 1
