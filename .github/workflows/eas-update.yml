@@ -10,8 +10,9 @@ name: EAS Update (over-the-air)
 #   preview, or production). This is how a feature branch reaches a
 #   phone before it's merged.
 #
-# Needs ONE repository secret: EXPO_TOKEN (an Expo access token from
-# expo.dev → Account settings → Access tokens). The token never appears
+# Needs ONE secret, EXPO_TOKEN — either a repository secret or a secret
+# on the "prod" environment (an Expo access token from expo.dev →
+# Account settings → Access tokens). The token never appears
 # in chat, in logs, or in a sandbox — only GitHub holds it, and it can
 # be revoked from the same page.
 #
@@ -41,6 +42,10 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # Bound to the "prod" deployment environment so an environment-scoped
+    # EXPO_TOKEN is visible here. Repository-level secrets are visible
+    # regardless; if the environment doesn't exist GitHub creates it.
+    environment: prod
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
