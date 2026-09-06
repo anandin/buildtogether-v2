@@ -39,6 +39,12 @@ on:
         required: false
         default: ""
 
+# Only one publish at a time per channel; a newer push supersedes a
+# queued older one rather than racing it to the phone.
+concurrency:
+  group: eas-update-${{ github.event.inputs.eas_branch || 'production' }}
+  cancel-in-progress: true
+
 jobs:
   publish:
     runs-on: ubuntu-latest
