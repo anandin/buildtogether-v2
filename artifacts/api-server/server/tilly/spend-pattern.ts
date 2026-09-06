@@ -628,7 +628,10 @@ export async function buildWeeklyPattern(
   const windowSuffix = usingRolling7 ? " (last 7 days)" : "";
   if (top) {
     italicSpan = FULL_DAY_NAMES[top.dayIdx];
-    headline = `$${Math.round(totalSpent)} spent${windowSuffix}. ${italicSpan} are still your soft spot.`;
+    // "are still your soft spot" read as a verdict ("I've been watching
+    // you fail") — the word "still" did most of the damage. Same data,
+    // stated as fact rather than judgment.
+    headline = `$${Math.round(totalSpent)} spent${windowSuffix}. ${italicSpan} run heaviest.`;
   } else {
     headline = `$${Math.round(totalSpent)} spent${windowSuffix}. No surprises this week.`;
   }

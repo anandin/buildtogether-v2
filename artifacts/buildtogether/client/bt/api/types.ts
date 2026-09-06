@@ -125,7 +125,55 @@ export type TodayBrief =
          * Empty array when no detectors fired. */
         observations?: Array<{ kind: string; [k: string]: unknown }>;
       } | null;
+      /** Confidence in the income denominator, plus anything the user
+       * still has to decide about it. When
+       * `confidence.blocksSurplusClaims` is true the screen must NOT
+       * render surplus / room / affordability copy of its own — the
+       * number behind it is unverified in both directions. Render the
+       * review card instead. Optional so older API responses parse. */
+      incomeReview?: IncomeReview | null;
     };
+
+/** Phase 0, commitment-layer PRD. Two error directions: inflow that
+ * should be income but is bucketed elsewhere (`candidates`), and large
+ * deposits held out of the total pending confirmation
+ * (`quarantinedDeposits`). Both make every downstream surplus number
+ * wrong, so both are surfaced for one-tap resolution. */
+export type IncomeReview = {
+  confidence: {
+    level: "high" | "medium" | "low";
+    countedMonthly: number;
+    unreviewedMonthly: number;
+    quarantinedMonthly: number;
+    unreviewedShare: number;
+    quarantinedShare: number;
+    /** Most severe first. Safe to display. */
+    reasons: string[];
+    blocksSurplusClaims: boolean;
+  };
+  source: "plaid" | "plaid-estimate" | "self-report" | "none";
+  candidates: Array<{
+    merchant: string;
+    currentCategory: string;
+    occurrences: number;
+    avgAmount: number;
+    estMonthly: number;
+    lastSeenDate: string;
+  }>;
+  quarantinedDeposits: Array<{
+    merchant: string | null;
+    amount: number;
+    date: string;
+  }>;
+  /** True when there is nothing for the user to decide. */
+  clean: boolean;
+};
+
+export type IncomeDecisionAction =
+  | "confirm_income"
+  | "not_income"
+  | "confirm_deposit"
+  | "deposit_is_transfer";
 
 export type TillyQuestion = {
   id: string;
@@ -433,7 +481,76 @@ export type Dream = {
   due: string;
   gradient: [string, string];
   nudge: string;
+  /** Honesty split (PRD F3). `earmarked` = set aside in the app's
+   * ledger, nothing left the bank; `moved` = the user says it moved.
+   * Copy must never say "saved" about an earmark. Optional so older
+   * API responses keep parsing. */
+  earmarked?: number;
+  moved?: number;
+  /** Standing per-payday sweep the user consented to, if any. */
+  commitment?: SweepCommitment | null;
 };
+
+export type SweepCommitment = {
+  id: string;
+  kind?: string;
+  goalId?: string | null;
+  goalName?: string | null;
+  amount: number;
+  cadence?: string;
+  status: "active" | "paused" | "ended" | string;
+  consentedAt?: string;
+  /** The escalation rule the user consented to, if any (PRD F4). */
+  escalation?: { rate: number; ceiling: number | null; lastAppliedPaycheck: number | null } | null;
+};
+
+export type AllocationOption =
+  | {
+      kind: "goal";
+      goalId: string;
+      name: string;
+      amount: number;
+      remainingToTarget: number;
+      paydaysToTarget: number;
+      paydaysSooner: number;
+      currentPerPayday: number;
+    }
+  | {
+      kind: "liability";
+      accountId: string;
+      name: string;
+      balance: number;
+      amount: number;
+      paydaysToClear: number;
+      clearBy: string | null;
+      currentPerPayday: number;
+    }
+  | { kind: "liquid"; amount: 0 };
+
+/** GET /api/tilly/payday-allocation — the live choice for this cycle. */
+export type PaydayAllocationResponse =
+  | { active: false; reason: string }
+  | {
+      active: true;
+      paydayDate: string;
+      cycleEndIso: string;
+      /** When true the server has already emptied `options` — render
+       * the income review instead of an allocation. */
+      incomeBlocked: boolean;
+      allocation: {
+        paycheckAmount: number;
+        paydayDate: string;
+        nextPaydayDate: string | null;
+        cycleDays: number;
+        billsDue: Array<{ merchant: string; amount: number; date: string }>;
+        billsTotal: number;
+        expectedVariable: number;
+        trulyFree: number;
+        options: AllocationOption[];
+      };
+      commitments: SweepCommitment[];
+      trailingMedianPaycheck?: number;
+    };
 export type DreamsList =
   | StubEnvelope
   | { ready: true; dreams: Dream[]; yearSaved: number; perDay: number };

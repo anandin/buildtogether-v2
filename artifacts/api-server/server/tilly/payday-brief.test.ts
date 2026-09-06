@@ -146,3 +146,129 @@ describe("templatePushBody — the LLM-down fallback", () => {
     expect(body.toLowerCase()).not.toContain("tap to see");
   });
 });
+
+// ── Phase 2: the live choice + what the commitment layer did ─────────
+
+import { sweepsLine } from "./payday-brief";
+
+describe("computePaydayAllocation — options (PRD F1)", () => {
+  const input = {
+    paycheckAmount: 6745,
+    paydayDate: "2026-08-06",
+    cadence: "biweekly" as const,
+    billsDue: [{ merchant: "Rent", amount: 2400, date: "2026-08-10" }],
+    dailyPace: 100, // ×14 = 1400 → trulyFree = 6745 − 2400 − 1400 = 2945
+    dream: null,
+    goals: [
+      { id: "g1", name: "Japan trip", targetAmount: 5000, savedAmount: 1000, currentPerPayday: 0 },
+      { id: "g2", name: "Emergency", targetAmount: 3000, savedAmount: 2900, currentPerPayday: 100 },
+      { id: "g3", name: "Done already", targetAmount: 500, savedAmount: 500 },
+    ],
+  };
+
+  it("offers one option per goal with room, plus 'leave it liquid'", () => {
+    const a = computePaydayAllocation(input);
+    expect(a.trulyFree).toBe(2945);
+    const kinds = a.options.map((o) => o.kind);
+    expect(kinds).toEqual(["goal", "goal", "liquid"]);
+    expect(a.options.some((o) => o.kind === "goal" && o.goalId === "g3")).toBe(false);
+  });
+
+  it("sizes each option at 10% in $25 steps, capped at what's left", () => {
+    const a = computePaydayAllocation(input);
+    const japan = a.options.find((o) => o.kind === "goal" && o.goalId === "g1");
+    const emerg = a.options.find((o) => o.kind === "goal" && o.goalId === "g2");
+    // 10% of 2945 = 294.5 → $275.
+    expect(japan && japan.kind === "goal" ? japan.amount : 0).toBe(275);
+    // Emergency has $100 left → capped.
+    expect(emerg && emerg.kind === "goal" ? emerg.amount : 0).toBe(100);
+  });
+
+  it("carries a consequence: paydays to target, and how many sooner than today's pace", () => {
+    const a = computePaydayAllocation(input);
+    const japan = a.options.find((o) => o.kind === "goal" && o.goalId === "g1");
+    if (!japan || japan.kind !== "goal") throw new Error("missing");
+    expect(japan.paydaysToTarget).toBe(Math.ceil(4000 / 275));
+    expect(japan.paydaysSooner).toBe(0); // no current commitment → nothing to compare
+    const emerg = a.options.find((o) => o.kind === "goal" && o.goalId === "g2");
+    if (!emerg || emerg.kind !== "goal") throw new Error("missing");
+    expect(emerg.currentPerPayday).toBe(100);
+  });
+
+  it("offers nothing on a thin cycle — no token asks", () => {
+    const a = computePaydayAllocation({ ...input, dailyPace: 300 }); // trulyFree = 145 ≥ 100 but 10% → $0 steps
+    expect(a.options.filter((o) => o.kind === "goal").every((o) => o.kind === "goal" && o.amount >= 25)).toBe(true);
+    const thin = computePaydayAllocation({ ...input, dailyPace: 320 }); // trulyFree = −135
+    expect(thin.options).toEqual([]);
+  });
+
+  it("never lists a liability — none are ingested, and a fake one is invented abundance", () => {
+    const a = computePaydayAllocation(input);
+    expect(a.options.every((o) => o.kind === "goal" || o.kind === "liquid")).toBe(true);
+  });
+});
+
+describe("sweepsLine — what happened, in the app's own honest verb", () => {
+  it("says 'set aside', never 'saved' or 'moved'", () => {
+    const line = sweepsLine([{ goalName: "Japan trip", amount: 250 }], []);
+    expect(line).toBe("Set aside $250 for Japan trip, as agreed.");
+    expect(line).not.toMatch(/\bsaved\b|\bmoved\b/i);
+  });
+  it("lists several sweeps naturally", () => {
+    expect(sweepsLine([{ goalName: "Japan", amount: 250 }, { goalName: "Emergency", amount: 100 }], [])).toBe(
+      "Set aside $250 for Japan and $100 for Emergency, as agreed.",
+    );
+  });
+  it("thin cycle: names the skip, keeps the commitment, no verdict", () => {
+    const line = sweepsLine([], [{ reason: "no_room" }]);
+    expect(line).toMatch(/picks back up next paycheque/);
+    expect(line).not.toMatch(/\bstill\b|overspent|too much/i);
+  });
+  it("silent when nothing ran and nothing was skipped for room", () => {
+    expect(sweepsLine([], [])).toBe("");
+    expect(sweepsLine([], [{ reason: "already_done" }])).toBe("");
+  });
+});
+
+describe("computePaydayAllocation — liability forks (open item 6)", () => {
+  it("offers a paydown fork with a real balance and a clear-by date", () => {
+    const a = computePaydayAllocation({
+      paycheckAmount: 6745,
+      paydayDate: "2026-08-06",
+      cadence: "biweekly",
+      billsDue: [],
+      dailyPace: 100, // trulyFree = 6745 − 1400 = 5345 → 10% = $525
+      dream: null,
+      goals: [],
+      liabilities: [{ accountId: "acc1", name: "TD Visa", balance: 4302 }],
+    });
+    const visa = a.options.find((o) => o.kind === "liability");
+    if (!visa || visa.kind !== "liability") throw new Error("missing liability option");
+    expect(visa.amount).toBe(525);
+    expect(visa.paydaysToClear).toBe(Math.ceil(4302 / 525)); // 9
+    expect(visa.clearBy).toBe(addDaysIso("2026-08-06", 14 * 9));
+    expect(a.options[a.options.length - 1].kind).toBe("liquid");
+  });
+
+  it("skips a zero balance — nothing to pay down is not a fork", () => {
+    const a = computePaydayAllocation({
+      paycheckAmount: 6745, paydayDate: "2026-08-06", cadence: "biweekly", billsDue: [], dailyPace: 100, dream: null,
+      goals: [], liabilities: [{ accountId: "acc1", name: "Paid card", balance: 0 }],
+    });
+    expect(a.options).toEqual([]);
+  });
+});
+
+describe("sweepsLine — escalation notice", () => {
+  it("names the rule acting, the old and new amount, and the undo", () => {
+    const line = sweepsLine(
+      [{ goalName: "Japan trip", amount: 350 }],
+      [],
+      [{ goalName: "Japan trip", from: 250, to: 350, paycheckDelta: 400 }],
+    );
+    expect(line).toMatch(/up \$400/);
+    expect(line).toMatch(/now \$350 \(was \$250\)/);
+    expect(line).toMatch(/undoes it/);
+    expect(line).toMatch(/Set aside \$350 for Japan trip, as agreed\.$/);
+  });
+});

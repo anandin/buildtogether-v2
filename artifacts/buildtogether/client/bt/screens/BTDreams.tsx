@@ -706,6 +706,14 @@ function DreamPortrait({
             {pct}%
           </BTChip>
         </View>
+        {(d.earmarked ?? 0) > 0 ? (
+          // The honesty split (PRD F3): an earmark is Tilly's ledger, not
+          // the bank's. Never call it "saved".
+          <Text style={{ color: t.inkMute, fontFamily: BTFonts.sans, fontSize: 11, marginTop: -8 }}>
+            ${Math.round(d.earmarked ?? 0).toLocaleString()} set aside in Tilly
+            {(d.moved ?? 0) > 0 ? ` · $${Math.round(d.moved ?? 0).toLocaleString()} moved by you` : " · nothing moved yet"}
+          </Text>
+        ) : null}
 
         {/* Milestone track */}
         <View style={{ position: "relative", height: 18, justifyContent: "center" }}>
@@ -771,7 +779,11 @@ function DreamPortrait({
         {/* Footer */}
         <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
           <Text style={{ color: t.inkSoft, fontFamily: BTFonts.sans, fontSize: 12 }}>
-            +${d.weekly}/wk auto
+            {d.commitment && d.commitment.status !== "ended"
+              ? `+$${d.commitment.amount} every payday${d.commitment.status === "paused" ? " · paused" : ""}`
+              : d.weekly > 0
+                ? `+$${d.weekly} every payday`
+                : "nothing automatic yet"}
           </Text>
           <Text
             style={{

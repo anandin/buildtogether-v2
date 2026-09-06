@@ -8,6 +8,7 @@
 import { z } from "zod";
 
 import { getLLM } from "./llm/factory";
+import type { IncomeConfidence } from "./income-review";
 import { buildSystemPrompts } from "./persona";
 import type { BTToneKey } from "./tone";
 
@@ -95,6 +96,9 @@ export type DailyBriefInput = {
    * narrative is anchored on these so it stops sounding generic and
    * actually reflects what's known about the user's patterns. */
   forwardLook?: ForwardLookSnapshot | null;
+  /** Verdict on the income denominator. When this blocks, the hero may
+   * not assert surplus/room/affordability — see the income guard below. */
+  incomeConfidence?: IncomeConfidence | null;
 };
 
 const PhrasingSchema = z.object({
@@ -185,7 +189,7 @@ ${JSON.stringify(
   const userContent = `Compose the home-screen phrasing for ${input.name} right now.
 
 Time: ${input.now} (use "${dayLabel(input.now)}" as the day label context).
-Tone: ${input.tone}.
+Tone: ${input.tone}.${incomeGuardContext(input.incomeConfidence)}
 
 The student's numbers (already computed — DO NOT recompute, just reference accurately):
 - monthly surplus (income − spent − committed): $${input.numbers.breathing.toFixed(0)}
@@ -247,6 +251,22 @@ Return four fields:
     }
   }
 
+  // Income guard — the abundance denominator. Instructions alone are not
+  // a guarantee (same lesson as the fabrication guard above), so the
+  // claim is checked after generation and degraded deterministically.
+  // A missing abundance claim costs far less trust than a false one.
+  if (input.incomeConfidence?.blocksSurplusClaims && !briefRespectsIncomeGuard(phrasing)) {
+    console.warn(
+      `[daily-brief] surplus claim on unverified income (user ${input.userId}) — degrading to the income question`,
+    );
+    phrasing = {
+      greeting: phrasing.greeting ?? `Hey ${input.name}.`,
+      bodyLine: "*Some of your income isn't counted yet* — I'd rather check than guess at what's spare.",
+      tillyInvite: "Want to sort out which deposits are actually income?",
+      heroNarrative: "",
+    };
+  }
+
   return {
     greeting: phrasing.greeting,
     dayLabel: dayLabel(input.now),
@@ -258,6 +278,62 @@ Return four fields:
     tillyInvite: phrasing.tillyInvite,
     heroNarrative: phrasing.heroNarrative || undefined,
   };
+}
+
+// ── Income guard helpers (pure, unit-tested) ─────────────────────────
+//
+// Phase 0 of the commitment-layer PRD. Every "you have room" claim is an
+// underwritten guarantee — true only if the income side is right. The
+// 2026-05-16 audit found the live account projecting off ~$6,745/mo
+// against a real ~$15k+, so the hero was confidently wrong in the doom
+// direction. Until the denominator is user-verified, the hero asks
+// instead of asserting.
+
+/** Phrases that assert spare capacity. Deliberately narrow — this
+ * suppresses copy, so a false positive costs a useful sentence. */
+const SURPLUS_CLAIM_PATTERNS: RegExp[] = [
+  /\bsurplus\b/i,
+  /\bbreathing room\b/i,
+  /\broom (?:for|to|left)\b/i,
+  /\byou can afford\b/i,
+  /\bcan comfortably\b/i,
+  /\b(?:left ?over|leftover)\b/i,
+  /\bto spare\b/i,
+  /\bspare cash\b/i,
+  /\bfree to spend\b/i,
+  /\byou'?ve earned\b/i,
+  /\btreat yourself\b/i,
+  /\bgo (?:ahead|enjoy)\b/i,
+  /\bplenty\b/i,
+];
+
+/** True when the text asserts spare capacity. */
+export function assertsSurplus(text: string): boolean {
+  return SURPLUS_CLAIM_PATTERNS.some((re) => re.test(text));
+}
+
+/** True when no generated field claims surplus. Checked only when the
+ * income confidence verdict blocks; see `assessIncomeConfidence`. */
+export function briefRespectsIncomeGuard(phrasing: {
+  bodyLine?: string;
+  heroNarrative?: string;
+  tillyInvite?: string;
+}): boolean {
+  return ![phrasing.bodyLine, phrasing.heroNarrative, phrasing.tillyInvite]
+    .filter((s): s is string => typeof s === "string" && s.length > 0)
+    .some(assertsSurplus);
+}
+
+/** Prompt-side half of the guard. Empty string when income is trusted. */
+export function incomeGuardContext(confidence?: IncomeConfidence | null): string {
+  if (!confidence?.blocksSurplusClaims) return "";
+  return `
+
+INCOME IS NOT VERIFIED — HARD CONSTRAINT. ${confidence.reasons.join(" ")}
+The surplus figure below is therefore unreliable in BOTH directions and may be badly wrong.
+- Do NOT say the user has surplus, breathing room, room for anything, spare cash, or that they can afford / have earned something.
+- Do NOT reassure them that they are fine, and do NOT warn them that they are short. Both are guesses right now.
+- DO name, plainly and without blame, that some income isn't counted yet, and invite them to sort it out. That is the single most useful thing you can say today.`;
 }
 
 // ── Fabrication guard helpers (pure, unit-tested) ───────────────────

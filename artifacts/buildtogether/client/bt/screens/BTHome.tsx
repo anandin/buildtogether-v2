@@ -45,6 +45,8 @@ import { btApi } from "../api/client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Text } from "react-native";
 import { ShouldIBuyTile } from "../ShouldIBuyTile";
+import { IncomeReviewCard } from "../IncomeReviewCard";
+import { PaydayAllocationCard } from "../PaydayAllocationCard";
 import { useTilly } from "../hooks/useTilly";
 
 type Props = { onNav?: (route: BTRoute) => void };
@@ -418,6 +420,23 @@ export function BTHome({ onNav }: Props) {
             </Text>
           </BTCard>
         )}
+
+        {/* Income check — sits directly under the hero because it
+            explains the hero. When income is unverified the server
+            suppresses the surplus copy above, and this card is what
+            replaces it: the one thing the user can do today that makes
+            every other number on this screen trustworthy. Renders
+            nothing when there's nothing to decide. */}
+        {!isFirstLoad ? (
+          <IncomeReviewCard review={today_?.incomeReview} />
+        ) : null}
+
+        {/* Payday allocation — the live choice (PRD §5). Same slot family
+            as the income check because it's the same conversation: once
+            the denominator is trusted, here's what's free and where it
+            could point. Self-hides when income is unverified, when no
+            paycheque landed this cycle, or once a commitment stands. */}
+        {!isFirstLoad ? <PaydayAllocationCard /> : null}
 
         {/* Sprint A — habit hook. Lives above the week strip, just
             below the hero/breathing-room card, because this is the

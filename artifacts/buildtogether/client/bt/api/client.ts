@@ -27,6 +27,10 @@ import type {
   PlaidPendingTransaction,
   PendingGroup,
   TillyQuestion,
+  IncomeReview,
+  IncomeDecisionAction,
+  PaydayAllocationResponse,
+  SweepCommitment,
 } from "./types";
 import type { BTToneKey } from "../tones";
 
@@ -65,6 +69,20 @@ async function putJson<T>(route: string, body?: unknown): Promise<T> {
 export const btApi = {
   // ── Tilly insights ───────────────────────────────────────────────────────
   today: () => getJson<TodayBrief>("/api/tilly/today"),
+  // Income review — Phase 0 of the commitment layer. Every surplus claim
+  // rests on the income denominator, so the user gets a one-tap way to
+  // fix it instead of having to raise it in chat.
+  incomeReview: () => getJson<IncomeReview>("/api/tilly/income-review"),
+  decideIncome: (vars: {
+    action: IncomeDecisionAction;
+    sourceName: string;
+    date?: string;
+    amount?: number;
+  }) =>
+    postJson<{ ok: boolean; result: unknown; review: IncomeReview }>(
+      "/api/tilly/income-review/decide",
+      vars,
+    ),
   spendPattern: (range: "week" | "month" | "year" = "week", offset: number = 0) =>
     getJson<SpendPattern>(
       `/api/tilly/spend-pattern?range=${range}${offset !== 0 ? `&offset=${offset}` : ""}`,
@@ -158,6 +176,23 @@ export const btApi = {
 
   // ── Dreams ──────────────────────────────────────────────────────────────
   dreams: () => getJson<DreamsList>("/api/dreams"),
+  // Commitment layer (PRD F1/F2) — the payday choice and what it creates.
+  paydayAllocation: () => getJson<PaydayAllocationResponse>("/api/tilly/payday-allocation"),
+  commitments: () => getJson<{ commitments: SweepCommitment[] }>("/api/tilly/commitments"),
+  createCommitment: (body: {
+    goalId?: string;
+    liability?: { accountId: string; name: string; balance: number };
+    amount: number;
+    consentFrame?: string;
+    escalate?: boolean;
+  }) => postJson<{ commitment: SweepCommitment }>("/api/tilly/commitments", body),
+  updateCommitment: async (
+    id: string,
+    body: { status?: "active" | "paused" | "ended"; amount?: number; escalation?: null },
+  ) => {
+    const res = await apiRequest("PATCH", `/api/tilly/commitments/${id}`, body);
+    return (await res.json()) as { commitment: SweepCommitment };
+  },
   createDream: (body: {
     name: string;
     target: number;

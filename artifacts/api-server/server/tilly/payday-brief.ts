@@ -47,8 +47,12 @@ import {
   inferCadence,
   readIncomeRows,
   splitAnomalousIncome,
+  medianIncomeAmount,
 } from "./income-summary";
 import { bucketFor, loadUserOverrides } from "./taxonomy";
+import { executeSweepsForPayday, listActiveCommitments } from "./commitments";
+import { listCreditLiabilities } from "./credit-snapshot";
+import { narrateWeek } from "./week-narrator";
 import { getUserTimezone, localDateString, localDaysAgoIso } from "./user-tz";
 import { sendExpoPush } from "./expo-push";
 import { recordNudgeSent } from "./nudge-log";
@@ -75,7 +79,46 @@ export type PaydayAllocation = {
   trulyFree: number;
   /** Concrete sweep suggestion, or null when there's no room / no dream. */
   dreamSuggestion: { goalId: string; name: string; amount: number } | null;
+  /**
+   * The live choice (PRD F1): where the truly-free money could point.
+   * One row per goal with something left to fund, plus `liquid`. Each
+   * carries a consequence delta so it reads as a choice, not a mood.
+   * Empty when trulyFree is below the claim floor — no offer on a thin
+   * cycle. Liabilities are NOT listed: Plaid liabilities aren't
+   * ingested yet (open item in the PRD), and a fake "Visa" option would
+   * be exactly the kind of invented abundance this product forbids.
+   */
+  options: AllocationOption[];
 };
+
+export type AllocationOption =
+  | {
+      kind: "goal";
+      goalId: string;
+      name: string;
+      /** Suggested per-payday sweep. */
+      amount: number;
+      remainingToTarget: number;
+      /** "done in N paydays" at the suggested amount. */
+      paydaysToTarget: number;
+      /** Paydays saved vs. the user's current standing commitment (0 if none). */
+      paydaysSooner: number;
+      /** Existing active sweep amount for this goal, if any. */
+      currentPerPayday: number;
+    }
+  | {
+      kind: "liability";
+      accountId: string;
+      name: string;
+      balance: number;
+      /** Suggested per-payday paydown. */
+      amount: number;
+      paydaysToClear: number;
+      /** YYYY-MM-DD projected from cadence. Null when cadence unknown. */
+      clearBy: string | null;
+      currentPerPayday: number;
+    }
+  | { kind: "liquid"; amount: 0 };
 
 export function addDaysIso(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map((n) => parseInt(n, 10));
@@ -96,6 +139,18 @@ export function computePaydayAllocation(input: {
   /** Trailing daily variable spend (dollars/day). */
   dailyPace: number;
   dream: { id: string; name: string; targetAmount: number; savedAmount: number } | null;
+  /** All goals with room, for the options list. Optional for callers
+   * that only need the ledger numbers. */
+  goals?: Array<{
+    id: string;
+    name: string;
+    targetAmount: number;
+    savedAmount: number;
+    /** Active sweep amount already committed per payday, if any. */
+    currentPerPayday?: number;
+  }>;
+  /** Credit balances from Plaid liabilities — real numbers only. */
+  liabilities?: Array<{ accountId: string; name: string; balance: number; currentPerPayday?: number }>;
 }): PaydayAllocation {
   const step = cadenceStepDays(input.cadence);
   const nextPaydayDate = step ? addDaysIso(input.paydayDate, step) : null;
@@ -122,6 +177,54 @@ export function computePaydayAllocation(input: {
     }
   }
 
+  // Options — the same 10% / $25-step sizing as the sweep suggestion,
+  // per goal. Suggested amount never exceeds what the goal still needs.
+  const options: AllocationOption[] = [];
+  if (trulyFree >= 100) {
+    const tenPercent = Math.floor((trulyFree * 0.1) / 25) * 25;
+    for (const g of input.goals ?? []) {
+      const remaining = Math.max(0, Math.round(g.targetAmount - g.savedAmount));
+      if (remaining <= 0) continue;
+      const amount = Math.min(Math.max(25, tenPercent), remaining);
+      if (amount < 25) continue;
+      const current = Math.round(g.currentPerPayday ?? 0);
+      const withSuggested = Math.ceil(remaining / amount);
+      const withCurrent = current > 0 ? Math.ceil(remaining / current) : null;
+      options.push({
+        kind: "goal",
+        goalId: g.id,
+        name: g.name,
+        amount,
+        remainingToTarget: remaining,
+        paydaysToTarget: withSuggested,
+        paydaysSooner: withCurrent === null ? 0 : Math.max(0, withCurrent - withSuggested),
+        currentPerPayday: current,
+      });
+    }
+    // Debt paydown forks — the "paid-off jar" as a live choice. The
+    // suggested amount is the same 10% slice; the consequence is a date.
+    for (const l of input.liabilities ?? []) {
+      const balance = Math.round(l.balance);
+      if (balance <= 0) continue;
+      const amount = Math.min(Math.max(25, tenPercent), balance);
+      if (amount < 25) continue;
+      const paydaysToClear = Math.ceil(balance / amount);
+      options.push({
+        kind: "liability",
+        accountId: l.accountId,
+        name: l.name,
+        balance,
+        amount,
+        paydaysToClear,
+        clearBy: step ? addDaysIso(input.paydayDate, step * paydaysToClear) : null,
+        currentPerPayday: Math.round(l.currentPerPayday ?? 0),
+      });
+    }
+    // "Leave it liquid" is a first-class option — the choice must be
+    // genuine for the autonomy effect to exist at all.
+    if (options.length > 0) options.push({ kind: "liquid", amount: 0 });
+  }
+
   return {
     paycheckAmount: Math.round(input.paycheckAmount * 100) / 100,
     paydayDate: input.paydayDate,
@@ -132,6 +235,7 @@ export function computePaydayAllocation(input: {
     expectedVariable,
     trulyFree,
     dreamSuggestion,
+    options,
   };
 }
 
@@ -145,6 +249,32 @@ export function templatePushBody(a: PaydayAllocation): string {
     return `Paycheck landed: $${Math.round(a.paycheckAmount).toLocaleString()}. ~$${(a.billsTotal + a.expectedVariable).toLocaleString()} is spoken for${nextBit} — about $${free.toLocaleString()} is truly yours.`;
   }
   return `Paycheck landed: $${Math.round(a.paycheckAmount).toLocaleString()}. Heads up — bills + your usual pace run ~$${Math.abs(free).toLocaleString()} past it${nextBit}. Worth a look together.`;
+}
+
+/** What the commitment layer did this payday, in one sentence. Pure.
+ * Empty when nothing ran and nothing was skipped for lack of room. */
+export function sweepsLine(
+  executed: Array<{ goalName: string; amount: number }>,
+  skipped: Array<{ reason: string }>,
+  escalated: Array<{ goalName: string; from: number; to: number; paycheckDelta: number }> = [],
+): string {
+  // Escalation notice comes first: the rule the user consented to just
+  // acted on its own, so it's named before the amount it changed.
+  const raise = escalated[0]
+    ? `Your paycheque is up $${escalated[0].paycheckDelta.toLocaleString()} since we set this up, so the ${escalated[0].goalName} set-aside is now $${escalated[0].to.toLocaleString()} (was $${escalated[0].from.toLocaleString()}) — a quarter of the raise, as you asked. One tap on Home undoes it. `
+    : "";
+  if (executed.length > 0) {
+    const parts = executed.map((e) => `$${e.amount.toLocaleString()} for ${e.goalName}`);
+    const list =
+      parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+    return `${raise}Set aside ${list}, as agreed.`;
+  }
+  if (raise) return raise.trim();
+  if (skipped.some((s) => s.reason === "no_room")) {
+    // Setback protocol: name it, keep the commitment intact, no verdict.
+    return "Thin cycle, so I held off on the usual set-aside — it picks back up next paycheque.";
+  }
+  return "";
 }
 
 // ── LLM phrasing ─────────────────────────────────────────────────────
@@ -285,7 +415,7 @@ async function resolveOwner(householdId: string): Promise<string | null> {
 
 /** Trailing-28d variable daily pace, honouring the user's taxonomy
  * overrides — same bucketing computeMonthFlow uses. */
-async function trailingVariablePace(
+export async function trailingVariablePace(
   userId: string,
   householdId: string,
   now: Date,
@@ -440,6 +570,17 @@ export async function runPaydayPulseForHousehold(
       }
     : null;
 
+  const allGoals = await db.select().from(goals).where(eq(goals.coupleId, householdId)).limit(20);
+  const activeSweeps = (await listActiveCommitments(householdId)).filter(
+    (c) => c.status === "active" && c.kind === "sweep",
+  );
+  let liabilities: Awaited<ReturnType<typeof listCreditLiabilities>> = [];
+  try {
+    liabilities = await listCreditLiabilities(householdId);
+  } catch (err) {
+    console.warn("[payday-pulse] liabilities unavailable (non-fatal):", err);
+  }
+  const debtGoalFor = (accountId: string) => allGoals.find((g) => g.liabilityRef === accountId);
   const allocation = computePaydayAllocation({
     paycheckAmount: Math.abs(landed.amount),
     paydayDate: landed.date,
@@ -447,7 +588,36 @@ export async function runPaydayPulseForHousehold(
     billsDue,
     dailyPace,
     dream,
+    goals: allGoals.map((g) => ({
+      id: g.id,
+      name: g.name,
+      targetAmount: g.targetAmount,
+      savedAmount: g.savedAmount,
+      currentPerPayday: activeSweeps.find((c) => c.targetGoalId === g.id)?.amount ?? 0,
+    })),
+    liabilities: liabilities.map((l) => ({
+      accountId: l.accountId,
+      name: l.name,
+      balance: l.balance,
+      currentPerPayday: activeSweeps.find((c) => c.targetGoalId === debtGoalFor(l.accountId)?.id)?.amount ?? 0,
+    })),
   });
+
+  // The outcome layer: standing commitments execute on the paycheque,
+  // before any copy is written, so the pulse reports what HAPPENED
+  // ("set aside $250 for Japan, as agreed") rather than asking again.
+  // Skips, not pauses, on a thin cycle — see commitments.ts.
+  let sweeps: Awaited<ReturnType<typeof executeSweepsForPayday>> = { executed: [], skipped: [], escalated: [] };
+  try {
+    sweeps = await executeSweepsForPayday({
+      householdId,
+      paydayDate: landed.date,
+      trulyFree: allocation.trulyFree,
+      trailingMedianPaycheck: medianIncomeAmount(typical),
+    });
+  } catch (err) {
+    console.warn("[payday-pulse] sweep execution failed (non-fatal):", err);
+  }
 
   // Cycle scorecard — hold the PREVIOUS pulse's forecast accountable.
   // "Last cycle you closed $X ahead of plan" is the streak mechanic
@@ -501,6 +671,39 @@ export async function runPaydayPulseForHousehold(
     (tonePref?.tone as BTToneKey | undefined) ?? "sibling",
     scorecard,
   );
+  // Deterministic, appended after the LLM so it can't be dropped or
+  // reworded: what the commitment layer actually did this payday. The
+  // verb is "set aside" — an earmark — never "saved" or "moved" (F3/P7).
+  const sweepLine = sweepsLine(sweeps.executed, sweeps.skipped, sweeps.escalated);
+  if (sweepLine) {
+    phrasing.pushBody = `${phrasing.pushBody} ${sweepLine}`;
+    phrasing.cardBody = `${phrasing.cardBody} ${sweepLine}`;
+  }
+
+  // Recognition layer (P8/F8) on the cycle that just closed: a pay
+  // cycle is a better story unit than a week. In-app card only — the
+  // push stays one sentence. Same guards as the weekly narrator; a
+  // failed or unclear story simply leaves the card as it was.
+  try {
+    const cycleStart = addDaysIso(landed.date, -(step ?? 14));
+    const story = await narrateWeek({
+      userId,
+      householdId,
+      weekStartIso: cycleStart,
+      weekEndIso: addDaysIso(landed.date, -1),
+      thisWeekTotal: await totalOutflowBetween(userId, householdId, cycleStart, addDaysIso(landed.date, -1)),
+      priorWeekTotal: await totalOutflowBetween(
+        userId,
+        householdId,
+        addDaysIso(cycleStart, -(step ?? 14)),
+        addDaysIso(cycleStart, -1),
+      ),
+      incomeBlocked: false,
+    });
+    if (story) phrasing.cardBody = `${story.narrative}\n\n${phrasing.cardBody}`;
+  } catch (err) {
+    console.warn("[payday-pulse] cycle narrator failed (non-fatal):", err);
+  }
 
   // In-app surface: observation memory → Home's learned card + chat
   // retrieval both see it without any client change.
@@ -528,6 +731,7 @@ export async function runPaydayPulseForHousehold(
       paydayDate: landed.date,
       allocation: allocation as unknown as Record<string, unknown>,
       scorecard,
+      sweeps,
     },
     sourceTable: "tilly_memory",
     sourceId: memRow.id,

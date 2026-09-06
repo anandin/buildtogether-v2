@@ -279,65 +279,17 @@ export function mountCronRoutes(app: Express): void {
    * in the last 6 days. The cron fires weekly; if it runs twice in the
    * same week (manual + scheduled), the dream still only gets one bump.
    */
+  // Retired 2026-08 (docs/PRD_COMMITMENT_LAYER.md, F3). This cron used
+  // to bump goals.saved_amount every Friday with no money moving — the
+  // UI then said "saved" about dollars still sitting in checking. Sweeps
+  // now execute on detected paycheques via tilly/commitments.ts, write
+  // kind='earmarked', and the copy says so. Endpoint kept so the Vercel
+  // schedule doesn't 404; it does nothing.
   app.all(
     "/api/cron/auto-save",
     requireCron,
     async (_req: Request, res: Response) => {
-      try {
-        const dueRows = await db
-          .select()
-          .from(goals)
-          .where(and(gt(goals.weeklyAuto, 0)));
-
-        let processed = 0;
-        let skipped = 0;
-        const today = new Date().toISOString().slice(0, 10);
-        const weekAgo = new Date(Date.now() - 6 * 86400 * 1000).toISOString().slice(0, 10);
-
-        for (const dream of dueRows) {
-          // Skip if a recent auto contribution exists.
-          const recentAuto = await db
-            .select({ id: goalContributions.id })
-            .from(goalContributions)
-            .where(
-              and(
-                eq(goalContributions.goalId, dream.id),
-                eq(goalContributions.contributor, "auto"),
-                sql`${goalContributions.date} > ${weekAgo}`,
-              ),
-            )
-            .limit(1);
-          if (recentAuto.length) {
-            skipped++;
-            continue;
-          }
-
-          const amount = dream.weeklyAuto ?? 0;
-          if (amount <= 0) {
-            skipped++;
-            continue;
-          }
-
-          await db.transaction(async (tx) => {
-            await tx.insert(goalContributions).values({
-              goalId: dream.id,
-              amount,
-              date: today,
-              contributor: "auto",
-            });
-            await tx
-              .update(goals)
-              .set({ savedAmount: dream.savedAmount + amount })
-              .where(eq(goals.id, dream.id));
-          });
-          processed++;
-        }
-
-        res.json({ ok: true, processed, skipped, totalDue: dueRows.length });
-      } catch (err) {
-        console.error("/api/cron/auto-save error:", err);
-        res.status(500).json({ error: "cron failed" });
-      }
+      res.json({ ok: true, retired: true, replacedBy: "/api/cron/payday-pulse" });
     },
   );
 

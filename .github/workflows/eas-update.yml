@@ -1,0 +1,73 @@
+name: EAS Update (over-the-air)
+
+# Ships the mobile JavaScript to phones without a store release.
+#
+# Trigger 1 — automatic: any push to main that touches the mobile app
+#   publishes to the `production` update branch (the channel the
+#   TestFlight / Play build listens on, per eas.json).
+# Trigger 2 — manual: "Run workflow" in the Actions tab, pick the git
+#   ref and the EAS branch (development for the dev-client build,
+#   preview, or production). This is how a feature branch reaches a
+#   phone before it's merged.
+#
+# Needs ONE secret, EXPO_TOKEN — either a repository secret or a secret
+# on the "prod" environment (an Expo access token from expo.dev →
+# Account settings → Access tokens). The token never appears
+# in chat, in logs, or in a sandbox — only GitHub holds it, and it can
+# be revoked from the same page.
+#
+# OTA only carries JavaScript. A change that adds a native module or
+# edits app.json plugins needs a new EAS build instead — the update
+# will simply not apply to a binary with a different runtimeVersion.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "artifacts/buildtogether/**"
+      - ".github/workflows/eas-update.yml"
+  workflow_dispatch:
+    inputs:
+      eas_branch:
+        description: "EAS update branch (development | preview | production)"
+        required: true
+        default: "production"
+        type: choice
+        options: [development, preview, production]
+      message:
+        description: "Update message (shown in expo.dev)"
+        required: false
+        default: ""
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    # Bound to the "prod" deployment environment so an environment-scoped
+    # EXPO_TOKEN is visible here. Repository-level secrets are visible
+    # regardless; if the environment doesn't exist GitHub creates it.
+    environment: prod
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - run: pnpm install --frozen-lockfile
+      - name: Publish update
+        working-directory: artifacts/buildtogether
+        env:
+          EAS_BRANCH: ${{ github.event.inputs.eas_branch || 'production' }}
+          MSG: ${{ github.event.inputs.message }}
+        run: |
+          eas update \
+            --branch "$EAS_BRANCH" \
+            --message "${MSG:-${GITHUB_REF_NAME}@${GITHUB_SHA::7}}" \
+            --non-interactive

@@ -87,7 +87,7 @@ export const BT_DATA = {
 
   week: {
     spent: 148,
-    headline: "Wednesdays are still your soft spot.",
+    headline: "Wednesdays run heaviest.",
     bars: [
       { d: "M", amt: 12 },
       { d: "T", amt: 18 },

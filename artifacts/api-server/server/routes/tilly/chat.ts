@@ -1640,7 +1640,7 @@ export function mountTillyChatRoutes(app: Express): void {
       const body =
         typeof req.body?.body === "string" && req.body.body.trim()
           ? req.body.body.trim()
-          : "$131 spent. Wednesdays are still your soft spot.";
+          : "$131 spent. Wednesdays run heaviest.";
       const [memRow] = await db
         .insert(tillyMemory)
         .values({
