@@ -61,9 +61,19 @@ jobs:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
       - run: pnpm install --frozen-lockfile
+      - name: Check EXPO_TOKEN is present
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error title=EXPO_TOKEN not found::This job reads secrets from the repository (Settings → Secrets and variables → Actions → Repository secrets) and from the GitHub environment named 'prod' (Settings → Environments). Neither has EXPO_TOKEN. Vercel environment variables are NOT visible here. Add it as a Repository secret named exactly EXPO_TOKEN, then re-run this workflow."
+            exit 1
+          fi
+          echo "EXPO_TOKEN present (${#EXPO_TOKEN} chars)"
       - name: Publish update
         working-directory: artifacts/buildtogether
         env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           EAS_BRANCH: ${{ github.event.inputs.eas_branch || 'production' }}
           MSG: ${{ github.event.inputs.message }}
         run: |
