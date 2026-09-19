@@ -1,0 +1,44 @@
+# EAS Workflow — over-the-air JS update, run on Expo's own CI.
+#
+# Why this exists alongside .github/workflows/eas-update.yml: the GitHub
+# job needs an EXPO_TOKEN secret it has never been able to see, whereas
+# this runs with the project's own EAS identity and needs no secret at
+# all. Trigger: `eas workflow:run update.yml` (or the Expo connector), or
+# automatically on pushes to main that touch the app.
+#
+# Channel: the installed phone builds (preview profile, May 2026) listen
+# on the `preview` channel — NOT production. Defaults accordingly.
+#
+# Monorepo: this file lives in the app directory (artifacts/buildtogether)
+# because EAS resolves eas.json / app.json from the project root, and the
+# GitHub connection's base directory must point here.
+name: OTA update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - artifacts/buildtogether/**
+      - '!artifacts/buildtogether/**/*.md'
+  workflow_dispatch:
+    inputs:
+      channel:
+        type: choice
+        description: EAS Update channel the installed build listens on
+        options: [preview, production, development]
+        default: preview
+        required: true
+      message:
+        type: string
+        description: Update message shown in expo.dev
+        required: false
+        default: ''
+
+jobs:
+  publish:
+    name: Publish update
+    type: update
+    environment: preview
+    params:
+      channel: ${{ inputs.channel || 'preview' }}
+      message: ${{ inputs.message || github.commit_message || 'OTA update' }}
