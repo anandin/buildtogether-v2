@@ -13,6 +13,14 @@
 # on `preview`, NOT production. Defaults accordingly.
 name: OTA update
 
+# The worker's bundled pnpm is older than this repo's lockfile format
+# (lockfileVersion 9.0), which made `pnpm install --frozen-lockfile`
+# fail with ERR_PNPM_NO_LOCKFILE while the lockfile was sitting right
+# there. Pin the major so the install matches the committed lockfile.
+defaults:
+  tools:
+    pnpm: '10'
+
 on:
   push:
     branches: [main]
