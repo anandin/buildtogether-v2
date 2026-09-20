@@ -40,7 +40,10 @@ type WireDream = {
 
 const DEFAULT_GLYPH = "✺";
 const DEFAULT_GRADIENT: [string, string] = ["#E94B3C", "#F59E0B"];
-const DEFAULT_NUDGE = "I'll move what we agreed each week. You don't have to remember.";
+// Honest by default (F3/P7): a sweep sets money aside in Tilly's ledger;
+// nothing leaves the bank until the user moves it.
+const DEFAULT_NUDGE =
+  "I'll set it aside each payday. Nothing leaves your account until you move it.";
 
 function rowToWire(
   row: typeof goals.$inferSelect,

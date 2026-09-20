@@ -95,7 +95,7 @@ export function BTDreams() {
             lineHeight: 19,
           }}
         >
-          Tilly auto-moves it after every paycheck — you don't have to remember.
+          Tilly sets it aside every payday. Nothing leaves your account until you move it.
         </Text>
       </View>
 
