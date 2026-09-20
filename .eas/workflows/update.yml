@@ -13,12 +13,18 @@
 # on `preview`, NOT production. Defaults accordingly.
 name: OTA update
 
-# The worker's bundled pnpm is older than this repo's lockfile format
-# (lockfileVersion 9.0), which made `pnpm install --frozen-lockfile`
-# fail with ERR_PNPM_NO_LOCKFILE while the lockfile was sitting right
-# there. Pin the major so the install matches the committed lockfile.
+# Toolchain is pinned below because the default worker image is older
+# than this project needs. See the comments on each entry.
 defaults:
   tools:
+    # The worker image defaults to Node 18, which is too old twice over:
+    # eas-cli 24 requires ^20.18.3 || >=22, and Metro's config loader calls
+    # Array.prototype.toReversed (Node 20+), so `expo export` died with
+    # "configs.toReversed is not a function".
+    node: '22'
+    # Worker's bundled pnpm predates this repo's lockfile format (9.0), so
+    # `pnpm install --frozen-lockfile` ignored the lockfile and then
+    # reported it missing.
     pnpm: '10'
 
 on:
