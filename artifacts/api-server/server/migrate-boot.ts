@@ -568,6 +568,28 @@ const CRITICAL_STATEMENTS: string[] = [
   `ALTER TABLE "goals" ADD COLUMN IF NOT EXISTS "liability_ref" text`,
   `CREATE INDEX IF NOT EXISTS "sweep_commitments_household_status_idx" ON "sweep_commitments" ("household_id", "status")`,
   `CREATE INDEX IF NOT EXISTS "goal_contributions_commitment_payday_idx" ON "goal_contributions" ("commitment_id", "payday_date")`,
+  // Backfill: goals.weekly_auto was the old source of truth and the Friday
+  // /api/cron/auto-save that honoured it is now a no-op. Without this,
+  // anyone with an existing auto-save silently stops accruing. Turn each
+  // one into a real per-paycheque commitment so the payday sweep picks it
+  // up. Idempotent: skipped when a commitment already targets the goal.
+  `INSERT INTO "sweep_commitments"
+     ("household_id", "user_id", "kind", "target_goal_id", "amount", "cadence", "status", "consent_frame")
+   SELECT g."couple_id",
+          (SELECT u."id" FROM "users" u WHERE u."couple_id" = g."couple_id" LIMIT 1),
+          'sweep', g."id", g."weekly_auto", 'per_paycheck', 'active', 'migrated_weekly_auto'
+     FROM "goals" g
+    WHERE g."weekly_auto" IS NOT NULL
+      AND g."weekly_auto" > 0
+      AND (SELECT u."id" FROM "users" u WHERE u."couple_id" = g."couple_id" LIMIT 1) IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM "sweep_commitments" c
+         WHERE c."target_goal_id" = g."id" AND c."status" IN ('active','paused'))`,
+  // The stored per-goal nudge claims Tilly MOVES money, which she does not
+  // (F3/P7 — sweeps are earmarks until a rail exists). Rewrite only the
+  // old default; user-authored nudges are left alone.
+  `UPDATE "goals" SET "nudge" = 'I''ll set it aside each payday. Nothing leaves your account until you move it.'
+     WHERE "nudge" = 'I''ll move what we agreed each week. You don''t have to remember.'`,
 ];
 
 export async function applyBootMigrations(): Promise<{
