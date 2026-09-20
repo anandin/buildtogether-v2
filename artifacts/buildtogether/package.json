@@ -77,6 +77,7 @@
     "@types/react-dom": "~19.1.7",
     "babel-plugin-module-resolver": "^5.0.2",
     "babel-plugin-react-compiler": "^19.0.0-beta-e993439-20250117",
+    "babel-preset-expo": "~54.0.10",
     "typescript": "~5.9.2"
   }
 }
