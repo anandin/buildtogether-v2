@@ -37,6 +37,7 @@ import { mountPushRoutes } from "./push";
 import { mountExpensesRoutes } from "./expenses";
 import { mountInvitesRoutes } from "./invites";
 import { mountDemoRoutes } from "./demo";
+import { mountHabitRoutes } from "./habits";
 import { mountPasskeyRoutes, mountPasskeyDevRoutes } from "./passkey";
 import { mountE2ERoutes } from "./e2e";
 import { mountWatchlistRoutes } from "./watchlist";
@@ -68,6 +69,7 @@ export function registerTillyRoutes(app: Express): void {
   mountExpensesRoutes(app);
   mountInvitesRoutes(app);
   mountWatchlistRoutes(app);
+  mountHabitRoutes(app);
   // E2E session-issuer + debug endpoints. These mint real Bearer tokens
   // for a pinned user and expose financial-data debug dumps — a backdoor
   // that must NEVER exist on the production deployment (SOC 2 CC6.1). It
@@ -81,14 +83,16 @@ export function registerTillyRoutes(app: Express): void {
   } else {
     console.log("[routes] e2e routes SKIPPED (production)");
   }
-  // Demo routes (POST /api/demo/seed, /api/demo/clear, /api/demo/connect-plaid-sandbox)
-  // are auth-gated but let any user wipe + re-seed their own data. Useful for
-  // QA / staging, dangerous in production. Mount only in non-prod environments.
-  if (process.env.NODE_ENV !== "production") {
+  // Demo wipe/seed routes are a footgun: any signed-in user can erase
+  // their household. Hard-closed on production (NODE_ENV or VERCEL_ENV)
+  // and also inside mountDemoRoutes itself. Local/dev/preview only.
+  const demoAllowed =
+    process.env.NODE_ENV !== "production" && process.env.VERCEL_ENV !== "production";
+  if (demoAllowed) {
     mountDemoRoutes(app);
     mountPasskeyDevRoutes(app);
-    console.log("[routes] demo + passkey-dev routes mounted (NODE_ENV != production)");
+    console.log("[routes] demo + passkey-dev routes mounted (non-production)");
   } else {
-    console.log("[routes] demo + passkey-dev routes SKIPPED (NODE_ENV == production)");
+    console.log("[routes] demo + passkey-dev routes SKIPPED (production)");
   }
 }

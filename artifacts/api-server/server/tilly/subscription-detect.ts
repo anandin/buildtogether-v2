@@ -1,22 +1,22 @@
 /**
- * Subscription detection — spec §5.7 protective surface.
+ * Subscription detection — v3.
  *
- * Two paths:
- *   1. Plaid `transactionsRecurringGet` if the connected institution
- *      supports it — returns recurring streams with cadence + next
- *      expected date. Most cards do support this in production.
- *   2. Rule-based fallback: same merchant + same amount within ±5%
- *      across 2+ months → infer monthly subscription.
+ * Two paths, both real:
+ *   1. Plaid `transactionsRecurringGet` when the institution supports it.
+ *   2. History inference over stored `plaid_transactions` (see
+ *      recurring-infer.ts). This runs even when Plaid credentials are
+ *      absent, so sandbox imports and manual-accept history still
+ *      produce a subscription list.
  *
- * Upserts into `subscriptions` keyed on (household, plaidRecurringStreamId)
- * for path 1, or (household, merchant, amount) for path 2. The Home tile
- * + protections feed query this table.
+ * Upserts by (household, normalized merchant). Plaid stream ids are
+ * stored when path 1 produced the row.
  */
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { db } from "../db";
 import { plaidItems, plaidTransactions, subscriptions } from "../../shared/schema";
 import { decryptSecret } from "../security/crypto-fields";
 import { getPlaidClient, isPlaidConfigured } from "../plaid";
+import { inferRecurring, normalizeMerchant, type InferredRecurring } from "./recurring-infer";
 
 export type ScanResult = {
   detected: number;
@@ -44,21 +44,129 @@ function toCadence(frequency: string | undefined): {
   }
 }
 
-function usageNote(lastChargedAt: string | null, lastUsedAt: string | null): string {
-  if (!lastChargedAt) return "";
-  const daysSinceUsed = lastUsedAt
-    ? Math.floor((Date.now() - new Date(lastUsedAt).getTime()) / (86400 * 1000))
-    : 9999;
-  if (daysSinceUsed > 60) return `Used ${daysSinceUsed} days ago`;
-  if (daysSinceUsed > 30) return `Used ${daysSinceUsed} days ago`;
-  return `Used ${daysSinceUsed} days ago`;
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function upsertStream(
+  householdId: string,
+  stream: {
+    merchant: string;
+    amount: number;
+    cadence: string;
+    cadenceDays: number | null;
+    lastChargedAt: string | null;
+    nextChargeAt: string | null;
+    source: string;
+    plaidRecurringStreamId?: string | null;
+    usageNote?: string | null;
+  },
+): Promise<"inserted" | "updated"> {
+  const key = normalizeMerchant(stream.merchant);
+  const existing = await db
+    .select()
+    .from(subscriptions)
+    .where(eq(subscriptions.householdId, householdId));
+  const match = existing.find(
+    (row) =>
+      (stream.plaidRecurringStreamId &&
+        row.plaidRecurringStreamId === stream.plaidRecurringStreamId) ||
+      normalizeMerchant(row.merchant) === key,
+  );
+  if (match) {
+    if (match.status === "paused" || match.status === "cancelled") {
+      return "updated";
+    }
+    await db
+      .update(subscriptions)
+      .set({
+        amount: stream.amount,
+        cadence: stream.cadence,
+        cadenceDays: stream.cadenceDays,
+        lastChargedAt: stream.lastChargedAt ?? match.lastChargedAt,
+        nextChargeAt: stream.nextChargeAt ?? match.nextChargeAt,
+        usageNote: stream.usageNote ?? match.usageNote,
+        source: match.source === "manual" ? match.source : stream.source,
+        plaidRecurringStreamId: stream.plaidRecurringStreamId ?? match.plaidRecurringStreamId,
+        updatedAt: new Date(),
+      })
+      .where(eq(subscriptions.id, match.id));
+    return "updated";
+  }
+  await db.insert(subscriptions).values({
+    householdId,
+    merchant: stream.merchant,
+    amount: stream.amount,
+    cadence: stream.cadence,
+    cadenceDays: stream.cadenceDays,
+    lastChargedAt: stream.lastChargedAt,
+    nextChargeAt: stream.nextChargeAt,
+    status: "active",
+    source: stream.source,
+    plaidRecurringStreamId: stream.plaidRecurringStreamId ?? null,
+    usageNote: stream.usageNote ?? null,
+  });
+  return "inserted";
+}
+
+async function scanFromHistory(householdId: string, result: ScanResult): Promise<void> {
+  const since = new Date(Date.now() - 400 * 86_400_000).toISOString().slice(0, 10);
+  const rows = await db
+    .select({
+      merchant: plaidTransactions.merchantName,
+      name: plaidTransactions.name,
+      amount: plaidTransactions.amount,
+      date: plaidTransactions.date,
+      category: plaidTransactions.ourCategory,
+    })
+    .from(plaidTransactions)
+    .where(
+      and(
+        eq(plaidTransactions.coupleId, householdId),
+        inArray(plaidTransactions.status, ["accepted", "pending_review"]),
+        sql`${plaidTransactions.date} >= ${since}`,
+        sql`${plaidTransactions.amount} > 0`,
+      ),
+    );
+
+  const inferred: InferredRecurring[] = inferRecurring(
+    rows.map((r) => ({
+      merchant: (r.merchant || r.name || "").trim(),
+      amount: r.amount,
+      date: r.date,
+      category: r.category,
+    })),
+    todayIso(),
+  );
+
+  for (const stream of inferred) {
+    const outcome = await upsertStream(householdId, {
+      merchant: stream.merchant,
+      amount: stream.amount,
+      cadence: stream.cadence,
+      cadenceDays: stream.cadenceDays,
+      lastChargedAt: stream.lastChargedAt,
+      nextChargeAt: stream.nextChargeAt,
+      source: "rule_based",
+      usageNote: `Seen ${stream.occurrences}× · cadence ${stream.cadence}`,
+    });
+    if (outcome === "inserted") {
+      result.fromRules += 1;
+      result.detected += 1;
+    }
+  }
 }
 
 /**
- * Run the recurring-tx scan for a household. Returns a summary; the
- * subscriptions table is the source of truth for per-row state.
+ * Run the recurring scan for a household. History inference always runs.
+ * The live Plaid recurring endpoint runs only when credentials exist and
+ * `includePlaidApi` is true (user-triggered scan). Cron uses history only
+ * so a slow institution can't blow the function budget.
  */
-export async function scanSubscriptions(householdId: string): Promise<ScanResult> {
+export async function scanSubscriptions(
+  householdId: string,
+  opts?: { includePlaidApi?: boolean },
+): Promise<ScanResult> {
   const result: ScanResult = {
     detected: 0,
     fromPlaidRecurring: 0,
@@ -67,121 +175,60 @@ export async function scanSubscriptions(householdId: string): Promise<ScanResult
     errors: [],
   };
 
-  if (!isPlaidConfigured()) {
+  const includePlaidApi = opts?.includePlaidApi !== false && isPlaidConfigured();
+  if (opts?.includePlaidApi !== false && !isPlaidConfigured()) {
     result.errors.push("plaid_not_configured");
-    return result;
   }
 
-  const plaid = getPlaidClient();
-  if (!plaid) {
-    result.errors.push("plaid_client_unavailable");
-    return result;
-  }
-
-  const items = await db
-    .select()
-    .from(plaidItems)
-    .where(eq(plaidItems.coupleId, householdId));
-
-  // ─── Path 1: Plaid recurring streams ───────────────────────────────────
-  for (const item of items) {
-    try {
-      const resp = await plaid.transactionsRecurringGet({
-        access_token: decryptSecret(item.accessToken),
-      });
-      const outflows = resp.data.outflow_streams ?? [];
-      for (const stream of outflows) {
-        if (stream.is_active === false) continue;
-        const cadence = toCadence(stream.frequency);
-        const merchant = stream.merchant_name || stream.description || "Unknown";
-        const amount = Math.abs(stream.average_amount?.amount ?? 0);
-        if (amount <= 0) continue;
-
-        await db
-          .insert(subscriptions)
-          .values({
-            householdId,
-            merchant,
-            amount,
-            cadence: cadence.cadence,
-            cadenceDays: cadence.cadenceDays,
-            lastChargedAt: stream.last_date ?? null,
-            nextChargeAt: stream.predicted_next_date ?? null,
-            status: "active",
-            source: "plaid_recurring",
-            plaidRecurringStreamId: stream.stream_id,
-          })
-          .onConflictDoNothing();
-        result.fromPlaidRecurring++;
-        result.detected++;
+  if (includePlaidApi && opts?.includePlaidApi !== false) {
+    const plaid = getPlaidClient();
+    if (!plaid) {
+      result.errors.push("plaid_client_unavailable");
+    } else {
+      const items = await db
+        .select()
+        .from(plaidItems)
+        .where(eq(plaidItems.coupleId, householdId));
+      for (const item of items) {
+        try {
+          const resp = await plaid.transactionsRecurringGet({
+            access_token: decryptSecret(item.accessToken),
+          });
+          const outflows = resp.data.outflow_streams ?? [];
+          for (const stream of outflows) {
+            if (stream.is_active === false) continue;
+            const cadence = toCadence(stream.frequency);
+            const merchant = stream.merchant_name || stream.description || "Unknown";
+            const amount = Math.abs(stream.average_amount?.amount ?? 0);
+            if (amount <= 0) continue;
+            const outcome = await upsertStream(householdId, {
+              merchant,
+              amount,
+              cadence: cadence.cadence,
+              cadenceDays: cadence.cadenceDays,
+              lastChargedAt: stream.last_date ?? null,
+              nextChargeAt: stream.predicted_next_date ?? null,
+              source: "plaid_recurring",
+              plaidRecurringStreamId: stream.stream_id,
+            });
+            if (outcome === "inserted") {
+              result.fromPlaidRecurring += 1;
+              result.detected += 1;
+            }
+          }
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : "unknown";
+          result.errors.push(`plaid_item_${item.id}: ${message}`);
+        }
       }
-    } catch (err: any) {
-      // Many sandbox / regional banks don't support recurring. Fall through
-      // to the rule-based detector instead of failing the scan.
-      result.errors.push(`plaid_item_${item.id}: ${err?.message ?? "unknown"}`);
     }
   }
 
-  // ─── Path 2: rule-based fallback ───────────────────────────────────────
-  // Same merchant + ~same amount across 2+ months in plaid_transactions.
   try {
-    const aggResult = await db.execute(sql`
-      SELECT merchant_name AS merchant,
-             ROUND(amount::numeric, 0) AS amount,
-             COUNT(*)                  AS occurrences,
-             MAX(date)                 AS last_seen
-        FROM ${plaidTransactions}
-       WHERE couple_id = ${householdId}
-         AND amount > 0
-         AND merchant_name IS NOT NULL
-       GROUP BY merchant_name, ROUND(amount::numeric, 0)
-      HAVING COUNT(*) >= 2
-    `);
-    const candidates = (aggResult.rows ?? []) as {
-      merchant: string;
-      amount: string;
-      occurrences: string;
-      last_seen: string;
-    }[];
-
-    for (const c of candidates) {
-      const merchant = c.merchant;
-      const amt = Number(c.amount);
-      if (!Number.isFinite(amt) || amt <= 0) continue;
-
-      // Skip if already covered by a Plaid recurring stream entry.
-      const existing = await db
-        .select({ id: subscriptions.id })
-        .from(subscriptions)
-        .where(
-          and(
-            eq(subscriptions.householdId, householdId),
-            eq(subscriptions.merchant, merchant),
-          ),
-        )
-        .limit(1);
-      if (existing.length) continue;
-
-      await db
-        .insert(subscriptions)
-        .values({
-          householdId,
-          merchant,
-          amount: amt,
-          cadence: "monthly",
-          cadenceDays: 30,
-          lastChargedAt: c.last_seen,
-          nextChargeAt: null,
-          status: "active",
-          source: "rule_based",
-          usageNote: `Seen ${c.occurrences}× in transaction history`,
-        })
-        .onConflictDoNothing();
-      result.fromRules++;
-      result.detected++;
-    }
-  } catch (err: any) {
-    result.errors.push(`rule_based: ${err?.message ?? "unknown"}`);
+    await scanFromHistory(householdId, result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : "unknown";
+    result.errors.push(`rule_based: ${message}`);
   }
 
   return result;

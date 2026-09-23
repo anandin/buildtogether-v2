@@ -1418,3 +1418,22 @@ function priorMonthBounds(
   }
   return out;
 }
+
+const EMPTY_DAY_LETTERS = ["M", "T", "W", "T", "F", "S", "S"];
+
+/** Real spend payload for a household with nothing in the window.
+ * Replaces the old phase stub so Spend renders an empty week instead
+ * of a not-ready envelope. */
+export function emptyWeeklyPattern(headline = "Nothing logged in this window yet."): WeeklyPattern {
+  return {
+    ready: true,
+    spent: 0,
+    headline,
+    bars: EMPTY_DAY_LETTERS.map((d) => ({ d, amt: 0 })),
+    categories: [],
+    fixedObligations: [],
+    today: [],
+    periodLabel: "This week",
+    incomeSources: [],
+  };
+}

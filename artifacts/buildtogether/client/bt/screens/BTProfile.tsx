@@ -44,8 +44,20 @@ type ProfileRoute = null | "banks" | "pending" | "settings" | "security" | "cate
  * without needing a navigation library. Each sub-screen has its own
  * back button that pops back here.
  */
-export function BTProfile() {
-  const [route, setRoute] = useState<ProfileRoute>(null);
+export function BTProfile({
+  forcedRoute = null,
+  onForcedRouteConsumed,
+}: {
+  forcedRoute?: ProfileRoute;
+  onForcedRouteConsumed?: () => void;
+} = {}) {
+  const [route, setRoute] = useState<ProfileRoute>(forcedRoute);
+  useEffect(() => {
+    if (forcedRoute) {
+      setRoute(forcedRoute);
+      onForcedRouteConsumed?.();
+    }
+  }, [forcedRoute, onForcedRouteConsumed]);
   const back = () => setRoute(null);
 
   if (route === "banks") return <BankConnectionsScreen onBack={back} />;

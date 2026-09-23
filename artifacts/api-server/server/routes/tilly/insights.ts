@@ -35,7 +35,7 @@ import {
   type IncomeDecision,
 } from "../../tilly/income-review";
 import { isValidTone, DEFAULT_TONE, type BTToneKey } from "../../tilly/tone";
-import { buildWeeklyPattern } from "../../tilly/spend-pattern";
+import { buildWeeklyPattern, emptyWeeklyPattern } from "../../tilly/spend-pattern";
 import { buildCreditSnapshot } from "../../tilly/credit-snapshot";
 import { sql } from "drizzle-orm";
 import { expenses } from "../../../shared/schema";
@@ -739,6 +739,19 @@ export function mountTillyInsightsRoutes(app: Express): void {
         console.warn("/api/tilly/today openQuestions fallback:", qErr);
       }
 
+      let coach: Awaited<ReturnType<typeof import("../../tilly/coach-home").buildCoachHome>> | null = null;
+      try {
+        const { buildCoachHome } = await import("../../tilly/coach-home");
+        coach = await buildCoachHome({
+          userId,
+          householdId,
+          name,
+          pendingCount: pendingSummary?.count ?? 0,
+        });
+      } catch (coachErr) {
+        console.warn("/api/tilly/today coach home fallback:", coachErr);
+      }
+
       res.json({
         ready: true,
         ...brief,
@@ -761,6 +774,8 @@ export function mountTillyInsightsRoutes(app: Express): void {
         // must not render surplus-shaped copy of its own while
         // `confidence.blocksSurplusClaims` is true.
         incomeReview,
+        // v3 coach home — cash, bills, habit strip, one action, briefing.
+        coach,
       });
     } catch (err) {
       console.error("/api/tilly/today error:", err);
@@ -1177,7 +1192,9 @@ export function mountTillyInsightsRoutes(app: Express): void {
   app.get("/api/tilly/spend-pattern", requireAuth, async (req: Request, res: Response) => {
     if (!req.user) return res.status(401).json({ error: "auth required" });
     const householdId = req.user.coupleId;
-    if (!householdId) return res.json({ phase: 4, ready: false });
+    if (!householdId) {
+      return res.json(emptyWeeklyPattern("Finish setup and your spend will land here."));
+    }
 
     try {
       const rangeParam = String(req.query.range ?? "week");
@@ -1198,14 +1215,15 @@ export function mountTillyInsightsRoutes(app: Express): void {
         range,
         offset,
       );
-      if (!pattern) return res.json({ phase: 4, ready: false });
+      if (!pattern) {
+        return res.json(emptyWeeklyPattern("Nothing logged in this window yet."));
+      }
       res.json(pattern);
     } catch (err) {
-      // Plaid not connected, no transactions, or transient DB read — same UX
-      // either way: the screen renders its connect-bank empty state. We
-      // return ready:false instead of 500 so the browser console stays clean.
+      // A read failure used to return a phase stub, which left Spend
+      // looking unwired. An empty ready payload keeps the screen real.
       console.warn("/api/tilly/spend-pattern soft-fail:", err);
-      res.json({ phase: 4, ready: false, reason: "transient" });
+      res.json(emptyWeeklyPattern("Spend is catching up. Pull to refresh in a moment."));
     }
   });
 

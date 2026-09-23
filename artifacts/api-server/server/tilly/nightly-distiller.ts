@@ -145,6 +145,11 @@ export async function distillUser(
       "dream_contributed",
       "nudge_acted_on",
       "nudge_ignored",
+      "habit_checkin",
+      "habit_created",
+      "habit_suggested",
+      "coach_digest_sent",
+      "automation_nudge",
     ].includes(e.kind),
   );
   const hasChat = events.some((e) => e.kind === "chat_user_msg");

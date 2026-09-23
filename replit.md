@@ -143,18 +143,18 @@ Required env / secrets (server refuses to boot without these):
 - Cron auth: `CRON_SECRET` (currently warns + runs open in dev)
 
 Pre-launch hardening (open items):
-- **Demo routes** (`server/routes/demo.ts`, mounted at `routes/index.ts:50`)
-  — `POST /api/demo/seed` and `/api/demo/clear` are auth-gated but let any
-  user wipe/seed their own data. Either remove `mountDemoRoutes` from the
-  prod bundle or gate behind `NODE_ENV !== "production"`.
+- **Demo routes** — `mountDemoRoutes` is skipped when `NODE_ENV` or
+  `VERCEL_ENV` is `production`, and `mountDemoRoutes` itself refuses to
+  register in those environments. The mobile "try with demo data" control
+  is dev-only.
 - **Plaid env** — defaults to `sandbox` (`server/plaid.ts:39`). Set
   `PLAID_ENV=production` and swap to production keys before real bank links.
 - **CRON_SECRET** — `routes/cron.ts:33` allows open access in dev when
   unset. Set the secret in production env vars.
-- **Phase-2 stubs** — several screens (`Today`, `Spend`) return
-  `StubEnvelope { phase: 2, ready: false }` for features not yet wired
-  (real subscription scanner is "Phase 5 TODO" in `BTHome.tsx:11`).
-  Decide which are acceptable for v1.
+- **v3 coach home** — Today returns a real `coach` payload (cash,
+  upcoming bills, habit strip, one action, briefing). Spend returns
+  `ready: true` with an empty pattern when a window has no transactions
+  instead of a phase stub. See `docs/V3.md`.
 - **Push tokens** — Expo push registration runs on boot but is best-effort.
   Confirm `EXPO_ACCESS_TOKEN` is set if you want delivery receipts.
 - **RevenueCat** — `EXPO_PUBLIC_REVENUECAT_IOS_KEY` /

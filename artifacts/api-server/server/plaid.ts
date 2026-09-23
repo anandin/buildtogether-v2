@@ -335,14 +335,51 @@ export const AUTO_ACCEPT_AMOUNT_CAP = 500;
  * Caller MUST also confirm the row isn't pending (Plaid still shaping it)
  * before honouring this. Same `tx.pending` guard the rule path uses.
  */
+/** PFC primaries that are ordinary spend. High-confidence Tilly
+ * classifications in these buckets skip the pending queue up to the
+ * amount cap. Transfers, loans, and income stay questions. */
+const AI_SAFE_PFC = new Set([
+  "FOOD_AND_DRINK",
+  "TRANSPORTATION",
+  "ENTERTAINMENT",
+  "GENERAL_MERCHANDISE",
+  "PERSONAL_CARE",
+  "GENERAL_SERVICES",
+  "HOME_IMPROVEMENT",
+  "MEDICAL",
+  "RENT_AND_UTILITIES",
+  "TRAVEL",
+  "RECREATION",
+]);
+
+const AI_QUESTION_CATEGORIES = new Set([
+  "transfers",
+  "transfer",
+  "income",
+  "fees",
+  "loans",
+  "taxes",
+  "other",
+]);
+
 export function shouldAutoAcceptByAI(
   aiConfidence: number | null | undefined,
   tx: { amount: number; personal_finance_category?: any },
+  aiCategory?: string | null,
 ): boolean {
-  if (typeof aiConfidence !== "number" || aiConfidence < 0.9) return false;
+  if (typeof aiConfidence !== "number" || aiConfidence < 0.8) return false;
   const primary = (tx.personal_finance_category?.primary || "").toUpperCase();
-  if (primary === "BANK_FEES") return true;
-  if (Math.abs(tx.amount) < 30) return true;
+  if (primary === "LOAN_PAYMENTS" || primary === "TRANSFER_OUT" || primary === "TRANSFER_IN") {
+    return false;
+  }
+  const category = (aiCategory || "").trim().toLowerCase();
+  if (category && AI_QUESTION_CATEGORIES.has(category)) return false;
+  if (primary === "BANK_FEES") return aiConfidence >= 0.9;
+  const amount = Math.abs(tx.amount);
+  if (amount > AUTO_ACCEPT_AMOUNT_CAP) return false;
+  if (AI_SAFE_PFC.has(primary) && aiConfidence >= 0.8) return true;
+  if (category && !AI_QUESTION_CATEGORIES.has(category) && aiConfidence >= 0.85) return true;
+  if (aiConfidence >= 0.9 && amount < 30) return true;
   return false;
 }
 

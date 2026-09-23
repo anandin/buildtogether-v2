@@ -622,6 +622,7 @@ export function mountTillyChatRoutes(app: Express): void {
           recentAnalysis,
           openQuestions,
           skillsResult,
+          coachSection,
         ] = await Promise.all([
           cb.buildDossierSection(userId),
           cb.buildFinancialStateSection(householdId, userId),
@@ -629,6 +630,7 @@ export function mountTillyChatRoutes(app: Express): void {
           cb.buildRecentAnalysisSection(householdId),
           cb.buildOpenQuestionsSection(householdId),
           cb.buildSkillsSection(message),
+          cb.buildCoachSection(userId, householdId, req.user?.name || "there"),
         ]);
         const memSection = cb.buildMemorySnippetsSection(memSnippets);
         const screen = cb.buildScreenContextSection(screenContext);
@@ -651,6 +653,7 @@ export function mountTillyChatRoutes(app: Express): void {
           cashFlow,
           recentAnalysis,
           openQuestions,
+          coachSection,
           skillsResult.section,
           screen,
         ].filter((s): s is string => s !== null);

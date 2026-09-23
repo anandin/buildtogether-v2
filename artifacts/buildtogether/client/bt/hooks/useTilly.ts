@@ -97,6 +97,10 @@ export function useTilly() {
       if (seen.has("dream_created") || seen.has("dream_deleted")) {
         qc.invalidateQueries({ queryKey: ["/api/dreams"] });
       }
+      if (seen.has("habit_created") || seen.has("habit_checked_in")) {
+        qc.invalidateQueries({ queryKey: ["/api/habits"] });
+        qc.invalidateQueries({ queryKey: ["/api/tilly/today"] });
+      }
       if (
         seen.has("payment_to_card_aliased") ||
         seen.has("payment_to_card_unaliased")

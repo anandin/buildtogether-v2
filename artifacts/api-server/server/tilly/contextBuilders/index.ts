@@ -28,3 +28,4 @@ export { buildRecentAnalysisSection } from "./recentAnalysis";
 export { buildOpenQuestionsSection } from "./openQuestions";
 export { buildSkillsSection, type SkillsSectionResult } from "./skills";
 export { buildScreenContextSection } from "./screenContext";
+export { buildCoachSection } from "./coach";

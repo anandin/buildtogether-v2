@@ -8,7 +8,7 @@
  * Below the sky:
  *   "TILLY SAYS" → big serif greeting → Inter body line about the day
  *   Hero balance card (real numbers when ready, connect-bank empty state)
- *   Subscription + dream tiles when wired (real subscription = TODO Phase 5)
+ *   Subscription + dream tiles, plus the v3 coach strip (cash, bills, habits)
  *   Tilly invite pill
  *
  * The week strip and "Tilly Learned" card from the design land in a later
@@ -36,7 +36,7 @@ import {
   useAnswerTillyQuestion,
   useDismissTillyQuestion,
 } from "../hooks/useTillyQuestions";
-import type { TillyQuestion } from "../api/types";
+import type { CoachHome, TillyQuestion } from "../api/types";
 import { useDreams } from "../hooks/useDreams";
 import { useUser } from "../hooks/useUser";
 import { useExpenses } from "../hooks/useExpenses";
@@ -50,7 +50,15 @@ import { PaydayAllocationCard } from "../PaydayAllocationCard";
 import { useTilly } from "../hooks/useTilly";
 
 type Props = { onNav?: (route: BTRoute) => void };
-export type BTRoute = "home" | "guardian" | "spend" | "credit" | "dreams" | "profile";
+export type BTRoute =
+  | "home"
+  | "guardian"
+  | "spend"
+  | "credit"
+  | "dreams"
+  | "profile"
+  | "habits"
+  | "pending";
 
 export function BTHome({ onNav }: Props) {
   const { t, tone } = useBT();
@@ -575,6 +583,8 @@ export function BTHome({ onNav }: Props) {
             Hides when there's nothing scheduled today so it never
             adds empty-state noise. */}
         <UpNextCard onNav={onNav} />
+
+        {today_?.coach ? <CoachStrip t={t} coach={today_.coach} onNav={onNav} onOpenChat={openChatWithSeed} /> : null}
 
         {!isFirstLoad && firstDream ? (
           <Pressable onPress={() => onNav?.("dreams")}>
@@ -1441,6 +1451,134 @@ function TillyQuestionsStrip({
           );
         })}
       </View>
+    </View>
+  );
+}
+
+function CoachStrip({
+  t,
+  coach,
+  onNav,
+  onOpenChat,
+}: {
+  t: BTTheme;
+  coach: CoachHome;
+  onNav?: (route: BTRoute) => void;
+  onOpenChat: (seed: string) => void;
+}) {
+  const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+  const cashLabel =
+    coach.cash.liquid == null
+      ? "Cash not in yet"
+      : coach.cash.source === "self_report"
+        ? `${money(coach.cash.liquid)} liquid · you told me`
+        : `${money(coach.cash.liquid)} liquid`;
+  const credit =
+    coach.cash.creditOwed != null && coach.cash.creditOwed > 0
+      ? ` · ${money(coach.cash.creditOwed)} on cards`
+      : "";
+
+  const act = () => {
+    const route = coach.primaryAction.route;
+    if (route === "guardian") {
+      onOpenChat(coach.primaryAction.chatSeed ?? "How is my money looking today?");
+      return;
+    }
+    onNav?.(route);
+  };
+
+  return (
+    <View style={{ gap: 12 }}>
+      <BTCard t={t} padding={16} style={{ gap: 8 }}>
+        <BTLabel color={t.accent}>Briefing</BTLabel>
+        <Text style={{ color: t.ink, fontFamily: BTFonts.serif, fontSize: 16, lineHeight: 23 }}>
+          {coach.briefing}
+        </Text>
+      </BTCard>
+
+      <BTCard t={t} alt padding={14} style={{ gap: 8 }}>
+        <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontSize: 14, fontWeight: "600" }}>
+          {cashLabel}
+          {credit}
+        </Text>
+        {coach.upcoming.length === 0 ? (
+          <Text style={{ color: t.inkMute, fontFamily: BTFonts.sans, fontSize: 13 }}>
+            No bills in the next two weeks.
+          </Text>
+        ) : (
+          coach.upcoming.slice(0, 4).map((item) => (
+            <View key={`${item.kind}-${item.id}`} style={{ flexDirection: "row", justifyContent: "space-between" }}>
+              <Text style={{ color: t.inkSoft, fontFamily: BTFonts.sans, fontSize: 13, flex: 1 }} numberOfLines={1}>
+                {item.label}
+                {item.date ? ` · ${item.date.slice(5)}` : ""}
+              </Text>
+              <Text style={{ color: t.ink, fontFamily: BTFonts.mono, fontSize: 12 }}>{money(item.amount)}</Text>
+            </View>
+          ))
+        )}
+      </BTCard>
+
+      <Pressable onPress={() => onNav?.("habits")} accessibilityRole="button" accessibilityLabel="Open habits">
+        <View style={{ gap: 8 }}>
+          <BTLabel color={t.inkMute}>Habits</BTLabel>
+          {coach.habits.length === 0 ? (
+            <Text style={{ color: t.inkSoft, fontFamily: BTFonts.serifItalic, fontSize: 15 }}>
+              No streak yet. Start one.
+            </Text>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              {coach.habits.map((h) => (
+                <View
+                  key={h.id}
+                  style={{
+                    paddingHorizontal: 12,
+                    paddingVertical: 10,
+                    borderRadius: 14,
+                    backgroundColor: t.surface,
+                    borderWidth: 1,
+                    borderColor: h.due ? t.accent : t.rule,
+                    minWidth: 120,
+                  }}
+                >
+                  <Text style={{ color: t.ink, fontFamily: BTFonts.sans, fontSize: 13, fontWeight: "600" }} numberOfLines={1}>
+                    {h.title}
+                  </Text>
+                  <Text style={{ color: t.inkMute, fontFamily: BTFonts.mono, fontSize: 11, marginTop: 4 }}>
+                    {h.currentStreak} streak · {Math.round(h.weeklyCompletionRate * 100)}%
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+      </Pressable>
+
+      <BTCard t={t} inverted padding={16} style={{ gap: 8 }}>
+        <BTLabel color={t.invertedFgMute}>One thing</BTLabel>
+        <Text style={{ color: t.invertedFg, fontFamily: BTFonts.serif, fontSize: 18, lineHeight: 24 }}>
+          {coach.primaryAction.title}
+        </Text>
+        <Text style={{ color: t.invertedFgMute, fontFamily: BTFonts.sans, fontSize: 13, lineHeight: 18 }}>
+          {coach.primaryAction.body}
+        </Text>
+        <Pressable
+          onPress={act}
+          accessibilityRole="button"
+          accessibilityLabel={coach.primaryAction.ctaLabel}
+          style={{
+            alignSelf: "flex-start",
+            marginTop: 4,
+            paddingHorizontal: 14,
+            paddingVertical: 8,
+            borderRadius: 999,
+            backgroundColor: t.accent,
+          }}
+        >
+          <Text style={{ color: t.surface, fontFamily: BTFonts.sans, fontSize: 12, fontWeight: "700" }}>
+            {coach.primaryAction.ctaLabel}
+          </Text>
+        </Pressable>
+      </BTCard>
     </View>
   );
 }

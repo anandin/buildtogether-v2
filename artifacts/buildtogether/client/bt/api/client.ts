@@ -31,6 +31,8 @@ import type {
   IncomeDecisionAction,
   PaydayAllocationResponse,
   SweepCommitment,
+  HabitsResponse,
+  HabitSuggestion,
 } from "./types";
 import type { BTToneKey } from "../tones";
 
@@ -69,6 +71,29 @@ async function putJson<T>(route: string, body?: unknown): Promise<T> {
 export const btApi = {
   // ── Tilly insights ───────────────────────────────────────────────────────
   today: () => getJson<TodayBrief>("/api/tilly/today"),
+  habits: () => getJson<HabitsResponse>("/api/habits"),
+  createHabit: (body: {
+    title?: string;
+    kind?: string;
+    cadence?: string;
+    targetAmount?: number | null;
+    reason?: string | null;
+    source?: "user" | "tilly";
+  }) => postJson<{ habit: HabitsResponse["habits"][number] }>("/api/habits", body),
+  checkInHabit: (
+    id: string,
+    body?: { note?: string | null; amount?: number | null; completed?: boolean; date?: string },
+  ) => postJson<{ habit: HabitsResponse["habits"][number] }>(`/api/habits/${id}/checkin`, body ?? {}),
+  archiveHabit: (id: string) => postJson<{ ok: true }>(`/api/habits/${id}/archive`, {}),
+  acceptHabitSuggestion: (suggestion: HabitSuggestion) =>
+    postJson<{ habit: HabitsResponse["habits"][number] }>("/api/habits", {
+      title: suggestion.title,
+      kind: suggestion.kind,
+      cadence: suggestion.cadence,
+      targetAmount: suggestion.targetAmount,
+      reason: suggestion.reason,
+      source: "tilly",
+    }),
   // Income review — Phase 0 of the commitment layer. Every surplus claim
   // rests on the income denominator, so the user gets a one-tap way to
   // fix it instead of having to raise it in chat.

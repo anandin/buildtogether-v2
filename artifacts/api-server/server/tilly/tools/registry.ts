@@ -128,6 +128,9 @@ export const TOOL_NAMES = [
   // describing one.
   "setCategoryCap",
   "removeCategoryCap",
+  // v3 money habits — create a practice and log a check-in from chat.
+  "createHabit",
+  "checkInHabit",
 ] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
@@ -318,6 +321,20 @@ export type ToolResult =
       kind: "category_cap_removed";
       category: string;
       removed: boolean;
+    }
+  | {
+      kind: "habit_created";
+      habitId: string;
+      title: string;
+      habitKind: string;
+      cadence: string;
+    }
+  | {
+      kind: "habit_checked_in";
+      habitId: string;
+      title: string;
+      streak: number;
+      completed: boolean;
     };
 
 // ─── Tool context (passed to every handler) ────────────────────────────────
@@ -511,6 +528,30 @@ const removeCategoryCapSchema = z.object({
   category: z.string().min(1),
 });
 
+const createHabitSchema = z.object({
+  title: z.string().min(1),
+  kind: z
+    .enum([
+      "no_spend_day",
+      "save_amount",
+      "review_pending",
+      "gratitude_spend",
+      "weekly_checkin",
+      "custom",
+    ])
+    .optional(),
+  cadence: z.enum(["daily", "weekly"]).optional(),
+  targetAmount: z.number().positive().optional(),
+  reason: z.string().optional(),
+});
+
+const checkInHabitSchema = z.object({
+  title: z.string().min(1),
+  note: z.string().optional(),
+  amount: z.number().nonnegative().optional(),
+  completed: z.boolean().optional(),
+});
+
 const TOOL_SCHEMAS: Record<ToolName, z.ZodType> = {
   createDream: createDreamSchema,
   markPaymentToOwnCard: markPaymentToOwnCardSchema,
@@ -536,6 +577,8 @@ const TOOL_SCHEMAS: Record<ToolName, z.ZodType> = {
   confirmDepositAsIncome: confirmDepositAsIncomeSchema,
   setCategoryCap: setCategoryCapSchema,
   removeCategoryCap: removeCategoryCapSchema,
+  createHabit: createHabitSchema,
+  checkInHabit: checkInHabitSchema,
 };
 
 // ─── Tool descriptions for the LLM ──────────────────────────────────────
@@ -745,6 +788,20 @@ const TOOL_DESCRIPTIONS: Record<ToolName, string> = {
     "REMOVE A SPENDING CAP. Trigger on 'remove the coffee cap', 'stop " +
     "capping eating out', 'no more limit on shopping'. category: the " +
     "capped category to clear.",
+  createHabit:
+    "CREATE A MONEY HABIT. Trigger when the user wants a practice: " +
+    "'start a no-spend day', 'remind me to review pending each week', " +
+    "'I want to save $25 a week', 'log a gratitude spend'. title: their " +
+    "words. kind: no_spend_day | save_amount | review_pending | " +
+    "gratitude_spend | weekly_checkin | custom. cadence: daily or weekly. " +
+    "targetAmount only for save_amount. Confirm with the title. Do not " +
+    "claim a habit exists without this tool.",
+  checkInHabit:
+    "LOG A HABIT CHECK-IN. Trigger when the user says they did the " +
+    "practice: 'no-spend day done', 'I reviewed pending', 'checked in " +
+    "on money', 'saved the $25'. title: the habit name (fuzzy match). " +
+    "note: optional one line. completed defaults true. Confirm the new " +
+    "streak from the tool result. Never claim a check-in without this tool.",
 };
 
 /**
@@ -874,6 +931,10 @@ export const TOOL_GROUPS: { label: string; tools: ToolName[] }[] = [
   {
     label: "DREAMS — savings goals",
     tools: ["createDream", "deleteDream"],
+  },
+  {
+    label: "HABITS — money practices and check-ins",
+    tools: ["createHabit", "checkInHabit"],
   },
   {
     label: "SHOPPING — watchlist + scout (LIVE WEB DATA)",
@@ -1042,7 +1103,64 @@ export async function executeTool(
         parsed.data as z.infer<typeof removeCategoryCapSchema>,
         ctx,
       );
+    case "createHabit":
+      return await runCreateHabit(
+        parsed.data as z.infer<typeof createHabitSchema>,
+        ctx,
+      );
+    case "checkInHabit":
+      return await runCheckInHabit(
+        parsed.data as z.infer<typeof checkInHabitSchema>,
+        ctx,
+      );
   }
+}
+
+async function runCreateHabit(
+  args: z.infer<typeof createHabitSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  const { createHabit } = await import("../habits-service");
+  const habit = await createHabit({
+    householdId: ctx.householdId,
+    userId: ctx.userId,
+    title: args.title,
+    kind: args.kind,
+    cadence: args.cadence,
+    targetAmount: args.targetAmount ?? null,
+    reason: args.reason ?? null,
+    source: "tilly",
+  });
+  return {
+    kind: "habit_created",
+    habitId: habit.id,
+    title: habit.title,
+    habitKind: habit.kind,
+    cadence: habit.cadence,
+  };
+}
+
+async function runCheckInHabit(
+  args: z.infer<typeof checkInHabitSchema>,
+  ctx: ToolContext,
+): Promise<ToolResult | null> {
+  const { checkInHabit } = await import("../habits-service");
+  const habit = await checkInHabit({
+    householdId: ctx.householdId,
+    userId: ctx.userId,
+    title: args.title,
+    note: args.note ?? null,
+    amount: args.amount ?? null,
+    completed: args.completed,
+  });
+  if (!habit) return null;
+  return {
+    kind: "habit_checked_in",
+    habitId: habit.id,
+    title: habit.title,
+    streak: habit.currentStreak,
+    completed: habit.checkedInPeriod,
+  };
 }
 
 /**

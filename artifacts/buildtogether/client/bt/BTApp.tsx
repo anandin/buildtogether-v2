@@ -23,12 +23,13 @@ import { BTSpend } from "./screens/BTSpend";
 import { BTCredit } from "./screens/BTCredit";
 import { BTDreams } from "./screens/BTDreams";
 import { BTProfile } from "./screens/BTProfile";
+import { BTHabits } from "./screens/BTHabits";
 import { Onboarding } from "./onboarding/Onboarding";
 import { useOnboardingStatus } from "./hooks/useOnboarding";
 import { usePlaidForegroundSync } from "./hooks/usePlaidForegroundSync";
 import { registerForExpoPushToken } from "@/lib/notifications";
 
-type Tab = "home" | "spend" | "guardian" | "credit" | "dreams" | "profile";
+type Tab = "home" | "spend" | "guardian" | "credit" | "dreams" | "profile" | "habits";
 
 // Order matches design/screens.jsx tab bar exactly: Today, Spend, Tilly
 // (center), Dreams, You. Credit is reachable from Home but not in the bar.
@@ -71,6 +72,7 @@ function BTShell() {
   const { t } = useBT();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>("home");
+  const [openPending, setOpenPending] = useState(false);
 
   // Pull fresh bank transactions on cold open and every time the app
   // returns to foreground. Throttled inside the hook to 60s so rapid
@@ -104,12 +106,33 @@ function BTShell() {
   return (
     <View style={[styles.root, { backgroundColor: t.bg }]}>
       <View style={[styles.body, { paddingTop: insets.top }]}>
-        {tab === "home" && <BTHome onNav={(r) => setTab(r)} />}
+        {tab === "home" && (
+          <BTHome
+            onNav={(r) => {
+              if (r === "pending") {
+                setOpenPending(true);
+                setTab("profile");
+                return;
+              }
+              if (r === "habits") {
+                setTab("habits");
+                return;
+              }
+              setTab(r);
+            }}
+          />
+        )}
         {tab === "guardian" && <BTGuardian />}
         {tab === "spend" && <BTSpend />}
         {tab === "credit" && <BTCredit />}
         {tab === "dreams" && <BTDreams />}
-        {tab === "profile" && <BTProfile />}
+        {tab === "habits" && <BTHabits onBack={() => setTab("home")} />}
+        {tab === "profile" && (
+          <BTProfile
+            forcedRoute={openPending ? "pending" : null}
+            onForcedRouteConsumed={() => setOpenPending(false)}
+          />
+        )}
       </View>
 
       <View
