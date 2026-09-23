@@ -1595,6 +1595,81 @@ export const tillyLlmCallLog = pgTable("tilly_llm_call_log", {
 
 export type TillyLlmCallLog = typeof tillyLlmCallLog.$inferSelect;
 
+/**
+ * v3 money habits — user-defined (or Tilly-suggested) practices with
+ * check-ins, streaks, and a weekly completion rate. Couples share the
+ * household row; `userId` records who created it.
+ *
+ * kind: no_spend_day | save_amount | review_pending | gratitude_spend
+ *       | weekly_checkin | custom
+ * cadence: daily | weekly
+ */
+export const moneyHabits = pgTable("money_habits", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  householdId: varchar("household_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  title: text("title").notNull(),
+  kind: text("kind").notNull().default("custom"),
+  cadence: text("cadence").notNull().default("daily"),
+  targetAmount: real("target_amount"),
+  active: boolean("active").notNull().default(true),
+  source: text("source").notNull().default("user"), // user | tilly
+  reason: text("reason"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  archivedAt: timestamp("archived_at"),
+});
+export type MoneyHabit = typeof moneyHabits.$inferSelect;
+
+export const habitCheckins = pgTable("habit_checkins", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  habitId: varchar("habit_id").notNull().references(() => moneyHabits.id, { onDelete: "cascade" }),
+  householdId: varchar("household_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  checkinDate: text("checkin_date").notNull(), // YYYY-MM-DD in the user's zone
+  completed: boolean("completed").notNull().default(true),
+  amount: real("amount"),
+  note: text("note"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  habitDateUniq: uniqueIndex("habit_checkins_habit_date_uniq").on(t.habitId, t.checkinDate),
+}));
+export type HabitCheckin = typeof habitCheckins.$inferSelect;
+
+/**
+ * One proactive coach note per user per local day per kind. The digest
+ * cron upserts here so a retry doesn't double-push, and the distiller
+ * can turn the outcome into an L2 memory.
+ */
+export const coachDigests = pgTable("coach_digests", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  householdId: varchar("household_id").notNull(),
+  userId: varchar("user_id").notNull(),
+  digestDate: text("digest_date").notNull(),
+  kind: text("kind").notNull(), // morning | habit_break | bill_loom | anomaly
+  title: text("title").notNull(),
+  body: text("body").notNull(),
+  status: text("status").notNull().default("sent"), // sent | quiet | logged
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (t) => ({
+  userDayKindUniq: uniqueIndex("coach_digests_user_day_kind_uniq").on(t.userId, t.digestDate, t.kind),
+}));
+export type CoachDigest = typeof coachDigests.$inferSelect;
+
+/**
+ * Last known cash snapshot for Today. Refreshed from Plaid account
+ * balances when a bank is connected, otherwise from the user's
+ * self-reported money snapshot. Aggregates only — no account numbers.
+ */
+export const cashPositions = pgTable("cash_positions", {
+  householdId: varchar("household_id").primaryKey(),
+  liquid: real("liquid"),
+  creditOwed: real("credit_owed"),
+  source: text("source").notNull().default("none"), // plaid | self_report | none
+  accountCount: integer("account_count").notNull().default(0),
+  asOf: timestamp("as_of").defaultNow().notNull(),
+});
+export type CashPosition = typeof cashPositions.$inferSelect;
+
 // ==================== Legacy aliases ====================
 // Keep V1-name imports compiling during the Phase 1c route-splitting transition.
 // These re-exports point to the renamed tables. Do NOT use in new code.

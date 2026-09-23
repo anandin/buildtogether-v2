@@ -362,6 +362,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const autoAcceptByAI = shouldAutoAcceptByAI(
           aiSuggestion?.confidence ?? null,
           tx,
+          aiSuggestion?.category ?? null,
         );
         const autoAccept =
           autoAcceptByRule ||
@@ -5299,7 +5300,11 @@ Return just the message text.`;
           // a tiny / fee-shaped row that the user said they don't want to
           // review.
           const okPlaid = shouldAutoAcceptPlaidTransaction(txShape);
-          const okAI = shouldAutoAcceptByAI(ptx.aiSuggestedConfidence ?? null, txShape);
+          const okAI = shouldAutoAcceptByAI(
+            ptx.aiSuggestedConfidence ?? null,
+            txShape,
+            ptx.aiSuggestedCategory ?? null,
+          );
           if (!okPlaid && !okAI) continue;
 
           const paidBy = roleByItem.get(ptx.plaidItemId) || "partner1";

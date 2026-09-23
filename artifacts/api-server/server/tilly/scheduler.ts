@@ -16,12 +16,14 @@
  *   03:00 — distill yesterday's events into typed L2 memories
  *   03:30 — rewrite dossiers for users with new typed memories
  *   04:00 — archive stale L2a memories per user retention pref
+ *   12:15 — coach digest for timezones where it is morning (Toronto)
  *
  * All times are UTC so behavior is identical across deployments.
  */
 import { distillAllActiveUsers } from "./nightly-distiller";
 import { rewriteDossiersForActiveUsers } from "./dossier-rewriter";
 import { archiveStaleMemories } from "./memory-archiver";
+import { runCoachDigests } from "./coach-digest";
 
 interface DailyJob {
   name: string;
@@ -66,6 +68,16 @@ const jobs: DailyJob[] = [
       console.log(
         `[scheduler] archive-memories ok: scanned=${r.scanned} archived=${r.archived}`,
       );
+    },
+  },
+  {
+    name: "coach-digest",
+    hourUtc: 12,
+    minuteUtc: 15,
+    lastRunDayUtc: null,
+    async run() {
+      const r = await runCoachDigests(new Date());
+      console.log(`[scheduler] coach-digest ok:`, JSON.stringify(r));
     },
   },
 ];

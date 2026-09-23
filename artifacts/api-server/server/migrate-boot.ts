@@ -567,6 +567,54 @@ const CRITICAL_STATEMENTS: string[] = [
   )`,
   `ALTER TABLE "goals" ADD COLUMN IF NOT EXISTS "liability_ref" text`,
   `CREATE INDEX IF NOT EXISTS "sweep_commitments_household_status_idx" ON "sweep_commitments" ("household_id", "status")`,
+  // v3 — money habits, coach digests, cached cash position.
+  `CREATE TABLE IF NOT EXISTS "money_habits" (
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "household_id" varchar NOT NULL,
+    "user_id" varchar NOT NULL,
+    "title" text NOT NULL,
+    "kind" text NOT NULL DEFAULT 'custom',
+    "cadence" text NOT NULL DEFAULT 'daily',
+    "target_amount" real,
+    "active" boolean NOT NULL DEFAULT true,
+    "source" text NOT NULL DEFAULT 'user',
+    "reason" text,
+    "created_at" timestamp DEFAULT now() NOT NULL,
+    "archived_at" timestamp
+  )`,
+  `CREATE INDEX IF NOT EXISTS "money_habits_household_active_idx" ON "money_habits" ("household_id", "active")`,
+  `CREATE TABLE IF NOT EXISTS "habit_checkins" (
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "habit_id" varchar NOT NULL REFERENCES "money_habits"("id") ON DELETE CASCADE,
+    "household_id" varchar NOT NULL,
+    "user_id" varchar NOT NULL,
+    "checkin_date" text NOT NULL,
+    "completed" boolean NOT NULL DEFAULT true,
+    "amount" real,
+    "note" text,
+    "created_at" timestamp DEFAULT now() NOT NULL
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "habit_checkins_habit_date_uniq" ON "habit_checkins" ("habit_id", "checkin_date")`,
+  `CREATE TABLE IF NOT EXISTS "coach_digests" (
+    "id" varchar PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "household_id" varchar NOT NULL,
+    "user_id" varchar NOT NULL,
+    "digest_date" text NOT NULL,
+    "kind" text NOT NULL,
+    "title" text NOT NULL,
+    "body" text NOT NULL,
+    "status" text NOT NULL DEFAULT 'sent',
+    "created_at" timestamp DEFAULT now() NOT NULL
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "coach_digests_user_day_kind_uniq" ON "coach_digests" ("user_id", "digest_date", "kind")`,
+  `CREATE TABLE IF NOT EXISTS "cash_positions" (
+    "household_id" varchar PRIMARY KEY,
+    "liquid" real,
+    "credit_owed" real,
+    "source" text NOT NULL DEFAULT 'none',
+    "account_count" integer NOT NULL DEFAULT 0,
+    "as_of" timestamp DEFAULT now() NOT NULL
+  )`,
   `CREATE INDEX IF NOT EXISTS "goal_contributions_commitment_payday_idx" ON "goal_contributions" ("commitment_id", "payday_date")`,
   // Backfill: goals.weekly_auto was the old source of truth and the Friday
   // /api/cron/auto-save that honoured it is now a no-op. Without this,

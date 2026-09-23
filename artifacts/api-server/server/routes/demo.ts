@@ -141,6 +141,10 @@ function buildSixWeeks(): SeedExpense[] {
 }
 
 export function mountDemoRoutes(app: Express): void {
+  if (process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production") {
+    console.warn("[demo] refused to mount wipe/seed routes in production");
+    return;
+  }
   app.post("/api/demo/seed", requireAuth, async (req: Request, res: Response) => {
     if (!req.user) return res.status(401).json({ error: "auth required" });
     const householdId = req.user.coupleId;

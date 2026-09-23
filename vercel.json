@@ -49,6 +49,10 @@
     {
       "path": "/api/cron/curate-skills",
       "schedule": "11 5 * * 0"
+    },
+    {
+      "path": "/api/cron/coach-digest",
+      "schedule": "15 * * * *"
     }
   ]
 }

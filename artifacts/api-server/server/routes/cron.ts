@@ -530,4 +530,27 @@ export function mountCronRoutes(app: Express): void {
       }
     },
   );
+
+  /**
+   * v3 coach loop — morning digest, habit nudges, bill warnings,
+   * and a history-based subscription refresh. Hourly; each user is
+   * touched once during their local 08:00–10:59 window.
+   * `?force=1` skips the hour gate (manual ops).
+   */
+  app.all(
+    "/api/cron/coach-digest",
+    requireCron,
+    async (req: Request, res: Response) => {
+      try {
+        const { runCoachDigests } = await import("../tilly/coach-digest");
+        const force = req.query.force === "1" || req.query.force === "true";
+        const out = await runCoachDigests(new Date(), { force });
+        res.json({ ok: true, ...out });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error("/api/cron/coach-digest error:", msg);
+        res.status(500).json({ error: "coach digest failed", debug: msg });
+      }
+    },
+  );
 }

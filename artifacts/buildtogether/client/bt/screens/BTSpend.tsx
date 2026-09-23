@@ -1206,7 +1206,7 @@ function BTSpendBody() {
             </View>
           </BTCard>
 
-          {recent.length === 0 ? (
+          {recent.length === 0 && __DEV__ ? (
             <Pressable
               onPress={() => seed.mutate()}
               disabled={seed.isPending}
@@ -1461,9 +1461,10 @@ function BTSpendBody() {
                 // double-anchors on zero in a way that reads broken;
                 // collapse to a single quiet line.
                 if (isCurrent && spent === 0 && todayAmt === 0) {
+                  const noun = range === "year" ? "year" : range === "month" ? "month" : "week";
                   return (
                     <BTSerif size={30} color={t.ink} weight="500">
-                      Nothing yet this week.
+                      Nothing yet this {noun}.
                     </BTSerif>
                   );
                 }

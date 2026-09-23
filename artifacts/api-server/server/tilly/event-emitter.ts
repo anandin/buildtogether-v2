@@ -62,7 +62,15 @@ export type EventKind =
   // + previews of the user message + draft reply. Operator can
   // inspect via /admin/memory to find patterns in what the persona /
   // tools let slip.
-  | "validator_flagged";
+  | "validator_flagged"
+  // v3 habits + coach automation
+  | "habit_created"
+  | "habit_checkin"
+  | "habit_archived"
+  | "habit_suggested"
+  | "coach_digest_sent"
+  | "automation_nudge"
+  | "subscription_detected";
 
 export type EventPayload = Record<string, unknown>;
 

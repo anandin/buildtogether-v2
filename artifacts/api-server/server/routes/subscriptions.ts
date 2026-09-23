@@ -8,6 +8,7 @@ import { requireAuth } from "../middleware/auth";
 import { db } from "../db";
 import { subscriptions } from "../../shared/schema";
 import { scanSubscriptions } from "../tilly/subscription-detect";
+import { emitEventAsync } from "../tilly/event-emitter";
 import { findCancelLink } from "../tilly/merchant-cancel-links";
 
 type WireSub = {
@@ -97,7 +98,19 @@ export function mountSubscriptionsRoutes(app: Express): void {
       if (!householdId) return res.status(400).json({ error: "no household" });
 
       try {
-        const result = await scanSubscriptions(householdId);
+        const result = await scanSubscriptions(householdId, { includePlaidApi: true });
+        if (result.detected > 0) {
+          emitEventAsync({
+            userId: req.user.id,
+            householdId,
+            kind: "subscription_detected",
+            payload: {
+              detected: result.detected,
+              fromPlaidRecurring: result.fromPlaidRecurring,
+              fromRules: result.fromRules,
+            },
+          });
+        }
         res.json({ ok: true, ...result });
       } catch (err) {
         console.error("/api/subscriptions/scan error:", err);

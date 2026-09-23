@@ -132,7 +132,69 @@ export type TodayBrief =
        * number behind it is unverified in both directions. Render the
        * review card instead. Optional so older API responses parse. */
       incomeReview?: IncomeReview | null;
+      /** v3 coach home. Absent on older API responses. */
+      coach?: CoachHome | null;
     };
+
+export type CoachHabitStripItem = {
+  id: string;
+  title: string;
+  kind: string;
+  cadence: "daily" | "weekly";
+  currentStreak: number;
+  weeklyCompletionRate: number;
+  checkedInPeriod: boolean;
+  due: boolean;
+};
+
+export type CoachHome = {
+  briefing: string;
+  cash: {
+    liquid: number | null;
+    creditOwed: number | null;
+    source: "plaid" | "self_report" | "none";
+    asOf: string | null;
+    accountCount: number;
+  };
+  upcoming: Array<{
+    kind: "bill" | "commitment";
+    id: string;
+    label: string;
+    amount: number;
+    date: string | null;
+  }>;
+  habits: CoachHabitStripItem[];
+  primaryAction: {
+    id: string;
+    title: string;
+    body: string;
+    ctaLabel: string;
+    route: "habits" | "spend" | "guardian" | "pending" | "dreams";
+    chatSeed?: string;
+  };
+};
+
+export type HabitSuggestion = {
+  kind: string;
+  title: string;
+  cadence: "daily" | "weekly";
+  targetAmount: number | null;
+  reason: string;
+};
+
+export type HabitsResponse = {
+  ready: true;
+  habits: Array<
+    CoachHabitStripItem & {
+      targetAmount: number | null;
+      source: string;
+      reason: string | null;
+      bestStreak: number;
+      createdAt: string;
+    }
+  >;
+  suggestions: HabitSuggestion[];
+};
 
 /** Phase 0, commitment-layer PRD. Two error directions: inflow that
  * should be income but is bucketed elsewhere (`candidates`), and large
@@ -312,6 +374,20 @@ export type TillyToolResult =
       sourceName: string;
       reclassifiedCount: number;
       reclassifiedAmount: number;
+    }
+  | {
+      kind: "habit_created";
+      habitId: string;
+      title: string;
+      habitKind: string;
+      cadence: string;
+    }
+  | {
+      kind: "habit_checked_in";
+      habitId: string;
+      title: string;
+      streak: number;
+      completed: boolean;
     };
 
 export type UserPrefsResponse = {
